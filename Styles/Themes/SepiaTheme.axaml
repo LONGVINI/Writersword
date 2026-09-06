@@ -38,11 +38,20 @@
 	<SolidColorBrush x:Key="BorderDefaultBrush">#5A4A40</SolidColorBrush>
 	<SolidColorBrush x:Key="BorderSubtleBrush">#3C3430</SolidColorBrush>
 
-	<!-- Семантические цвета секций настроек -->
-	<SolidColorBrush x:Key="SectionGlobalBgBrush">#1C2030</SolidColorBrush>
-	<SolidColorBrush x:Key="SectionGlobalFgBrush">#7A9FCC</SolidColorBrush>
-	<SolidColorBrush x:Key="SectionProjectBgBrush">#2C1E00</SolidColorBrush>
-	<SolidColorBrush x:Key="SectionProjectFgBrush">#D4960A</SolidColorBrush>
+	<!-- Семантические цвета секций: синий — общее для всех проектов,
+	     янтарный — своё для открытого проекта. Пара «фон + текст» подобрана
+	     так, чтобы плашка отличалась от дорожки переключателя (контраст не
+	     ниже 1.3), а надпись на ней читалась (не ниже 4.5). Меняя одно,
+	     проверяйте оба: раньше плашка отличалась от фона на 1.14 и на тёмной
+	     теме была почти неразличима. -->
+	<SolidColorBrush x:Key="SectionGlobalBgBrush">#283654</SolidColorBrush>
+	<SolidColorBrush x:Key="SectionGlobalFgBrush">#9BBFE8</SolidColorBrush>
+	<SolidColorBrush x:Key="SectionProjectBgBrush">#4A3208</SolidColorBrush>
+	<SolidColorBrush x:Key="SectionProjectFgBrush">#EBAE28</SolidColorBrush>
+
+	<!-- Дорожка переключателя области. Темнее плашек и отделена от панели,
+	     иначе «пилюля» сливается с тем, на чём лежит. -->
+	<SolidColorBrush x:Key="ScopeTrackBrush">#241C16</SolidColorBrush>
 
 	<!-- Переопределение токенов FluentTheme для ComboBox -->
 	<SolidColorBrush x:Key="ComboBoxBackground">#4A3828</SolidColorBrush>

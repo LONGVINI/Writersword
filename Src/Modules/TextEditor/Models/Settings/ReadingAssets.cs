@@ -53,6 +53,21 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Writersword", "Reading");
 
+        /// <summary>
+        /// Чтение файла из проекта в обход вкладок. Принимает путь внутри
+        /// проекта, возвращает байты или null.
+        ///
+        /// Обычный путь идёт через активную вкладку — она знает, какой проект
+        /// открыт. На телефоне вкладок нет вовсе, и картинки вида с адресом
+        /// «project:» там не находились: книга показывалась ровным цветом вместо
+        /// бумаги, и почему — не говорил никто.
+        ///
+        /// Присваивается тем, кто открыл книгу, и сбрасывается, когда закрыл:
+        /// чтение идёт по требованию, во время отрисовки, поэтому хранилище
+        /// обязано быть живым всё время, пока книга на экране.
+        /// </summary>
+        public static Func<string, byte[]?>? ProjectSource { get; set; }
+
         /// <summary>Форматы, которые годятся картинке вида.</summary>
         private static readonly string[] AllowedExtensions =
             { ".jpg", ".jpeg", ".png", ".webp", ".bmp" };
@@ -99,7 +114,12 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             try
             {
                 if (IsProjectRef(reference))
-                    return Context?.ReadFile($"{ZipFolder}/{NameOf(reference!)}");
+                {
+                    var inProject = $"{ZipFolder}/{NameOf(reference!)}";
+                    return ProjectSource is { } read
+                        ? read(inProject)
+                        : Context?.ReadFile(inProject);
+                }
 
                 if (IsAppRef(reference))
                 {

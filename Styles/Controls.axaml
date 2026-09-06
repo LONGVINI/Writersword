@@ -19,6 +19,7 @@
 	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/RibbonScrollArrow.axaml"/>
 	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/Flyout.axaml"/>
 	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/UnitToggle.axaml"/>
+	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/ScopeToggle.axaml"/>
 
 	<!-- Скролл: тонкий, скруглённый бегунок, без стрелок, подсветка при наведении. -->
 	<Style Selector="ScrollBar:vertical">

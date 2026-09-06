@@ -99,6 +99,37 @@ namespace Writersword.Core.Interfaces.Services.Storage
             string storePath, string projectName, CancellationToken ct = default);
 
         /// <summary>
+        /// Объявить, что книга открыта здесь, и узнать, открыта ли она ещё где-то.
+        ///
+        /// Нужно затем, чтобы не доводить до расхождения: свести две правки одного
+        /// текста автоматически нельзя, а предупредить о том, что вторая сторона
+        /// сейчас за работой, — можно. Это осведомление, а не запрет: книгу никто
+        /// не запирает, решение остаётся за человеком.
+        /// </summary>
+        Task<PresenceReport> AnnouncePresenceAsync(
+            string projectName, DevicePresence self, CancellationToken ct = default);
+
+        /// <summary>
+        /// Убрать свою отметку: книгу закрыли. Без этого другая сторона ещё
+        /// несколько минут считала бы её занятой.
+        /// </summary>
+        /// <summary>
+        /// Посмотреть, кто держит книгу, ничего о себе не сообщая.
+        ///
+        /// Разведено с объявлением затем, что своя отметка обновляется раз в
+        /// пару минут — по сроку свежести, — а о чужих хочется знать сразу.
+        /// Спрашивать с условием по версии дёшево: неизменившийся файл сервер
+        /// не отдаёт вовсе.
+        ///
+        /// null означает «с прошлого раза ничего не изменилось».
+        /// </summary>
+        Task<PresenceReport?> PeekPresenceAsync(
+            string projectName, string selfDeviceId, CancellationToken ct = default);
+
+        Task ReleasePresenceAsync(
+            string projectName, string deviceId, CancellationToken ct = default);
+
+        /// <summary>
         /// Состояние синхронизации изменилось по итогам фоновой проверки.
         /// Подписчик в интерфейсе решает, спрашивать ли пользователя.
         /// </summary>

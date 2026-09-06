@@ -214,6 +214,61 @@
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
+		<!-- Кнопка кадра в углу аватарки. Тот же приём, что и на плитках
+		     быстрой ленты (qTileCrop): появляется при наведении на аватарку и
+		     не мешает, пока не нужна. Размер 20 в коробке 56 — оба чётные,
+		     отступ целый. -->
+		<Style Selector="Button.avatarCrop">
+			<Setter Property="Width" Value="20"/>
+			<Setter Property="Height" Value="20"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="10"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Panel.avatarBox:pointerover Button.avatarCrop">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Button.avatarCrop /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="10"/>
+		</Style>
+		<Style Selector="Button.avatarCrop:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<!-- Выключенная кнопка не прячется, а гаснет. Спрятанная означала
+		     бы, что у персонажа без картинки кадрирования не существует вовсе,
+		     и искать его негде — а оно есть, просто пока не к чему применить. -->
+		<Style Selector="Button.avatarCrop:disabled">
+			<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+		</Style>
+		<Style Selector="Button.avatarCrop:disabled /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+		</Style>
+
+		<!-- Обёртка для подсказки над выключенной кнопкой: выключенный контрол
+		     событий мыши не получает, и подсказка на нём самом не всплывает —
+		     а именно выключенной объяснение нужнее всего. Тот же приём, что и в
+		     управлении папками. -->
+		<Style Selector="Border.cropTipHost">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="HorizontalAlignment" Value="Left"/>
+			<Setter Property="VerticalAlignment" Value="Top"/>
+		</Style>
+
 		<!-- Кольцо-подсказка вокруг самой аватарки: без него круглая
 		     картинка ничем не намекала бы, что по ней можно щёлкнуть и
 		     открыть быструю ленту (п.3 по духу — узнаваемость кликабельного). -->
@@ -230,14 +285,14 @@
 		     равно обрезается многоточием при необходимости, полное — в
 		     подсказке. -->
 		<Style Selector="Button.quickFolderTab">
+			<Setter Property="Width" Value="32"/>
+			<Setter Property="Height" Value="32"/>
 			<Setter Property="MinWidth" Value="0"/>
 			<Setter Property="MinHeight" Value="0"/>
-			<Setter Property="MaxWidth" Value="88"/>
-			<Setter Property="Padding" Value="8,3"/>
+			<Setter Property="Padding" Value="0"/>
 			<Setter Property="Margin" Value="0,0,6,0"/>
-			<Setter Property="CornerRadius" Value="10"/>
+			<Setter Property="CornerRadius" Value="999"/>
 			<Setter Property="BorderThickness" Value="0"/>
-			<Setter Property="FontSize" Value="10"/>
 			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
 			<Setter Property="VerticalContentAlignment" Value="Center"/>
@@ -246,18 +301,19 @@
 			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
 			<Setter Property="BorderBrush" Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="1"/>
-			<Setter Property="CornerRadius" Value="10"/>
+			<Setter Property="CornerRadius" Value="999"/>
 		</Style>
 		<Style Selector="Button.quickFolderTab:pointerover /template/ ContentPresenter">
 			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
 		</Style>
 		<Style Selector="Button.quickFolderTab.active">
 			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-			<Setter Property="FontWeight" Value="SemiBold"/>
 		</Style>
 		<Style Selector="Button.quickFolderTab.active /template/ ContentPresenter">
 			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="2"/>
 		</Style>
 
 		<Style Selector="TextBlock.rowLabel">
@@ -552,8 +608,13 @@
 									     ограничено по высоте так жёстко и ведёт
 									     себя как попап цветового кружка — то же
 									     самое человек уже видел там. -->
+									<!-- Заливка обязательна: без неё коробка не попадает под
+									     курсор целиком, и кнопка кадра проступала бы только над
+									     самой картинкой, а не над всей аватаркой. -->
+									<Panel Grid.Column="0" Classes="avatarBox"
+									       Background="Transparent"
+									       Width="56" Height="56">
 									<Button x:Name="AvatarFlyoutTrigger"
-									        Grid.Column="0"
 									        Classes="ghost roundGhost"
 									        Width="56" Height="56"
 									        behaviours:TooltipBehavior.Tip="Быстрый выбор аватарки"
@@ -644,13 +705,21 @@
 																				FontWeight="SemiBold"
 																				Margin="2,0,2,6"
 																				Foreground="{DynamicResource TextMutedBrush}"/>
-																			<ItemsControl ItemsSource="{Binding Tiles}">
-																				<ItemsControl.ItemsPanel>
-																					<ItemsPanelTemplate>
-																						<WrapPanel Orientation="Horizontal"/>
-																					</ItemsPanelTemplate>
-																				</ItemsControl.ItemsPanel>
-																				<ItemsControl.ItemTemplate>
+																			<!-- Репитер, а не ItemsControl с WrapPanel: тот строит
+																			     все плитки разом, и лента на пятьсот картинок
+																			     раскодировала при открытии все пятьсот, несмотря на
+																			     ленивую миниатюру — лень не срабатывает, когда
+																			     построены все. Ячейка 60 — плитка 52 плюс её отступ. -->
+																			<ItemsRepeater ItemsSource="{Binding Tiles}">
+																				<ItemsRepeater.Layout>
+																					<UniformGridLayout Orientation="Horizontal"
+																					                   MinItemWidth="60"
+																					                   MinItemHeight="60"
+																					                   MinColumnSpacing="0"
+																					                   MinRowSpacing="0"
+																					                   ItemsStretch="None"/>
+																				</ItemsRepeater.Layout>
+																				<ItemsRepeater.ItemTemplate>
 																					<DataTemplate x:DataType="quick:CharacterQuickAvatarTile">
 																						<Panel Classes="qTile">
 																							<Button Classes="qTileFace"
@@ -661,7 +730,17 @@
 																								<Border Width="52" Height="52" CornerRadius="26"
 																									ClipToBounds="True"
 																									Background="{DynamicResource BgBaseBrush}">
-																									<Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+																									<Panel>
+																										<!-- Заглушка на время, пока миниатюра
+																										     строится в стороне от UI-потока. -->
+																										<PathIcon Width="18" Height="18"
+																											HorizontalAlignment="Center"
+																											VerticalAlignment="Center"
+																											IsVisible="{Binding !HasThumbnail}"
+																											Foreground="{DynamicResource TextDisabledBrush}"
+																											Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+																										<Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+																									</Panel>
 																								</Border>
 																							</Button>
 
@@ -683,8 +762,8 @@
 																							</Button>
 																						</Panel>
 																					</DataTemplate>
-																				</ItemsControl.ItemTemplate>
-																			</ItemsControl>
+																				</ItemsRepeater.ItemTemplate>
+																			</ItemsRepeater>
 																		</StackPanel>
 																	</DataTemplate>
 																</ItemsControl.ItemTemplate>
@@ -700,12 +779,21 @@
 															Margin="2,4,2,10"/>
 
 														<!-- Полоска папок — быстрая навигация по единому списку выше: клик
-														     прокручивает список до нужного раздела, а не фильтрует картинки. -->
-														<ScrollViewer Grid.Row="1"
-															Margin="0,0,0,8"
+														     прокручивает список до нужного раздела, а не фильтрует картинки.
+														     Отбита от списка своей полосой во всю ширину попапа: отрицательный
+														     отступ гасит его собственные поля, иначе полоса шла бы с зазором по
+														     краям и читалась бы как ещё один блок внутри списка, а не как
+														     подставка под ним. -->
+														<Border Grid.Row="1"
+														        Margin="-10,0,-10,8"
+														        Padding="10,6"
+														        Background="{DynamicResource BgBaseBrush}"
+														        BorderBrush="{DynamicResource BorderSubtleBrush}"
+														        BorderThickness="0,1,0,1"
+														        IsVisible="{ReflectionBinding #PanelRoot.DataContext.QuickAvatars.HasFolders}">
+														<ScrollViewer
 															HorizontalScrollBarVisibility="Auto"
-															VerticalScrollBarVisibility="Disabled"
-															IsVisible="{ReflectionBinding #PanelRoot.DataContext.QuickAvatars.HasFolders}">
+															VerticalScrollBarVisibility="Disabled">
 															<ItemsControl ItemsSource="{ReflectionBinding #PanelRoot.DataContext.QuickAvatars.Folders}">
 																<ItemsControl.ItemsPanel>
 																	<ItemsPanelTemplate>
@@ -717,15 +805,34 @@
 																		<Button Classes="quickFolderTab"
 																			Click="OnQuickFolderClick"
 																			behaviours:TooltipBehavior.Tip="{Binding Title}">
-																			<TextBlock Text="{Binding Title}"
-																				TextAlignment="Center"
-																				TextWrapping="NoWrap"
-																				TextTrimming="CharacterEllipsis"/>
+																			<!-- Только обложка, без подписи: подписи занимали всю
+																			     ширину полоски, а помещалось в них по три слова с
+																			     многоточием — по такому обрезку папка всё равно не
+																			     узнаётся. Полное имя осталось в подсказке.
+																			     Коробка 28 в кнопке 32, значок 16 — все размеры
+																			     чётные, отступы целые. -->
+																			<Panel Width="28" Height="28">
+																				<Border Width="28" Height="28" CornerRadius="14"
+																					ClipToBounds="True"
+																					IsVisible="{Binding HasIcon}"
+																					Background="{DynamicResource BgSurfaceBrush}">
+																					<Image Source="{Binding Icon}" Stretch="UniformToFill"/>
+																				</Border>
+																				<PathIcon Width="16" Height="16"
+																					IsVisible="{Binding IsRecent}"
+																					Foreground="{Binding $parent[Button].Foreground}"
+																					Data="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+																				<PathIcon Width="16" Height="16"
+																					IsVisible="{Binding ShowFolderGlyph}"
+																					Foreground="{Binding $parent[Button].Foreground}"
+																					Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+																			</Panel>
 																		</Button>
 																	</DataTemplate>
 																</ItemsControl.ItemTemplate>
 															</ItemsControl>
 														</ScrollViewer>
+														</Border>
 
 
 														<!-- Тот же переход, что и «Настроить…» у цветового
@@ -745,6 +852,22 @@
 											</Flyout>
 										</Button.Flyout>
 									</Button>
+
+										<!-- Кадр этой же картинки. Окно открывается сразу на
+										     той форме, что выбрана у карточки: кружок или
+										     полоска. Второй кадр при этом не теряется — он
+										     виден в превью и возвращается нетронутым. -->
+										<Border Classes="cropTipHost"
+										        behaviours:TooltipBehavior.Tip="Кадрировать"
+										        behaviours:TooltipBehavior.Description="Выбрать свой кадр этой картинки. Окно откроется сразу на той форме, что стоит у карточки — кружок или полоска. Пока картинки нет, кадрировать нечего">
+											<Button Classes="avatarCrop"
+											        Command="{Binding CropAvatarCommand}"
+											        IsEnabled="{Binding CanCropAvatar}">
+												<PathIcon Width="10" Height="10"
+												          Data="M1 1H9V5H5V9H1Z M19 19H11V15H15V11H19Z"/>
+											</Button>
+										</Border>
+									</Panel>
 
 									<StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
 										<!-- Единственная кнопка секции, которая не прозрачная и не

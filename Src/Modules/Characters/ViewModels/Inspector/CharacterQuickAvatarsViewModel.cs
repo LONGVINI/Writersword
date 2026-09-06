@@ -27,7 +27,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
         private readonly Action<string> _pick;
 
         private Bitmap? _thumbnail;
-        private bool _thumbnailLoaded;
+        private bool _thumbnailRequested;
 
         public CharacterQuickAvatarTile(
             CharacterAvatarItem item,
@@ -68,14 +68,42 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
         {
             get
             {
-                if (!_thumbnailLoaded)
+                if (!_thumbnailRequested)
                 {
-                    _thumbnailLoaded = true;
-                    try { _thumbnail = _service.LoadBitmap(AvatarRef, 96); }
-                    catch (Exception ex) { _logger.Error(ex, "Quick tile thumb failed for {Ref}", AvatarRef); }
+                    _thumbnailRequested = true;
+
+                    // Уже построенную отдаём тем же кадром: иначе плитки,
+                    // которые только что были на экране, мигали бы заглушкой
+                    // при каждой прокрутке туда-обратно.
+                    _thumbnail = _service.TryGetThumbnail(AvatarRef, 96);
+                    if (_thumbnail == null) RequestThumbnail();
                 }
                 return _thumbnail;
             }
+        }
+
+        /// <summary>Миниатюра готова. Пока нет — плитка показывает заглушку.</summary>
+        public bool HasThumbnail => _thumbnail != null;
+
+        /// <summary>
+        /// Построить миниатюру в стороне от UI-потока. Прокрутка реализует
+        /// новые плитки прямо во время движения, и раскодирование на месте
+        /// останавливало её на каждой новой строке.
+        /// </summary>
+        private async void RequestThumbnail()
+        {
+            Bitmap? bitmap = null;
+            try { bitmap = await _service.LoadThumbnailAsync(AvatarRef, 96); }
+            catch (Exception ex) { _logger.Error(ex, "Quick tile thumb failed for {Ref}", AvatarRef); }
+
+            if (bitmap == null) return;
+
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _thumbnail = bitmap;
+                this.RaisePropertyChanged(nameof(Thumbnail));
+                this.RaisePropertyChanged(nameof(HasThumbnail));
+            });
         }
     }
 
@@ -86,6 +114,14 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
     /// только прокручивает список к своему месту (см. RequestScrollToFolder
     /// у CharacterQuickAvatarsViewModel).
     /// </summary>
+    /// <summary>
+    /// Что за раздел стоит в ленте. Нужен полоске папок внизу: у папки есть
+    /// обложка, а у «Недавних» и «В проекте» её быть не может — это не папки, а
+    /// выборки, и показывать им чужую картинку нельзя. Разбор по названию
+    /// раздела сломался бы от первой же папки, названной «Недавние».
+    /// </summary>
+    public enum CharacterQuickAvatarFolderKind { Recent, Project, Pack }
+
     public class CharacterQuickAvatarFolder : ReactiveObject
     {
         public CharacterQuickAvatarFolder(
@@ -94,10 +130,12 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             IReadOnlyList<CharacterAvatarItem> items,
             ICharacterAvatarService service,
             Action<string> pick,
-            Func<string, Task>? onCrop)
+            Func<string, Task>? onCrop,
+            CharacterQuickAvatarFolderKind kind = CharacterQuickAvatarFolderKind.Pack)
         {
             Title = title;
             Icon = icon;
+            Kind = kind;
             Tiles = items
                 .Select(item => new CharacterQuickAvatarTile(item, service, pick, onCrop))
                 .ToList();
@@ -105,7 +143,19 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
 
         public string Title { get; }
         public Bitmap? Icon { get; }
+        public CharacterQuickAvatarFolderKind Kind { get; }
         public IReadOnlyList<CharacterQuickAvatarTile> Tiles { get; }
+
+        /// <summary>У раздела есть обложка — её и показываем в полоске папок.</summary>
+        public bool HasIcon => Icon != null;
+
+        public bool IsRecent => Kind == CharacterQuickAvatarFolderKind.Recent;
+
+        /// <summary>
+        /// Папка без обложки: показывается значком папки. Пустой кружок на её
+        /// месте читался бы как непрогрузившаяся картинка.
+        /// </summary>
+        public bool ShowFolderGlyph => !HasIcon && !IsRecent;
     }
 
     /// <summary>
@@ -228,12 +278,14 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
                 var recents = service.GetRecentAvatars();
                 if (recents.Count > 0)
                     Folders.Add(new CharacterQuickAvatarFolder(
-                        "Недавние", null, recents, service, PickStored, CropStoredAsync));
+                        "Недавние", null, recents, service, PickStored, CropStoredAsync,
+                        CharacterQuickAvatarFolderKind.Recent));
 
                 var project = service.GetProjectAvatars();
                 if (project.Count > 0)
                     Folders.Add(new CharacterQuickAvatarFolder(
-                        "В проекте", null, project, service, PickStored, CropStoredAsync));
+                        "В проекте", null, project, service, PickStored, CropStoredAsync,
+                        CharacterQuickAvatarFolderKind.Project));
 
                 foreach (var pack in service.GetAllPacks())
                 {
@@ -241,7 +293,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
 
                     Bitmap? icon = null;
                     if (!string.IsNullOrEmpty(pack.IconRef))
-                        try { icon = service.LoadBitmap(pack.IconRef, 64); } catch { }
+                        try { icon = service.LoadThumbnail(pack.IconRef, 64); } catch { }
 
                     Folders.Add(new CharacterQuickAvatarFolder(
                         PackTitle(pack), icon, pack.Items.ToList(), service, PickStored, CropStoredAsync));

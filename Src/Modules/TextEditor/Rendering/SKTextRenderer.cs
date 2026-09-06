@@ -180,9 +180,16 @@ namespace Writersword.Modules.TextEditor.Rendering
             float spaceAfterPt = (float)(para.Properties.SpaceAfter
                                         ?? (isCell ? 0.0 : (double)styles.ResolveSpaceAfter(styleName)));
 
-            float lineSpacing = para.Properties.LineSpacingValue.HasValue
-                                        ? (float)para.Properties.LineSpacingValue.Value
-                                        : styles.ResolveLineSpacing(styleName);
+            // Межстрочный интервал несёт не только значение, но и правило: «множитель»,
+            // «точно» и «минимум» дают разную высоту строки, и без правила значение
+            // «точно 14 пт» читалось как четырнадцатикратный множитель.
+            var lineSpacing = para.Properties.LineSpacingValue.HasValue
+                ? new SKLineSpacing(
+                    para.Properties.LineSpacingRule ?? Models.Styles.LineSpacingRule.Auto,
+                    (float)para.Properties.LineSpacingValue.Value)
+                : new SKLineSpacing(
+                    styles.ResolveLineSpacingRule(styleName),
+                    styles.ResolveLineSpacing(styleName));
 
             // Конвертируем TextAlignment из модели в Core enum через int.
             // Значения намеренно совпадают: Left=0, Center=1, Right=2, Justify=3.
@@ -208,7 +215,16 @@ namespace Writersword.Modules.TextEditor.Rendering
             };
 
             var tokens = CollectTokens(para, styleName, styles, InlineImageSize);
-            WrapTokensToLines(tokens, layout, textWidthPt, lineSpacing, wrapZones, wrapPreferPushDown, wrapPages);
+
+            // Пустой абзац рисуется шрифтом своего стиля. Запасной Times New Roman 14
+            // давал пустой строке чужую высоту, и пустые строки между блоками текста
+            // занимали на листе не столько же места, сколько в Word.
+            var emptyLineFormat = BuildEmptyLineFormat(para, styleName, styles);
+
+            WrapTokensToLines(
+                tokens, layout, textWidthPt, lineSpacing,
+                wrapZones, wrapPreferPushDown, wrapPages, emptyLineFormat,
+                styles.BreakOnHyphen);
             layout.TextLength = GetPlainTextLength(para);
 
             return layout;
@@ -259,11 +275,19 @@ namespace Writersword.Modules.TextEditor.Rendering
             tableLayout.ColumnWidthsPt.AddRange(colWidthsPt);
             tableLayout.ColumnOffsetsPt.AddRange(colOffsetsPt);
 
-            float tableY = 0f;
+            // Раскладка таблицы идёт в два прохода.
+            //
+            // Первый обмеряет ячейки: считает ширины, поля и раскладки абзацев и
+            // выводит из них базовые высоты строк. Сами SKTableCellLayout здесь ещё
+            // не создаются — их Ypt задаётся только при создании и потом неизменен,
+            // а вертикальные позиции известны лишь когда высоты строк окончательны.
+            // Окончательными они становятся после второго прохода: объединённая по
+            // вертикали ячейка может растянуть свои строки под своё содержимое.
+            var measured = new List<CellMeasure>();
+            var rowHeightsPt = new float[rowCount];
 
             for (int row = 0; row < rowCount; row++)
             {
-                var rowLayout = new SKTableRowLayout { Row = row, Ypt = tableY };
                 float rowHeight = 0f;
 
                 for (int col = 0; col < colCount; col++)
@@ -294,22 +318,16 @@ namespace Writersword.Modules.TextEditor.Rendering
                         cellWidthPt - padLeftPt - padRightPt - leftBorderW - rightBorderW,
                         1f);
 
-                    var cellLayout = new SKTableCellLayout
+                    var measure = new CellMeasure(cell, row, col)
                     {
-                        Row = row,
-                        Column = col,
-                        RowSpan = cell.RowSpan,
-                        ColSpan = cell.ColSpan,
-                        Xpt = colOffsetsPt[col],
-                        Ypt = tableY,
+                        XPt = colOffsetsPt[col],
                         WidthPt = cellWidthPt,
                         PadTopPt = padTopPt,
                         PadBottomPt = padBottomPt,
                         PadLeftPt = padLeftPt,
                         PadRightPt = padRightPt,
-                        BackgroundColor = cell.BackgroundColor,
-                        VerticalAlignment = (int)cell.VerticalAlignment,
-                        Borders = BuildCellBorderLayout(cell.Borders)
+                        TopBorderPt = cell.Borders.Top != BorderStyle.None ? (float)cell.Borders.ThicknessPt : 0f,
+                        BottomBorderPt = cell.Borders.Bottom != BorderStyle.None ? (float)cell.Borders.ThicknessPt : 0f
                     };
 
                     // Верстаем параграфы ячейки с isCell = true — подавляем дефолтный SpaceAfter.
@@ -324,7 +342,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                             && cellFontPreview.TryGetValue(para, out var pv)) ? pv : para;
                         var paraLayout = BuildLayout(paraSrc, contentWidthPt, styles, isCell: true);
 
-                        cellLayout.Paragraphs.Add(new SKTableParaLayout
+                        measure.Paragraphs.Add(new SKTableParaLayout
                         {
                             Layout = paraLayout,
                             Ypt = cellContentY,
@@ -336,16 +354,12 @@ namespace Writersword.Modules.TextEditor.Rendering
                                       + paraLayout.SpaceAfterPt;
                     }
 
-                    float topBorderW = cell.Borders.Top != BorderStyle.None ? (float)cell.Borders.ThicknessPt : 0f;
-                    float botBorderW = cell.Borders.Bottom != BorderStyle.None ? (float)cell.Borders.ThicknessPt : 0f;
-                    cellLayout.ContentHeightPt = cellContentY;
-                    cellLayout.HeightPt = cellContentY + padTopPt + padBottomPt + topBorderW + botBorderW;
+                    measure.ContentHeightPt = cellContentY;
+                    measured.Add(measure);
 
                     // Высота строки определяется самой высокой ячейкой без RowSpan.
-                    if (cell.RowSpan == 1 && cellLayout.HeightPt > rowHeight)
-                        rowHeight = cellLayout.HeightPt;
-
-                    rowLayout.Cells.Add(cellLayout);
+                    if (cell.RowSpan == 1 && measure.OwnHeightPt > rowHeight)
+                        rowHeight = measure.OwnHeightPt;
                 }
 
                 // Минимальная высота строки — высота пустой строки.
@@ -357,37 +371,132 @@ namespace Writersword.Modules.TextEditor.Rendering
                 float userMinPt = (float)table.GetRowMinHeightPt(row);
                 if (userMinPt > rowHeight) rowHeight = userMinPt;
 
-                rowLayout.HeightPt = rowHeight;
-
-                // Проставляем финальную высоту всем ячейкам строки
-                // (без RowSpan — для ячеек с RowSpan высота будет пересчитана позже).
-                foreach (var cellLayout in rowLayout.Cells)
-                    if (cellLayout.RowSpan == 1)
-                        cellLayout.HeightPt = rowHeight;
-
-                tableLayout.Rows.Add(rowLayout);
-                tableY += rowHeight;
+                rowHeightsPt[row] = rowHeight;
             }
 
-            // Пересчёт высот для объединённых ячеек (RowSpan > 1).
-            foreach (var rowLayout in tableLayout.Rows)
+            // Объединённая по вертикали ячейка растягивает свои строки, когда её
+            // содержимому не хватает их суммарной высоты.
+            //
+            // Высоту строки задают только ячейки без RowSpan, поэтому строка, все
+            // клетки которой накрыты объединением, оставалась минимальной — 14 pt.
+            // Объединение нескольких строк давало плоскую полосу, в которой текст
+            // не помещался и срезался клипом ячейки: со стороны это выглядит как
+            // «объединение съело содержимое ячеек».
+            foreach (var measure in measured)
             {
-                foreach (var cellLayout in rowLayout.Cells)
+                if (measure.Cell.RowSpan <= 1) continue;
+
+                int firstRow = measure.Row;
+                int lastRow = Math.Min(firstRow + measure.Cell.RowSpan, rowCount) - 1;
+                if (lastRow < firstRow) continue;
+
+                float availablePt = 0f;
+                for (int r = firstRow; r <= lastRow; r++)
+                    availablePt += rowHeightsPt[r];
+
+                float deficitPt = measure.OwnHeightPt - availablePt;
+                if (deficitPt <= 0.01f) continue;
+
+                // Недостача делится поровну между строками объединения: вся прибавка
+                // на одной строке перекосила бы её соседей справа и слева от
+                // объединённой ячейки.
+                float sharePt = deficitPt / (lastRow - firstRow + 1);
+                for (int r = firstRow; r <= lastRow; r++)
+                    rowHeightsPt[r] += sharePt;
+            }
+
+            // Второй проход — сборка. Высоты строк окончательны, поэтому вертикальные
+            // позиции известны, и объекты раскладки создаются сразу правильными.
+            var rowYPt = new float[rowCount];
+            float tableY = 0f;
+            for (int row = 0; row < rowCount; row++)
+            {
+                rowYPt[row] = tableY;
+                tableY += rowHeightsPt[row];
+
+                var rowLayout = new SKTableRowLayout { Row = row, Ypt = rowYPt[row] };
+                rowLayout.HeightPt = rowHeightsPt[row];
+                tableLayout.Rows.Add(rowLayout);
+            }
+
+            foreach (var measure in measured)
+            {
+                // Высота ячейки: своя строка, а у объединённой — сумма накрытых строк.
+                float cellHeightPt = 0f;
+                for (int r = measure.Row;
+                     r < measure.Row + measure.Cell.RowSpan && r < rowCount; r++)
+                    cellHeightPt += rowHeightsPt[r];
+
+                var cellLayout = new SKTableCellLayout
                 {
-                    if (cellLayout.RowSpan <= 1) continue;
+                    Row = measure.Row,
+                    Column = measure.Column,
+                    RowSpan = measure.Cell.RowSpan,
+                    ColSpan = measure.Cell.ColSpan,
+                    Xpt = measure.XPt,
+                    Ypt = rowYPt[measure.Row],
+                    WidthPt = measure.WidthPt,
+                    PadTopPt = measure.PadTopPt,
+                    PadBottomPt = measure.PadBottomPt,
+                    PadLeftPt = measure.PadLeftPt,
+                    PadRightPt = measure.PadRightPt,
+                    BackgroundColor = measure.Cell.BackgroundColor,
+                    VerticalAlignment = (int)measure.Cell.VerticalAlignment,
+                    Borders = BuildCellBorderLayout(measure.Cell.Borders)
+                };
 
-                    float totalH = 0f;
-                    for (int r = cellLayout.Row;
-                         r < cellLayout.Row + cellLayout.RowSpan
-                         && r < tableLayout.Rows.Count; r++)
-                        totalH += tableLayout.Rows[r].HeightPt;
+                cellLayout.ContentHeightPt = measure.ContentHeightPt;
+                cellLayout.HeightPt = cellHeightPt;
 
-                    cellLayout.HeightPt = totalH;
-                }
+                foreach (var paraLayout in measure.Paragraphs)
+                    cellLayout.Paragraphs.Add(paraLayout);
+
+                tableLayout.Rows[measure.Row].Cells.Add(cellLayout);
             }
 
             tableLayout.TotalHeightPt = tableY;
             return tableLayout;
+        }
+
+        /// <summary>
+        /// Обмеры ячейки между двумя проходами вёрстки таблицы: всё, что нужно для
+        /// её раскладки, кроме вертикальной позиции.
+        ///
+        /// Отдельный тип нужен потому, что Ypt у SKTableRowLayout и SKTableCellLayout
+        /// задаётся только при создании объекта, а зависит он от итоговых высот строк —
+        /// значит, сами объекты раскладки можно создавать лишь после того, как высоты
+        /// сойдутся. Раскладки абзацев при этом строятся один раз, в первом проходе:
+        /// они от высоты строки не зависят, а стоят дорого.
+        /// </summary>
+        private sealed class CellMeasure
+        {
+            public CellMeasure(TableCell cell, int row, int column)
+            {
+                Cell = cell;
+                Row = row;
+                Column = column;
+            }
+
+            public TableCell Cell { get; }
+            public int Row { get; }
+            public int Column { get; }
+
+            public float XPt { get; init; }
+            public float WidthPt { get; init; }
+            public float PadTopPt { get; init; }
+            public float PadBottomPt { get; init; }
+            public float PadLeftPt { get; init; }
+            public float PadRightPt { get; init; }
+            public float TopBorderPt { get; init; }
+            public float BottomBorderPt { get; init; }
+
+            public float ContentHeightPt { get; set; }
+
+            public List<SKTableParaLayout> Paragraphs { get; } = new();
+
+            /// <summary>Высота, которой ячейке хватает на собственное содержимое.</summary>
+            public float OwnHeightPt =>
+                ContentHeightPt + PadTopPt + PadBottomPt + TopBorderPt + BottomBorderPt;
         }
 
         /// <summary>
@@ -477,6 +586,32 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// Один параграф может давать несколько SKPageParagraph если он пересекает границу страниц.
         /// Вызывается TextEditorPrintDocument и DocumentCanvas в Page mode.
         /// </summary>
+        /// <summary>
+        /// Записывает плавающий объект на страницу печати. Габарит нулевой ширины
+        /// или высоты пропускается: рисовать нечего, а в PDF он дал бы пустой узел.
+        /// </summary>
+        private static void AddPageFloat(
+            SKPageContent page, object block,
+            WrapMode wrapMode, int zOrder,
+            float offsetXPt, float offsetYPt, float widthPt, float heightPt,
+            float marginLeftPt, float marginTopPt)
+        {
+            if (widthPt <= 0f || heightPt <= 0f) return;
+
+            page.Floats.Add(new SKPageFloat
+            {
+                Block = block,
+                XPt = marginLeftPt + offsetXPt,
+                YPt = marginTopPt + offsetYPt,
+                WidthPt = widthPt,
+                HeightPt = heightPt,
+                // За текстом и в потоке — до текста, остальное поверх: порядок тот же,
+                // что в экранном проходе канваса.
+                BeforeText = wrapMode is WrapMode.Behind or WrapMode.Inline,
+                ZOrder = zOrder
+            });
+        }
+
         public SKPageLayout BuildPageLayout(
             DocumentModel document,
             PrintPageSettings pageSettings,
@@ -644,6 +779,33 @@ namespace Writersword.Modules.TextEditor.Rendering
                     }
 
 
+                    // ── Плавающие объекты: картинки и фигуры ─────────────
+                    // Кладутся на ту страницу, где стоит их блок в потоке, по
+                    // собственным смещениям от начала текстовой области — тот же
+                    // отсчёт, что и на экране. Высоту потока они не занимают:
+                    // печать повторяет экран, а не пересчитывает его заново.
+                    if (block is ImageBlock floatImage)
+                    {
+                        AddPageFloat(currentPage, floatImage,
+                            floatImage.WrapMode, floatImage.ZOrder,
+                            (float)floatImage.OffsetXPt, (float)floatImage.OffsetYPt,
+                            (float)floatImage.WidthPt, (float)floatImage.HeightPt,
+                            marginLeftPt, marginTopPt);
+                        paraIndex++;
+                        continue;
+                    }
+
+                    if (block is ShapeBlock floatShape)
+                    {
+                        AddPageFloat(currentPage, floatShape,
+                            floatShape.WrapMode, floatShape.ZOrder,
+                            (float)floatShape.OffsetXPt, (float)floatShape.OffsetYPt,
+                            (float)floatShape.WidthPt, (float)floatShape.HeightPt,
+                            marginLeftPt, marginTopPt);
+                        paraIndex++;
+                        continue;
+                    }
+
                     if (block is not ParagraphBlock para)
                     {
                         paraIndex++;
@@ -757,6 +919,9 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             canvas.Clear(SKColors.White);
 
+            // Плавающие объекты за текстом и в потоке — под ним.
+            RenderPageFloats(canvas, page, beforeText: true);
+
             foreach (var para in page.Paragraphs)
             {
                 float paraX = page.MarginLeftPt + para.Layout.LeftIndentPt;
@@ -803,7 +968,76 @@ namespace Writersword.Modules.TextEditor.Rendering
                 }
             }
 
-            // Рендерим таблицы страницы (каждая может быть слайсом строк).
+            RenderPageTables(canvas, page);
+
+            // Плавающие объекты поверх текста — последними, как на экране.
+            RenderPageFloats(canvas, page, beforeText: false);
+        }
+
+        /// <summary>
+        /// Плавающие объекты страницы одного слоя. Порядок — по Z-порядку, при
+        /// равном сохраняется порядок блоков в документе.
+        ///
+        /// Картинку читает ResolvePrintImage: у печати нет кеша канваса, файлы
+        /// берутся из хранилища проекта и живут ровно на время печати.
+        /// </summary>
+        private static void RenderPageFloats(SKCanvas canvas, SKPageContent page, bool beforeText)
+        {
+            if (page.Floats.Count == 0) return;
+
+            var layer = new List<(SKPageFloat Item, int Order)>();
+            for (int i = 0; i < page.Floats.Count; i++)
+            {
+                var f = page.Floats[i];
+                if (f.BeforeText != beforeText) continue;
+                layer.Add((f, i));
+            }
+            if (layer.Count == 0) return;
+
+            layer.Sort((a, b) =>
+            {
+                int byZ = a.Item.ZOrder.CompareTo(b.Item.ZOrder);
+                return byZ != 0 ? byZ : a.Order.CompareTo(b.Order);
+            });
+
+            foreach (var (item, _) in layer)
+            {
+                var rect = new SKRect(
+                    item.XPt, item.YPt,
+                    item.XPt + item.WidthPt, item.YPt + item.HeightPt);
+
+                switch (item.Block)
+                {
+                    case ShapeBlock shape:
+                    {
+                        var fill = string.IsNullOrEmpty(shape.FillImageFileName)
+                            ? null
+                            : PrintImageResolver?.Invoke(shape.FillImageFileName!);
+                        FloatingObjectRenderer.DrawShape(canvas, shape, rect, fill);
+                        break;
+                    }
+
+                    case ImageBlock image:
+                    {
+                        var bitmap = PrintImageResolver?.Invoke(image.ImageFileName);
+                        if (bitmap is not null)
+                            FloatingObjectRenderer.DrawImage(canvas, image, rect, bitmap);
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Источник картинок для печати: имя файла в хранилище проекта — образ.
+        /// Ставится перед печатью и общий на весь проход, как и остальные
+        /// подмены статического рендера.
+        /// </summary>
+        public static Func<string, SKImage?>? PrintImageResolver { get; set; }
+
+        /// <summary>Таблицы страницы (каждая может быть слайсом строк).</summary>
+        private static void RenderPageTables(SKCanvas canvas, SKPageContent page)
+        {
             foreach (var pageTable in page.Tables)
             {
                 var layout = pageTable.Layout;
@@ -1105,6 +1339,54 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// Для каждого символа проверяет наличие глифа в назначенном шрифте.
         /// Если глиф отсутствует — подставляет системный фолбэк через SKFontManager.
         /// </summary>
+        /// <summary>
+        /// Метрики шрифта так, как их видит вёрстка: |ascent|, descent и зазор
+        /// строки в пунктах. Нужны для сверки высоты строки с другими редакторами.
+        /// </summary>
+        public static (float Ascent, float Descent, float Leading) ProbeFontMetrics(
+            string family, float sizePt, bool bold, bool italic)
+        {
+            var typeface = GetOrCreateTypeface(family, bold, italic);
+            var font = GetOrCreateFont(typeface, sizePt);
+            font.GetFontMetrics(out var metrics);
+
+            return (Math.Abs(metrics.Ascent), Math.Abs(metrics.Descent), Math.Abs(metrics.Leading));
+        }
+
+        /// <summary>
+        /// Формат, которым меряется пустая строка абзаца: собственные свойства рана,
+        /// если они есть (их проставляет ввод), иначе шрифт стиля абзаца.
+        /// </summary>
+        private static SKRunSegment BuildEmptyLineFormat(
+            ParagraphBlock para, string? styleName, StyleResolver styles)
+        {
+            Models.Inline.RunProperties? props = null;
+
+            foreach (var chunk in para.Chunks)
+            {
+                foreach (var run in chunk.Runs)
+                    if (run.Properties is not null) { props = run.Properties; break; }
+
+                if (props is not null) break;
+            }
+
+            string family = !string.IsNullOrEmpty(props?.FontFamily)
+                ? props!.FontFamily!
+                : styles.ResolveFontFamily(styleName);
+
+            float size = props?.FontSize.HasValue == true
+                ? (float)props.FontSize.Value
+                : styles.ResolveFontSize(styleName);
+
+            return new SKRunSegment
+            {
+                FontFamily = ResolveReadingFamily(family),
+                FontSizePt = ScaleReadingFont(size),
+                IsBold = props?.IsBold ?? styles.ResolveBold(styleName),
+                IsItalic = props?.IsItalic ?? styles.ResolveItalic(styleName)
+            };
+        }
+
         private static List<(string Char, SKRunSegment Format, int GlobalIndex)> CollectTokens(
             ParagraphBlock para,
             string? styleName,
@@ -1262,10 +1544,12 @@ namespace Writersword.Modules.TextEditor.Rendering
             List<(string Char, SKRunSegment Format, int GlobalIndex)> tokens,
             SKTextLayout layout,
             float textAreaWidthPt,
-            float lineSpacing,
+            SKLineSpacing lineSpacing,
             IReadOnlyList<SKWrapZone>? wrapZones = null,
             bool wrapPreferPushDown = false,
-            WrapPageContext? wrapPages = null)
+            WrapPageContext? wrapPages = null,
+            SKRunSegment? emptyLineFormat = null,
+            bool breakOnHyphen = true)
         {
             // Сохраняем ширину текстовой области — используется в ComputeAlignmentOffset.
             // textAreaWidthPt = availableWidthPt - leftIndentPt - rightIndentPt,
@@ -1274,7 +1558,7 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             if (tokens.Count == 0)
             {
-                var emptyLine = BuildEmptyLine(layout, lineSpacing);
+                var emptyLine = BuildEmptyLine(layout, lineSpacing, emptyLineFormat);
                 layout.Lines.Add(emptyLine);
                 layout.TotalHeightPt = emptyLine.Height;
                 return;
@@ -1325,7 +1609,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 if (format.IsInlineObject && format.ObjectHeightPt > ascent)
                     ascent = format.ObjectHeightPt;
 
-                return (ascent + descent) * Math.Max(lineSpacing, 1f);
+                return lineSpacing.ResolveProbe(ascent, descent, Math.Abs(m.Leading));
             }
 
             if (hasZones)
@@ -1463,6 +1747,12 @@ namespace Writersword.Modules.TextEditor.Rendering
                 UpdateSheetBounds();
 
                 float extraTop = 0f;
+
+                // Нижний край препятствий последней проверенной вертикали. Нужен на
+                // выходе из цикла: там строке отдаётся полная колонка, и без этого
+                // значения увести её из-под объекта уже нечем.
+                float lastPushBottomPt = float.MinValue;
+
                 for (int guard = 0; guard < 16; guard++)
                 {
                     float y = yTop + extraTop;
@@ -1512,6 +1802,8 @@ namespace Writersword.Modules.TextEditor.Rendering
                         result.Add(new SKWrapFragment(0f, textAreaWidthPt));
                         return extraTop;
                     }
+
+                    lastPushBottomPt = pushBottom;
 
                     // Перекрывающиеся объекты — одно препятствие: интервалы сливаются
                     // курсором, поэтому промежутки между ними считаются по реальной
@@ -1592,6 +1884,21 @@ namespace Writersword.Modules.TextEditor.Rendering
                     }
 
                     extraTop = nextExtraTop;
+                }
+
+                // Свободной полосы не нашлось, и опускать строку дальше нельзя. Для
+                // обычного текста полная колонка здесь допустима: слово всё равно
+                // придётся рвать, и рвать его лучше в полной строке. Но требование
+                // шире половины колонки может прийти только от встроенной картинки —
+                // BandRequirement обрезает текстовое требование этим потолком и
+                // поднимает его выше только под габарит объекта. Картинку рвать
+                // нечем, и полная колонка означала бы её поверх обтекаемого объекта:
+                // уводим строку под нижний край препятствия.
+                if (lastPushBottomPt > float.MinValue
+                    && requiredWidthPt > textAreaWidthPt * 0.5f)
+                {
+                    float belowPt = lastPushBottomPt - yTop + 0.5f;
+                    if (belowPt > extraTop) extraTop = belowPt;
                 }
 
                 result.Clear();
@@ -1868,6 +2175,15 @@ namespace Writersword.Modules.TextEditor.Rendering
                     float charWidth = MeasureChar(ch, format);
                     wordBuffer.Add((ch, format, globalIdx));
                     wordWidth += charWidth;
+
+                    // Перенос допускается сразу после дефиса внутри слова: «чьего-то»
+                    // Word разрывает на «чьего-» и «то». Без этого слово с дефисом
+                    // уезжает на следующую строку целиком, и абзац занимает лишнюю
+                    // строку — на листе это накапливается и уводит границы страниц.
+                    // Дефис в начале куска (тире прямой речи, минус перед числом)
+                    // точкой переноса не считается: отрывать его не от чего.
+                    if (breakOnHyphen && ch == "-" && wordBuffer.Count > 1)
+                        FlushWord();
                 }
             }
 
@@ -1986,11 +2302,12 @@ namespace Writersword.Modules.TextEditor.Rendering
         private static void FinalizeLine(
             SKLineLayout line,
             SKTextLayout layout,
-            float lineSpacing,
+            SKLineSpacing lineSpacing,
             SKRunSegment? emptyLineMetrics = null)
         {
             float maxAscent = 0f;
             float maxDescent = 0f;
+            float maxLeading = 0f;
 
             // Метрики одного текста, без учёта габарита картинок: по ним рисуется каретка.
             // Иначе рядом с крупной картинкой каретка растягивалась бы на всю её высоту,
@@ -2007,6 +2324,9 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 float ascent = Math.Abs(metrics.Ascent);
                 float descent = Math.Abs(metrics.Descent);
+
+                // Межстрочный зазор гарнитуры входит в одинарный интервал Word.
+                if (Math.Abs(metrics.Leading) > maxLeading) maxLeading = Math.Abs(metrics.Leading);
 
                 // Шрифтовые метрики берём и у сегмента-картинки: он несёт кегль стиля,
                 // поэтому строка из одной картинки всё равно знает высоту своего текста.
@@ -2034,10 +2354,11 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 maxAscent = maxTextAscent = Math.Abs(emptyMetrics.Ascent);
                 maxDescent = maxTextDescent = Math.Abs(emptyMetrics.Descent);
+                maxLeading = Math.Abs(emptyMetrics.Leading);
             }
 
             float lineHeightBase = maxAscent + maxDescent;
-            float lineHeight = lineHeightBase * lineSpacing;
+            float lineHeight = lineSpacing.Resolve(maxAscent, maxDescent, maxLeading);
             float baseline = (lineHeight - lineHeightBase) / 2f + maxAscent;
 
             // Вытеснение строки под обтекаемый объект: зазор входит в высоту параграфа.
@@ -2053,16 +2374,19 @@ namespace Writersword.Modules.TextEditor.Rendering
             layout.Lines.Add(line);
         }
 
-        private static SKLineLayout BuildEmptyLine(SKTextLayout layout, float lineSpacing)
+        private static SKLineLayout BuildEmptyLine(
+            SKTextLayout layout, SKLineSpacing lineSpacing, SKRunSegment? format = null)
         {
             var typeface = GetOrCreateTypeface(
-                StyleResolver.FallbackFontFamily, false, false);
-            var font = GetOrCreateFont(typeface, StyleResolver.FallbackFontSizePt);
+                format?.FontFamily ?? StyleResolver.FallbackFontFamily,
+                format?.IsBold ?? false,
+                format?.IsItalic ?? false);
+            var font = GetOrCreateFont(typeface, format?.FontSizePt ?? StyleResolver.FallbackFontSizePt);
 
             font.GetFontMetrics(out var metrics);
             float ascent = Math.Abs(metrics.Ascent);
             float descent = Math.Abs(metrics.Descent);
-            float height = (ascent + descent) * lineSpacing;
+            float height = lineSpacing.Resolve(ascent, descent, Math.Abs(metrics.Leading));
             float baseline = (height - (ascent + descent)) / 2f + ascent;
 
             return new SKLineLayout
@@ -2541,7 +2865,30 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             // sizePt хранится как целое число тысячных чтобы избежать float-ключей.
             var key = (typeface.Handle, (int)(sizePt * 1000));
-            return _fontCache.GetOrAdd(key, _ => new SKFont(typeface, sizePt));
+
+            // Умолчания Skia здесь не годятся, и обе поправки — про то, чтобы буква
+            // стояла там, где её посчитала раскладка, а не там, куда её округлил
+            // растр.
+            //
+            // Subpixel: без него начало каждой буквы округляется до целого пикселя.
+            // Строка, сдвинувшаяся на долю пункта — от правки рамки картинки, от
+            // выключки, от чего угодно, — расползается: одна буква осталась на
+            // месте, соседняя перевалила через границу пикселя и уехала, и
+            // просветы между ними гуляют, хотя в раскладке не менялись вовсе.
+            //
+            // LinearMetrics: без него округляются и ширины букв. Тогда ширина
+            // строки зависит от того, в каком масштабе её сейчас показывают, и один
+            // и тот же абзац разбивается на 100% иначе, чем на 200%, а на печати
+            // иначе, чем на экране. Для рукописи это недопустимо: страница обязана
+            // быть одной и той же страницей.
+            //
+            // Плата — текст чуть мягче по горизонтали: штрихи перестают ложиться
+            // точно на пиксель. Word и просмотрщики PDF платят её по той же причине.
+            return _fontCache.GetOrAdd(key, _ => new SKFont(typeface, sizePt)
+            {
+                Subpixel = true,
+                LinearMetrics = true
+            });
         }
 
         private static SKTypeface GetOrCreateTypeface(string family, bool bold, bool italic)

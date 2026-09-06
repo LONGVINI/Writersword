@@ -106,7 +106,93 @@ namespace Writersword.Modules.TextEditor.Contracts
         void InsertTOC();
         void InsertComment(string text);
 
+        // ── Работа с выделенной фигурой ───────────────────────────────────
+
+        /// <summary>Сводка по выделенной фигуре для ленты, либо null.</summary>
+        (ShapeType Type, WrapMode Wrap, WrapSide WrapSide, ShapeDashStyle Dash, ShapeArrowHead StartArrow, ShapeArrowHead EndArrow, string? FillColor, string? StrokeColor, double StrokeThicknessPt, double CornerRadiusPt, double Opacity, double WidthPt, double HeightPt, double RotationDeg, bool LockAspect, int PinnedPage, bool HasFillImage, bool FillImageStretch)? GetSelectedShapeInfo();
+
+        /// <summary>Меняет вид уже вставленной фигуры, сохраняя её положение и оформление.</summary>
+        void SetShapeType(ShapeType type);
+
+        /// <summary>Цвет заливки в hex, либо null — заливки нет.</summary>
+        void SetShapeFill(string? hexColor);
+
+        /// <summary>Цвет обводки в hex, либо null — обводки нет.</summary>
+        void SetShapeStroke(string? hexColor);
+
+        /// <summary>Толщина обводки в пунктах.</summary>
+        void SetShapeStrokeThickness(double thicknessPt);
+
+        /// <summary>Штрих обводки.</summary>
+        void SetShapeDash(ShapeDashStyle dash);
+
+        /// <summary>Скругление углов прямоугольника и выноски в пунктах.</summary>
+        void SetShapeCornerRadius(double radiusPt);
+
+        /// <summary>Наконечники на концах линии.</summary>
+        void SetShapeArrows(ShapeArrowHead start, ShapeArrowHead end);
+
+        /// <summary>Непрозрачность фигуры: 1 — полностью видима, 0 — невидима.</summary>
+        void SetShapeOpacity(double opacity);
+
+        /// <summary>Ширина фигуры в пунктах.</summary>
+        void SetShapeWidth(double widthPt);
+
+        /// <summary>Высота фигуры в пунктах.</summary>
+        void SetShapeHeight(double heightPt);
+
+        /// <summary>Угол поворота фигуры в градусах.</summary>
+        void SetShapeRotation(double degrees);
+
+        /// <summary>Блокировка пропорций при изменении размера.</summary>
+        void SetShapeLockAspect(bool locked);
+
+        /// <summary>Режим обтекания текстом.</summary>
+        void SetShapeWrapMode(WrapMode mode);
+
+        /// <summary>С какой стороны от фигуры идёт текст при обтекании.</summary>
+        void SetShapeWrapSide(WrapSide side);
+
+        /// <summary>Отступы текста от фигуры при обтекании, в пунктах.</summary>
+        void SetShapeWrapPadding(double topPt, double bottomPt, double leftPt, double rightPt);
+
+        /// <summary>Закрепляет фигуру за страницей, на которой она стоит, либо снимает закрепление.</summary>
+        void SetShapePinned(bool pinned);
+
+        /// <summary>Порядок перекрытия: на передний план или на задний.</summary>
+        void SetShapeZOrder(bool toFront);
+
+        /// <summary>Кладёт картинку внутрь фигуры. Пустой путь снимает заливку картинкой.</summary>
+        void SetShapeFillImage(string? filePath);
+
+        /// <summary>Растягивать картинку-заливку на весь габарит фигуры.</summary>
+        void SetShapeFillImageStretch(bool stretch);
+
+        /// <summary>Удаляет выделенную фигуру.</summary>
+        void DeleteSelectedShape();
+
         // ── Работа с выделенным изображением ──────────────────────────────
+
+        /// <summary>Штрих рамки картинки: сплошная, пунктир, точки, штрихпунктир.</summary>
+        void SetImageBorderDash(ShapeDashStyle dash);
+
+        /// <summary>Штрих рамки выделенной картинки, либо null.</summary>
+        ShapeDashStyle? GetSelectedImageBorderDash();
+
+        /// <summary>
+        /// Форма картинки: по её контуру картинка обрезается и по нему же идёт рамка.
+        /// </summary>
+        void SetImageShapeType(ShapeType type);
+
+        /// <summary>Форма выделенной картинки, либо null.</summary>
+        ShapeType? GetSelectedImageShapeType();
+
+        /// <summary>Скругление углов формы картинки в пунктах.</summary>
+        void SetImageCornerRadius(double radiusPt);
+
+        /// <summary>Скругление углов рамки выделенной картинки, либо null.</summary>
+        double? GetSelectedImageCornerRadius();
+
         void SetImageWrapMode(WrapMode mode);
 
         /// <summary>С какой стороны от картинки идёт текст при обтекании.</summary>
@@ -135,6 +221,12 @@ namespace Writersword.Modules.TextEditor.Contracts
         void SetImageHeight(double heightPt);
         void SetImageOpacity(double opacity);
         void SetImageBorder(string? colorHex, double thicknessPt);
+
+        /// <summary>Куда ложится рамка картинки: внутрь, по границе или наружу.</summary>
+        void SetImageBorderAlign(ImageBorderAlign align);
+
+        /// <summary>Положение рамки выделенной картинки, либо null если ничего не выделено.</summary>
+        ImageBorderAlign? GetSelectedImageBorderAlign();
         (double WidthPt, double HeightPt, double Opacity, string? BorderColor, double BorderThicknessPt)? GetSelectedImageStyle();
         void ToggleImageFlipHorizontal();
         void ToggleImageFlipVertical();
@@ -142,6 +234,14 @@ namespace Writersword.Modules.TextEditor.Contracts
         bool GetImageCropMode();
         void SetImageWrapPadding(double topPt, double bottomPt, double leftPt, double rightPt);
         (double TopPt, double BottomPt, double LeftPt, double RightPt)? GetSelectedImageWrapPadding();
+
+        /// <summary>
+        /// Что сейчас выделено на листе. Лента «Формат» одна на картинку и фигуру,
+        /// и по этому признаку показывает группы, которые есть только у одного
+        /// из них: заливка и наконечники у фигуры, обрезка и отражение у картинки.
+        /// Null — не выделено ничего.
+        /// </summary>
+        (bool HasShape, bool HasImage, bool HasFillImage, bool IsLine)? GetSelectedFloatingKind();
 
         // ── Макет страницы ────────────────────────────────────────────────
         void SetPageSize(PaperSize size);
@@ -178,6 +278,15 @@ namespace Writersword.Modules.TextEditor.Contracts
         void ExportToDocx();
         void ExportToTxt();
         void ExportToMarkdown();
+
+        // ── Импорт ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Импортирует внешний документ, заменяя содержимое текущего.
+        /// Формат определяется по расширению файла (.docx, .txt).
+        /// Пользователя спрашивают о замене содержимого перед импортом.
+        /// </summary>
+        void ImportFromFile(string filePath);
 
         // ── Структурные операции с таблицей ──────────────────────────────
 

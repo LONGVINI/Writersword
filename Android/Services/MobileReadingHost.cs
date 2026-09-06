@@ -38,10 +38,49 @@ namespace Writersword.Mobile.Services
         public ReadingSettings? Reading => _document()?.Reading;
 
         /// <summary>
-        /// Виды — только встроенные. Приложенные к документу и общие для всех
-        /// проектов живут в настройках программы, которых на телефоне нет.
+        /// Встроенные виды и приложенные к книге.
+        ///
+        /// Приложенные лежат в самой рукописи (DocumentModel.ReadingThemes) и
+        /// потому доезжают на телефон вместе с ней — доставать их неоткуда не
+        /// нужно. Вид, чей опознаватель совпал со встроенным, не задваивается:
+        /// встроенному лишь ставится пометка, что он приложен к документу, —
+        /// так же поступает и настольная лента.
+        ///
+        /// Общих для всех проектов видов здесь нет и не будет: они живут в
+        /// настройках программы и привязаны к машине, а не к книге.
         /// </summary>
-        public IReadOnlyList<ReadingTheme> ReadingThemes() => ReadingTheme.BuiltIn.ToList();
+        public IReadOnlyList<ReadingTheme> ReadingThemes()
+        {
+            var result = new List<ReadingTheme>();
+            var byId = new Dictionary<string, ReadingTheme>(StringComparer.Ordinal);
+
+            foreach (var builtIn in ReadingTheme.BuiltIn)
+            {
+                var copy = builtIn.Clone();
+                result.Add(copy);
+                byId[copy.Id] = copy;
+            }
+
+            var document = _document()?.Document.ReadingThemes;
+            if (document is null)
+                return result;
+
+            foreach (var theme in document)
+            {
+                if (byId.TryGetValue(theme.Id, out var existing))
+                {
+                    existing.InDocument = true;
+                    continue;
+                }
+
+                var copy = theme.Clone();
+                copy.InDocument = true;
+                result.Add(copy);
+                byId[copy.Id] = copy;
+            }
+
+            return result;
+        }
 
         public void ApplyReadingLayout() => _canvas.ApplyReadingSettings();
 
@@ -65,10 +104,10 @@ namespace Writersword.Mobile.Services
         public void OpenReadingThemes() { }
 
         /// <summary>
-        /// Настройки чтения живут в сессии документа, а сессию телефон пока не
-        /// пишет: книга здесь только читается. Выбранный вид переживёт смену
-        /// подачи и кегля, но не перезапуск.
+        /// Настройки чтения — личное дело читателя, поэтому лежат они в данных
+        /// приложения, а не в проекте: уехав с рукописью, они открыли бы её у
+        /// получателя чужими глазами.
         /// </summary>
-        public void PersistReadingPreferences() { }
+        public void PersistReadingPreferences() => ReaderState.Save(Reading);
     }
 }

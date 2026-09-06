@@ -1,7 +1,11 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Rendering;
+using Avalonia.VisualTree;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -59,6 +63,85 @@ namespace Writersword
         /// в том числе PrintPreviewView.
         /// </summary>
         public static Window? MainWindow { get; private set; }
+
+        // ── Осциллографы отрисовки ────────────────────────────────────────
+        //
+        // Встроенные накладки Avalonia: счётчик кадров, подсветка
+        // перерисованных областей и два графика — время раскладки и время
+        // отрисовки кадра. Отдельного пакета не требуют, живут в самом
+        // Avalonia (TopLevel.RendererDiagnostics).
+        //
+        // Включаются с клавиатуры, а не постоянно: сами накладки рисуются
+        // каждый кадр и, будучи всегда включёнными, искажали бы ту самую
+        // картину, ради которой их смотрят.
+        //
+        //   F9  — по кругу: выкл → кадры → кадры + перерисовка →
+        //         кадры + перерисовка + оба графика → выкл
+        //
+        // Временная отладка вместе с пробой DragPerf; убрать, когда закончим.
+        private static int _overlayStage;
+
+        private static void AttachRendererOverlays(Window window)
+        {
+            window.AddHandler(InputElement.KeyDownEvent, (object? _, KeyEventArgs e) =>
+            {
+                if (e.Key != Key.F9) return;
+
+                _overlayStage = (_overlayStage + 1) % 4;
+
+                var overlays = _overlayStage switch
+                {
+                    1 => RendererDebugOverlays.Fps,
+                    2 => RendererDebugOverlays.Fps | RendererDebugOverlays.DirtyRects,
+                    3 => RendererDebugOverlays.Fps | RendererDebugOverlays.DirtyRects
+                         | RendererDebugOverlays.LayoutTimeGraph
+                         | RendererDebugOverlays.RenderTimeGraph,
+                    _ => RendererDebugOverlays.None
+                };
+
+                window.RendererDiagnostics.DebugOverlays = overlays;
+                e.Handled = true;
+            }, RoutingStrategies.Tunnel);
+
+            // ЗАМЕР РАСКЛАДКИ. F10 печатает в журнал, что накопили репитеры
+            // карточек с прошлого нажатия, и обнуляет счётчики. Порядок такой:
+            // нажать F10, открыть боковую панель, нажать F10 ещё раз — вторая
+            // выдача покрывает ровно анимацию.
+            //
+            // Нужно это, чтобы понять, сколько карточек репитер держит
+            // реализованными на самом деле. Средняя раскладка в тридцать
+            // миллисекунд объясняется либо сорока карточками по три четверти
+            // миллисекунды каждая, либо всеми полутора сотнями по двадцать
+            // микросекунд — и лечится это совершенно по-разному.
+            window.AddHandler(InputElement.KeyDownEvent, (object? _, KeyEventArgs e) =>
+            {
+                if (e.Key != Key.F10) return;
+                e.Handled = true;
+
+                var log = Serilog.Log.ForContext("SourceContext", "LayoutProbe");
+                var index = 0;
+
+                foreach (var repeater in window.GetVisualDescendants()
+                             .OfType<Writersword.Modules.Characters.Controls.PerfItemsRepeater>())
+                {
+                    var items = (repeater.ItemsSource as System.Collections.ICollection)?.Count ?? 0;
+                    var realized = repeater.GetVisualChildren().Count();
+                    var elements = repeater.GetVisualDescendants().Count();
+
+                    log.Warning(
+                        "[Layout] #{Index} видно={Visible} элементов_в_коллекции={Items} "
+                        + "реализовано={Realized} узлов={Elements} "
+                        + "перемеров={M} ({Mms:F1} мс) расстановок={A} ({Ams:F1} мс)",
+                        index++, repeater.IsEffectivelyVisible, items, realized, elements,
+                        repeater.MeasureCount, repeater.MeasureMs,
+                        repeater.ArrangeCount, repeater.ArrangeMs);
+
+                    repeater.ResetPerfCounters();
+                }
+
+                if (index == 0) log.Warning("[Layout] репитеров карточек не найдено");
+            }, RoutingStrategies.Tunnel);
+        }
 
         /// <summary>
         /// Инициализация Avalonia — загрузка XAML ресурсов.
@@ -432,6 +515,8 @@ namespace Writersword
 
                 desktop.MainWindow = mainWindow;
 
+                AttachRendererOverlays(mainWindow);
+
                 desktop.ShutdownRequested += (s, e) =>
                 {
                     // Останавливаем AutoSaveService чтобы не запускались новые сохранения
@@ -530,6 +615,21 @@ namespace Writersword
                                             $"«{name}»: в хранилище более новая версия — Инструменты, Забрать из хранилища");
                                         break;
                                 }
+                            });
+                        };
+
+                        coordinator.ForeignPresenceDetected += (_, e) =>
+                        {
+                            // Предупреждение, а не запрет: программа не вправе
+                            // запирать книгу — устройство умирает, не убрав
+                            // отметку, и запертая книга осталась бы запертой.
+                            Dispatcher.UIThread.Post(() =>
+                            {
+                                var name = System.IO.Path.GetFileNameWithoutExtension(e.LocalPath);
+
+                                notifications.ShowWarning(e.Other.Editing
+                                    ? $"«{name}» открыта и правится на устройстве «{e.Other.DeviceName}» — работая здесь, вы разойдётесь"
+                                    : $"«{name}» открыта для чтения на устройстве «{e.Other.DeviceName}»");
                             });
                         };
 

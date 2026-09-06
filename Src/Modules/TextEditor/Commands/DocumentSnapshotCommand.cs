@@ -107,12 +107,29 @@ namespace Writersword.Modules.TextEditor.Commands
             foreach (var style in restored.Styles)
                 doc.Styles.Add(style);
 
+            // Лист восстанавливается целиком, а не одними полями: операции вроде
+            // импорта документа меняют и размер бумаги, и ориентацию, и колонки,
+            // и без их отката Ctrl+Z возвращал бы текст на чужую страницу.
+            doc.PageSettings.PaperSize = restored.PageSettings.PaperSize;
+            doc.PageSettings.WidthMm = restored.PageSettings.WidthMm;
+            doc.PageSettings.HeightMm = restored.PageSettings.HeightMm;
+            doc.PageSettings.Orientation = restored.PageSettings.Orientation;
             doc.PageSettings.MarginTopMm = restored.PageSettings.MarginTopMm;
             doc.PageSettings.MarginBottomMm = restored.PageSettings.MarginBottomMm;
             doc.PageSettings.MarginLeftMm = restored.PageSettings.MarginLeftMm;
             doc.PageSettings.MarginRightMm = restored.PageSettings.MarginRightMm;
+            doc.PageSettings.MarginGutterMm = restored.PageSettings.MarginGutterMm;
+            doc.PageSettings.HeaderDistanceMm = restored.PageSettings.HeaderDistanceMm;
+            doc.PageSettings.FooterDistanceMm = restored.PageSettings.FooterDistanceMm;
+
+            doc.ColumnSettings.ColumnCount = restored.ColumnSettings.ColumnCount;
+            doc.ColumnSettings.GapMm = restored.ColumnSettings.GapMm;
+            doc.ColumnSettings.ShowSeparator = restored.ColumnSettings.ShowSeparator;
 
             _docVm.RebuildParagraphViewModelsPublic();
+
+            // Геометрию листа канвас пересобирает только по уведомлению о PageSettings.
+            _docVm.RaisePageSettingsChanged();
             _docVm.FireParagraphFormatChanged();
         }
 

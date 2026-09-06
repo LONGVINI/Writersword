@@ -1,4 +1,4 @@
-using ReactiveUI;
+﻿using ReactiveUI;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -58,6 +58,25 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             });
             SetAvatarCircleCommand = ReactiveCommand.Create(() => { AvatarStrip = false; });
             SetAvatarStripCommand = ReactiveCommand.Create(() => { AvatarStrip = true; });
+
+            CropAvatarCommand = ReactiveCommand.CreateFromTask(async () =>
+            {
+                var target = Primary;
+                if (target is null || RequestCropForCard is null) return;
+
+                var current = target.AvatarPath;
+                if (string.IsNullOrEmpty(current)) return;
+
+                // Форму окно берёт у самой карточки: у неё уже выбрано, кружок
+                // это или полоска, и спрашивать второй раз то же самое незачем.
+                // Кадры у ссылки при этом оба, и второй возвращается нетронутым:
+                // правка полоски не должна сбивать кружок.
+                var crops = await RequestCropForCard(current!, target.AvatarStrip, target);
+                if (crops is null) return;
+
+                var combined = CharacterAvatarRef.Combine(current, crops.Circle, crops.Strip);
+                if (!string.IsNullOrEmpty(combined)) PickQuickAvatar(combined!);
+            });
 
             // Кольцо разом по всему проекту. Подтверждение не модальным окном, а
             // раскрытием самой строки в две кнопки — тот же приём, что у
@@ -172,6 +191,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             this.RaisePropertyChanged(nameof(Thickness));
             this.RaisePropertyChanged(nameof(ThicknessText));
             this.RaisePropertyChanged(nameof(AvatarBitmap));
+            this.RaisePropertyChanged(nameof(CanCropAvatar));
             this.RaisePropertyChanged(nameof(FallbackIcon));
             this.RaisePropertyChanged(nameof(IsCollective));
             this.RaisePropertyChanged(nameof(ApplyRingToAllCommand));
@@ -183,6 +203,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             this.RaisePropertyChanged(nameof(ImportanceMark));
             this.RaisePropertyChanged(nameof(ImportanceLevel));
             this.RaisePropertyChanged(nameof(CanChooseAvatar));
+            this.RaisePropertyChanged(nameof(CanCropAvatar));
             this.RaisePropertyChanged(nameof(DropTarget));
             this.RaisePropertyChanged(nameof(QuickAvatars));
 
@@ -363,6 +384,24 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
         public ReactiveCommand<Unit, Unit> CycleImportanceCommand { get; }
         public ReactiveCommand<Unit, Unit> ChooseAvatarCommand { get; }
 
+        /// <summary>
+        /// Открыть обрезку для аватарки карточки. Окно живёт на уровне модуля,
+        /// вью-модель до него не дотягивается — как и у быстрой ленты, ход
+        /// делается колбэком, который ставит панель (CharacterInspectorPanel).
+        ///
+        /// Второй параметр — открывать ли сразу на полоске: форма берётся у
+        /// карточки, третий — сама карточка для превью справа.
+        /// </summary>
+        public Func<string, bool, object?, Task<CharacterAvatarCropPair?>>? RequestCropForCard { get; set; }
+
+        public ReactiveCommand<Unit, Unit> CropAvatarCommand { get; }
+
+        /// <summary>
+        /// Кадрировать есть что: карточка одна и картинка у неё стоит. У пустой
+        /// аватарки обрезать нечего, у нескольких выбранных картинки разные.
+        /// </summary>
+        public bool CanCropAvatar => IsSingle && !string.IsNullOrEmpty(Primary?.AvatarPath);
+
         // ── Аватарка ───────────────────────────────────────────────────────
         //
         // Кнопка на карточке больше аватарку не меняет: щелчок по карточке
@@ -395,6 +434,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             }
 
             this.RaisePropertyChanged(nameof(AvatarBitmap));
+            this.RaisePropertyChanged(nameof(CanCropAvatar));
 
             // Список недавних только что пополнился — лента обязана это
             // показать, иначе только что поставленной картинки в ней не будет.

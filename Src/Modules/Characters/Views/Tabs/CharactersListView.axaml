@@ -1,4 +1,4 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
              xmlns:res="using:Writersword.Src.Modules.Characters.Resources"
@@ -460,9 +460,21 @@
                                     <controls:PerfItemsRepeater ItemsSource="{Binding VisibleCharacters}"
                                                    IsVisible="{Binding IsExpanded}"
                                                    Margin="12,8">
+                                            <!-- MinItemHeight задан наравне с MinItemWidth, и это не
+                                                 косметика. Высоту строки раскладка иначе берёт из
+                                                 первого измеренного элемента, а высота карточки
+                                                 приходит привязками через $parent — в первом проходе
+                                                 она может намериться почти нулевой, и тогда в окно
+                                                 реализации «влезает» вся папка целиком. Замер показывал
+                                                 153 реализованные карточки из 153 и девять тысяч узлов
+                                                 в одном репитере. Значение перезадаётся из вьюмодели
+                                                 (UpdateGridLayouts) вместе с MinItemWidth; здесь стоит
+                                                 запасное на «средние» — 108 высоты карточки плюс 12
+                                                 полей, ровно как MinItemWidth равен минимуму плюс 12. -->
                                             <controls:PerfItemsRepeater.Layout>
                                                 <UniformGridLayout MaximumRowsOrColumns="20"
                                                                    MinItemWidth="152"
+                                                                   MinItemHeight="120"
                                                                    MinColumnSpacing="0"
                                                                    MinRowSpacing="0"
                                                                    ItemsStretch="Fill"/>

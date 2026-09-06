@@ -311,6 +311,7 @@ namespace Writersword.Modules.TextEditor
         {
             var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
             if (canvas is null) return;
+            canvas.BreakOnHyphen = _localSettings.BreakOnHyphen;
             canvas.SubstituteMissingGlyphs = _localSettings.SubstituteMissingGlyphs;
             canvas.SubstituteFontFamily = _localSettings.SubstituteFontFamily;
             canvas.ScriptFontMap = _localSettings.ScriptFontMap;
@@ -1812,6 +1813,8 @@ namespace Writersword.Modules.TextEditor
             l.AutoSaveIntervalSeconds.Value = g.AutoSaveIntervalSeconds.Value;
             l.MonitorSizeInches.GlobalValue = g.MonitorSizeInches.Value;
             l.MonitorSizeInches.Value = g.MonitorSizeInches.Value;
+            l.BreakOnHyphen.GlobalValue = g.BreakOnHyphen.Value;
+            l.BreakOnHyphen.Value = g.BreakOnHyphen.Value;
             l.SubstituteMissingGlyphs.GlobalValue = g.SubstituteMissingGlyphs.Value;
             l.SubstituteMissingGlyphs.Value = g.SubstituteMissingGlyphs.Value;
             l.SubstituteFontFamily.GlobalValue = g.SubstituteFontFamily.Value;
@@ -1838,6 +1841,7 @@ namespace Writersword.Modules.TextEditor
             _localSettingsVm.DefaultZoom.PromoteToGlobal();
             _localSettingsVm.AutoSaveIntervalSeconds.PromoteToGlobal();
             _localSettingsVm.MonitorSizeInches.PromoteToGlobal();
+            _localSettingsVm.BreakOnHyphen.PromoteToGlobal();
             _localSettingsVm.SubstituteMissingGlyphs.PromoteToGlobal();
             _localSettingsVm.SubstituteFontFamily.PromoteToGlobal();
             if (_globalSettingsVm is not null)
@@ -1897,6 +1901,7 @@ namespace Writersword.Modules.TextEditor
                 _localSettingsVm.DefaultZoom.GlobalValue = _globalSettingsVm.DefaultZoom.Value;
                 _localSettingsVm.AutoSaveIntervalSeconds.GlobalValue = _globalSettingsVm.AutoSaveIntervalSeconds.Value;
                 _localSettingsVm.MonitorSizeInches.GlobalValue = _globalSettingsVm.MonitorSizeInches.Value;
+                _localSettingsVm.BreakOnHyphen.GlobalValue = _globalSettingsVm.BreakOnHyphen.Value;
                 _localSettingsVm.SubstituteMissingGlyphs.GlobalValue = _globalSettingsVm.SubstituteMissingGlyphs.Value;
                 _localSettingsVm.SubstituteFontFamily.GlobalValue = _globalSettingsVm.SubstituteFontFamily.Value;
             }
@@ -1912,6 +1917,7 @@ namespace Writersword.Modules.TextEditor
             _localSettingsVm.DefaultZoom.ResetToGlobal();
             _localSettingsVm.AutoSaveIntervalSeconds.ResetToGlobal();
             _localSettingsVm.MonitorSizeInches.ResetToGlobal();
+            _localSettingsVm.BreakOnHyphen.ResetToGlobal();
             _localSettingsVm.SubstituteMissingGlyphs.ResetToGlobal();
             _localSettingsVm.SubstituteFontFamily.ResetToGlobal();
             _logger.Debug("Local settings reset to global values");
@@ -1932,6 +1938,7 @@ namespace Writersword.Modules.TextEditor
             _localSettingsVm.DefaultZoom.ResetToHardcoded();
             _localSettingsVm.AutoSaveIntervalSeconds.ResetToHardcoded();
             _localSettingsVm.MonitorSizeInches.ResetToHardcoded();
+            _localSettingsVm.BreakOnHyphen.ResetToHardcoded();
             _localSettingsVm.SubstituteMissingGlyphs.ResetToHardcoded();
             _localSettingsVm.SubstituteFontFamily.ResetToHardcoded();
             _logger.Debug("Local settings reset to hardcoded defaults");

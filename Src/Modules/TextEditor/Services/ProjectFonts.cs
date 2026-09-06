@@ -101,6 +101,66 @@ namespace Writersword.Modules.TextEditor.Services
             Rendering.SKTextRenderer.TrimFontCache();
         }
 
+        /// <summary>
+        /// Заложить шрифты напрямую, минуя вкладки.
+        ///
+        /// Обычный путь загрузки идёт через активную вкладку — она знает, какой
+        /// проект открыт. На телефоне вкладок нет, как нет и контейнера служб:
+        /// книга там открывается своим кодом, и до недавнего времени уложенные в
+        /// неё шрифты просто не находились. Отрисовка честно спрашивала про них
+        /// первым делом, склад отвечал «нет ни одного», и рукопись рисовалась
+        /// системными гарнитурами телефона — молча, как если бы автор так и
+        /// задумал.
+        ///
+        /// Байты передаются готовыми, а не источником, откуда их брать: тот, кто
+        /// открыл книгу, закроет её сразу после чтения, а гарнитуры обязаны
+        /// пережить это закрытие — они живут до смены проекта.
+        /// </summary>
+        public static void LoadFrom(IEnumerable<(string Name, byte[] Data)> files)
+        {
+            Invalidate();
+
+            if (files is null) return;
+
+            lock (_lock)
+            {
+                _loaded = true;
+
+                foreach (var (name, bytes) in files)
+                {
+                    if (bytes is not { Length: > 0 }) continue;
+
+                    var data = SKData.CreateCopy(bytes);
+                    var typeface = SKTypeface.FromData(data);
+
+                    if (typeface is null)
+                    {
+                        data.Dispose();
+                        _logger.Warning("Failed to read a project font: {Name}", name);
+                        continue;
+                    }
+
+                    _data.Add(data);
+
+                    var family = typeface.FamilyName ?? string.Empty;
+                    if (!_byFamily.TryGetValue(family, out var faces))
+                    {
+                        faces = new List<Face>();
+                        _byFamily[family] = faces;
+                    }
+
+                    faces.Add(new Face
+                    {
+                        Typeface = typeface,
+                        FileName = name,
+                        Bytes = bytes.LongLength
+                    });
+                }
+
+                _logger.Debug("Project fonts loaded directly: {Count} families", _byFamily.Count);
+            }
+        }
+
         private static void EnsureLoaded()
         {
             lock (_lock)

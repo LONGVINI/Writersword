@@ -30,12 +30,16 @@ namespace Writersword.Mobile.Views
         /// <summary>Нажата «Открыть» с выбранной книгой.</summary>
         public event Action<string>? OpenRequested;
 
+        /// <summary>Переключена «Правка»: true — черновик, false — чтение.</summary>
+        public event Action<bool>? EditModeChanged;
+
         public ReaderHud()
         {
             InitializeComponent();
 
             ToggleButton.IsCheckedChanged += OnToggleChanged;
             OpenButton.Click += OnOpenClicked;
+            EditButton.IsCheckedChanged += OnEditChanged;
 
             FormatBox.SelectionChanged += OnFormatChanged;
             ThemeBox.SelectionChanged += OnThemeChanged;
@@ -69,6 +73,38 @@ namespace Writersword.Mobile.Views
         {
             if (BookBox.SelectedItem is string name && !string.IsNullOrWhiteSpace(name))
                 OpenRequested?.Invoke(name);
+        }
+
+        private void OnEditChanged(object? sender, RoutedEventArgs e)
+        {
+            if (_syncing) return;
+            EditModeChanged?.Invoke(EditButton.IsChecked == true);
+        }
+
+        /// <summary>
+        /// Разрешена ли правка. Запрещённая снимается и гаснет: держать нажатой
+        /// кнопку, которая ничего не делает, значит врать о состоянии книги.
+        /// </summary>
+        public void SetEditAvailable(bool available)
+        {
+            EditButton.IsEnabled = available;
+
+            if (available || EditButton.IsChecked != true)
+                return;
+
+            _syncing = true;
+            EditButton.IsChecked = false;
+            _syncing = false;
+        }
+
+        /// <summary>Снять «Правку», не поднимая события.</summary>
+        public void ClearEditMode()
+        {
+            if (EditButton.IsChecked != true) return;
+
+            _syncing = true;
+            EditButton.IsChecked = false;
+            _syncing = false;
         }
 
         // ── Привязка к ленте чтения ───────────────────────────────────────
@@ -117,6 +153,15 @@ namespace Writersword.Mobile.Views
 
         private void SetEnabled(bool on)
         {
+            EditButton.IsEnabled = on;
+
+            if (!on)
+            {
+                _syncing = true;
+                EditButton.IsChecked = false;
+                _syncing = false;
+            }
+
             // Вкладка «Книга» живёт своей жизнью: пока книга не открыта, только
             // она и нужна.
             for (int i = 1; i < Tabs.ItemCount; i++)

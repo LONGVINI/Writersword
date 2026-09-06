@@ -17,5 +17,9 @@
 			<views:SyncCheckView/>
 		</TabItem>
 
+		<TabItem Header="Журнал">
+			<views:LogView/>
+		</TabItem>
+
 	</TabControl>
 </UserControl>

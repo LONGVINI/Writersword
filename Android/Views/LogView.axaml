@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.Mobile.Views.LogView">
+
+	<Grid RowDefinitions="Auto,Auto,*,Auto" Margin="12">
+
+		<StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+			<Button x:Name="RefreshButton" Content="Обновить" Padding="14,8"/>
+			<Button x:Name="CopyButton"    Content="Скопировать" Padding="14,8"/>
+			<Button x:Name="ClearButton"   Content="Очистить" Padding="14,8"/>
+		</StackPanel>
+
+		<TextBlock Grid.Row="1"
+		           x:Name="StatusBlock"
+		           FontSize="12"
+		           Opacity="0.75"
+		           TextWrapping="Wrap"
+		           Margin="0,0,0,8"/>
+
+		<!-- Журнал показывается хвостом и только для чтения: на телефоне его не
+		     правят, а читают, и разрешённая правка означала бы лишь случайно
+		     стёртую улику. -->
+		<Border Grid.Row="2"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1"
+		        CornerRadius="6">
+			<ScrollViewer x:Name="Scroll" Padding="8">
+				<SelectableTextBlock x:Name="LogBlock"
+				                     FontFamily="monospace"
+				                     FontSize="11"
+				                     TextWrapping="NoWrap"/>
+			</ScrollViewer>
+		</Border>
+
+		<TextBlock Grid.Row="3"
+		           x:Name="PathBlock"
+		           FontSize="10"
+		           TextWrapping="Wrap"
+		           Opacity="0.6"
+		           Margin="0,8,0,0"/>
+
+	</Grid>
+</UserControl>

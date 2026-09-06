@@ -40,6 +40,36 @@ namespace Writersword.Modules.TextEditor.Document
         private const float DraftPadHPt = 9f;
         private const float DraftPadWPt = 0f;
         private const float ReadingMaxPt = 510f;
+
+        /// <summary>
+        /// Наименьшее поле по краям колонки чтения.
+        ///
+        /// Потолок ширины сам по себе полей не даёт: на экране уже потолка колонка
+        /// занимает его целиком, и текст упирается в оба края. На большом окне этого
+        /// не видно — там колонка упирается в потолок раньше, чем в края, — а на
+        /// телефоне строка начинается от самой рамки, и читать её неприятно.
+        /// </summary>
+        private const float ReadingMinSidePt = 24f;
+
+        /// <summary>
+        /// Ширина колонки чтения при данной ширине холста.
+        ///
+        /// Считается в одном месте, потому что спрашивают её трое: пересборка
+        /// раскладки, быстрый пересчёт одного абзаца и отрисовка бумажной ленты.
+        /// Разойдись они хоть на пункт — отпечаток раскладки перестанет сходиться с
+        /// тем, под что абзацы шейпились, и полный проход пагинации будет идти на
+        /// каждый measure.
+        /// </summary>
+        private static float ReadingColumnWidthPt(float canvasWidthPt)
+        {
+            float column = Math.Min(canvasWidthPt, ReadingMaxPt);
+
+            // Поля отдаются не любой ценой: на очень узком экране колонка важнее их,
+            // иначе от строки останется половина.
+            float withSides = Math.Max(canvasWidthPt - ReadingMinSidePt * 2f, canvasWidthPt * 0.6f);
+
+            return Math.Max(Math.Min(column, withSides), 1f);
+        }
         private const float FallbackLinePt = 16.5f;
 
         // Отступ каретки якоря от границы таблицы — чтобы не перекрывалась рамкой.
@@ -130,6 +160,44 @@ namespace Writersword.Modules.TextEditor.Document
             // для выделения, маркеров размера, поворота и обрезки — они работают по
             // единому списку картинок.
             bool InLine = false);
+
+        // ── Плавающий объект глазами раскладки ────────────────────────────
+        // Картинка и фигура попадают в обтекание одинаково, поэтому зоны, вытеснение
+        // таблиц и переброс строк работают не с ImageEntry и не с ShapeEntry, а с этой
+        // общей записью: габарит на листе плюс модель, у которой раскладка спрашивает
+        // режим обтекания и отступы.
+        private readonly record struct FloatEntry(
+            Models.Document.IFloatingObject Block,
+            float XPt,
+            float Ypt,
+            float WidthPt,
+            float HeightPt,
+            int PageIndex);
+
+        /// <summary>
+        /// Единый список обтекаемых объектов страницы: картинки и фигуры вместе.
+        /// Порядок значения не имеет — зоны складываются независимо друг от друга.
+        /// </summary>
+        private static List<FloatEntry> BuildFloatSource(
+            List<ImageEntry> images, List<ShapeEntry> shapes)
+        {
+            var result = new List<FloatEntry>(images.Count + shapes.Count);
+
+            foreach (var ie in images)
+            {
+                // Картинка в строке текста место на листе занимает как символ, а не как
+                // плавающий объект: обтекать её строкам не нужно и нечего.
+                if (ie.InLine) continue;
+                result.Add(new FloatEntry(
+                    ie.Block, ie.XPt, ie.Ypt, ie.WidthPt, ie.HeightPt, ie.PageIndex));
+            }
+
+            foreach (var se in shapes)
+                result.Add(new FloatEntry(
+                    se.Block, se.XPt, se.Ypt, se.WidthPt, se.HeightPt, se.PageIndex));
+
+            return result;
+        }
 
         // ── Атомарный снимок для render-потока ────────────────────────────
         private readonly object _renderLock = new();
@@ -714,7 +782,20 @@ namespace Writersword.Modules.TextEditor.Document
         private int _pressCellRow = -1;
         private int _pressCellCol = -1;
 
+        // Клетка сетки прямо под указателем в момент нажатия — не начало
+        // владеющей ею ячейки. По ней строится выделение: подсветка обязана идти
+        // ровно там, где вели мышь, а не разъезжаться на всю объединённую ячейку.
+        private int _pressCellGridRow = -1;
+        private int _pressCellGridCol = -1;
+
         private readonly Dictionary<TableBlock, (int sr, int sc, int er, int ec)> _tableSelections = new();
+
+        // Прямоугольник ячеек ровно таким, каким его протянул пользователь, — до
+        // расширения до целых ячеек. По нему видно, вдоль какой оси вели мышь, и
+        // не разъехался ли прямоугольник поперёк этой оси. Нужен объединению:
+        // в _tableSelections лежит уже расширенный, и намерение по нему не читается.
+        private TableBlock? _rawCellSelTable;
+        private (int sr, int sc, int er, int ec) _rawCellSel;
 
         // Потоковое выделение ячеек: абзац ячейки -> выделенный диапазон [from, to].
         // Частичная стартовая ячейка, целые промежуточные по порядку чтения, частичная конечная.
@@ -803,6 +884,12 @@ namespace Writersword.Modules.TextEditor.Document
         private static readonly Avalonia.Input.DataFormat<byte[]> ClipboardImageDibFormat =
             Avalonia.Input.DataFormat.CreateBytesPlatformFormat("DeviceIndependentBitmap");
 
+        // Простой текст, который редактор сам положил в системный буфер вместе с
+        // _internalClipboardJson. По нему вставка узнаёт, что структурная копия всё ещё
+        // отвечает содержимому буфера. _clipboardCache для этого не годится: он кеширует
+        // ЧУЖОЙ текст буфера, а не наш.
+        private string? _internalClipboardPlain;
+
         private enum ClipboardBlockKind { Paragraph, Table, Image }
         private sealed class ClipboardBlock
         {
@@ -841,6 +928,32 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
         private IReadOnlyDictionary<string, string>? _scriptFontMap;
+
+        /// <summary>
+        /// Разрешать ли перенос строки после дефиса внутри слова.
+        /// Обновляется из TextEditorModule при изменении настроек.
+        ///
+        /// Настройка меняет разбивку текста по строкам, поэтому готовые раскладки
+        /// абзацев обесцениваются: кэш чистится, и документ верстается заново.
+        /// </summary>
+        public bool BreakOnHyphen
+        {
+            get => _breakOnHyphen;
+            set
+            {
+                if (_breakOnHyphen == value) return;
+                _breakOnHyphen = value;
+
+                if (DocVm is null) return;
+
+                _styleResolver = CreateStyleResolver();
+                _layoutCache.Clear();
+                InvalidateCellLayoutCaches();
+                RebuildLayouts();
+                InvalidateFull();
+            }
+        }
+        private bool _breakOnHyphen = true;
 
         /// <summary>
         /// Подставлять ли шрифт вместо знаков, которых нет в выбранной гарнитуре.
@@ -890,7 +1003,8 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm!.Document.Styles,
                 _scriptFontMap,
                 _substituteMissingGlyphs,
-                _substituteFontFamily);
+                _substituteFontFamily,
+                _breakOnHyphen);
 
         // ── Логирование ───────────────────────────────────────────────────
         private static readonly ILogger _logger = Log.ForContext<DocumentCanvas>();
@@ -1050,6 +1164,8 @@ namespace Writersword.Modules.TextEditor.Document
             // Каретка мигает только пока редактор в фокусе: без фокуса таймер остановлен
             // и редактор не генерирует кадры вообще — окно не перерисовывается в покое.
             LostFocus += OnLostFocusHandler;
+
+            AttachInputMethod();
         }
 
         // ── HotKey ───────────────────────────────────────────────────────
@@ -1509,6 +1625,68 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         /// <summary>
+        /// Число строк текущей раскладки. Считается по разбитым на строки абзацам:
+        /// сколько строк текста легло на листы, столько и показывает статистика.
+        /// Знаки конца абзаца тут ни при чём — абзац на всю страницу это одна запись
+        /// в модели и три десятка строк на бумаге.
+        /// </summary>
+        public int LineCount
+        {
+            get { lock (_renderLock) { return CountLayoutLines(_layouts); } }
+        }
+
+        /// <summary>
+        /// Строки набора в списке раскладок. Абзац, разрезанный между страницами, лежит
+        /// несколькими записями, и каждая приносит свою долю строк. Пустой абзац
+        /// записан диапазоном нулевой длины, но строку на листе занимает — за ним
+        /// числится одна.
+        /// </summary>
+        private static int CountLayoutLines(List<ParaLayout> layouts)
+        {
+            int lines = 0;
+            foreach (var pl in layouts)
+            {
+                int count = pl.LineTo - pl.LineFrom;
+                lines += count > 0 ? count : 1;
+            }
+            return lines;
+        }
+
+        /// <summary>
+        /// Раскладка пересчитала документ: число страниц и число строк. Оба значения
+        /// известны только после разбивки по листам, поэтому строка состояния получает
+        /// их отсюда, а не считает по тексту.
+        /// </summary>
+        public Action<int, int>? PaginationChanged { get; set; }
+
+        // Последние отданные наружу значения. Пересборка раскладки идёт много чаще, чем
+        // меняется число страниц, и без этой пары строка состояния получала бы событие
+        // на каждое движение каретки.
+        private int _paginationPages = -1;
+        private int _paginationLines = -1;
+
+        /// <summary>
+        /// Сообщает наружу число страниц и строк, если они изменились с прошлого раза.
+        /// </summary>
+        private void NotifyPagination()
+        {
+            if (PaginationChanged is null) return;
+
+            int pages, lines;
+            lock (_renderLock)
+            {
+                pages = Math.Max(1, _pages.Count);
+                lines = CountLayoutLines(_layouts);
+            }
+
+            if (pages == _paginationPages && lines == _paginationLines) return;
+
+            _paginationPages = pages;
+            _paginationLines = lines;
+            PaginationChanged.Invoke(pages, lines);
+        }
+
+        /// <summary>
         /// Номер страницы (1-based) у верха вьюпорта при заданном вертикальном смещении прокрутки (px).
         /// Используется всплывающей подсказкой при перетаскивании ползунка.
         /// </summary>
@@ -1672,32 +1850,76 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.GetCaretTargetDelegate = GetCaretTarget;
             DocVm.InlineImageInserted -= OnInlineImageInserted;
             DocVm.InlineImageInserted += OnInlineImageInserted;
+            DocVm.ShapeInserted -= OnShapeInserted;
+            DocVm.ShapeInserted += OnShapeInserted;
+            DocVm.GetSelectedShapeInfoDelegate = GetSelectedShapeInfo;
+            DocVm.SetShapeTypeDelegate = SetSelectedShapeType;
+            DocVm.SetShapeFillDelegate = SetSelectedShapeFill;
+            DocVm.SetShapeStrokeDelegate = SetSelectedShapeStroke;
+            DocVm.SetShapeStrokeThicknessDelegate = SetSelectedShapeStrokeThickness;
+            DocVm.SetShapeDashDelegate = SetSelectedShapeDash;
+            DocVm.SetShapeCornerRadiusDelegate = SetSelectedShapeCornerRadius;
+            DocVm.SetShapeArrowsDelegate = SetSelectedShapeArrows;
+            DocVm.SetShapeOpacityDelegate = SetSelectedShapeOpacity;
+            DocVm.SetShapeWidthDelegate = SetSelectedShapeWidth;
+            DocVm.SetShapeHeightDelegate = SetSelectedShapeHeight;
+            DocVm.SetShapeRotationDelegate = SetSelectedShapeRotation;
+            DocVm.SetShapeLockAspectDelegate = SetSelectedShapeLockAspect;
+            DocVm.SetShapeWrapModeDelegate = SetSelectedShapeWrapMode;
+            DocVm.SetShapeWrapSideDelegate = SetSelectedShapeWrapSide;
+            DocVm.SetShapeWrapPaddingDelegate = SetSelectedShapeWrapPadding;
+            DocVm.SetShapePinnedDelegate = SetSelectedShapePinned;
+            DocVm.SetShapeZOrderDelegate = SetSelectedShapeZOrder;
+            // Кнопка «Картинка» одна на оба объекта: у фигуры кладёт картинку в
+            // контур, у картинки заменяет файл (DocumentCanvas.FloatingRouting).
+            DocVm.SetShapeFillImageDelegate = SetFloatingFillImage;
+            DocVm.SetShapeFillImageStretchDelegate = SetSelectedShapeFillImageStretch;
+            DocVm.DeleteSelectedShapeDelegate = DeleteSelectedShape;
             DocVm.InlineObjectsChanged -= RefreshParagraphAfterInlineChange;
             DocVm.InlineObjectsChanged += RefreshParagraphAfterInlineChange;
-            DocVm.TrySetImageAlignmentDelegate = TrySetSelectedImageAlignment;
             DocVm.GetSelectedImageAlignmentDelegate = GetSelectedImageAlignment;
-            DocVm.SetImageWrapModeDelegate = SetSelectedImageWrapMode;
-            DocVm.SetImageWrapSideDelegate = SetSelectedImageWrapSide;
-            DocVm.GetSelectedImageWrapSideDelegate = GetSelectedImageWrapSide;
-            DocVm.SetImagePinnedPageDelegate = SetSelectedImagePinnedPage;
-            DocVm.GetSelectedImagePinnedPageDelegate = GetSelectedImagePinnedPage;
-            DocVm.GetSelectedImageCurrentPageDelegate = GetSelectedImageCurrentPage;
-            DocVm.SetImageLockAspectDelegate = SetSelectedImageLockAspect;
-            DocVm.DeleteSelectedImageDelegate = DeleteSelectedImageFromCanvas;
-            DocVm.GetSelectedImageInfoDelegate = GetSelectedImageInfo;
-            DocVm.SetImageRotationDelegate = SetSelectedImageRotation;
-            DocVm.GetSelectedImageRotationDelegate = GetSelectedImageRotation;
-            DocVm.SetImageWidthDelegate = SetSelectedImageWidth;
-            DocVm.SetImageHeightDelegate = SetSelectedImageHeight;
-            DocVm.SetImageOpacityDelegate = SetSelectedImageOpacity;
-            DocVm.SetImageBorderDelegate = SetSelectedImageBorder;
-            DocVm.GetSelectedImageStyleDelegate = GetSelectedImageStyle;
-            DocVm.ToggleImageFlipHorizontalDelegate = ToggleSelectedImageFlipHorizontal;
-            DocVm.ToggleImageFlipVerticalDelegate = ToggleSelectedImageFlipVertical;
+            // Общие свойства идут через маршрутизацию: лента одна на картинку и
+            // фигуру, а разводит вызовы канвас — см. DocumentCanvas.FloatingRouting.cs.
+            DocVm.GetSelectedImagePinnedPageDelegate = GetFloatingPinnedPage;
+            DocVm.GetSelectedImageCurrentPageDelegate = GetFloatingCurrentPage;
+            DocVm.SetImageLockAspectDelegate = SetFloatingLockAspect;
+            DocVm.DeleteSelectedImageDelegate = DeleteSelectedFloating;
+            DocVm.GetSelectedImageInfoDelegate = GetFloatingInfo;
+            DocVm.SetImageRotationDelegate = SetFloatingRotation;
+            DocVm.GetSelectedImageRotationDelegate = GetFloatingRotation;
+            DocVm.SetImageWidthDelegate = SetFloatingWidth;
+            DocVm.SetImageHeightDelegate = SetFloatingHeight;
+            DocVm.SetImageOpacityDelegate = SetFloatingOpacity;
+            DocVm.SetImageBorderDelegate = SetFloatingBorder;
+            DocVm.SetImageBorderDashDelegate = SetFloatingBorderDash;
+            DocVm.GetSelectedImageBorderDashDelegate = GetFloatingBorderDash;
+            DocVm.SetImageCornerRadiusDelegate = SetFloatingCornerRadius;
+            DocVm.GetSelectedImageCornerRadiusDelegate = GetFloatingCornerRadius;
+            DocVm.SetImageShapeTypeDelegate = SetFloatingShapeType;
+            DocVm.GetSelectedImageShapeTypeDelegate = GetFloatingShapeType;
+            DocVm.GetSelectedImageStyleDelegate = GetFloatingStyle;
+            DocVm.SetImageWrapModeDelegate = SetFloatingWrapMode;
+            DocVm.SetImageWrapSideDelegate = SetFloatingWrapSide;
+            DocVm.GetSelectedImageWrapSideDelegate = GetFloatingWrapSide;
+            DocVm.SetImagePinnedPageDelegate = SetFloatingPinnedPage;
+            DocVm.TrySetImageAlignmentDelegate = SetFloatingAlignment;
+            DocVm.SetImageWrapPaddingDelegate = SetFloatingWrapPadding;
+            DocVm.GetSelectedImageWrapPaddingDelegate = GetFloatingWrapPadding;
+            DocVm.GetSelectedFloatingKindDelegate = GetFloatingKind;
+
+            // Линия по контуру снаружи/внутри и отражение — на обоих объектах:
+            // у картинки это рамка и зеркало самой картинки, у фигуры — обводка
+            // и зеркало её контура вместе с картинкой-заливкой. Разводит вызов
+            // канвас, как и остальные общие команды (DocumentCanvas.FloatingRouting).
+            DocVm.SetImageBorderAlignDelegate = SetFloatingOutlineAlign;
+            DocVm.GetSelectedImageBorderAlignDelegate = GetFloatingOutlineAlign;
+            DocVm.ToggleImageFlipHorizontalDelegate = ToggleFloatingFlipHorizontal;
+            DocVm.ToggleImageFlipVerticalDelegate = ToggleFloatingFlipVertical;
+
+            // Обрезка пока только у картинки: режим кадрирования — это ещё и
+            // жест с маркерами на канвасе, и его перевод на фигуру идёт отдельно.
             DocVm.SetImageCropModeDelegate = SetSelectedImageCropMode;
             DocVm.GetImageCropModeDelegate = GetSelectedImageCropMode;
-            DocVm.SetImageWrapPaddingDelegate = SetSelectedImageWrapPadding;
-            DocVm.GetSelectedImageWrapPaddingDelegate = GetSelectedImageWrapPadding;
             WireInlineImageSizeResolver();
             _pagesPerRowSetting = DocVm.PagesPerRow;
             UpdateEffectivePagesPerRow();
@@ -2103,15 +2325,67 @@ namespace Writersword.Modules.TextEditor.Document
             InvalidateFull();
         }
 
+        /// <summary>
+        /// Ставит каретку к месту картинки.
+        ///
+        /// Зовётся перед удалением, и нужно это отмене. Снимок запоминает каретку
+        /// такой, какой она была на момент правки, а отмена возвращает её туда же
+        /// и уводит за собой холст. Картинку же выделяют мышью, каретка при этом
+        /// остаётся где стояла — хоть страницей выше, — и отменённое удаление
+        /// возвращало картинку в одном месте, а показывало другое.
+        ///
+        /// Абзац ищется ближайший по вертикали на той же странице: своей записи о
+        /// том, какому абзацу принадлежит картинка, у раскладки нет, а расстояние
+        /// по листу отвечает на тот же вопрос достаточно точно, чтобы холст
+        /// приехал куда надо.
+        /// </summary>
+        private void MoveCaretToImage(ImageBlock image)
+        {
+            ImageEntry? entry = null;
+            foreach (var candidate in _images)
+            {
+                if (!ReferenceEquals(candidate.Block, image)) continue;
+                entry = candidate;
+                break;
+            }
+
+            if (entry is null) return;
+
+            int best = -1;
+            float bestDistance = float.MaxValue;
+
+            for (int i = 0; i < _layouts.Count; i++)
+            {
+                var layout = _layouts[i];
+                if (layout.PageIndex != entry.PageIndex) continue;
+
+                float distance = Math.Abs(layout.Ypt - entry.Ypt);
+                if (distance >= bestDistance) continue;
+
+                bestDistance = distance;
+                best = i;
+            }
+
+            if (best < 0) return;
+
+            _caretPara = best;
+            _caretChar = 0;
+        }
+
         // Удаляет выделенную картинку (команда контекстной вкладки).
         private void DeleteSelectedImageFromCanvas()
         {
             if (_selectedImage is null) return;
             var img = _selectedImage;
             ExitImageCropMode(apply: false);
+            MoveCaretToImage(img);
+
+            BeginEdit("Удаление изображения");
             _selectedImage = null;
             DocVm?.RemoveImage(img);
             ImageSelectionChanged?.Invoke(false);
+            CommitEdit();
+
             InvalidateFull();
         }
 
@@ -2189,8 +2463,84 @@ namespace Writersword.Modules.TextEditor.Document
             _selectedImage.BorderColor = color;
             _selectedImage.BorderThicknessPt = thick;
             CommitImageEdit();
+            // Рамка входит в зону обтекания, поэтому её правка меняет вёрстку текста
+            // вокруг картинки, а не только саму картинку: одной перерисовки мало.
+            RebuildLayouts();
+            InvalidateMeasure();
             InvalidateFull();
         }
+
+        // Задаёт положение рамки относительно границы картинки: внутрь, по границе
+        // или наружу. От этого зависит и рисунок рамки, и ширина зоны обтекания —
+        // рамка снаружи занимает на листе место сверх габарита картинки.
+        /// <summary>Штрих рамки выделенной картинки.</summary>
+        private void SetSelectedImageBorderDash(Models.Document.ShapeDashStyle dash)
+        {
+            if (_selectedImage is null || _selectedImage.BorderDashStyle == dash) return;
+
+            BeginImageEdit("Штрих рамки изображения");
+            _selectedImage.BorderDashStyle = dash;
+            CommitImageEdit();
+            InvalidateFull();
+        }
+
+        /// <summary>Штрих рамки выделенной картинки, либо null.</summary>
+        private Models.Document.ShapeDashStyle? GetSelectedImageBorderDash()
+            => _selectedImage?.BorderDashStyle;
+
+        /// <summary>
+        /// Скругление углов рамки. Габарит от него не меняется, поэтому пересборка
+        /// раскладки не нужна — хватает перерисовки.
+        /// </summary>
+        private void SetSelectedImageCornerRadius(double radiusPt)
+        {
+            if (_selectedImage is null) return;
+            double r = Math.Clamp(radiusPt, 0.0, 400.0);
+            if (Math.Abs(_selectedImage.CornerRadiusPt - r) < 0.01) return;
+
+            BeginImageEdit("Скругление рамки изображения");
+            _selectedImage.CornerRadiusPt = r;
+            CommitImageEdit();
+            InvalidateFull();
+        }
+
+        /// <summary>Скругление углов рамки выделенной картинки, либо null.</summary>
+        private double? GetSelectedImageCornerRadius()
+            => _selectedImage?.CornerRadiusPt;
+
+        /// <summary>
+        /// Форма выделенной картинки: по её контуру картинка обрезается и по нему же
+        /// идёт рамка. Габарит от формы не меняется, поэтому пересборка раскладки не
+        /// нужна — хватает перерисовки.
+        /// </summary>
+        private void SetSelectedImageShapeType(Models.Document.ShapeType type)
+        {
+            if (_selectedImage is null || _selectedImage.ShapeType == type) return;
+
+            BeginImageEdit("Форма изображения");
+            _selectedImage.ShapeType = type;
+            CommitImageEdit();
+            InvalidateFull();
+        }
+
+        /// <summary>Форма выделенной картинки, либо null.</summary>
+        private Models.Document.ShapeType? GetSelectedImageShapeType()
+            => _selectedImage?.ShapeType;
+
+        private void SetSelectedImageBorderAlign(Models.Document.ImageBorderAlign align)
+        {
+            if (_selectedImage is null || _selectedImage.BorderAlign == align) return;
+
+            BeginImageEdit("Положение рамки изображения");
+            _selectedImage.BorderAlign = align;
+            CommitImageEdit();
+            RebuildLayouts();
+            InvalidateMeasure();
+            InvalidateFull();
+        }
+
+        private Models.Document.ImageBorderAlign? GetSelectedImageBorderAlign()
+            => _selectedImage?.BorderAlign;
 
         // Приводит код цвета рамки к сплошному hex, понятному SKColor.TryParse.
         // Палитра умеет отдавать код градиента ("grad|...") — из него берётся
@@ -3191,7 +3541,7 @@ namespace Writersword.Modules.TextEditor.Document
                         // дважды. С урезанной шириной на широком окне вычитание
                         // уводило колонку в минус, и текст вставал по букве в строку.
                         float cw = (float)(_canvasWidth * PxToPt);
-                        float columnPt = Math.Min(cw, ReadingMaxPt);
+                        float columnPt = ReadingColumnWidthPt(cw);
                         RebuildFlowMode(cw, 18f, (cw - columnPt) / 2f);
                         break;
                     }
@@ -3273,13 +3623,13 @@ namespace Writersword.Modules.TextEditor.Document
         /// null — обтекаемых объектов рядом нет.
         /// </summary>
         private List<SKWrapZone>? ComputeWrapZones(
-            List<ImageEntry> images, float paraTopPt, float textXPt, float textWidthPt,
+            List<FloatEntry> floats, float paraTopPt, float textXPt, float textWidthPt,
             List<PageRect>? pages = null, int? pageIndex = null,
             float lookAheadPt = DefaultWrapLookAheadPt, int? maxPageIndex = null)
         {
             List<SKWrapZone>? zones = null;
 
-            foreach (var ie in images)
+            foreach (var ie in floats)
             {
                 var wm = ie.Block.WrapMode;
                 if (wm != WrapMode.Square && wm != WrapMode.Tight) continue;
@@ -3301,8 +3651,18 @@ namespace Writersword.Modules.TextEditor.Document
                 double rad = ie.Block.RotationDeg * Math.PI / 180.0;
                 float absCos = (float)Math.Abs(Math.Cos(rad));
                 float absSin = (float)Math.Abs(Math.Sin(rad));
-                float boxW = ie.WidthPt * absCos + ie.HeightPt * absSin;
-                float boxH = ie.WidthPt * absSin + ie.HeightPt * absCos;
+
+                // Оформление — часть пятна объекта на листе: наружная половина рамки
+                // картинки (а при рамке снаружи вся её толщина) и наружная половина
+                // обводки фигуры занимают место так же, как сам объект. Без этого
+                // широкая рамка ложилась поверх текста, который считал себя обтекающим:
+                // зона кончалась по краю самой картинки.
+                float outsetPt = (float)ie.Block.WrapOutsetPt;
+                float rectWpt = ie.WidthPt + outsetPt * 2f;
+                float rectHpt = ie.HeightPt + outsetPt * 2f;
+
+                float boxW = rectWpt * absCos + rectHpt * absSin;
+                float boxH = rectWpt * absSin + rectHpt * absCos;
                 float cx = ie.XPt + ie.WidthPt / 2f;
                 float cy = ie.Ypt + ie.HeightPt / 2f;
 
@@ -3373,8 +3733,6 @@ namespace Writersword.Modules.TextEditor.Document
                 left = Math.Max(left, 0f);
                 right = Math.Min(right, textWidthPt);
 
-                LogWrapZone(ie, pages is not null, top, bottom, left, right);
-
                 zones ??= new List<SKWrapZone>();
                 zones.Add(new SKWrapZone(
                     top - paraTopPt, bottom - paraTopPt, left, right,
@@ -3388,32 +3746,6 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             return zones;
-        }
-
-        // Последняя записанная в журнал зона обтекания: страница картинки и её границы
-        // в координатах документа, огрублённые до пункта. Зона считается для каждого
-        // абзаца заново, поэтому без подавления повторов одна картинка писала бы
-        // столько строк, сколько абзацев рядом с ней.
-        private readonly Dictionary<ImageBlock, (int Page, int Top, int Bottom, bool Clipped)>
-            _wrapZoneLogState = new();
-
-        private void LogWrapZone(
-            ImageEntry entry, bool pagesKnown,
-            float topPt, float bottomPt, float leftPt, float rightPt)
-        {
-            var state = (entry.PageIndex, (int)topPt, (int)bottomPt, pagesKnown);
-
-            if (_wrapZoneLogState.TryGetValue(entry.Block, out var prev) && prev == state)
-                return;
-
-            if (_wrapZoneLogState.Count > 64) _wrapZoneLogState.Clear();
-            _wrapZoneLogState[entry.Block] = state;
-
-            _logger.Debug(
-                "[WRAP] Zone from image on page {Page}: y=[{Top}..{Bottom}] x=[{Left}..{Right}] "
-                + "clippedByPage={Clipped} side={Side}",
-                entry.PageIndex, topPt, bottomPt, leftPt, rightPt,
-                pagesKnown, entry.Block.WrapSide);
         }
 
         /// <summary>
@@ -3635,7 +3967,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// contentYPt при этом сдвигается вниз.
         /// </summary>
         private void ResolveInlineImageBand(
-            List<ImageEntry> zoneSource,
+            List<FloatEntry> zoneSource,
             ref float contentYPt,
             float boxWpt,
             float boxHpt,
@@ -3660,19 +3992,37 @@ namespace Writersword.Modules.TextEditor.Document
                     zoneSource, contentYPt, textXPt, textWidthPt, pages, pageIndex);
                 if (zones is null || zones.Count == 0) return;
 
-                // Зоны, пересекающие вертикальную полосу самой картинки.
+                // Зоны, пересекающие вертикальную полосу самой картинки, и стороны,
+                // разрешённые самими объектами: «только слева» запрещает ставить
+                // картинку правее объекта, «только справа» — левее. Сторона
+                // учитывалась лишь при вёрстке текста, а блок-картинка вставала
+                // в самый широкий промежуток независимо от неё — и уезжала на ту
+                // сторону, где текст этому же объекту стоять запрещено.
                 blocking.Clear();
                 float lowestBottomPt = float.MinValue;
+                float allowedLeftPt = 0f;
+                float allowedRightPt = textWidthPt;
                 foreach (var zone in zones)
                 {
                     if (zone.BottomPt <= 0f || zone.TopPt >= boxHpt) continue;
                     blocking.Add(zone);
                     if (zone.BottomPt > lowestBottomPt) lowestBottomPt = zone.BottomPt;
+
+                    switch (zone.Side)
+                    {
+                        case SKWrapSide.LeftOnly:
+                            if (zone.LeftPt < allowedRightPt) allowedRightPt = zone.LeftPt;
+                            break;
+                        case SKWrapSide.RightOnly:
+                            if (zone.RightPt > allowedLeftPt) allowedLeftPt = zone.RightPt;
+                            break;
+                    }
                 }
 
                 if (blocking.Count == 0) return;
 
-                // Самый широкий свободный промежуток колонки между занятыми участками.
+                // Самый широкий свободный промежуток колонки между занятыми участками,
+                // обрезанный по разрешённым сторонам.
                 blocking.Sort((a, b) => a.LeftPt.CompareTo(b.LeftPt));
                 float cursorPt = 0f;
                 float bestLeftPt = 0f;
@@ -3680,13 +4030,26 @@ namespace Writersword.Modules.TextEditor.Document
 
                 foreach (var zone in blocking)
                 {
-                    float gapPt = zone.LeftPt - cursorPt;
-                    if (gapPt > bestWidthPt) { bestWidthPt = gapPt; bestLeftPt = cursorPt; }
+                    if (zone.LeftPt > cursorPt)
+                    {
+                        float gapLeftPt = Math.Max(cursorPt, allowedLeftPt);
+                        float gapRightPt = Math.Min(zone.LeftPt, allowedRightPt);
+                        if (gapRightPt - gapLeftPt > bestWidthPt)
+                        {
+                            bestWidthPt = gapRightPt - gapLeftPt;
+                            bestLeftPt = gapLeftPt;
+                        }
+                    }
                     if (zone.RightPt > cursorPt) cursorPt = zone.RightPt;
                 }
 
-                float tailPt = textWidthPt - cursorPt;
-                if (tailPt > bestWidthPt) { bestWidthPt = tailPt; bestLeftPt = cursorPt; }
+                float tailLeftPt = Math.Max(cursorPt, allowedLeftPt);
+                float tailRightPt = Math.Min(textWidthPt, allowedRightPt);
+                if (tailRightPt - tailLeftPt > bestWidthPt)
+                {
+                    bestWidthPt = tailRightPt - tailLeftPt;
+                    bestLeftPt = tailLeftPt;
+                }
 
                 if (bestWidthPt >= boxWpt)
                 {
@@ -3720,7 +4083,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// накрывающая её середину, обязана отодвинуть таблицу так же, как накрывающая верх.
         /// </summary>
         private void ResolveTableTop(
-            List<ImageEntry> zoneSource,
+            List<FloatEntry> zoneSource,
             ref float contentYPt,
             float tableXPt,
             float tableWidthPt,

@@ -1,0 +1,123 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Writersword.ViewModels.Sync"
+        x:Class="Writersword.Views.Sync.DevicesView"
+        x:DataType="vm:DevicesViewModel"
+        Title="Устройства"
+        Width="560"
+        Height="480"
+        MinWidth="460"
+        MinHeight="380"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True"
+        WindowDecorations="None"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent">
+
+	<Grid>
+
+		<Border Background="{DynamicResource BgBaseBrush}" CornerRadius="14" Margin="2"/>
+
+		<Border Background="{DynamicResource BgAppBrush}" CornerRadius="12" Margin="8">
+			<Grid RowDefinitions="48,Auto,*,Auto">
+
+				<!-- Заголовок -->
+				<Grid Grid.Row="0" Margin="20,0">
+					<TextBlock Text="Устройства"
+					           FontSize="16"
+					           FontWeight="SemiBold"
+					           Foreground="{DynamicResource TextPrimaryBrush}"
+					           VerticalAlignment="Center"/>
+					<Button HorizontalAlignment="Right"
+					        VerticalAlignment="Center"
+					        Width="28" Height="28"
+					        Padding="0,4"
+					        Classes="ghost"
+					        Foreground="{DynamicResource TextMutedBrush}"
+					        FontSize="14"
+					        Cursor="Hand"
+					        Click="Close_Click">
+						<TextBlock Text="&#x2715;" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+					</Button>
+				</Grid>
+
+				<Border Grid.Row="0" Height="1"
+				        Background="{DynamicResource BorderSubtleBrush}"
+				        VerticalAlignment="Bottom"/>
+
+				<!-- Это устройство -->
+				<StackPanel Grid.Row="1" Margin="24,16,24,8" Spacing="8">
+
+					<TextBlock Text="{Binding StatusText}"
+					           FontSize="12"
+					           TextWrapping="Wrap"
+					           Foreground="{DynamicResource TextMutedBrush}"/>
+
+					<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+						<TextBlock Grid.Column="0"
+						           Text="Имя этого устройства"
+						           FontSize="12"
+						           VerticalAlignment="Center"
+						           Foreground="{DynamicResource TextSecondaryBrush}"/>
+						<TextBox Grid.Column="1" Text="{Binding DeviceName, Mode=TwoWay}"/>
+						<Button Grid.Column="2" Content="Сохранить"
+						        Command="{Binding RenameCommand}"
+						        Padding="14,6"/>
+					</Grid>
+
+					<TextBlock FontSize="11"
+					           Foreground="{DynamicResource TextMutedBrush}"
+					           TextWrapping="Wrap">
+						<Run Text="Опознаватель:"/>
+						<Run Text="{Binding DeviceIdShort}"/>
+						<Run Text="— его видит другая сторона вместо имени, пока имя не задано."/>
+					</TextBlock>
+
+				</StackPanel>
+
+				<!-- Книги -->
+				<Border Grid.Row="2" Margin="24,8,24,8"
+				        BorderBrush="{DynamicResource BorderSubtleBrush}"
+				        BorderThickness="1"
+				        CornerRadius="8">
+					<ListBox ItemsSource="{Binding Rows}" Background="Transparent">
+						<ListBox.ItemTemplate>
+							<DataTemplate>
+								<Grid ColumnDefinitions="*,Auto" Margin="4,6">
+									<TextBlock Grid.Column="0"
+									           Text="{Binding Title}"
+									           FontSize="13"
+									           VerticalAlignment="Center"/>
+									<TextBlock Grid.Column="1"
+									           Text="{Binding Holder}"
+									           FontSize="12"
+									           VerticalAlignment="Center"/>
+								</Grid>
+							</DataTemplate>
+						</ListBox.ItemTemplate>
+					</ListBox>
+				</Border>
+
+				<Border Grid.Row="3"
+				        BorderBrush="{DynamicResource BorderSubtleBrush}"
+				        BorderThickness="0,1,0,0"
+				        Padding="24,12">
+					<Grid ColumnDefinitions="*,Auto">
+						<TextBlock Grid.Column="0"
+						           FontSize="11"
+						           TextWrapping="Wrap"
+						           VerticalAlignment="Center"
+						           Foreground="{DynamicResource TextMutedBrush}"
+						           Text="Отметки обновляются раз в пятнадцать секунд и протухают за шесть минут. Книгу это не запирает: программа предупреждает, решение за вами."/>
+						<Button Grid.Column="1" Content="Закрыть"
+						        Classes="ghost"
+						        Click="Close_Click"
+						        Padding="16,6"
+						        Margin="12,0,0,0"/>
+					</Grid>
+				</Border>
+
+			</Grid>
+		</Border>
+	</Grid>
+</Window>

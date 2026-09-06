@@ -183,8 +183,17 @@
   <data name="Edit_Undo" xml:space="preserve">
     <value>Отменить</value>
   </data>
+  <data name="Export_Dialog_Title" xml:space="preserve">
+    <value>Экспорт документа</value>
+  </data>
   <data name="Export_Docx" xml:space="preserve">
     <value>Экспорт в Word</value>
+  </data>
+  <data name="Export_Failed" xml:space="preserve">
+    <value>Не удалось экспортировать: {0}</value>
+  </data>
+  <data name="Export_Failed_NoDialog" xml:space="preserve">
+    <value>Экспорт недоступен: нет окна для выбора файла.</value>
   </data>
   <data name="Export_Markdown" xml:space="preserve">
     <value>Экспорт в Markdown</value>
@@ -192,8 +201,35 @@
   <data name="Export_PDF" xml:space="preserve">
     <value>Экспорт в PDF</value>
   </data>
+  <data name="Export_Success" xml:space="preserve">
+    <value>Экспортировано: {0}</value>
+  </data>
   <data name="Export_Txt" xml:space="preserve">
     <value>Экспорт в TXT</value>
+  </data>
+  <data name="File_Export" xml:space="preserve">
+    <value>Экспорт</value>
+  </data>
+  <data name="File_Group" xml:space="preserve">
+    <value>Файл</value>
+  </data>
+  <data name="File_Import" xml:space="preserve">
+    <value>Импорт</value>
+  </data>
+  <data name="FileType_Docx" xml:space="preserve">
+    <value>Документ Word (*.docx)</value>
+  </data>
+  <data name="FileType_Import" xml:space="preserve">
+    <value>Документы (*.docx, *.txt)</value>
+  </data>
+  <data name="FileType_Markdown" xml:space="preserve">
+    <value>Markdown (*.md)</value>
+  </data>
+  <data name="FileType_Pdf" xml:space="preserve">
+    <value>Документ PDF (*.pdf)</value>
+  </data>
+  <data name="FileType_Txt" xml:space="preserve">
+    <value>Текстовый файл (*.txt)</value>
   </data>
   <data name="FindReplace_Title" xml:space="preserve">
     <value>Найти и заменить</value>
@@ -269,6 +305,45 @@
   </data>
   <data name="Format_Underline_Letter" xml:space="preserve">
     <value>Ч</value>
+  </data>
+  <data name="Import_Backup_Created" xml:space="preserve">
+    <value>Перед импортом создана точка восстановления.</value>
+  </data>
+  <data name="Import_Backup_Failed" xml:space="preserve">
+    <value>Точку восстановления создать не удалось.</value>
+  </data>
+  <data name="Import_Backup_Failed_Message" xml:space="preserve">
+    <value>Точку восстановления создать не удалось: вернуть текущий текст после импорта будет нечем. Импортировать всё равно?</value>
+  </data>
+  <data name="Import_Backup_Failed_Title" xml:space="preserve">
+    <value>Нет точки восстановления</value>
+  </data>
+  <data name="Import_Confirm_Message" xml:space="preserve">
+    <value>Импорт заменит всё содержимое текущего документа. Перед этим будет создана точка восстановления. Продолжить?</value>
+  </data>
+  <data name="Import_Confirm_Title" xml:space="preserve">
+    <value>Заменить содержимое документа?</value>
+  </data>
+  <data name="Import_Dialog_Title" xml:space="preserve">
+    <value>Импорт документа</value>
+  </data>
+  <data name="Import_Failed" xml:space="preserve">
+    <value>Не удалось импортировать: {0}</value>
+  </data>
+  <data name="Import_FileNotFound" xml:space="preserve">
+    <value>Файл не найден.</value>
+  </data>
+  <data name="Import_ImagesNotSaved" xml:space="preserve">
+    <value>Картинки не удалось сохранить в проект.</value>
+  </data>
+  <data name="Import_ReadOnly" xml:space="preserve">
+    <value>Документ открыт только для чтения — импорт недоступен.</value>
+  </data>
+  <data name="Import_Success" xml:space="preserve">
+    <value>Документ импортирован.</value>
+  </data>
+  <data name="Import_Unsupported" xml:space="preserve">
+    <value>Формат {0} пока не поддерживается.</value>
   </data>
   <data name="Insert_Bookmark" xml:space="preserve">
     <value>Закладка</value>
@@ -420,6 +495,12 @@
   <data name="Settings_AutoSaveSeconds" xml:space="preserve">
     <value>сек. (0 — отключено)</value>
   </data>
+  <data name="Settings_BreakOnHyphen" xml:space="preserve">
+    <value>Переносить строку по дефису</value>
+  </data>
+  <data name="Settings_BreakOnHyphenHint" xml:space="preserve">
+    <value>Слово с дефисом может разрываться между строками: «чьего-то» разбивается на «чьего-» и «то». Так верстает Word. Выключите, если дефисы рвать нельзя — например в кодах и формулах.</value>
+  </data>
   <data name="Settings_DefaultLanguage" xml:space="preserve">
     <value>Язык по умолчанию</value>
   </data>
@@ -530,6 +611,36 @@
   </data>
   <data name="Status_Paragraphs" xml:space="preserve">
     <value>Абзацы</value>
+  </data>
+  <data name="Status_Lines" xml:space="preserve">
+    <value>Строки</value>
+  </data>
+  <data name="Stats_Title" xml:space="preserve">
+    <value>Статистика</value>
+  </data>
+  <data name="Stats_Pages" xml:space="preserve">
+    <value>Страниц</value>
+  </data>
+  <data name="Stats_Words" xml:space="preserve">
+    <value>Слов</value>
+  </data>
+  <data name="Stats_CharsNoSpaces" xml:space="preserve">
+    <value>Знаков (без пробелов)</value>
+  </data>
+  <data name="Stats_CharsWithSpaces" xml:space="preserve">
+    <value>Знаков (с пробелами)</value>
+  </data>
+  <data name="Stats_Paragraphs" xml:space="preserve">
+    <value>Абзацев</value>
+  </data>
+  <data name="Stats_Lines" xml:space="preserve">
+    <value>Строк</value>
+  </data>
+  <data name="Stats_DraftHint" xml:space="preserve">
+    <value>Черновик и веб-разметка не разбивают документ на листы, поэтому страницы и строки не считаются.</value>
+  </data>
+  <data name="Stats_Close" xml:space="preserve">
+    <value>Закрыть</value>
   </data>
   <data name="Status_Words" xml:space="preserve">
     <value>Слова</value>

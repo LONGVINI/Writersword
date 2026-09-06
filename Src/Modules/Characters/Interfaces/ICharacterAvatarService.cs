@@ -50,6 +50,29 @@ namespace Writersword.Modules.Characters.Interfaces
         Bitmap? LoadBitmap(string? avatarRef, int maxSide);
 
         /// <summary>
+        /// Миниатюра для ленты картинок: тот же результат, что у LoadBitmap, но
+        /// общий и запомненный — повторное открытие ленты не раскодирует ничего
+        /// заново.
+        ///
+        /// Битмап принадлежит службе: уничтожать его нельзя, его же показывает
+        /// всякий следующий, кто спросит ту же картинку.
+        /// </summary>
+        Bitmap? LoadThumbnail(string? avatarRef, int maxSide);
+
+        /// <summary>
+        /// Готовая миниатюра, если её уже строили, иначе null. Ничего не читает
+        /// и не раскодирует: показу нужно отличить «есть, ставь сразу» от
+        /// «строится, пока покажи заглушку».
+        /// </summary>
+        Bitmap? TryGetThumbnail(string? avatarRef, int maxSide);
+
+        /// <summary>
+        /// Миниатюра в стороне от UI-потока: прокрутка ленты не должна
+        /// останавливаться на раскодирование каждой новой плитки.
+        /// </summary>
+        Task<Bitmap?> LoadThumbnailAsync(string? avatarRef, int maxSide);
+
+        /// <summary>
         /// Картинка под нужный вид карточки. forStrip выбирает кадр полоски;
         /// если своего кадра у полоски нет, берётся кадр кружка.
         /// </summary>
@@ -105,6 +128,19 @@ namespace Writersword.Modules.Characters.Interfaces
             CharacterAvatarPackScope scope,
             string? name,
             string? iconFileName);
+
+        /// <summary>
+        /// Запомнить порядок картинок в папке — списком имён файлов, сверху
+        /// вниз. Имена, которых в папке нет, пропускаются; картинки, которых
+        /// нет в списке, встают после перечисленных.
+        ///
+        /// Встроенные паки лежат в ресурсах сборки и порядка не хранят: для
+        /// них вызов ничего не делает.
+        /// </summary>
+        void SetPackItemOrder(
+            string packId,
+            CharacterAvatarPackScope scope,
+            IReadOnlyList<string> fileNames);
 
         /// <summary>
         /// Перенести пак в другую область, сохранив имя и содержимое: то же

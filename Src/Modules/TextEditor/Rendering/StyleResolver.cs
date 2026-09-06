@@ -52,11 +52,18 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public string? SubstituteFontFamily { get; }
 
+        /// <summary>
+        /// Разрешён ли перенос строки после дефиса внутри слова. Ставится из
+        /// настроек редактора.
+        /// </summary>
+        public bool BreakOnHyphen { get; }
+
         public StyleResolver(
             IEnumerable<DocumentStyle> styles,
             IReadOnlyDictionary<string, string>? scriptFontMap = null,
             bool substituteMissingGlyphs = false,
-            string? substituteFontFamily = null)
+            string? substituteFontFamily = null,
+            bool breakOnHyphen = true)
         {
             _index = new Dictionary<string, DocumentStyle>(
                 System.StringComparer.OrdinalIgnoreCase);
@@ -70,6 +77,7 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             SubstituteMissingGlyphs = substituteMissingGlyphs;
             SubstituteFontFamily = substituteFontFamily;
+            BreakOnHyphen = breakOnHyphen;
         }
 
         // ── Резолверы шрифта ──────────────────────────────────────────────
@@ -137,6 +145,20 @@ namespace Writersword.Modules.TextEditor.Rendering
                     return (float)style.ParagraphProperties.LineSpacingValue.Value;
 
             return FallbackLineSpacing;
+        }
+
+        /// <summary>
+        /// Резолвирует правило межстрочного интервала из цепочки стилей BasedOn.
+        /// Без правила значение интервала пришлось бы считать множителем всегда,
+        /// а «точно» и «минимум» задают высоту строки в пунктах.
+        /// </summary>
+        public LineSpacingRule ResolveLineSpacingRule(string? styleName)
+        {
+            foreach (var style in WalkChain(styleName))
+                if (style.ParagraphProperties?.LineSpacingRule.HasValue == true)
+                    return style.ParagraphProperties.LineSpacingRule.Value;
+
+            return LineSpacingRule.Auto;
         }
 
         /// <summary>

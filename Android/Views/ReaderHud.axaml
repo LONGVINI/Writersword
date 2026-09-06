@@ -85,17 +85,30 @@
 
 				<!-- ═══ КНИГА ═══════════════════════════════════════════ -->
 				<TabItem Header="Книга" Classes="Hud">
-					<Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
-						<ComboBox x:Name="BookBox"
-						          Grid.Column="0"
-						          HorizontalAlignment="Stretch"
-						          PlaceholderText="Книга на телефоне"/>
-						<Button x:Name="OpenButton"
-						        Grid.Column="1"
-						        Classes="Hud"
-						        Content="Открыть"
-						        Margin="8,0,0,0"/>
-					</Grid>
+					<StackPanel Spacing="10" Margin="0,8,0,0">
+						<Grid ColumnDefinitions="*,Auto">
+							<ComboBox x:Name="BookBox"
+							          Grid.Column="0"
+							          HorizontalAlignment="Stretch"
+							          PlaceholderText="Книга на телефоне"/>
+							<Button x:Name="OpenButton"
+							        Grid.Column="1"
+							        Classes="Hud"
+							        Content="Открыть"
+							        Margin="8,0,0,0"/>
+						</Grid>
+
+						<!-- Правка переводит книгу из чтения в черновик: узкой колонки
+						     и полей нет, текст течёт по ширине экрана, касание ставит
+						     каретку и поднимает клавиатуру. -->
+						<StackPanel Orientation="Horizontal" Spacing="8">
+							<ToggleButton x:Name="EditButton" Classes="Hud" Content="Правка"/>
+							<TextBlock Classes="Caption"
+							           MinWidth="0"
+							           TextWrapping="Wrap"
+							           Text="Клавиатура открывается касанием текста"/>
+						</StackPanel>
+					</StackPanel>
 				</TabItem>
 
 				<!-- ═══ ПОДАЧА ══════════════════════════════════════════ -->

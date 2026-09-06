@@ -205,9 +205,21 @@
     <value>Undo</value>
     <comment>Toolbar button tooltip</comment>
   </data>
+  <data name="Export_Dialog_Title" xml:space="preserve">
+    <value>Export document</value>
+    <comment>Export dialog title</comment>
+  </data>
   <data name="Export_Docx" xml:space="preserve">
     <value>Export to Word</value>
     <comment>References tab export menu</comment>
+  </data>
+  <data name="Export_Failed" xml:space="preserve">
+    <value>Export failed: {0}</value>
+    <comment>Export notification</comment>
+  </data>
+  <data name="Export_Failed_NoDialog" xml:space="preserve">
+    <value>Export is unavailable: no save dialog.</value>
+    <comment>Export notification</comment>
   </data>
   <data name="Export_Markdown" xml:space="preserve">
     <value>Export to Markdown</value>
@@ -217,9 +229,45 @@
     <value>Export to PDF</value>
     <comment>References tab export menu</comment>
   </data>
+  <data name="Export_Success" xml:space="preserve">
+    <value>Exported: {0}</value>
+    <comment>Export notification</comment>
+  </data>
   <data name="Export_Txt" xml:space="preserve">
     <value>Export to TXT</value>
     <comment>References tab export menu</comment>
+  </data>
+  <data name="File_Export" xml:space="preserve">
+    <value>Export</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="File_Group" xml:space="preserve">
+    <value>File</value>
+    <comment>Insert tab group header</comment>
+  </data>
+  <data name="File_Import" xml:space="preserve">
+    <value>Import</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="FileType_Docx" xml:space="preserve">
+    <value>Word document (*.docx)</value>
+    <comment>File picker type</comment>
+  </data>
+  <data name="FileType_Import" xml:space="preserve">
+    <value>Documents (*.docx, *.txt)</value>
+    <comment>File picker type</comment>
+  </data>
+  <data name="FileType_Markdown" xml:space="preserve">
+    <value>Markdown (*.md)</value>
+    <comment>File picker type</comment>
+  </data>
+  <data name="FileType_Pdf" xml:space="preserve">
+    <value>PDF document (*.pdf)</value>
+    <comment>File picker type</comment>
+  </data>
+  <data name="FileType_Txt" xml:space="preserve">
+    <value>Plain text (*.txt)</value>
+    <comment>File picker type</comment>
   </data>
   <data name="FindReplace_Title" xml:space="preserve">
     <value>Find and Replace</value>
@@ -320,6 +368,58 @@
   <data name="Format_Underline_Letter" xml:space="preserve">
     <value>U</value>
     <comment>Letter shown on Underline button</comment>
+  </data>
+  <data name="Import_Backup_Created" xml:space="preserve">
+    <value>A restore point was created before the import.</value>
+    <comment>Import notification</comment>
+  </data>
+  <data name="Import_Backup_Failed" xml:space="preserve">
+    <value>The restore point could not be created.</value>
+    <comment>Import notification</comment>
+  </data>
+  <data name="Import_Backup_Failed_Message" xml:space="preserve">
+    <value>A restore point could not be created, so the current text cannot be brought back after the import. Import anyway?</value>
+    <comment>Import dialog</comment>
+  </data>
+  <data name="Import_Backup_Failed_Title" xml:space="preserve">
+    <value>No restore point</value>
+    <comment>Import dialog</comment>
+  </data>
+  <data name="Import_Confirm_Message" xml:space="preserve">
+    <value>Import replaces the whole content of the current document. A restore point is created first. Continue?</value>
+    <comment>Import dialog</comment>
+  </data>
+  <data name="Import_Confirm_Title" xml:space="preserve">
+    <value>Replace document content?</value>
+    <comment>Import dialog</comment>
+  </data>
+  <data name="Import_Dialog_Title" xml:space="preserve">
+    <value>Import document</value>
+    <comment>Import dialog title</comment>
+  </data>
+  <data name="Import_Failed" xml:space="preserve">
+    <value>Import failed: {0}</value>
+    <comment>Import notification</comment>
+  </data>
+  <data name="Import_FileNotFound" xml:space="preserve">
+    <value>File not found.</value>
+    <comment>Import notification</comment>
+  </data>
+  <data name="Import_ImagesNotSaved" xml:space="preserve">
+    <value>Images could not be saved into the project.</value>
+    <comment>Import notification</comment>
+  </data>
+  <data name="Import_ReadOnly" xml:space="preserve">
+    <value>The document is read-only, import is unavailable.</value>
+    <comment>Import notification</comment>
+  </data>
+  <data name="Import_Success" xml:space="preserve">
+    <value>Document imported.</value>
+    <comment>Import notification</comment>
+  </data>
+  <data name="Import_Unsupported" xml:space="preserve">
+    <value>Format {0} is not supported yet.</value>
+    <comment>Import notification</comment>
   </data>
   <data name="Insert_Bookmark" xml:space="preserve">
     <value>Bookmark</value>
@@ -521,6 +621,14 @@
     <value>sec. (0 — disabled)</value>
     <comment>Settings unit label</comment>
   </data>
+  <data name="Settings_BreakOnHyphen" xml:space="preserve">
+    <value>Break lines after a hyphen</value>
+    <comment>Settings checkbox</comment>
+  </data>
+  <data name="Settings_BreakOnHyphenHint" xml:space="preserve">
+    <value>A word with a hyphen may be split across lines: "long-standing" becomes "long-" and "standing". This is how Word lays out text; turn it off when hyphens must not be broken (codes, formulas).</value>
+    <comment>Settings hint</comment>
+  </data>
   <data name="Settings_DefaultLanguage" xml:space="preserve">
     <value>Default language</value>
     <comment>Settings label</comment>
@@ -668,6 +776,46 @@
   <data name="Status_Paragraphs" xml:space="preserve">
     <value>Paragraphs</value>
     <comment>Status bar label</comment>
+  </data>
+  <data name="Status_Lines" xml:space="preserve">
+    <value>Lines</value>
+    <comment>Status bar label</comment>
+  </data>
+  <data name="Stats_Title" xml:space="preserve">
+    <value>Statistics</value>
+    <comment>Document statistics dialog title</comment>
+  </data>
+  <data name="Stats_Pages" xml:space="preserve">
+    <value>Pages</value>
+    <comment>Document statistics row label</comment>
+  </data>
+  <data name="Stats_Words" xml:space="preserve">
+    <value>Words</value>
+    <comment>Document statistics row label</comment>
+  </data>
+  <data name="Stats_CharsNoSpaces" xml:space="preserve">
+    <value>Characters (no spaces)</value>
+    <comment>Document statistics row label</comment>
+  </data>
+  <data name="Stats_CharsWithSpaces" xml:space="preserve">
+    <value>Characters (with spaces)</value>
+    <comment>Document statistics row label</comment>
+  </data>
+  <data name="Stats_Paragraphs" xml:space="preserve">
+    <value>Paragraphs</value>
+    <comment>Document statistics row label</comment>
+  </data>
+  <data name="Stats_Lines" xml:space="preserve">
+    <value>Lines</value>
+    <comment>Document statistics row label</comment>
+  </data>
+  <data name="Stats_DraftHint" xml:space="preserve">
+    <value>Draft and web layouts do not paginate the document, so page and line counts are unavailable.</value>
+    <comment>Document statistics hint shown in draft and web view modes</comment>
+  </data>
+  <data name="Stats_Close" xml:space="preserve">
+    <value>Close</value>
+    <comment>Document statistics dialog button</comment>
   </data>
   <data name="Status_Words" xml:space="preserve">
     <value>Words</value>

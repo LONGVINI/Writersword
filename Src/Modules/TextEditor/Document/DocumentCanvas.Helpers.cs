@@ -206,8 +206,10 @@ namespace Writersword.Modules.TextEditor.Document
                 int maxRow = Math.Max(kv.Value.sr, kv.Value.er);
                 int minCol = Math.Min(kv.Value.sc, kv.Value.ec);
                 int maxCol = Math.Max(kv.Value.sc, kv.Value.ec);
-                if (cell.Row >= minRow && cell.Row <= maxRow
-                    && cell.Column >= minCol && cell.Column <= maxCol)
+                // По пересечению: выделение идёт по клеткам сетки, и объединённая
+                // ячейка часто задета частично.
+                if (cell.Row + cell.RowSpan - 1 >= minRow && cell.Row <= maxRow
+                    && cell.Column + cell.ColSpan - 1 >= minCol && cell.Column <= maxCol)
                     return true;
             }
             return false;
@@ -239,8 +241,8 @@ namespace Writersword.Modules.TextEditor.Document
 
                 foreach (var cell in kv.Key.Cells)
                 {
-                    if (cell.Row < minRow || cell.Row > maxRow) continue;
-                    if (cell.Column < minCol || cell.Column > maxCol) continue;
+                    if (cell.Row + cell.RowSpan - 1 < minRow || cell.Row > maxRow) continue;
+                    if (cell.Column + cell.ColSpan - 1 < minCol || cell.Column > maxCol) continue;
 
                     cell.Paragraphs.Clear();
                     cell.Paragraphs.Add(new Writersword.Modules.TextEditor.Models.Document.ParagraphBlock());
@@ -388,6 +390,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Копирование разрешено и в режиме сравнения (read-only) —
             // оно не меняет данные документа.
             _internalClipboardJson = null;
+            _internalClipboardPlain = null;
             _clipboardCache = null;
             _clipboardImage = null;
             _clipboardImageBytes = null;
@@ -517,6 +520,10 @@ namespace Writersword.Modules.TextEditor.Document
 #pragma warning disable CS0618
                 await clipboard.SetTextAsync(plain);
 #pragma warning restore CS0618
+
+                // Что положили в буфер — то и запомнили. Вставка сверяется с этим
+                // текстом: пока он в буфере, структурная копия описывает именно его.
+                _internalClipboardPlain = plain;
             }
         }
 
@@ -527,38 +534,219 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private async Task CopyImageToClipboard(ImageBlock img)
         {
+            _logger.Debug("[CLIP] Copy image: {File}", img.ImageFileName);
+
             _clipboardImage = CloneImageFull(img);
             _clipboardImageBytes = null;
 
+            byte[]? data = null;
             try
             {
                 var ctx = Writersword.Core.Services.CoreServices
                     .GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()?.ActiveTab?.Context;
-                byte[]? data = ctx?.ReadFile($"TextEditor/Images/{img.ImageFileName}");
-                // Байты — для вставки в другой проект (файл переносится в его ZIP).
-                _clipboardImageBytes = data;
-                var clip = TopLevel.GetTopLevel(this)?.Clipboard;
-                if (data is { Length: > 0 } && clip is not null)
-                {
-                    var dt = new Avalonia.Input.DataTransfer();
-
-                    // CF_DIB — стандартный формат картинки Windows (читают Paint, Word и
-                    // почти все). Строим 32-битный DIB (BITMAPINFOHEADER + пиксели снизу
-                    // вверх) вручную из пикселей: SkiaSharp BMP не кодирует.
-                    try
-                    {
-                        byte[]? dib = BuildDibFromImage(data);
-                        if (dib is { Length: > 0 })
-                            dt.Add(Avalonia.Input.DataTransferItem.Create(ClipboardImageDibFormat, dib));
-                    }
-                    catch { }
-
-                    // Плюс сырой PNG — для приложений, читающих формат «PNG».
-                    dt.Add(Avalonia.Input.DataTransferItem.Create(ClipboardImagePngFormat, data));
-                    await clip.SetDataAsync(dt);
-                }
+                // Байты — для вставки в другой проект (файл переносится в его хранилище).
+                data = ctx?.ReadFile($"TextEditor/Images/{img.ImageFileName}");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "[CLIP] Read image file failed: {File}", img.ImageFileName);
+            }
+
+            _clipboardImageBytes = data;
+            if (data is not { Length: > 0 })
+            {
+                _logger.Debug("[CLIP] Copy image: file not read, {File}", img.ImageFileName);
+                return;
+            }
+
+            var top = TopLevel.GetTopLevel(this);
+            var clip = top?.Clipboard;
+            if (clip is null)
+            {
+                _logger.Debug(
+                    "[CLIP] Copy image: no system clipboard (topLevel={Top})",
+                    top?.GetType().Name ?? "null");
+                return;
+            }
+
+            Avalonia.Media.Imaging.Bitmap? bmp = null;
+            try
+            {
+                using var ms = new System.IO.MemoryStream(data);
+                bmp = new Avalonia.Media.Imaging.Bitmap(ms);
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "[CLIP] Decode image for clipboard failed");
+            }
+
+            // Классический формат Windows строится здесь, своими руками.
+            //
+            // Раньше над этим местом стояло рассуждение, что раскладку по форматам
+            // Windows делает сама Avalonia, если положить DataFormat.Bitmap. Опыт
+            // говорит обратное: внутри редактора вставка работала — она читает свой
+            // же «PNG», — а наружу, в Word, в Paint, в переписку, не выходило ничего.
+            // DataFormat.Bitmap оказался понятием Avalonia, а не буфера обмена.
+            byte[]? dib = BuildDeviceIndependentBitmap(data);
+
+            try
+            {
+                var dt = new Avalonia.Input.DataTransfer();
+                if (bmp is not null)
+                    dt.Add(Avalonia.Input.DataTransferItem.Create(Avalonia.Input.DataFormat.Bitmap, bmp));
+
+                // CF_DIB — то, чем берут картинку Word, Paint и почти всё, что
+                // старше браузера.
+                if (dib is not null)
+                    dt.Add(Avalonia.Input.DataTransferItem.Create(ClipboardImageDibFormat, dib));
+
+                // Плюс сырой PNG — приложениям, читающим формат «PNG». Он же служит
+                // признаком владения: вставка сверяет байты из буфера с
+                // _clipboardImageBytes и по совпадению понимает, что там всё ещё
+                // лежит именно эта картинка.
+                dt.Add(Avalonia.Input.DataTransferItem.Create(ClipboardImagePngFormat, data));
+
+                _logger.Debug(
+                    "[CLIP] Copy image: writing {Len} bytes to clipboard, bitmap={HasBitmap}, dib={DibLen}",
+                    data.Length, bmp is not null, dib?.Length ?? -1);
+                await clip.SetDataAsync(dt);
+                _logger.Debug("[CLIP] Image copied");
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "[CLIP] SetDataAsync failed, falling back to bitmap only");
+            }
+
+            // Резерв: хотя бы пиксели должны попасть в буфер, иначе картинку не вставить
+            // никуда за пределами редактора.
+            if (bmp is null) return;
+            try
+            {
+                await clip.SetBitmapAsync(bmp);
+                _logger.Debug("[CLIP] Image copied as bitmap only: {Len} bytes", data.Length);
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "[CLIP] SetBitmapAsync failed");
+            }
+        }
+
+        /// <summary>
+        /// Собирает CF_DIB из байтов PNG.
+        ///
+        /// CF_DIB — это BITMAPINFOHEADER и следом пиксели, БЕЗ файлового заголовка
+        /// BITMAPFILEHEADER: тот добавляет лишь тот, кто пишет .bmp на диск, а в
+        /// буфере обмена его быть не должно — с ним картинку не примет никто.
+        ///
+        /// Строки идут снизу вверх, и это задаётся положительной высотой в
+        /// заголовке. Отрицательную высоту — строки сверху вниз — понимают не все,
+        /// а у непонявших картинка встаёт вверх ногами.
+        ///
+        /// Прозрачность подкладывается белым. Альфа в 32-битном DIB формально есть,
+        /// но читают её единицы, а остальные показывают на месте прозрачных точек
+        /// чёрное. Белое и меньшее из зол, и совпадает с бумагой документа.
+        ///
+        /// Подкладка считается вручную, в том же проходе, где строки переставляются
+        /// снизу вверх. Первым заходом она делалась холстом Skia поверх растра с
+        /// непредумноженной альфой — и картинка получалась целиком чёрной: Skia
+        /// рисует в предумноженной альфе, и холст поверх непредумноженного растра
+        /// даёт мусор. Проход по точкам от типа альфы не зависит вовсе, лишь бы он
+        /// был известен, — а он известен из самого растра.
+        /// </summary>
+        private byte[]? BuildDeviceIndependentBitmap(byte[] png)
+        {
+            try
+            {
+                using var decoded = SKBitmap.Decode(png);
+                if (decoded is null || decoded.Width <= 0 || decoded.Height <= 0)
+                    return null;
+
+                // Порядок каналов приводится к тому, в каком его ждёт DIB. Копия
+                // делается всегда: у PNG он бывает и RGBA, и с иным типом альфы.
+                using var image = decoded.Copy(SKColorType.Bgra8888);
+                if (image is null)
+                    return null;
+
+                bool premultiplied = image.Info.AlphaType == SKAlphaType.Premul;
+
+                int width = image.Width;
+                int height = image.Height;
+                int stride = width * 4;
+
+                const int HeaderSize = 40;
+                var result = new byte[HeaderSize + stride * height];
+
+                void PutInt(int offset, int value)
+                    => BitConverter.TryWriteBytes(result.AsSpan(offset, 4), value);
+
+                void PutShort(int offset, short value)
+                    => BitConverter.TryWriteBytes(result.AsSpan(offset, 2), value);
+
+                PutInt(0, HeaderSize);          // biSize
+                PutInt(4, width);               // biWidth
+                PutInt(8, height);              // biHeight, положительная — снизу вверх
+                PutShort(12, 1);                // biPlanes
+                PutShort(14, 32);               // biBitCount
+                PutInt(16, 0);                  // biCompression = BI_RGB
+                PutInt(20, stride * height);    // biSizeImage
+                PutInt(24, 0);                  // biXPelsPerMeter
+                PutInt(28, 0);                  // biYPelsPerMeter
+                PutInt(32, 0);                  // biClrUsed
+                PutInt(36, 0);                  // biClrImportant
+
+                var pixels = image.GetPixelSpan();
+
+                for (int row = 0; row < height; row++)
+                {
+                    var from = pixels.Slice((height - 1 - row) * stride, stride);
+                    var to = result.AsSpan(HeaderSize + row * stride, stride);
+
+                    for (int x = 0; x < stride; x += 4)
+                    {
+                        byte b = from[x];
+                        byte g = from[x + 1];
+                        byte r = from[x + 2];
+                        int a = from[x + 3];
+
+                        if (a < 255)
+                        {
+                            int white = 255 - a;
+
+                            if (premultiplied)
+                            {
+                                // Каналы уже умножены на альфу — белое просто
+                                // добавляется тем, чего до непрозрачности не хватает.
+                                b = (byte)(b + white);
+                                g = (byte)(g + white);
+                                r = (byte)(r + white);
+                            }
+                            else
+                            {
+                                b = (byte)((b * a + 255 * white) / 255);
+                                g = (byte)((g * a + 255 * white) / 255);
+                                r = (byte)((r * a + 255 * white) / 255);
+                            }
+                        }
+
+                        to[x] = b;
+                        to[x + 1] = g;
+                        to[x + 2] = r;
+
+                        // Непрозрачность выставляется всем точкам: подкладка уже
+                        // сделана, и прежнее значение сбивало бы с толку тех, кто
+                        // альфу всё-таки читает.
+                        to[x + 3] = 255;
+                    }
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "[CLIP] Building DIB failed");
+                return null;
+            }
         }
 
         /// <summary>Полная копия блока картинки со всеми свойствами. Id — новый (по умолчанию).</summary>
@@ -572,6 +760,7 @@ namespace Writersword.Modules.TextEditor.Document
             Opacity = s.Opacity,
             BorderColor = s.BorderColor,
             BorderThicknessPt = s.BorderThicknessPt,
+            BorderAlign = s.BorderAlign,
             FlipHorizontal = s.FlipHorizontal,
             FlipVertical = s.FlipVertical,
             CropLeftFrac = s.CropLeftFrac,
@@ -735,9 +924,14 @@ namespace Writersword.Modules.TextEditor.Document
                 await CopyImageToClipboard(_selectedImage);
                 var toRemove = _selectedImage;
                 ExitImageCropMode(apply: false);
+                MoveCaretToImage(toRemove);
+
+                BeginEdit("Вырезание изображения");
                 _selectedImage = null;
                 DocVm?.RemoveImage(toRemove);
                 ImageSelectionChanged?.Invoke(false);
+                CommitEdit();
+
                 InvalidateFull();
                 return;
             }
@@ -797,6 +991,7 @@ namespace Writersword.Modules.TextEditor.Document
             Opacity = src.Opacity,
             BorderColor = src.BorderColor,
             BorderThicknessPt = src.BorderThicknessPt,
+            BorderAlign = src.BorderAlign,
             FlipHorizontal = src.FlipHorizontal,
             FlipVertical = src.FlipVertical,
             CropLeftFrac = src.CropLeftFrac,
@@ -939,19 +1134,101 @@ namespace Writersword.Modules.TextEditor.Document
             return true;
         }
 
+        /// <summary>
+        /// Забывает внутренние копии буфера, если системный буфер уже занят чем-то чужим.
+        /// Копия картинки статична и живёт до следующего копирования внутри редактора,
+        /// структурная копия текста — до следующего Ctrl+C; копирование в другой программе
+        /// их не трогало, и вставка подменяла содержимое буфера прежней картинкой документа
+        /// или прежним фрагментом текста. Признак «наше» — совпадение с тем, что редактор
+        /// сам положил в буфер: у картинки байты PNG, у текста простой текст.
+        /// </summary>
+        private async Task DropStaleClipboardAsync()
+        {
+            bool checkImage = _clipboardImage is not null && _clipboardImageBytes is { Length: > 0 };
+            bool checkText = !string.IsNullOrEmpty(_internalClipboardJson) && _internalClipboardPlain is not null;
+            if (!checkImage && !checkText) return;
+
+            var clip = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clip is null) return;
+
+            if (checkImage)
+            {
+                byte[]? png = null;
+                try { png = await clip.TryGetValueAsync(ClipboardImagePngFormat); }
+                catch { png = null; }
+
+                bool ours = png is not null && png.AsSpan().SequenceEqual(_clipboardImageBytes);
+                _logger.Debug(
+                    "[CLIP] Image paste source: ours={Ours}, clipboard={ClipLen} bytes, copied={CopyLen} bytes",
+                    ours, png?.Length ?? -1, _clipboardImageBytes!.Length);
+
+                if (!ours)
+                {
+                    _clipboardImage = null;
+                    _clipboardImageBytes = null;
+                }
+            }
+
+            if (checkText)
+            {
+                string? plain = null;
+                try
+                {
+#pragma warning disable CS0618
+                    plain = await clip.TryGetTextAsync();
+#pragma warning restore CS0618
+                }
+                catch { plain = null; }
+
+                if (!string.Equals(plain, _internalClipboardPlain, StringComparison.Ordinal))
+                {
+                    _internalClipboardJson = null;
+                    _internalClipboardPlain = null;
+                }
+            }
+        }
+
         private async Task PasteAsync()
         {
             if (IsEditingBlocked) return;
 
+            // Системный буфер мог быть перезаписан другой программой — снимком экрана,
+            // картинкой или текстом из браузера. Внутренние копии об этом не знают,
+            // поэтому сверяем их с буфером до того, как хоть одна из них будет вставлена.
+            await DropStaleClipboardAsync();
+
             // Внутренняя копия картинки (её положил Ctrl+C по картинке) — вставляем её.
             // Внутренний буфер сбрасывается при любом другом копировании внутри
             // редактора (текст, ячейки), так что устаревания в обычном сценарии нет.
-            if (_clipboardImage is not null && DocVm is not null && !IsInCell(_caretPara))
+            if (_clipboardImage is not null && DocVm is not null)
             {
+                // В клетке таблицы картинка встаёт только в текст.
+                //
+                // Плавающая картинка привязана к странице и живёт в её координатах, а
+                // клетка своего места на странице не знает: привязанная копия внутри
+                // клетки оказалась бы где угодно, только не в ней, — и ложилась бы
+                // поверх соседних картинок. Поэтому обтекание здесь снимается, а всё
+                // остальное — рамка, цвет, наклон, отражение, обрезка, размер —
+                // переносится как есть.
+                //
+                // Раньше вставка в клетку сюда не заходила вовсе: условие исключало
+                // клетки, и картинка уходила ниже, на путь «просто картинка из
+                // системного буфера». Тот знает одни байты, и все свойства терялись.
+                ImageBlock template = _clipboardImage;
+
+                if (IsInCell(_caretPara) && template.WrapMode != WrapMode.Inline)
+                {
+                    template = CloneImageFull(template);
+                    template.WrapMode = WrapMode.Inline;
+                    template.PinnedPage = 0;
+                    template.OffsetXPt = 0.0;
+                    template.OffsetYPt = 0.0;
+                }
+
                 // Плавающая картинка (Обтекание/За текстом/Поверх) вставляется РОВНО туда,
                 // где стоит курсор: считаем смещение от верха текстовой области страницы
                 // каретки. Inline-картинка встаёт в поток у каретки (смещения не нужны).
-                bool floating = _clipboardImage.WrapMode != WrapMode.Inline;
+                bool floating = template.WrapMode != WrapMode.Inline;
                 double offX = 20.0, offY = 20.0;
                 if (floating && _caretPara >= 0 && _caretPara < _layouts.Count)
                 {
@@ -967,8 +1244,8 @@ namespace Writersword.Modules.TextEditor.Document
                 // свойства — так вставка работает и в другом проекте. Якорь потока —
                 // абзац каретки (передаётся внутри InsertImageWithProps через _activeParagraph).
                 ImageBlock? pasted = _clipboardImageBytes is { Length: > 0 }
-                    ? DocVm.InsertImageWithProps(_clipboardImageBytes, _clipboardImage, offX, offY)
-                    : DocVm.InsertImageClone(_clipboardImage);
+                    ? DocVm.InsertImageWithProps(_clipboardImageBytes, template, offX, offY)
+                    : DocVm.InsertImageClone(template);
                 if (pasted is not null)
                 {
                     ExitImageCropMode(apply: false);
@@ -992,12 +1269,7 @@ namespace Writersword.Modules.TextEditor.Document
                     if (bmp is not null)
                     {
                         byte[]? bytes = null;
-                        try
-                        {
-                            using var ms = new System.IO.MemoryStream();
-                            bmp.Save(ms);
-                            bytes = ms.ToArray();
-                        }
+                        try { bytes = EncodeClipboardBitmapPng(bmp); }
                         catch { bytes = null; }
                         finally { bmp.Dispose(); }
 
@@ -1268,6 +1540,40 @@ namespace Writersword.Modules.TextEditor.Document
         /// Единый HitTest для всех элементов _layouts (параграфы и ячейки таблиц).
         /// Использует pl.AbsXPt — абсолютный X начала текстовой зоны.
         /// </summary>
+        /// <summary>
+        /// Кодирует картинку из буфера обмена в PNG.
+        ///
+        /// Пиксели забираются напрямую и кодируются Skia, а не через Bitmap.Save:
+        /// та перегрузка объявлена устаревшей, а её замена принимает параметры
+        /// кодировщика, которых здесь всё равно нет — нужен обычный PNG без настроек.
+        /// Skia в модуле и так рисует всё остальное, так что новой зависимости нет.
+        ///
+        /// Формат пикселей задан явно (BGRA, прямая альфа): именно в нём Avalonia
+        /// отдаёт содержимое буфера, и угадывание здесь давало бы перевёрнутые
+        /// каналы у вставленных скриншотов.
+        /// </summary>
+        private static byte[]? EncodeClipboardBitmapPng(Avalonia.Media.Imaging.Bitmap bitmap)
+        {
+            var size = bitmap.PixelSize;
+            if (size.Width <= 0 || size.Height <= 0) return null;
+
+            var info = new SKImageInfo(size.Width, size.Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
+            using var skBitmap = new SKBitmap(info);
+
+            var pixels = skBitmap.GetPixels();
+            if (pixels == IntPtr.Zero) return null;
+
+            bitmap.CopyPixels(
+                new Avalonia.PixelRect(0, 0, size.Width, size.Height),
+                pixels,
+                info.BytesSize,
+                info.RowBytes);
+
+            using var image = SKImage.FromBitmap(skBitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            return data?.ToArray();
+        }
+
         private (int parIdx, int charIdx) HitTest(Point ptLogPx)
         {
             List<ParaLayout> layouts;
@@ -1434,6 +1740,46 @@ namespace Writersword.Modules.TextEditor.Document
                     {
                         bestXDist = xDist;
                         bestIdx = i;
+                    }
+                }
+            }
+
+            // ── Клик выше таблицы: каретка идёт в ближайшую строку НАД точкой ──
+            // Верх страницы может быть занят обтекаемой картинкой: своей каретки у
+            // неё нет, и клик по ней или по пустому месту рядом не попадает ни в
+            // одну строку. Ближайшей по Y оказывалась первая клетка таблицы, и
+            // каретка уходила внутрь таблицы вместо абзаца над ней — сдвинуть
+            // таблицу вниз было нечем.
+            //
+            // Работает только для точки ВНЕ любой таблицы: клик в верхнее поле
+            // ячейки — это клик в ячейку, и уводить из неё каретку нельзя.
+            if (layouts[bestIdx].Cell != null && yPt < layouts[bestIdx].Ypt)
+            {
+                bool insideAnyTable = false;
+                foreach (var te in tables)
+                {
+                    int rowTo = te.RowTo < 0 ? te.Layout.Rows.Count : te.RowTo;
+                    float sliceH = 0f;
+                    for (int ri = te.RowFrom; ri < rowTo && ri < te.Layout.Rows.Count; ri++)
+                        sliceH += te.Layout.Rows[ri].HeightPt;
+
+                    if (yPt < te.Ypt || yPt > te.Ypt + sliceH) continue;
+                    if (xPt < te.XPt || xPt > te.XPt + te.Layout.TotalWidthPt) continue;
+
+                    insideAnyTable = true;
+                    break;
+                }
+
+                if (!insideAnyTable)
+                {
+                    // Ближайший абзац вне таблиц выше точки: между кликом и им может
+                    // стоять сколько угодно слайсов таблиц, поэтому идём до первого
+                    // не-ячеечного, а не смотрим только предыдущий.
+                    for (int i = bestIdx - 1; i >= 0; i--)
+                    {
+                        if (layouts[i].Cell != null) continue;
+                        _caretLineHint = -1;
+                        return (i, layouts[i].Vm.PlainText?.Length ?? 0);
                     }
                 }
             }
@@ -1829,6 +2175,7 @@ namespace Writersword.Modules.TextEditor.Document
             _caretTimer.Stop();
             _caretTimer.Start();
             ScrollToCaret();
+            NotifyInputMethod();
 
             // Уведомляем вертикальную линейку о странице каретки
             if (_caretPara >= 0 && _caretPara < _layouts.Count)
@@ -1843,6 +2190,7 @@ namespace Writersword.Modules.TextEditor.Document
             _caretVisible = true;
             _caretTimer.Stop();
             _caretTimer.Start();
+            NotifyInputMethod();
 
             if (_caretPara >= 0 && _caretPara < _layouts.Count)
                 CaretPageChanged?.Invoke(_layouts[_caretPara].PageIndex);

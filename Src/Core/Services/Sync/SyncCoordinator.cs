@@ -54,7 +54,22 @@ namespace Writersword.Core.Services.Sync
         /// <summary>Минимальный промежуток между сверками истории.</summary>
         private static readonly TimeSpan HistoryInterval = TimeSpan.FromHours(1);
 
+        /// <summary>
+        /// Как часто смотреть, кто ещё держит книгу.
+        ///
+        /// Пятнадцать секунд — не роскошь: спрашивается файл отметок с условием
+        /// по версии, и неизменившийся сервер не отдаёт вовсе, ни тела, ни
+        /// трафика. Своя отметка при этом обновляется на общем проходе, раз в
+        /// пару минут: писать её четыре раза в минуту незачем.
+        /// </summary>
+        private static readonly TimeSpan PresenceInterval = TimeSpan.FromSeconds(15);
+
+        /// <summary>Кто держит книгу, по последнему опросу. Ключ — путь к книге.</summary>
+        private readonly Dictionary<string, DevicePresence> _foreign =
+            new(StringComparer.OrdinalIgnoreCase);
+
         private CancellationTokenSource? _loop;
+        private CancellationTokenSource? _presenceLoop;
         private bool _disposed;
 
         /// <summary>
@@ -80,6 +95,18 @@ namespace Writersword.Core.Services.Sync
         /// значок в строке состояния и спрашивать ли автора.
         /// </summary>
         public event EventHandler<ProjectSyncState>? ProjectStateChanged;
+
+        /// <summary>
+        /// Книга открыта ещё на одном устройстве.
+        ///
+        /// Сводить две правки одного текста автоматически нельзя — выбор
+        /// принадлежит автору. Но предупредить, что вторая сторона сейчас за
+        /// работой, можно заранее, и тогда до расхождения дело не дойдёт.
+        ///
+        /// Событие, а не запрет: программа не вправе запирать книгу, потому что
+        /// однажды запрёт её насовсем — устройство умирает, не убрав отметку.
+        /// </summary>
+        public event EventHandler<ForeignPresenceEventArgs>? ForeignPresenceDetected;
 
         /// <summary>Работает ли фоновая проверка.</summary>
         public bool IsRunning => _loop is not null;
@@ -116,6 +143,9 @@ namespace Writersword.Core.Services.Sync
             _loop = new CancellationTokenSource();
             _ = RunLoopAsync(settings.PollInterval, _loop.Token);
 
+            _presenceLoop = new CancellationTokenSource();
+            _ = RunPresenceLoopAsync(_presenceLoop.Token);
+
             _log.Information("Sync coordinator started, interval {Interval}", settings.PollInterval);
         }
 
@@ -130,6 +160,14 @@ namespace Writersword.Core.Services.Sync
 
             loop.Cancel();
             loop.Dispose();
+
+            var presence = _presenceLoop;
+            _presenceLoop = null;
+            presence?.Cancel();
+            presence?.Dispose();
+
+            lock (_foreign) _foreign.Clear();
+
             _log.Information("Sync coordinator stopped");
         }
 
@@ -185,6 +223,107 @@ namespace Writersword.Core.Services.Sync
             }
         }
 
+        /// <summary>
+        /// Кто ещё держит эту книгу, по последнему опросу. null — никто.
+        /// </summary>
+        public DevicePresence? ForeignOn(string localPath)
+        {
+            lock (_foreign)
+                return _foreign.TryGetValue(localPath, out var found) ? found : null;
+        }
+
+        /// <summary>
+        /// Быстрый опрос отметок.
+        ///
+        /// Отдельным циклом, а не в общем проходе: общий ходит раз в пару минут,
+        /// потому что отправляет книги, а узнать, что за ту же книгу сел кто-то
+        /// ещё, хочется до того, как оба напишут по абзацу. Опрос ничего не
+        /// отправляет и спрашивает с условием по версии — неизменившийся файл
+        /// сервер не отдаёт.
+        /// </summary>
+        private async Task RunPresenceLoopAsync(CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try { await Task.Delay(PresenceInterval, ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) { return; }
+
+                try
+                {
+                    await PeekPresenceAsync(ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug(ex, "Presence peek tick failed");
+                }
+            }
+        }
+
+        private async Task PeekPresenceAsync(CancellationToken ct)
+        {
+            var sync = _factory.Current;
+            if (sync is null || !sync.IsConnected) return;
+
+            foreach (var path in _openProjects().Where(p => !string.IsNullOrWhiteSpace(p)).Distinct())
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var name = Path.GetFileNameWithoutExtension(path);
+                var report = await sync
+                    .PeekPresenceAsync(name, DeviceIdentity.Id, ct)
+                    .ConfigureAwait(false);
+
+                // null означает «ничего не изменилось» — не то же самое, что
+                // «никого нет»: снимок трогать нельзя.
+                if (report is null) continue;
+
+                UpdateForeign(path, report.Other);
+            }
+        }
+
+        /// <summary>
+        /// Обновляет снимок и сообщает о приходе. О приходе — один раз: повторять
+        /// одно и то же каждые пятнадцать секунд значит приучить человека
+        /// отмахиваться, не читая.
+        /// </summary>
+        private void UpdateForeign(string path, DevicePresence? other)
+        {
+            bool arrived;
+
+            lock (_foreign)
+            {
+                _foreign.TryGetValue(path, out var known);
+
+                if (other is null)
+                {
+                    _foreign.Remove(path);
+                    arrived = false;
+                }
+                else
+                {
+                    arrived = known is null
+                              || !string.Equals(known.DeviceId, other.DeviceId, StringComparison.Ordinal)
+                              || (other.Editing && !known.Editing);
+
+                    _foreign[path] = other;
+                }
+            }
+
+            if (!arrived || other is null) return;
+
+            _log.Warning("Project {Path} is also open on {Device}", path, other);
+
+            ForeignPresenceDetected?.Invoke(this, new ForeignPresenceEventArgs
+            {
+                LocalPath = path,
+                Other = other
+            });
+        }
+
         private async Task TickAsync(CancellationToken ct)
         {
             var sync = _factory.Current;
@@ -204,6 +343,8 @@ namespace Writersword.Core.Services.Sync
                 // машине он приходит с сервера один раз, а склад остаётся пустым.
                 if (DueForHistory(path))
                     await SyncHistoryAsync(sync, path, ct).ConfigureAwait(false);
+
+                await AnnounceAsync(sync, path, ct).ConfigureAwait(false);
             }
         }
 
@@ -301,6 +442,45 @@ namespace Writersword.Core.Services.Sync
                 _lastSeenWrite.Remove(path);
             }
         }
+
+        /// <summary>
+        /// Объявить, что книга открыта здесь, и посмотреть, открыта ли она ещё где-то.
+        ///
+        /// Отметка обновляется на каждом проходе: она протухает сама через
+        /// несколько минут, и редкое обновление объявляло бы живое устройство
+        /// мёртвым. Работа здесь считается правкой: настольная программа книгу
+        /// не только показывает.
+        ///
+        /// Решение, говорить ли о чужом присутствии, принимает UpdateForeign — он
+        /// же обслуживает быстрый опрос, и правило там одно на обоих.
+        /// </summary>
+        private async Task AnnounceAsync(IProjectSyncService sync, string path, CancellationToken ct)
+        {
+            try
+            {
+                var name = Path.GetFileNameWithoutExtension(path);
+
+                var self = new DevicePresence
+                {
+                    DeviceId = DeviceIdentity.Id,
+                    DeviceName = DeviceIdentity.Name,
+                    Kind = DeviceIdentity.Kind,
+                    Editing = true
+                };
+
+                var report = await sync.AnnouncePresenceAsync(name, self, ct).ConfigureAwait(false);
+
+                // Объявление заодно приносит и чужие отметки — снимок обновляется
+                // отсюда же, чтобы быстрому опросу не пришлось ходить лишний раз
+                // сразу после общего прохода.
+                UpdateForeign(path, report.Other);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _log.Debug(ex, "Presence announce failed for {Path}", path);
+            }
+        }
+
 
         /// <summary>
         /// Пора ли сверять историю этого проекта.

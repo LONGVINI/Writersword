@@ -48,7 +48,19 @@
 					<Border Width="64" Height="64" CornerRadius="32"
 					        ClipToBounds="True"
 					        Background="{DynamicResource BgSurfaceBrush}">
-						<Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+						<Panel>
+							<!-- Пока миниатюра строится в стороне от UI-потока, на её
+							     месте стоит значок. Раньше плитка раскодировала
+							     картинку прямо при создании, и окно не показывалось,
+							     пока не построит все до единой. -->
+							<PathIcon Width="20" Height="20"
+							          HorizontalAlignment="Center"
+							          VerticalAlignment="Center"
+							          IsVisible="{Binding !HasThumbnail}"
+							          Foreground="{DynamicResource TextDisabledBrush}"
+							          Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+							<Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+						</Panel>
 					</Border>
 				</Button>
 
@@ -386,15 +398,18 @@
 										        behaviours:TooltipBehavior.Description="Список забудет порядок обращений. Сами картинки и аватарки персонажей останутся на местах"/>
 									</Grid>
 								</Border>
-								<ItemsControl ItemsSource="{Binding VisibleRecentAvatars}"
+								<ItemsRepeater ItemsSource="{Binding VisibleRecentAvatars}"
 								              ItemTemplate="{StaticResource AvatarTileTemplate}"
 								              Margin="17,4,17,10">
-									<ItemsControl.ItemsPanel>
-										<ItemsPanelTemplate>
-											<WrapPanel Orientation="Horizontal"/>
-										</ItemsPanelTemplate>
-									</ItemsControl.ItemsPanel>
-								</ItemsControl>
+									<ItemsRepeater.Layout>
+										<UniformGridLayout Orientation="Horizontal"
+										                   MinItemWidth="70"
+										                   MinItemHeight="70"
+										                   MinColumnSpacing="0"
+										                   MinRowSpacing="0"
+										                   ItemsStretch="None"/>
+									</ItemsRepeater.Layout>
+								</ItemsRepeater>
 							</StackPanel>
 
 							<!-- Аватарки, лежащие в самом проекте -->
@@ -408,15 +423,18 @@
 										</Border>
 									</StackPanel>
 								</Border>
-								<ItemsControl ItemsSource="{Binding VisibleProjectAvatars}"
+								<ItemsRepeater ItemsSource="{Binding VisibleProjectAvatars}"
 								              ItemTemplate="{StaticResource AvatarTileTemplate}"
 								              Margin="17,4,17,10">
-									<ItemsControl.ItemsPanel>
-										<ItemsPanelTemplate>
-											<WrapPanel Orientation="Horizontal"/>
-										</ItemsPanelTemplate>
-									</ItemsControl.ItemsPanel>
-								</ItemsControl>
+									<ItemsRepeater.Layout>
+										<UniformGridLayout Orientation="Horizontal"
+										                   MinItemWidth="70"
+										                   MinItemHeight="70"
+										                   MinColumnSpacing="0"
+										                   MinRowSpacing="0"
+										                   ItemsStretch="None"/>
+									</ItemsRepeater.Layout>
+								</ItemsRepeater>
 							</StackPanel>
 
 							<!-- Папки: локальные, глобальные, встроенные.
@@ -438,15 +456,18 @@
 													</Border>
 												</StackPanel>
 											</Border>
-											<ItemsControl ItemsSource="{Binding Items}"
+											<ItemsRepeater ItemsSource="{Binding Items}"
 											              ItemTemplate="{StaticResource AvatarTileTemplate}"
 											              Margin="17,4,17,10">
-												<ItemsControl.ItemsPanel>
-													<ItemsPanelTemplate>
-														<WrapPanel Orientation="Horizontal"/>
-													</ItemsPanelTemplate>
-												</ItemsControl.ItemsPanel>
-											</ItemsControl>
+												<ItemsRepeater.Layout>
+													<UniformGridLayout Orientation="Horizontal"
+													                   MinItemWidth="70"
+													                   MinItemHeight="70"
+													                   MinColumnSpacing="0"
+													                   MinRowSpacing="0"
+													                   ItemsStretch="None"/>
+												</ItemsRepeater.Layout>
+											</ItemsRepeater>
 										</StackPanel>
 									</DataTemplate>
 								</ItemsControl.ItemTemplate>

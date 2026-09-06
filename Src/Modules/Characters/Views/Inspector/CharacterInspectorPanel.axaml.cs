@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
@@ -56,6 +56,7 @@ namespace Writersword.Modules.Characters.Views.Inspector
             if (DataContext is CharacterInspectorViewModel vm)
             {
                 vm.QuickAvatars.RequestCropForRef = CropStoredAsync;
+                vm.RequestCropForCard = CropCardAsync;
                 vm.QuickAvatars.RequestScrollToFolder = ScrollToFolder;
             }
         }
@@ -320,6 +321,51 @@ namespace Writersword.Modules.Characters.Views.Inspector
         {
             var host = this.FindAncestorOfType<CharactersModuleView>();
             return host?.FindControl<CharacterAvatarCropOverlay>("AvatarCropOverlayControl");
+        }
+
+        /// <summary>
+        /// Обрезка аватарки карточки. От CropStoredAsync отличается двумя
+        /// вещами: окно открывается сразу на той форме, которая у карточки
+        /// выбрана — кружок или полоска, — и справа показывается сама карточка
+        /// с её цветом и кольцом, чтобы кадр подбирался по тому, как он
+        /// в итоге и будет выглядеть.
+        /// </summary>
+        private async Task<CharacterAvatarCropPair?> CropCardAsync(
+            string avatarRef, bool openOnStrip, object? cardContext)
+        {
+            var avatarService = (DataContext as CharacterInspectorViewModel)?.QuickAvatars.AvatarService;
+            if (avatarService == null) return null;
+
+            var overlay = FindCropOverlay();
+            if (overlay == null) return null;
+
+            var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
+            var bytes = avatarService.LoadAvatarBytes(baseRef);
+            if (bytes == null) return null;
+
+            Bitmap? bitmap = null;
+            try
+            {
+                using var ms = new MemoryStream(bytes);
+                bitmap = new Bitmap(ms);
+
+                return await overlay.ShowAsync(
+                    bitmap,
+                    CharacterAvatarRef.CropOf(avatarRef),
+                    null,
+                    cardContext,
+                    CharacterAvatarRef.StripCropOf(avatarRef),
+                    openOnStrip);
+            }
+            catch (Exception ex)
+            {
+                _dropLogger.Error(ex, "Card avatar crop failed for {Ref}", avatarRef);
+                return null;
+            }
+            finally
+            {
+                bitmap?.Dispose();
+            }
         }
 
         private async Task<CharacterAvatarCropPair?> CropStoredAsync(string avatarRef)

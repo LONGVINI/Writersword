@@ -32,50 +32,17 @@
 
 	<UserControl.Styles>
 
-		<!-- Сегментированный переключатель области — как у палитр. -->
-		<Style Selector="Border.scopeTrack">
-			<Setter Property="CornerRadius" Value="999"/>
-			<Setter Property="Padding" Value="2"/>
-			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
-			<Setter Property="VerticalAlignment" Value="Center"/>
-		</Style>
-		<Style Selector="Button.scope">
-			<Setter Property="Padding" Value="14,4"/>
-			<Setter Property="MinWidth" Value="60"/>
-			<Setter Property="MinHeight" Value="0"/>
-			<Setter Property="CornerRadius" Value="999"/>
-			<Setter Property="BorderThickness" Value="0"/>
-			<Setter Property="FontSize" Value="11"/>
-			<Setter Property="HorizontalContentAlignment" Value="Center"/>
-			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-		</Style>
-		<Style Selector="Button.scope /template/ ContentPresenter">
+		<!-- Переключатель области берётся общим стилем
+		     (Styles/Controls/ScopeToggle.axaml) — тем же, что и у палитр цветов.
+		     Здесь лежала своя копия, и она разошлась с той: другой фон дорожки,
+		     другие отступы и обратный порядок сторон. -->
+
+		<!-- Обёртка для подсказки над выключенной кнопкой. Выключенный контрол
+		     не получает событий мыши, и подсказка на нём самом не всплывает —
+		     а именно у выключенной кнопки объяснение нужнее всего. -->
+		<Style Selector="Border.tipHost">
 			<Setter Property="Background" Value="Transparent"/>
-			<Setter Property="BorderBrush" Value="Transparent"/>
-			<Setter Property="BorderThickness" Value="0"/>
-			<Setter Property="CornerRadius" Value="999"/>
-			<Setter Property="Transitions">
-				<Transitions>
-					<BrushTransition Property="Background" Duration="0:0:0.15"/>
-				</Transitions>
-			</Setter>
-		</Style>
-		<Style Selector="Button.scope:not(.active):pointerover /template/ ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
-		</Style>
-		<Style Selector="Button.scope.local.active">
-			<Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
-			<Setter Property="FontWeight" Value="SemiBold"/>
-		</Style>
-		<Style Selector="Button.scope.local.active /template/ ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
-		</Style>
-		<Style Selector="Button.scope.global.active">
-			<Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
-			<Setter Property="FontWeight" Value="SemiBold"/>
-		</Style>
-		<Style Selector="Button.scope.global.active /template/ ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
 		</Style>
 
 		<!-- Круглая кнопка-иконка. Тот же размер и обводка, что у «плюса»
@@ -157,29 +124,25 @@
 			<Setter Property="BorderThickness" Value="1.5"/>
 		</Style>
 
-		<Style Selector="Border.scopeChip">
-			<Setter Property="CornerRadius" Value="999"/>
-			<Setter Property="Padding" Value="7,1"/>
+		<!-- Область хранения показывается значком, а не подписью. Значки взяты
+		     у списка палитр (Styles/UserControls/PaletteManagerView.axaml):
+		     глобус — общее для всех проектов, папка — внутри проекта, и цвета
+		     кистей те же. Слово «глобальная» рядом с именем папки занимало
+		     больше места, чем само имя, и в ленте из десятка папок читались одни
+		     подписи. Размер значка 14 при коробке 16: при 15 отступ выходит
+		     дробным и значок садится на полпикселя вбок.
+		     Замок — встроенная папка: у палитр такого случая нет, взять было
+		     неоткуда. Что означает каждый значок, написано в подсказке папки. -->
+		<Style Selector="Panel.scopeIcon">
+			<Setter Property="Width" Value="16"/>
+			<Setter Property="Height" Value="16"/>
 			<Setter Property="VerticalAlignment" Value="Center"/>
-			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
-			<Setter Property="TextElement.Foreground" Value="{DynamicResource TextMutedBrush}"/>
-		</Style>
-		<Style Selector="Border.scopeChip.local">
-			<Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
-			<Setter Property="TextElement.Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
-		</Style>
-		<Style Selector="Border.scopeChip.global">
-			<Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
-			<Setter Property="TextElement.Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
-		</Style>
-		<Style Selector="TextBlock.scopeChipText">
-			<Setter Property="FontSize" Value="10"/>
-			<Setter Property="FontWeight" Value="SemiBold"/>
 		</Style>
 
-		<!-- Плитка картинки: одинаковая коробка у всех, круг по центру,
-		     подпись в одну строку. Так ряды выстраиваются ровно, какой бы
-		     длины ни оказались имена файлов. -->
+		<!-- Плитка картинки: одинаковая коробка у всех, круг по центру. Имени
+		     файла под картинкой нет — это шум: у аватарок имена вида
+		     «94acae1c-06…», по ним ничего не узнаётся, а ряд из них забивает
+		     собой всю ленту. Имя осталось в подсказке. -->
 		<Style Selector="Panel.packItem StackPanel.itemTools">
 			<Setter Property="Opacity" Value="0"/>
 			<Setter Property="Transitions">
@@ -190,6 +153,28 @@
 		</Style>
 		<Style Selector="Panel.packItem:pointerover StackPanel.itemTools">
 			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<!-- Плитка под зажатой кнопкой мыши. Отклик даётся сразу по нажатию, до
+		     того как станет ясно, щелчок это или перетаскивание: пауза удержания
+		     без отклика читается как «не нажалось». -->
+		<Style Selector="Panel.packItem.picked Border.tileBox">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<!-- Место, откуда картинку тащат. Плитка остаётся в ленте и ездит по ней
+		     вместо отдельного пустого места, но саму картинку с неё убираем: она
+		     сейчас под курсором, и две одинаковых картинки разом читались бы как
+		     копирование, а не перестановка. -->
+		<Style Selector="Panel.packItem.dragging Border.tileBox">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Panel.packItem.dragging Image">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<Style Selector="Panel.packItem.dragging StackPanel.itemTools">
+			<Setter Property="Opacity" Value="0"/>
 		</Style>
 		<Style Selector="Button.itemBtn">
 			<Setter Property="Width" Value="18"/>
@@ -217,23 +202,6 @@
 		</Style>
 		<Style Selector="Button.itemBtn.danger:pointerover /template/ ContentPresenter">
 			<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
-		</Style>
-
-		<Style Selector="Button.confirmYes">
-			<Setter Property="FontSize" Value="10"/>
-			<Setter Property="Padding" Value="8,1"/>
-			<Setter Property="MinHeight" Value="0"/>
-			<Setter Property="CornerRadius" Value="4"/>
-			<Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
-		</Style>
-		<Style Selector="Button.confirmYes /template/ ContentPresenter">
-			<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
-		</Style>
-		<Style Selector="Button.confirmNo">
-			<Setter Property="FontSize" Value="10"/>
-			<Setter Property="Padding" Value="8,1"/>
-			<Setter Property="MinHeight" Value="0"/>
-			<Setter Property="CornerRadius" Value="4"/>
 		</Style>
 
 		<Style Selector="ScrollBar">
@@ -276,7 +244,7 @@
 		<Border x:Name="ManagerPanel"
 		        HorizontalAlignment="Center" VerticalAlignment="Center"
 		        Margin="24"
-		        MinWidth="0" Width="720"
+		        MinWidth="0" Width="744"
 		        Background="{DynamicResource BgBaseBrush}"
 		        BorderBrush="{DynamicResource BorderDefaultBrush}"
 		        BorderThickness="1"
@@ -312,27 +280,43 @@
 						         VerticalAlignment="Center"/>
 
 						<Border Grid.Column="1" Classes="scopeTrack">
-							<StackPanel Orientation="Horizontal" Spacing="2">
-								<Button Classes="scope global"
-								        Classes.active="{Binding NewPackIsGlobal}"
-								        Command="{Binding SetNewPackGlobalCommand}"
-								        Content="Глобальная"
-								        behaviours:TooltipBehavior.Tip="Глобальная папка"
-								        behaviours:TooltipBehavior.Description="Лежит в данных приложения и видна во всех проектах. Вместе с проектом другому человеку не уедет"/>
-								<Button Classes="scope local"
-								        Classes.active="{Binding NewPackIsLocal}"
-								        Command="{Binding SetNewPackLocalCommand}"
-								        Content="В проекте"
-								        behaviours:TooltipBehavior.Tip="Папка внутри проекта"
-								        behaviours:TooltipBehavior.Description="Лежит в файле проекта и уедет вместе с ним. Нужен открытый проект"/>
-							</StackPanel>
+							<Panel>
+								<Border Classes="scopeThumb"
+								        Classes.right="{Binding NewPackIsGlobal}"/>
+								<StackPanel Orientation="Horizontal">
+									<Border Classes="tipHost"
+									        behaviours:TooltipBehavior.Tip="Папка внутри проекта"
+									        behaviours:TooltipBehavior.Description="Лежит в файле проекта и уедет вместе с ним. Нужен открытый проект">
+										<Button Classes="scope local"
+										        Classes.active="{Binding NewPackIsLocal}"
+										        Command="{Binding SetNewPackLocalCommand}"
+										        Content="Локальная"/>
+									</Border>
+									<Border Classes="tipHost"
+									        behaviours:TooltipBehavior.Tip="Глобальная папка"
+									        behaviours:TooltipBehavior.Description="Лежит в данных приложения и видна во всех проектах. Вместе с проектом другому человеку не уедет">
+										<Button Classes="scope global"
+										        Classes.active="{Binding NewPackIsGlobal}"
+										        Command="{Binding SetNewPackGlobalCommand}"
+										        Content="Глобальная"/>
+									</Border>
+								</StackPanel>
+							</Panel>
 						</Border>
 
 						<Button Grid.Column="2" Classes="iconBtn accent"
 						        Command="{Binding CreatePackCommand}"
                                 behaviours:TooltipBehavior.Tip="Завести папку"
                                 behaviours:TooltipBehavior.Description="Создаёт папку с именем из поля слева, в выбранной области">
-							<PathIcon Width="13" Height="13"
+							<!-- Размер 14, а не 13. Внутри кнопки остаётся 28 − 1.5 − 1.5 = 25
+							     точек, поэтому у значка нечётного размера отступ выходит
+							     дробным (25 − 13) / 2 + 1.5 = 7.5, округление раскладки
+							     сдвигает его на полпикселя вправо и вниз, и плюс встаёт
+							     косо относительно кольца. При 14 отступ ровно 7, а габарит
+							     геометрии тоже 14 — штрих ложится в целые 2 точки.
+							     У остальных значков этой кнопки размер чётный по той же
+							     причине. -->
+							<PathIcon Width="14" Height="14"
 							          Data="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/>
 						</Button>
 
@@ -372,17 +356,26 @@
 									        behaviours:TooltipBehavior.Tip="{Binding DisplayName}"
 									        behaviours:TooltipBehavior.Description="{Binding ChipDescription}"
 									        behaviours:TooltipBehavior.ShowDelay="400">
-										<StackPanel Orientation="Horizontal" Spacing="8">
+										<StackPanel Orientation="Horizontal" Spacing="6">
+											<Panel Classes="scopeIcon">
+												<PathIcon Width="14" Height="14"
+												          IsVisible="{Binding IsGlobalUser}"
+												          Foreground="{DynamicResource SectionGlobalFgBrush}"
+												          Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+												<PathIcon Width="14" Height="14"
+												          IsVisible="{Binding IsLocal}"
+												          Foreground="{DynamicResource SectionProjectFgBrush}"
+												          Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+												<PathIcon Width="14" Height="14"
+												          IsVisible="{Binding IsBuiltIn}"
+												          Foreground="{DynamicResource TextMutedBrush}"
+												          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10z"/>
+											</Panel>
 											<TextBlock Text="{Binding DisplayName}"
 											           FontSize="12"
 											           VerticalAlignment="Center"
 											           MaxWidth="180"
 											           TextTrimming="CharacterEllipsis"/>
-											<Border Classes="scopeChip"
-											        Classes.local="{Binding IsLocal}"
-											        Classes.global="{Binding IsGlobalUser}">
-												<TextBlock Classes="scopeChipText" Text="{Binding ScopeLabel}"/>
-											</Border>
 											<TextBlock Text="{Binding ItemCount}"
 											           FontSize="11"
 											           VerticalAlignment="Center"
@@ -409,44 +402,46 @@
 
 						<Border Grid.Column="1" Classes="scopeTrack"
 						        IsVisible="{Binding CanMoveScope}">
-							<StackPanel Orientation="Horizontal" Spacing="2">
-								<Button Classes="scope global"
-								        Classes.active="{Binding SelectedIsGlobal}"
-								        Command="{Binding MakeGlobalCommand}"
-								        IsEnabled="{Binding CanMakeGlobal}"
-								        Content="Глобальная"
-								        behaviours:TooltipBehavior.Tip="Перенести в приложение"
-								        behaviours:TooltipBehavior.Description="Папка со всем содержимым переедет в данные приложения и станет видна во всех проектах. В файле проекта её не останется: аватарки персонажей переключатся на новое место и у того, кому проект передадут, уже не покажутся"/>
-								<Button Classes="scope local"
-								        Classes.active="{Binding SelectedIsLocal}"
-								        Command="{Binding MakeLocalCommand}"
-								        IsEnabled="{Binding CanMakeLocal}"
-								        Content="В проекте"
-								        behaviours:TooltipBehavior.Tip="Перенести в проект"
-								        behaviours:TooltipBehavior.Description="Папка со всем содержимым переедет в файл проекта и уедет вместе с ним. В общих её не останется — если она нужна и в других проектах, кладите копию соседней кнопкой"/>
-							</StackPanel>
+							<Panel>
+								<Border Classes="scopeThumb"
+								        Classes.right="{Binding SelectedIsGlobal}"/>
+								<StackPanel Orientation="Horizontal">
+									<Border Classes="tipHost"
+									        behaviours:TooltipBehavior.Tip="Перенести в проект"
+									        behaviours:TooltipBehavior.Description="Папка со всем содержимым переедет в файл проекта и уедет вместе с ним. В общих её не останется — если она нужна и в других проектах, кладите копию соседней кнопкой">
+										<Button Classes="scope local"
+										        Classes.active="{Binding SelectedIsLocal}"
+										        Command="{Binding MakeLocalCommand}"
+										        IsEnabled="{Binding CanMakeLocal}"
+										        Content="Локальная"/>
+									</Border>
+									<Border Classes="tipHost"
+									        behaviours:TooltipBehavior.Tip="Перенести в приложение"
+									        behaviours:TooltipBehavior.Description="Папка со всем содержимым переедет в данные приложения и станет видна во всех проектах. В файле проекта её не останется: аватарки персонажей переключатся на новое место и у того, кому проект передадут, уже не покажутся">
+										<Button Classes="scope global"
+										        Classes.active="{Binding SelectedIsGlobal}"
+										        Command="{Binding MakeGlobalCommand}"
+										        IsEnabled="{Binding CanMakeGlobal}"
+										        Content="Глобальная"/>
+									</Border>
+								</StackPanel>
+							</Panel>
 						</Border>
 
 						<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
 						            VerticalAlignment="Center">
 
-							<Button Classes="iconBtn"
-							        Command="{Binding AddImagesCommand}"
-							        IsEnabled="{Binding CanEditPack}"
+							<Border Classes="tipHost"
 							        behaviours:TooltipBehavior.Tip="Добавить картинки"
 							        behaviours:TooltipBehavior.Description="Выбрать файлы на диске. Их можно и просто бросить в это окно — лягут в выбранную папку">
-								<PathIcon Width="14" Height="14"
-								          Data="M20 4H4v16h16V4zM6 18l3.5-4.5 2.5 3.01L15.5 12l3.5 6H6z"/>
-							</Button>
+								<Button Classes="iconBtn"
+								        Command="{Binding AddImagesCommand}"
+								        IsEnabled="{Binding CanEditPack}">
+									<PathIcon Width="14" Height="14"
+									          Data="M20 4H4v16h16V4zM6 18l3.5-4.5 2.5 3.01L15.5 12l3.5 6H6z"/>
+								</Button>
+							</Border>
 
-							<Button Classes="iconBtn"
-							        Command="{Binding ResetCoverCommand}"
-							        IsEnabled="{Binding CanResetCover}"
-							        behaviours:TooltipBehavior.Tip="Сбросить обложку"
-							        behaviours:TooltipBehavior.Description="Папка снова будет показывать первую свою картинку. Сами картинки не трогаются">
-								<PathIcon Width="14" Height="14"
-								          Data="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-							</Button>
 
 							<!-- Копия в проект, а не перенос: исходная папка остаётся общей
 							     для всех проектов, а её копия уезжает вместе с этим. Именно
@@ -461,41 +456,33 @@
 								          Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
 							</Button>
 
-							<Button Classes="iconBtn"
-							        Command="{Binding ExportPackCommand}"
-							        IsEnabled="{Binding CanEditPack}"
+							<Border Classes="tipHost"
 							        behaviours:TooltipBehavior.Tip="Сохранить как ZIP"
 							        behaviours:TooltipBehavior.Description="Выгрузить папку архивом — чтобы перенести на другую машину или отдать соавтору">
-								<PathIcon Width="14" Height="14"
-								          Data="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/>
-							</Button>
+								<Button Classes="iconBtn"
+								        Command="{Binding ExportPackCommand}"
+								        IsEnabled="{Binding CanEditPack}">
+									<PathIcon Width="14" Height="14"
+									          Data="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/>
+								</Button>
+							</Border>
 
-							<Button Classes="iconBtn danger"
-							        Command="{Binding RequestDeletePackCommand}"
-							        IsEnabled="{Binding CanEditPack}"
-							        IsVisible="{Binding IsNotConfirmingPackDelete}"
-							        behaviours:TooltipBehavior.Tip="Удалить папку"
-							        behaviours:TooltipBehavior.Description="Папка удалится вместе со всеми своими картинками. Аватарки персонажей, взятые отсюда, станут заглушками">
-								<PathIcon Width="14" Height="14"
-								          Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-							</Button>
-
-							<StackPanel Orientation="Horizontal" Spacing="4"
-							            VerticalAlignment="Center"
-							            IsVisible="{Binding IsConfirmingPackDelete}">
-								<TextBlock Text="Удалить папку?" FontSize="11"
-								           VerticalAlignment="Center"
-								           Foreground="{DynamicResource TextPrimaryBrush}"/>
-								<Button Content="Да" Classes="confirmYes"
-								        Command="{Binding ConfirmDeletePackCommand}"/>
-								<Button Content="Нет" Classes="confirmNo"
-								        Command="{Binding CancelDeletePackCommand}"/>
-							</StackPanel>
+							<Border Classes="tipHost"
+							        behaviours:TooltipBehavior.Tip="Убрать папку"
+							        behaviours:TooltipBehavior.Description="Папка уходит из списка вместе со своими картинками. Пока это окно открыто, ничего не стёрто: Ctrl+Z возвращает. Насовсем удалится при закрытии окна">
+								<Button Classes="iconBtn danger"
+								        Command="{Binding DeletePackCommand}"
+								        IsEnabled="{Binding CanEditPack}">
+									<PathIcon Width="14" Height="14"
+									          Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+								</Button>
+							</Border>
 						</StackPanel>
 					</Grid>
 
 					<!-- Содержимое выбранной папки -->
-					<ScrollViewer Grid.Row="4" Margin="14,10,14,0"
+					<ScrollViewer Grid.Row="4" x:Name="PackItemsScroll"
+					              Margin="14,10,14,0"
 					              Background="Transparent"
 					              HorizontalScrollBarVisibility="Disabled"
 					              VerticalScrollBarVisibility="Auto">
@@ -509,52 +496,74 @@
                                        IsVisible="{Binding SelectedPack,
                                            Converter={x:Static ObjectConverters.IsNull}}"/>
 
-							<TextBlock Text="В этой папке пока пусто. Бросьте сюда картинку или нажмите кнопку с картинкой выше."
+							<TextBlock Text="Папка пуста"
 							           FontSize="12"
-							           TextWrapping="Wrap"
-							           MaxWidth="360"
 							           Foreground="{DynamicResource TextSecondaryBrush}"
 							           HorizontalAlignment="Center"
 							           VerticalAlignment="Center"
 							           Margin="0,40"
 							           IsVisible="{Binding SelectedPackIsEmpty}"/>
 
-							<ItemsControl ItemsSource="{Binding SelectedPack.Items}"
-                                          IsVisible="{Binding HasSelectedPack}"
-                                          Margin="4">
-								<ItemsControl.ItemsPanel>
-									<ItemsPanelTemplate>
-										<WrapPanel Orientation="Horizontal"/>
-									</ItemsPanelTemplate>
-								</ItemsControl.ItemsPanel>
-								<ItemsControl.ItemTemplate>
+							<!-- Репитер, а не ItemsControl с WrapPanel: тот строит все плитки
+							     разом, и папка на пятьсот картинок раскодировала при открытии
+							     все пятьсот. Репитер держит только видимые. Ячейка 76 — это
+							     плитка 68 плюс её отступ 4 с каждой стороны, поэтому сетка
+							     выглядит ровно как прежняя лента. -->
+							<!-- Правое поле больше левого на ширину полосы прокрутки: она
+							     всплывает поверх содержимого, и без своей дорожки ложилась
+							     ровно на крайний столбец плиток. Ширина окна подобрана так,
+							     чтобы в оставшееся влезло девять столбцов по 76 (плитка 68
+							     плюс поля 4 с каждой стороны), и ещё осталась щель. Когда
+							     окно у́же — раскладка сама берёт меньше столбцов, ничего не
+							     обрезая. -->
+							<ItemsRepeater x:Name="PackItemsHost"
+							               ItemsSource="{Binding SelectedPack.Items}"
+                                           IsVisible="{Binding HasSelectedPack}"
+                                           Margin="4,4,18,4">
+								<ItemsRepeater.Layout>
+									<UniformGridLayout Orientation="Horizontal"
+									                   MinItemWidth="76"
+									                   MinItemHeight="76"
+									                   MinColumnSpacing="0"
+									                   MinRowSpacing="0"
+									                   ItemsStretch="None"/>
+								</ItemsRepeater.Layout>
+								<ItemsRepeater.ItemTemplate>
 									<DataTemplate x:DataType="vm:CharacterAvatarPackManagerItemViewModel">
-										<Panel Classes="packItem" Margin="4" Background="Transparent"
-										       Width="76" Height="94">
+										<Panel Classes="packItem"
+										       Classes.dragging="{Binding IsDragging}"
+										       Margin="4" Background="Transparent"
+										       Width="68" Height="68">
 
-											<Border CornerRadius="8"
+											<Border Classes="tileBox"
+											        CornerRadius="8"
                                                     Background="{DynamicResource BgSurfaceBrush}"
                                                     BorderBrush="{DynamicResource BorderSubtleBrush}"
                                                     BorderThickness="1"
 													behaviours:TooltipBehavior.Tip="{Binding ToolTip}"
 													behaviours:TooltipBehavior.Description="{Binding FileName}"
 													behaviours:TooltipBehavior.ShowDelay="500">
-												<StackPanel Spacing="5" Margin="4,7,4,5"
-                                                            VerticalAlignment="Center">
-													<Border Width="52" Height="52" CornerRadius="26"
-                                                            ClipToBounds="True"
-                                                            HorizontalAlignment="Center"
-													        Background="{DynamicResource BgBaseBrush}">
+												<Border Width="52" Height="52" CornerRadius="26"
+                                                        ClipToBounds="True"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+												        Background="{DynamicResource BgBaseBrush}">
+													<Panel>
+														<!-- Пока миниатюра строится в стороне от
+														     UI-потока, на её месте стоит значок. Раньше
+														     плитка раскодировала картинку прямо в момент
+														     показа, и прокрутка вставала на каждой новой
+														     строке. -->
+														<PathIcon Width="18" Height="18"
+														          HorizontalAlignment="Center"
+														          VerticalAlignment="Center"
+														          IsVisible="{Binding !HasThumbnail}"
+														          Foreground="{DynamicResource TextDisabledBrush}"
+														          Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
 														<Image Source="{Binding Thumbnail}"
                                                                Stretch="UniformToFill"/>
-													</Border>
-													<TextBlock Text="{Binding ToolTip}"
-                                                               FontSize="9"
-                                                               HorizontalAlignment="Center"
-                                                               TextTrimming="CharacterEllipsis"
-                                                               TextWrapping="NoWrap"
-                                                               MaxWidth="64"/>
-												</StackPanel>
+													</Panel>
+												</Border>
 											</Border>
 
 											<!-- Обложка папки: отметка стоит на той картинке,
@@ -562,13 +571,15 @@
 											<Border IsVisible="{Binding IsCover}"
 											        IsHitTestVisible="False"
 											        HorizontalAlignment="Left" VerticalAlignment="Top"
-											        Margin="2,2,0,0"
+											        Margin="3,3,0,0"
 											        CornerRadius="999"
-											        Width="16" Height="16"
+											        Width="17" Height="17"
 											        Background="{DynamicResource BgBaseBrush}"
 											        BorderBrush="{DynamicResource AccentDefaultBrush}"
 											        BorderThickness="1">
 												<PathIcon Width="9" Height="9"
+												          HorizontalAlignment="Center"
+												          VerticalAlignment="Center"
 												          Foreground="{DynamicResource AccentDefaultBrush}"
 												          Data="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
 											</Border>
@@ -578,106 +589,48 @@
 											            Orientation="Horizontal" Spacing="2"
 											            HorizontalAlignment="Right"
 											            VerticalAlignment="Top"
-											            Margin="0,2,2,0"
-											            IsVisible="{Binding IsNotConfirmingDelete}">
+											            Margin="0,3,3,0">
 
 												<Button Classes="itemBtn"
 												        Command="{Binding SetAsCoverCommand}"
-												        IsVisible="{Binding CanModify}"
+												        IsVisible="{Binding CanSetCover}"
 												        behaviours:TooltipBehavior.Tip="Сделать обложкой"
 												        behaviours:TooltipBehavior.Description="Этой картинкой папка будет показываться в списках">
 													<PathIcon Width="10" Height="10"
 													          Data="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
 												</Button>
 
-												<Button Classes="itemBtn"
-												        IsVisible="{Binding HasMoveTargets}"
-												        behaviours:TooltipBehavior.Tip="Переложить"
-												        behaviours:TooltipBehavior.Description="Перенести картинку в другую папку. Ссылка на неё сменится вместе с папкой">
-													<Button.Flyout>
-														<Flyout Placement="Bottom">
-															<ItemsControl ItemsSource="{Binding MoveTargets}"
-															              MinWidth="170">
-																<ItemsControl.ItemTemplate>
-																	<DataTemplate x:DataType="vm:CharacterAvatarPackMoveTargetViewModel">
-																		<Button Command="{Binding MoveCommand}"
-																		        HorizontalAlignment="Stretch"
-																		        HorizontalContentAlignment="Left"
-																		        Padding="8,4" Margin="0,1">
-																			<StackPanel Orientation="Horizontal" Spacing="6">
-																				<TextBlock Text="{Binding DisplayName}"
-																				           FontSize="11"
-																				           VerticalAlignment="Center"/>
-																				<Border Classes="scopeChip"
-																				        Classes.local="{Binding IsLocal}"
-																				        Classes.global="{Binding IsGlobal}">
-																					<TextBlock Classes="scopeChipText"
-																					           Text="{Binding ScopeLabel}"/>
-																				</Border>
-																			</StackPanel>
-																		</Button>
-																	</DataTemplate>
-																</ItemsControl.ItemTemplate>
-															</ItemsControl>
-														</Flyout>
-													</Button.Flyout>
-													<PathIcon Width="10" Height="10"
-													          Data="M4 6h6l2 2h8v10H4V6zm8 4v2H9v2h3v2l3-3-3-3z"/>
-												</Button>
-
 												<Button Classes="itemBtn danger"
-												        Command="{Binding RequestDeleteCommand}"
+												        Command="{Binding DeleteCommand}"
 												        IsVisible="{Binding CanModify}"
-												        behaviours:TooltipBehavior.Tip="Удалить картинку"
-												        behaviours:TooltipBehavior.Description="Файл удаляется насовсем. Персонажи с этой аватаркой вернутся к заглушке">
+												        behaviours:TooltipBehavior.Tip="Убрать картинку"
+												        behaviours:TooltipBehavior.Description="Уходит из папки сразу, без переспроса. Пока это окно открыто, файл не стёрт: Ctrl+Z возвращает">
 													<PathIcon Width="10" Height="10"
 													          Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
 												</Button>
 											</StackPanel>
 
-											<!-- Переспрос перед удалением файла -->
-											<Border IsVisible="{Binding IsConfirmingDelete}"
-											        CornerRadius="8"
-											        Background="{DynamicResource BgBaseBrush}"
-											        BorderBrush="{DynamicResource HotKeyConflictCriticalBrush}"
-											        BorderThickness="1">
-												<StackPanel VerticalAlignment="Center" Spacing="4">
-													<TextBlock Text="Удалить?"
-													           FontSize="10"
-													           HorizontalAlignment="Center"
-													           Foreground="{DynamicResource TextPrimaryBrush}"/>
-													<StackPanel Orientation="Horizontal" Spacing="4"
-													            HorizontalAlignment="Center">
-														<Button Content="Да" Classes="confirmYes"
-														        Command="{Binding ConfirmDeleteCommand}"/>
-														<Button Content="Нет" Classes="confirmNo"
-														        Command="{Binding CancelDeleteCommand}"/>
-													</StackPanel>
-												</StackPanel>
-											</Border>
 										</Panel>
 									</DataTemplate>
-								</ItemsControl.ItemTemplate>
-							</ItemsControl>
+								</ItemsRepeater.ItemTemplate>
+							</ItemsRepeater>
 						</Panel>
 					</ScrollViewer>
 
-					<!-- Статус и подсказка -->
-					<Border Grid.Row="5" Padding="20,10,20,14"
+					<!-- Состояние. Полоса появляется, только когда есть что сказать:
+					     раньше под ней постоянно висела ещё и общая справка о
+					     встроенных папках, и нижняя треть окна была занята текстом,
+					     который читают один раз в жизни. То, что он объяснял,
+					     объясняют подсказки на самих кнопках. -->
+					<Border Grid.Row="5" Padding="20,8,20,10"
                             BorderBrush="{DynamicResource BorderSubtleBrush}"
-                            BorderThickness="0,1,0,0">
-						<StackPanel Spacing="3">
-							<TextBlock Text="{Binding StatusMessage}"
-							           FontSize="11"
-							           TextWrapping="Wrap"
-							           Foreground="{DynamicResource AccentDefaultBrush}"
-							           IsVisible="{Binding StatusMessage,
-							               Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-							<TextBlock FontSize="10"
-                                       Foreground="{DynamicResource TextMutedBrush}"
-                                       TextWrapping="Wrap"
-                                       Text="{x:Static loc:CharactersStrings.AvatarPackManager_BuiltInHint}"/>
-						</StackPanel>
+                            BorderThickness="0,1,0,0"
+					        IsVisible="{Binding StatusMessage,
+					            Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+						<TextBlock Text="{Binding StatusMessage}"
+						           FontSize="11"
+						           TextWrapping="Wrap"
+						           Foreground="{DynamicResource AccentDefaultBrush}"/>
 					</Border>
 				</Grid>
 
@@ -689,5 +642,30 @@
 				        BorderBrush="{DynamicResource AccentDefaultBrush}"/>
 			</Panel>
 		</Border>
+
+		<!-- Призрак перетаскиваемой картинки. Лежит поверх всего окна, поэтому
+		     объявлен в корневой сетке, а не внутри панели: панель обрезает
+		     содержимое по своим границам, и призрак пропадал бы у краёв. -->
+		<Canvas x:Name="DragGhostCanvas"
+		        IsHitTestVisible="False"
+		        IsVisible="False">
+			<Border x:Name="DragGhostBorder"
+			        Width="68" Height="68"
+			        CornerRadius="8"
+			        Opacity="0.9"
+			        Background="{DynamicResource BgSurfaceBrush}"
+			        BorderBrush="{DynamicResource AccentDefaultBrush}"
+			        BorderThickness="1.5">
+				<Border.Effect>
+					<DropShadowEffect BlurRadius="16" OffsetX="0" OffsetY="6" Opacity="0.45" Color="#000000"/>
+				</Border.Effect>
+				<Border Width="52" Height="52" CornerRadius="26"
+				        ClipToBounds="True"
+				        HorizontalAlignment="Center" VerticalAlignment="Center"
+				        Background="{DynamicResource BgBaseBrush}">
+					<Image x:Name="DragGhostImage" Stretch="UniformToFill"/>
+				</Border>
+			</Border>
+		</Canvas>
 	</Grid>
 </UserControl>

@@ -92,6 +92,42 @@ namespace Writersword.Core.Models.Rendering
     /// Одна страница документа после вёрстки.
     /// Содержит список параграфов которые на неё попали.
     /// </summary>
+    /// <summary>
+    /// Плавающий объект на странице — картинка или фигура — с уже вычисленным
+    /// прямоугольником в координатах страницы.
+    ///
+    /// Block хранится нетипизированно намеренно: ImageBlock и ShapeBlock живут в
+    /// модуле TextEditor, а Core о модулях не знает — зависимость идёт только в одну
+    /// сторону. Разбирает тип тот, кто рисует (SKTextRenderer.RenderPage), и он же
+    /// единственный, кто эти записи создаёт.
+    /// </summary>
+    public sealed class SKPageFloat
+    {
+        /// <summary>Блок документа: ImageBlock либо ShapeBlock.</summary>
+        public object Block { get; init; } = null!;
+
+        /// <summary>Левый край габарита в pt от левого края ЛИСТА (не текстовой зоны).</summary>
+        public float XPt { get; init; }
+
+        /// <summary>Верхний край габарита в pt от верха листа.</summary>
+        public float YPt { get; init; }
+
+        /// <summary>Ширина габарита в pt.</summary>
+        public float WidthPt { get; init; }
+
+        /// <summary>Высота габарита в pt.</summary>
+        public float HeightPt { get; init; }
+
+        /// <summary>
+        /// Рисовать ли объект до текста. true — «за текстом» и объекты в потоке,
+        /// false — «поверх текста» и обтекаемые. Порядок тот же, что на экране.
+        /// </summary>
+        public bool BeforeText { get; init; }
+
+        /// <summary>Порядок перекрытия среди объектов страницы: больше — выше.</summary>
+        public int ZOrder { get; init; }
+    }
+
     public sealed class SKPageContent
     {
         /// <summary>Параграфы страницы в порядке следования сверху вниз.</summary>
@@ -99,6 +135,12 @@ namespace Writersword.Core.Models.Rendering
 
         /// <summary>Таблицы страницы в порядке следования сверху вниз.</summary>
         public List<SKPageTable> Tables { get; } = new();
+
+        /// <summary>
+        /// Плавающие объекты страницы: картинки и фигуры. Без них печать выдавала
+        /// один текст с таблицами, а всё плавающее в PDF просто не попадало.
+        /// </summary>
+        public List<SKPageFloat> Floats { get; } = new();
 
         /// <summary>
         /// Физическая ширина страницы в pt (включая поля).

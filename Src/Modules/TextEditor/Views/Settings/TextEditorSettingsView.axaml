@@ -150,6 +150,19 @@
 				</Grid>
 
 				<StackPanel Spacing="0">
+					<Grid ColumnDefinitions="*,Auto">
+						<CheckBox Grid.Column="0"
+                                  IsChecked="{Binding BreakOnHyphen.Value}"
+                                  Content="{x:Static loc:TextEditorStrings.Settings_BreakOnHyphen}"/>
+						<sf:SettingButtons Grid.Column="1"
+                                           Setting="{Binding BreakOnHyphen}"
+                                           Context="{Binding Context}"/>
+					</Grid>
+					<TextBlock Classes="FieldHint"
+                               Text="{x:Static loc:TextEditorStrings.Settings_BreakOnHyphenHint}"/>
+				</StackPanel>
+
+				<StackPanel Spacing="0">
 					<TextBlock Classes="FieldLabel"
                                Text="{x:Static loc:TextEditorStrings.Settings_DefaultViewMode}"/>
 					<Grid ColumnDefinitions="*,Auto">

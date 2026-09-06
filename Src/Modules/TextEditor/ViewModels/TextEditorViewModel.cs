@@ -658,6 +658,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 Ruler.Zoom = zoom;
             };
 
+            // Нажатие на счётчики в строке состояния открывает то же окно, что и
+            // горячая клавиша статистики.
+            StatusBar.StatisticsRequested = ShowWordCount;
+
             // Видимость линеек и панели чтения зависит от режима, который только что
             // восстановлен из документа.
             RefreshSpreadState();
@@ -817,9 +821,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Ribbon.IsTableTabVisible = false;
         }
 
-        // Индекс контекстной вкладки «Формат» (картинка) в TabControl риббона:
-        // Home=0, Insert=1, Layout=2, References=3, Table=4, Image=5.
+        // Индексы контекстных вкладок в TabControl риббона:
+        // Home=0, Insert=1, Layout=2, References=3, Table=4,
+        // Формат=5, Расположение=6.
+        //
+        // Последние две — две половины одного инструмента для плавающего объекта:
+        // показываются и гаснут вместе, по одному флагу IsImageTabVisible.
+        private const int TableTabIndex = 4;
         private const int ImageTabIndex = 5;
+        private const int ImagePlacementTabIndex = 6;
 
         // Вкладка, активная до автопереключения на «Формат» — восстанавливается
         // при снятии выделения картинки.
@@ -831,10 +841,48 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private bool _tableTabBeforeImage;
 
         /// <summary>
-        /// Показывает/скрывает контекстную вкладку «Формат» (работа с картинкой)
-        /// при выделении/снятии выделения изображения на канвасе.
-        /// При выделении вкладка активируется автоматически, при снятии —
-        /// возвращается вкладка, которая была активна до этого.
+        /// Видима ли вкладка риббона с этим индексом. Контекстные вкладки скрыты,
+        /// пока не выделен их объект, а индекс у них в TabControl всё равно есть.
+        /// </summary>
+        private bool IsRibbonTabVisible(int index) => index switch
+        {
+            TableTabIndex => Ribbon.IsTableTabVisible,
+            ImageTabIndex => Ribbon.IsImageTabVisible,
+            ImagePlacementTabIndex => Ribbon.IsImageTabVisible,
+            _ => index >= 0 && index < TableTabIndex
+        };
+
+        /// <summary>
+        /// Возвращает риббон на прежнюю вкладку после того, как контекстная скрылась.
+        ///
+        /// Проверка видимости здесь обязательна. Выбор скрытой вкладки роняет
+        /// приложение: TabControl всё равно строит её содержимое, а места в дереве у
+        /// него нет — Avalonia падает на «AttachedToLogicalTreeCore called for Panel
+        /// but control has no logical parent» в проходе разметки. Ловится это так:
+        /// выделить картинку (открылась её вкладка), затем выделить фигуру и снять
+        /// выделение — прежней оказывается уже скрытая вкладка картинки.
+        /// </summary>
+        private void RestoreRibbonTab(int previousIndex, int contextIndex)
+        {
+            if (previousIndex >= 0
+                && previousIndex != contextIndex
+                && IsRibbonTabVisible(previousIndex))
+            {
+                Ribbon.SelectedTabIndex = previousIndex;
+                return;
+            }
+
+            Ribbon.SelectedTabIndex = 0;
+        }
+
+        /// <summary>
+        /// Показывает и скрывает контекстную вкладку «Формат» при выделении и
+        /// снятии выделения картинки на канвасе. При выделении вкладка
+        /// активируется сама, при снятии возвращается прежняя.
+        ///
+        /// Вкладка одна на картинку и фигуру, поэтому фигура ходит сюда же — см.
+        /// NotifyShapeSelectionChanged. Одновременно выделен ровно один объект,
+        /// так что и показ, и возврат прежней вкладки остаются на одном счётчике.
         /// </summary>
         public void NotifyImageSelectionChanged(bool selected)
         {
@@ -844,28 +892,40 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 {
                     _tabIndexBeforeImage = Ribbon.SelectedTabIndex;
                     _tableTabBeforeImage = Ribbon.IsTableTabVisible;
-                    Ribbon.IsTableTabVisible = false;
+
+                    // Порядок важен: сначала показываем и выбираем свою вкладку и
+                    // только потом гасим табличную. Погаси её раньше — и выбранной
+                    // на миг останется скрытая вкладка, а разметка этого не переживает.
                     Ribbon.IsImageTabVisible = true;
                     Ribbon.SelectedTabIndex = ImageTabIndex;
+                    Ribbon.IsTableTabVisible = false;
                 }
                 Ribbon.Image.SyncFromTarget();
             }
             else
             {
-                bool wasOnImageTab = Ribbon.SelectedTabIndex == ImageTabIndex;
-                Ribbon.IsImageTabVisible = false;
+                // Вкладок у объекта две, и уходить надо с любой из них: если
+                // пользователь ушёл на «Расположение», а объект перестал быть
+                // выделенным, обе гаснут — и выбранной осталась бы скрытая.
+                bool wasOnImageTab = Ribbon.SelectedTabIndex == ImageTabIndex
+                    || Ribbon.SelectedTabIndex == ImagePlacementTabIndex;
+
+                // Табличную возвращаем ДО выбора: она может оказаться той самой
+                // вкладкой, на которую мы собираемся вернуться.
                 Ribbon.IsTableTabVisible = _tableTabBeforeImage;
-                if (wasOnImageTab)
-                {
-                    Ribbon.SelectedTabIndex =
-                        _tabIndexBeforeImage >= 0 && _tabIndexBeforeImage != ImageTabIndex
-                            ? _tabIndexBeforeImage
-                            : 0;
-                }
+                if (wasOnImageTab) RestoreRibbonTab(_tabIndexBeforeImage, ImageTabIndex);
+                Ribbon.IsImageTabVisible = false;
                 _tabIndexBeforeImage = -1;
                 _tableTabBeforeImage = false;
             }
         }
+
+        /// <summary>
+        /// Выделение фигуры открывает ту же вкладку «Формат», что и картинка:
+        /// вкладка на оба объекта одна, а выделен всегда ровно один из них.
+        /// </summary>
+        public void NotifyShapeSelectionChanged(bool selected)
+            => NotifyImageSelectionChanged(selected);
 
         private void OnIndentDragStarted() => DocumentViewModel?.BeginParagraphFormatBatch();
         private void OnIndentDragEnded() => DocumentViewModel?.EndParagraphFormatBatch();
@@ -1253,7 +1313,40 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertTOC() => DocumentViewModel?.InsertTOC();
         public void InsertComment(string text) => DocumentViewModel?.InsertComment(text);
 
+        // ── Фигура ────────────────────────────────────────────────────────
+        public (ShapeType Type, WrapMode Wrap, WrapSide WrapSide, ShapeDashStyle Dash, ShapeArrowHead StartArrow, ShapeArrowHead EndArrow, string? FillColor, string? StrokeColor, double StrokeThicknessPt, double CornerRadiusPt, double Opacity, double WidthPt, double HeightPt, double RotationDeg, bool LockAspect, int PinnedPage, bool HasFillImage, bool FillImageStretch)? GetSelectedShapeInfo()
+            => DocumentViewModel?.GetSelectedShapeInfo();
+
+        public void SetShapeType(ShapeType type) => DocumentViewModel?.SetShapeType(type);
+        public void SetShapeFill(string? hexColor) => DocumentViewModel?.SetShapeFill(hexColor);
+        public void SetShapeStroke(string? hexColor) => DocumentViewModel?.SetShapeStroke(hexColor);
+        public void SetShapeStrokeThickness(double thicknessPt) => DocumentViewModel?.SetShapeStrokeThickness(thicknessPt);
+        public void SetShapeDash(ShapeDashStyle dash) => DocumentViewModel?.SetShapeDash(dash);
+        public void SetShapeCornerRadius(double radiusPt) => DocumentViewModel?.SetShapeCornerRadius(radiusPt);
+        public void SetShapeArrows(ShapeArrowHead start, ShapeArrowHead end) => DocumentViewModel?.SetShapeArrows(start, end);
+        public void SetShapeOpacity(double opacity) => DocumentViewModel?.SetShapeOpacity(opacity);
+        public void SetShapeWidth(double widthPt) => DocumentViewModel?.SetShapeWidth(widthPt);
+        public void SetShapeHeight(double heightPt) => DocumentViewModel?.SetShapeHeight(heightPt);
+        public void SetShapeRotation(double degrees) => DocumentViewModel?.SetShapeRotation(degrees);
+        public void SetShapeLockAspect(bool locked) => DocumentViewModel?.SetShapeLockAspect(locked);
+        public void SetShapeWrapMode(WrapMode mode) => DocumentViewModel?.SetShapeWrapMode(mode);
+        public void SetShapeWrapSide(WrapSide side) => DocumentViewModel?.SetShapeWrapSide(side);
+        public void SetShapeWrapPadding(double topPt, double bottomPt, double leftPt, double rightPt)
+            => DocumentViewModel?.SetShapeWrapPadding(topPt, bottomPt, leftPt, rightPt);
+        public void SetShapePinned(bool pinned) => DocumentViewModel?.SetShapePinned(pinned);
+        public void SetShapeZOrder(bool toFront) => DocumentViewModel?.SetShapeZOrder(toFront);
+        public void SetShapeFillImage(string? filePath) => DocumentViewModel?.SetShapeFillImage(filePath);
+        public void SetShapeFillImageStretch(bool stretch) => DocumentViewModel?.SetShapeFillImageStretch(stretch);
+        public void DeleteSelectedShape() => DocumentViewModel?.DeleteSelectedShape();
+
         // ── Изображение ───────────────────────────────────────────────────
+        public void SetImageBorderDash(ShapeDashStyle dash) => DocumentViewModel?.SetImageBorderDash(dash);
+        public ShapeDashStyle? GetSelectedImageBorderDash() => DocumentViewModel?.GetSelectedImageBorderDash();
+        public void SetImageShapeType(ShapeType type) => DocumentViewModel?.SetImageShapeType(type);
+        public ShapeType? GetSelectedImageShapeType() => DocumentViewModel?.GetSelectedImageShapeType();
+        public void SetImageCornerRadius(double radiusPt) => DocumentViewModel?.SetImageCornerRadius(radiusPt);
+        public double? GetSelectedImageCornerRadius() => DocumentViewModel?.GetSelectedImageCornerRadius();
+
         public void SetImageWrapMode(WrapMode mode) => DocumentViewModel?.SetImageWrapMode(mode);
         public void SetImageWrapSide(WrapSide side) => DocumentViewModel?.SetImageWrapSide(side);
         public WrapSide? GetSelectedImageWrapSide() => DocumentViewModel?.GetSelectedImageWrapSide();
@@ -1270,6 +1363,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetImageHeight(double heightPt) => DocumentViewModel?.SetImageHeight(heightPt);
         public void SetImageOpacity(double opacity) => DocumentViewModel?.SetImageOpacity(opacity);
         public void SetImageBorder(string? colorHex, double thicknessPt) => DocumentViewModel?.SetImageBorder(colorHex, thicknessPt);
+        public void SetImageBorderAlign(ImageBorderAlign align) => DocumentViewModel?.SetImageBorderAlign(align);
+        public ImageBorderAlign? GetSelectedImageBorderAlign() => DocumentViewModel?.GetSelectedImageBorderAlign();
         public (double WidthPt, double HeightPt, double Opacity, string? BorderColor, double BorderThicknessPt)? GetSelectedImageStyle()
             => DocumentViewModel?.GetSelectedImageStyle();
         public void ToggleImageFlipHorizontal() => DocumentViewModel?.ToggleImageFlipHorizontal();
@@ -1280,6 +1375,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             => DocumentViewModel?.SetImageWrapPadding(topPt, bottomPt, leftPt, rightPt);
         public (double TopPt, double BottomPt, double LeftPt, double RightPt)? GetSelectedImageWrapPadding()
             => DocumentViewModel?.GetSelectedImageWrapPadding();
+        public (bool HasShape, bool HasImage, bool HasFillImage, bool IsLine)? GetSelectedFloatingKind()
+            => DocumentViewModel?.GetSelectedFloatingKind();
 
         // ── Таблица ───────────────────────────────────────────────────────
 
@@ -1406,7 +1503,22 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void OpenFind() => DocumentViewModel?.OpenFind();
         public void OpenFindReplace() => DocumentViewModel?.OpenFindReplace();
         public void RunSpellCheck() => DocumentViewModel?.RunSpellCheck();
-        public void ShowWordCount() => DocumentViewModel?.ShowWordCount();
+        /// <summary>
+        /// Запрос на показ окна полной статистики. Ставится вью: оверлеями
+        /// распоряжается оно, модель о них ничего не знает.
+        /// </summary>
+        public Action? WordCountRequested { get; set; }
+
+        public void ShowWordCount()
+        {
+            if (DocumentViewModel is null) return;
+
+            // Слова и знаки строка состояния пересчитывает по таймеру и с задержкой
+            // после правки. Окно должно показать сегодняшний текст, а не тот, что был
+            // до последнего абзаца, поэтому пересчёт идёт прямо перед открытием.
+            RefreshStatusBar();
+            WordCountRequested?.Invoke();
+        }
 
         public void Print()
         {
@@ -1421,6 +1533,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ExportToDocx() => DocumentViewModel?.ExportToDocx();
         public void ExportToTxt() => DocumentViewModel?.ExportToTxt();
         public void ExportToMarkdown() => DocumentViewModel?.ExportToMarkdown();
+
+        public void ImportFromFile(string filePath) => DocumentViewModel?.ImportFromFile(filePath);
 
         // ── Auto save ─────────────────────────────────────────────────────
 
@@ -1447,18 +1561,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (DocumentViewModel is null) return;
 
-            var sb = new StringBuilder();
-            int paraCount = 0;
+            var paragraphs = new List<string>();
 
             foreach (var section in DocumentViewModel.Document.Sections)
                 foreach (var block in section.Blocks)
                     if (block is ParagraphBlock para)
-                    {
-                        sb.Append(para.GetPlainText()).Append(' ');
-                        paraCount++;
-                    }
+                        paragraphs.Add(para.GetPlainText());
 
-            StatusBar.UpdateFromText(sb.ToString(), paraCount, pageCount: 1);
+            // Число страниц и строк здесь не трогается: их знает раскладка канваса и
+            // присылает своим уведомлением. Прежняя единица затирала настоящее число
+            // страниц при каждом пересчёте текста.
+            StatusBar.UpdateFromParagraphs(paragraphs);
         }
 
         // ── IDisposable ───────────────────────────────────────────────────

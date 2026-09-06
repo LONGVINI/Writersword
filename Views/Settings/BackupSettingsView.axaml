@@ -28,79 +28,11 @@
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
 
-        <!-- Переключатель области — как вкладки в палитрах: общая плашка,
-             активный сегмент выделен фоном. Шаблон переопределён целиком,
-             иначе слева от текста остаётся кружок радиокнопки. -->
-        <!-- Сегменты переключателя области. Цвет закреплён за каждым и виден
-             всегда: синий — общая настройка, янтарный — настройка проекта.
-             Выбранный отличается яркостью и рамкой, а не наличием цвета, —
-             так обе области читаются, даже когда активна другая. -->
-        <Style Selector="RadioButton.segment">
-            <Setter Property="Padding" Value="12,6"/>
-            <Setter Property="CornerRadius" Value="6"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <!-- Затухания нет: фоны секций в теме и так тёмные, и при
-                 полупрозрачности невыбранный сегмент сливался с панелью.
-                 Выбор показывают рамка и насыщенность текста. -->
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="Template">
-                <ControlTemplate>
-                    <Border Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="{TemplateBinding CornerRadius}"
-                            Padding="{TemplateBinding Padding}">
-                        <ContentPresenter Content="{TemplateBinding Content}"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"/>
-                    </Border>
-                </ControlTemplate>
-            </Setter>
-        </Style>
-
-        <Style Selector="RadioButton.segment.global">
-            <Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
-            <Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
-        </Style>
-        <Style Selector="RadioButton.segment.project">
-            <Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
-            <Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
-        </Style>
-
-        <!-- Невыбранный: текст приглушён, фон остаётся цветным.
-             Выбранный: полный цвет текста, рамка в тон и полужирное начертание. -->
-        <Style Selector="RadioButton.segment">
-            <Setter Property="FontWeight" Value="Normal"/>
-        </Style>
-        <Style Selector="RadioButton.segment.global">
-            <Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
-        </Style>
-
-        <Style Selector="RadioButton.segment:not(:checked)">
-            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-        </Style>
-        <Style Selector="RadioButton.segment:not(:checked):pointerover">
-            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-        </Style>
-
-        <Style Selector="RadioButton.segment:checked">
-            <Setter Property="FontWeight" Value="SemiBold"/>
-        </Style>
-        <Style Selector="RadioButton.segment.global:checked">
-            <Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource SectionGlobalFgBrush}"/>
-        </Style>
-        <Style Selector="RadioButton.segment.project:checked">
-            <Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource SectionProjectFgBrush}"/>
-        </Style>
-
-        <Style Selector="RadioButton.segment:disabled">
-            <Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
-            <Setter Property="Cursor" Value="Arrow"/>
-        </Style>
+        <!-- Переключатель области берётся из общего стиля ScopeToggle.axaml:
+             тот же вид, что в палитрах и в папках аватарок. Свой набор стилей
+             здесь был раньше и выглядел иначе — обе стороны всегда цветные,
+             без едущей плашки, — из-за чего один и тот же по смыслу
+             переключатель в двух местах приложения смотрелся по-разному. -->
 
         <!-- Пометка области действия. Цвета те же, что у секций окна настроек:
              синий — общее для всех проектов, янтарный — только для этого. -->
@@ -155,39 +87,43 @@
                  настройку, либо личную для открытого проекта. Обе видны — надо
                  лишь переключиться, ни одна не теряется. -->
             <StackPanel Orientation="Horizontal" Spacing="10">
-                <Border Background="{DynamicResource BgSurfaceBrush}"
-                        CornerRadius="8"
-                        Padding="3"
-                        HorizontalAlignment="Left">
-                    <StackPanel Orientation="Horizontal">
-                        <!-- Папка — настройка этого проекта, глобус — общая.
-                             Обе фигуры контурные: сплошная папка рядом
-                             с контурным глобусом смотрелась чужой. -->
-                        <RadioButton Classes="segment project"
-                                     GroupName="BackupScope"
-                                     IsChecked="{Binding IsProjectScope}"
-                                     IsEnabled="{Binding CanUseProjectScope}">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <PathIcon Width="14" Height="14"
-                                          Foreground="{Binding $parent[RadioButton].Foreground}"
-                                          Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
-                                <TextBlock Text="{x:Static loc:Strings.Settings_Backups_Scope_Project}"
-                                           VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </RadioButton>
+                <!-- Стороны со значком, поэтому дорожка широкая: папка —
+                     настройка этого проекта, глобус — общая. Обе фигуры
+                     контурные: сплошная папка рядом с контурным глобусом
+                     смотрелась чужой. -->
+                <Border Classes="scopeTrack wide">
+                    <Panel>
+                        <Border Classes="scopeThumb"
+                                Classes.right="{Binding IsGlobalScope}"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Classes="scope local"
+                                    Classes.active="{Binding IsProjectScope}"
+                                    Command="{Binding ScopeProjectCommand}"
+                                    IsEnabled="{Binding CanUseProjectScope}">
+                                <StackPanel Orientation="Horizontal" Spacing="6"
+                                            HorizontalAlignment="Center">
+                                    <PathIcon Width="14" Height="14"
+                                              Foreground="{Binding $parent[Button].Foreground}"
+                                              Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+                                    <TextBlock Text="{x:Static loc:Strings.Settings_Backups_Scope_Project}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
 
-                        <RadioButton Classes="segment global"
-                                     GroupName="BackupScope"
-                                     IsChecked="{Binding IsGlobalScope}">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <PathIcon Width="15" Height="15"
-                                          Foreground="{Binding $parent[RadioButton].Foreground}"
-                                          Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-                                <TextBlock Text="{x:Static loc:Strings.Settings_Backups_Scope_Global}"
-                                           VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </RadioButton>
-                    </StackPanel>
+                            <Button Classes="scope global"
+                                    Classes.active="{Binding IsGlobalScope}"
+                                    Command="{Binding ScopeGlobalCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="6"
+                                            HorizontalAlignment="Center">
+                                    <PathIcon Width="15" Height="15"
+                                              Foreground="{Binding $parent[Button].Foreground}"
+                                              Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                                    <TextBlock Text="{x:Static loc:Strings.Settings_Backups_Scope_Global}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Panel>
                 </Border>
 
                 <infra:HintMark VerticalAlignment="Center"

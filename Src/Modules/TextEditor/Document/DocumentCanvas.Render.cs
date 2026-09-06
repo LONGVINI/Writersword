@@ -16,6 +16,57 @@ namespace Writersword.Modules.TextEditor.Document
 {
     public sealed partial class DocumentCanvas
     {
+        /// <summary>
+        /// Прямоугольник, по которому идёт штрих рамки картинки.
+        ///
+        /// Кисть рамки штрихует по центру линии, поэтому рамка внутрь поджимает
+        /// прямоугольник на половину толщины, а рамка наружу — раздаёт на неё же.
+        /// Рамка внутрь толще самой картинки вырождается в линию по её центру:
+        /// иначе стороны меняются местами и рамка выворачивается наизнанку.
+        /// </summary>
+        /// <summary>
+        /// Рисует рамку картинки, если она задана: цвет, толщина, штрих и скругление.
+        ///
+        /// Один метод на все четыре места отрисовки картинки — плавающую, поверх
+        /// текста, встроенную в строку и в поток «Ленты». Раньше в каждом стоял
+        /// свой одинаковый кусок, и любое новое свойство рамки пришлось бы
+        /// дописывать четырежды.
+        ///
+        /// alpha — прозрачность самой картинки: рамка гаснет вместе с ней.
+        /// </summary>
+        /// <summary>
+        /// Рамка картинки: цвет, толщина, штрих и скругление. Сама отрисовка живёт
+        /// в FloatingObjectRenderer — тем же кодом рамку рисует печать, иначе на
+        /// листе и в PDF она выглядела бы по-разному.
+        /// </summary>
+        private void DrawImageBorder(SKCanvas canvas, SKRect rect, ImageBlock block, byte alpha)
+            => Rendering.FloatingObjectRenderer.DrawImageBorder(canvas, block, rect, alpha);
+
+        /// <summary>
+        /// Ставит клип по контуру формы картинки, если форма задана. Возвращает
+        /// true, если клип поставлен — тогда вызывающий обязан снять его Restore.
+        ///
+        /// Отрисовок картинки в канвасе четыре (плавающая, поверх текста, в строке,
+        /// поток «Ленты»), и форма нужна во всех: иначе в одном режиме картинка
+        /// круглая, а в другом — прямоугольная.
+        /// </summary>
+        private static bool PushImageShapeClip(SKCanvas canvas, ImageBlock block, SKRect rect)
+        {
+            if (!block.HasShapeClip) return false;
+
+            using var path = Rendering.FloatingObjectRenderer.BuildShapePath(
+                block.ShapeType, block.CornerRadiusPt, rect);
+            if (path is null) return false;
+
+            canvas.Save();
+            canvas.ClipPath(path, SKClipOperation.Intersect, antialias: true);
+            return true;
+        }
+
+        /// <summary>Прямоугольник штриха рамки — общий с печатью.</summary>
+        private static SKRect ImageBorderRect(SKRect rect, ImageBlock block)
+            => Rendering.FloatingObjectRenderer.ImageBorderRect(rect, block);
+
         // ── Render ────────────────────────────────────────────────────────
         public override void Render(DrawingContext ctx)
         {
@@ -373,20 +424,91 @@ namespace Writersword.Modules.TextEditor.Document
                     float cellX = tableX + cell.Xpt;
                     float cellY = tableY + cell.Ypt - rowOffsetY - rowShift - extraShift;
 
+                    // Рамка и заливка идут на всю высоту ячейки, а не её первой
+                    // строки: объединённая по вертикали иначе замыкается под первой
+                    // строкой, и ниже остаётся полоса без границ.
+                    float cellVisibleH = CellSpanHeightPt(
+                        tableLayout, cell, effectiveRowTo, lastRowVisibleHeightPt, visibleH);
+
                     if (!string.IsNullOrEmpty(cell.BackgroundColor)
                         && SKColor.TryParse(cell.BackgroundColor, out var bgColor))
                     {
                         // Мутируем Color кешированного паинта — безопасно на compositor-треде.
                         _paintCellBg.Color = bgColor;
-                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, visibleH, _paintCellBg);
+                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, cellVisibleH, _paintCellBg);
                     }
 
                     float visibleCellY = cellY + rowShift;
 
                     SKTextRenderer.RenderCellBordersPublic(canvas, cell, cellX, visibleCellY,
-                        visibleH, canvasScale, false, false);
+                        cellVisibleH, canvasScale, false, false);
                 }
             }
+        }
+
+        /// <summary>
+        /// Высота ячейки в видимом куске таблицы: сумма высот строк, которые она
+        /// накрывает, в пределах куска.
+        ///
+        /// Объединённая по вертикали ячейка живёт в раскладке ТОЛЬКО в своей первой
+        /// строке. Проходы по строкам знают лишь высоту текущей строки, и такой
+        /// ячейке доставалась она одна: рамка замыкалась сразу под первой строкой,
+        /// а ниже оставалась полоса вообще без границ. Это и есть «дыра», которая
+        /// появляется в таблице после объединения нескольких строк, — ячейки при
+        /// этом целы, не нарисована только их нижняя часть.
+        ///
+        /// firstRowHeightPt — высота собственной строки ячейки, уже посчитанная
+        /// вызывающим со всеми поправками куска (продолжение сверху, обрез снизу).
+        /// </summary>
+        private static float CellSpanHeightPt(
+            SKTableLayout layout, SKTableCellLayout cell,
+            int effectiveRowTo, float lastRowVisibleHeightPt, float firstRowHeightPt)
+        {
+            if (cell.RowSpan <= 1) return firstRowHeightPt;
+
+            float total = 0f;
+            for (int r = cell.Row;
+                 r < cell.Row + cell.RowSpan && r < effectiveRowTo && r < layout.Rows.Count;
+                 r++)
+            {
+                float h = r == cell.Row ? firstRowHeightPt : layout.Rows[r].HeightPt;
+                if (r == effectiveRowTo - 1 && lastRowVisibleHeightPt >= 0f)
+                    h = lastRowVisibleHeightPt;
+                total += h;
+            }
+
+            return total > 0f ? total : firstRowHeightPt;
+        }
+
+        /// <summary>
+        /// Высота заливки выделения для ячейки в видимом куске таблицы.
+        ///
+        /// Обычная ячейка красится на высоту своей строки. Объединённая по вертикали
+        /// живёт в раскладке только в своей ПЕРВОЙ строке и накрывает следующие —
+        /// ей нужна сумма их высот, иначе закрашивается один её верх, а остальное
+        /// остаётся белым, будто ячейка не выделена.
+        /// </summary>
+        private static float CellSelectionHeightPt(
+            TableEntry te, SKTableRowLayout row, SKTableCellLayout cell,
+            int effectiveRowTo, float rowShift, float maxPadTop, float singleRowH)
+        {
+            if (cell.RowSpan <= 1) return singleRowH;
+
+            float total = 0f;
+            for (int r = row.Row;
+                 r < row.Row + cell.RowSpan && r < effectiveRowTo && r < te.Layout.Rows.Count;
+                 r++)
+            {
+                var spanRow = te.Layout.Rows[r];
+                float h = r == te.RowFrom
+                    ? spanRow.HeightPt - rowShift + maxPadTop
+                    : spanRow.HeightPt;
+                if (r == effectiveRowTo - 1 && te.LastRowVisibleHeightPt >= 0f)
+                    h = te.LastRowVisibleHeightPt;
+                total += h;
+            }
+
+            return total > 0f ? total : singleRowH;
         }
 
         private void RenderTableSelection(SKCanvas canvas, List<TableEntry> tables,
@@ -413,10 +535,13 @@ namespace Writersword.Modules.TextEditor.Document
                         maxPadTop = Math.Max(maxPadTop, cell.PadTopPt + cell.Borders.Top.WidthPt);
                 }
 
+                // Фильтра по minRow/maxRow здесь нет намеренно: объединённая ячейка
+                // живёт в раскладке в своей ПЕРВОЙ строке, и если выделение задело
+                // её нижнюю половину, отбор по строке-началу выкинул бы её целиком.
+                // Решает всё проверка пересечения ниже, по полному габариту ячейки.
                 foreach (var row in te.Layout.Rows)
                 {
                     if (row.Row < te.RowFrom || row.Row >= effectiveRowTo) continue;
-                    if (row.Row < minRow || row.Row > maxRow) continue;
 
                     bool isFirstRow = row.Row == te.RowFrom;
                     float rowShift = isFirstRow ? te.FirstRowContentOffsetPt : 0f;
@@ -431,10 +556,24 @@ namespace Writersword.Modules.TextEditor.Document
 
                     foreach (var cell in row.Cells)
                     {
-                        if (cell.Column < minCol || cell.Column > maxCol) continue;
+                        // Ячейка входит в подсветку по ПЕРЕСЕЧЕНИЮ всего своего
+                        // габарита с выделением и красится ЦЕЛИКОМ. Половина ячейки
+                        // не выделяется: выделить можно только всю, и подсветка
+                        // обязана показывать это честно.
+                        //
+                        // Прямоугольник самого выделения при этом не расширяется —
+                        // он идёт по клеткам сетки под курсором. Поэтому соседние
+                        // строки остаются закрашенными по выбранным столбцам, а не
+                        // разъезжаются вслед за объединённой ячейкой.
+                        if (cell.Row + cell.RowSpan - 1 < minRow || cell.Row > maxRow) continue;
+                        if (cell.Column + cell.ColSpan - 1 < minCol || cell.Column > maxCol) continue;
+
+                        float fillH = CellSelectionHeightPt(
+                            te, row, cell, effectiveRowTo, rowShift, maxPadTop, visibleH);
+
                         float cellX = te.XPt + cell.Xpt;
                         float cellY = te.Ypt + cell.Ypt - rowOffsetY - rowShift - extraShift;
-                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, visibleH, _paintSelection);
+                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, fillH, _paintSelection);
                     }
                 }
             }
@@ -783,6 +922,10 @@ namespace Writersword.Modules.TextEditor.Document
             // нужно задавать перед каждым проходом.
             PushReadingTextOverrides();
 
+            // Фигуры за текстом и фигуры-блоки в потоке — до текста, по тому же
+            // правилу, что и картинки: за текстом значит под ним.
+            RenderShapes(canvas, pages, firstPage, lastPage, beforeText: true);
+
             // Изображения-блоки (рисуются поверх белого листа, в координатах в пунктах).
             // Картинки за текстом (Behind) и блок-картинки (Inline) — рисуются до текста.
             foreach (var ie in images)
@@ -864,18 +1007,12 @@ namespace Writersword.Modules.TextEditor.Document
                     srcH * (float)(1.0 - Math.Clamp(ie.Block.CropBottomFrac, 0.0, 0.95)));
                 if (srcRect.Right <= srcRect.Left + 1f) srcRect.Right = srcRect.Left + 1f;
                 if (srcRect.Bottom <= srcRect.Top + 1f) srcRect.Bottom = srcRect.Top + 1f;
+                bool shapeClip = PushImageShapeClip(canvas, ie.Block, imgRect);
                 canvas.DrawImage(skImg, srcRect, imgRect, _imageSampling, imgPaint);
+                if (shapeClip) canvas.Restore();
                 _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
                 // Рамка картинки — в той же системе координат (поворот + отражение).
-                if (ie.Block.BorderThicknessPt > 0.0
-                    && !string.IsNullOrEmpty(ie.Block.BorderColor)
-                    && SKColor.TryParse(ie.Block.BorderColor, out var borderColor)
-                    && borderColor.Alpha > 0)
-                {
-                    _paintImageBorderDraw.Color = borderColor.WithAlpha((byte)(borderColor.Alpha * imgAlpha / 255));
-                    _paintImageBorderDraw.StrokeWidth = (float)ie.Block.BorderThicknessPt;
-                    canvas.DrawRect(imgRect, _paintImageBorderDraw);
-                }
+                DrawImageBorder(canvas, imgRect, ie.Block, imgAlpha);
 
                 // Картинка попала в текстовое выделение — заливаем той же кистью, что и текст.
                 // Иначе выделение «проходит сквозь» картинку: пользователь не видит, что она
@@ -1027,18 +1164,12 @@ namespace Writersword.Modules.TextEditor.Document
                     srcH * (float)(1.0 - Math.Clamp(ie.Block.CropBottomFrac, 0.0, 0.95)));
                 if (srcRect.Right <= srcRect.Left + 1f) srcRect.Right = srcRect.Left + 1f;
                 if (srcRect.Bottom <= srcRect.Top + 1f) srcRect.Bottom = srcRect.Top + 1f;
+                bool shapeClip = PushImageShapeClip(canvas, ie.Block, imgRect);
                 canvas.DrawImage(skImg, srcRect, imgRect, _imageSampling, imgPaint);
+                if (shapeClip) canvas.Restore();
                 _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
                 // Рамка картинки — в той же системе координат (поворот + отражение).
-                if (ie.Block.BorderThicknessPt > 0.0
-                    && !string.IsNullOrEmpty(ie.Block.BorderColor)
-                    && SKColor.TryParse(ie.Block.BorderColor, out var borderColor)
-                    && borderColor.Alpha > 0)
-                {
-                    _paintImageBorderDraw.Color = borderColor.WithAlpha((byte)(borderColor.Alpha * imgAlpha / 255));
-                    _paintImageBorderDraw.StrokeWidth = (float)ie.Block.BorderThicknessPt;
-                    canvas.DrawRect(imgRect, _paintImageBorderDraw);
-                }
+                DrawImageBorder(canvas, imgRect, ie.Block, imgAlpha);
 
                 // Картинка попала в текстовое выделение — заливаем той же кистью, что и текст.
                 // Иначе выделение «проходит сквозь» картинку: пользователь не видит, что она
@@ -1054,6 +1185,9 @@ namespace Writersword.Modules.TextEditor.Document
                 if (hasXform) canvas.Restore();
                 if (imgClip) canvas.Restore();
             }
+
+            // Фигуры поверх текста (InFront / Square / Tight) — после текста и картинок.
+            RenderShapes(canvas, pages, firstPage, lastPage, beforeText: false);
 
             // Предпросмотр обрезки — поверх всего: исходная картинка целиком,
             // срезаемые края затемнены, рамка кадрирования с маркерами. Картинка в
@@ -1152,6 +1286,9 @@ namespace Writersword.Modules.TextEditor.Document
                     canvas.Restore();
                 }
             }
+
+            // Рамка и маркеры выделенной фигуры.
+            RenderShapeSelection(canvas, firstPage, lastPage);
 
             // Рисуем выделения всех таблиц из единого словаря.
             foreach (var kv in _tableSelections)
@@ -1340,19 +1477,12 @@ namespace Writersword.Modules.TextEditor.Document
             if (src.Right <= src.Left + 1f) src.Right = src.Left + 1f;
             if (src.Bottom <= src.Top + 1f) src.Bottom = src.Top + 1f;
 
+            bool inlineShapeClip = PushImageShapeClip(canvas, block, dst);
             canvas.DrawImage(skImg, src, dst, _imageSampling, _paintImageDraw);
+            if (inlineShapeClip) canvas.Restore();
             _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
 
-            if (block.BorderThicknessPt > 0.0
-                && !string.IsNullOrEmpty(block.BorderColor)
-                && SKColor.TryParse(block.BorderColor, out var borderColor)
-                && borderColor.Alpha > 0)
-            {
-                _paintImageBorderDraw.Color =
-                    borderColor.WithAlpha((byte)(borderColor.Alpha * imgAlpha / 255));
-                _paintImageBorderDraw.StrokeWidth = (float)block.BorderThicknessPt;
-                canvas.DrawRect(dst, _paintImageBorderDraw);
-            }
+            DrawImageBorder(canvas, dst, block, imgAlpha);
 
             // Выделенная картинка в строке: в режиме разметки рамку, маркеры размера,
             // поворота и обрезки рисует общий проход по списку картинок — он полнее.
@@ -1648,9 +1778,13 @@ namespace Writersword.Modules.TextEditor.Document
                     foreach (var cell in row.Cells)
                     {
                         if (!_cellFlowFull.Contains((te.Table, row.Row, cell.Column))) continue;
+
+                        float fillH = CellSelectionHeightPt(
+                            te, row, cell, effectiveRowTo, rowShift, maxPadTop, visibleH);
+
                         float cellX = te.XPt + cell.Xpt;
                         float cellY = te.Ypt + cell.Ypt - rowOffsetY - rowShift - extraShift;
-                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, visibleH, _paintSelection);
+                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, fillH, _paintSelection);
                     }
                 }
             }
@@ -1684,7 +1818,7 @@ namespace Writersword.Modules.TextEditor.Document
             // текст удобно на светлом же поле, а не на подложке рабочей области.
             if (mode == EditorViewMode.Reading)
             {
-                float columnPt = Math.Min(canvasWPt, ReadingMaxPt);
+                float columnPt = ReadingColumnWidthPt(canvasWPt);
                 float sheetPad = Math.Max(columnPt * 0.09f, 22f);
                 float sheetW = Math.Min(columnPt + sheetPad * 2f, canvasWPt);
                 float sheetX = Math.Max((canvasWPt - sheetW) / 2f, 0f);
@@ -1782,18 +1916,12 @@ namespace Writersword.Modules.TextEditor.Document
             if (src.Right <= src.Left + 1f) src.Right = src.Left + 1f;
             if (src.Bottom <= src.Top + 1f) src.Bottom = src.Top + 1f;
 
+            bool flowShapeClip = PushImageShapeClip(canvas, ie.Block, dst);
             canvas.DrawImage(skImg, src, dst, _imageSampling, _paintImageDraw);
+            if (flowShapeClip) canvas.Restore();
             _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
 
-            if (ie.Block.BorderThicknessPt > 0.0
-                && !string.IsNullOrEmpty(ie.Block.BorderColor)
-                && SKColor.TryParse(ie.Block.BorderColor, out var borderColor)
-                && borderColor.Alpha > 0)
-            {
-                _paintImageBorderDraw.Color = borderColor.WithAlpha((byte)(borderColor.Alpha * alpha / 255));
-                _paintImageBorderDraw.StrokeWidth = (float)ie.Block.BorderThicknessPt;
-                canvas.DrawRect(dst, _paintImageBorderDraw);
-            }
+            DrawImageBorder(canvas, dst, ie.Block, alpha);
 
             if (_imagesInTextSelection.Contains(ie.Block))
                 canvas.DrawRect(dst, _paintSelection);

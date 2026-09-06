@@ -66,48 +66,9 @@
 			<Setter Property="BorderThickness" Value="1"/>
 		</Style>
 
-		<!-- Сегментированный переключатель области (Local/Global), классовый. -->
-		<Style Selector="Border.scopeTrack">
-			<Setter Property="CornerRadius" Value="999"/>
-			<Setter Property="Padding" Value="2"/>
-			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
-			<Setter Property="VerticalAlignment" Value="Center"/>
-		</Style>
-		<Style Selector="Button.scope">
-			<Setter Property="Padding" Value="14,5"/>
-			<Setter Property="MinWidth" Value="60"/>
-			<Setter Property="CornerRadius" Value="999"/>
-			<Setter Property="BorderThickness" Value="0"/>
-			<Setter Property="FontSize" Value="11"/>
-			<Setter Property="HorizontalContentAlignment" Value="Center"/>
-			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-		</Style>
-		<Style Selector="Button.scope /template/ ContentPresenter">
-			<Setter Property="Background" Value="Transparent"/>
-			<Setter Property="CornerRadius" Value="999"/>
-			<Setter Property="Transitions">
-				<Transitions>
-					<BrushTransition Property="Background" Duration="0:0:0.15"/>
-				</Transitions>
-			</Setter>
-		</Style>
-		<Style Selector="Button.scope:not(.active):pointerover /template/ ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
-		</Style>
-		<Style Selector="Button.scope.local.active">
-			<Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
-			<Setter Property="FontWeight" Value="SemiBold"/>
-		</Style>
-		<Style Selector="Button.scope.local.active /template/ ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
-		</Style>
-		<Style Selector="Button.scope.global.active">
-			<Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
-			<Setter Property="FontWeight" Value="SemiBold"/>
-		</Style>
-		<Style Selector="Button.scope.global.active /template/ ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
-		</Style>
+		<!-- Переключатель области берётся общим стилем
+		     (Styles/Controls/ScopeToggle.axaml): раньше здесь лежала своя копия,
+		     и она разошлась с копией в окне папок с аватарками. -->
 
 		<!-- Заголовок секции и шеврон. -->
 		<Style Selector="Path.chev">
@@ -414,14 +375,18 @@
 									<StackPanel IsVisible="{Binding IsActive}" Margin="8,2,8,8" Spacing="6">
 										<Grid ColumnDefinitions="Auto,*,Auto">
 											<Border Grid.Column="0" Classes="scopeTrack">
-												<StackPanel Orientation="Horizontal" Spacing="2">
-													<Button Classes="scope local" Classes.active="{Binding IsLocal}"
-													        Click="OnScopeLocal"
-													        Content="{x:Static res:SharedStrings.Palette_Local}"/>
-													<Button Classes="scope global" Classes.active="{Binding IsGlobal}"
-													        Click="OnScopeGlobal"
-													        Content="{x:Static res:SharedStrings.Palette_Global}"/>
-												</StackPanel>
+												<Panel>
+													<Border Classes="scopeThumb"
+													        Classes.right="{Binding IsGlobal}"/>
+													<StackPanel Orientation="Horizontal">
+														<Button Classes="scope local" Classes.active="{Binding IsLocal}"
+														        Click="OnScopeLocal"
+														        Content="{x:Static res:SharedStrings.Palette_Local}"/>
+														<Button Classes="scope global" Classes.active="{Binding IsGlobal}"
+														        Click="OnScopeGlobal"
+														        Content="{x:Static res:SharedStrings.Palette_Global}"/>
+													</StackPanel>
+												</Panel>
 											</Border>
 
 											<Border Grid.Column="1" Margin="10,0,0,0"

@@ -74,7 +74,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// <summary>Контекстная вкладка для работы с таблицей.</summary>
         public RibbonTableTabViewModel Table { get; }
 
-        /// <summary>Контекстная вкладка для работы с картинкой.</summary>
+        /// <summary>Контекстная вкладка для работы с картинкой и фигурой.</summary>
         public RibbonImageTabViewModel Image { get; }
 
         public RibbonViewModel(ITextEditorCommandTarget target)

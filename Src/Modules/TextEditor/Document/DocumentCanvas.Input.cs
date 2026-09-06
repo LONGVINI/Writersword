@@ -149,6 +149,12 @@ namespace Writersword.Modules.TextEditor.Document
         {
             base.OnPointerPressed(e);
             Focus();
+
+            // Касание текста поднимает экранную клавиатуру. Мышь панель ввода не трогает:
+            // на компьютере её нет, а на планшете с мышью она только закрыла бы страницу.
+            if (e.Pointer.Type == PointerType.Touch)
+                RequestInputPane();
+
             FinishZoomImmediately();
 
             var pt = e.GetPosition(this);
@@ -239,6 +245,16 @@ namespace Writersword.Modules.TextEditor.Document
                     ? StandardCursorType.SizeNorthSouth
                     : StandardCursorType.SizeWestEast);
                 e.Pointer.Capture(this);
+                e.Handled = true;
+                return;
+            }
+
+            // ── Фигуры ───────────────────────────────────────────────────
+            // Фигура рисуется поверх текста и картинок, поэтому и попадание по ней
+            // проверяется раньше. Промах снимает выделение фигуры и не мешает
+            // дальнейшей обработке нажатия.
+            if (ShapePointerPressed(e, pt, xPt, yPt))
+            {
                 e.Handled = true;
                 return;
             }
@@ -467,13 +483,36 @@ namespace Writersword.Modules.TextEditor.Document
                     _pressCellTable = geoPress.Value.table;
                     _pressCellRow = geoPress.Value.row;
                     _pressCellCol = geoPress.Value.col;
+                    _pressCellGridRow = geoPress.Value.gridRow;
+                    _pressCellGridCol = geoPress.Value.gridCol;
                 }
                 else if (nowInCell)
                 {
+                    // Запасной путь: геометрия таблицы клетку не нашла, но каретка
+                    // всё же встала в ячейку. Брать её можно, только когда точка
+                    // нажатия действительно внутри этой ячейки.
+                    //
+                    // Без проверки нажатие в ПУСТОМ месте — выше таблицы, по
+                    // обтекаемой картинке, у которой своей каретки нет, — назначало
+                    // ячейку нажатия: первое же движение мыши начинало протяжку по
+                    // ячейкам, и поставить курсор над таблицей было нечем.
                     var c = _layouts[pi].Cell!;
-                    _pressCellTable = c.Table;
-                    _pressCellRow = c.Cell.Row;
-                    _pressCellCol = c.Cell.Column;
+                    bool pressInsideCell =
+                        xPtPress >= c.ClipX && xPtPress <= c.ClipX + c.ClipW
+                        && yPtPress >= c.ClipY && yPtPress <= c.ClipY + c.ClipH;
+
+                    if (pressInsideCell)
+                    {
+                        _pressCellTable = c.Table;
+                        _pressCellRow = c.Cell.Row;
+                        _pressCellCol = c.Cell.Column;
+
+                        // Клетки сетки тут нет — известна только ячейка. Берём её
+                        // начало: выделение получится по ней, это честнее, чем
+                        // оставить прошлые координаты от другого нажатия.
+                        _pressCellGridRow = c.Cell.Row;
+                        _pressCellGridCol = c.Cell.Column;
+                    }
                 }
             }
 
@@ -644,6 +683,7 @@ namespace Writersword.Modules.TextEditor.Document
                 && _selectedImage.PinnedPage > 0;
 
             bool objectGesture = _imageRotating || _imageResizing
+                || _shapeRotating || _shapeResizing
                 || pinnedImageDrag
                 || _tableDragMode != TableDragMode.None;
             // Страница маппинга для закреплённой картинки — её собственная, а не та, над
@@ -656,6 +696,13 @@ namespace Writersword.Modules.TextEditor.Document
             (xPt, yPt) = objectGesture
                 ? VisualToLogicalPt(xPt, yPt, gestureMapPage)
                 : VisualToLogicalPt(xPt, yPt);
+
+            // ── Жесты фигуры ──────────────────────────────────────────────
+            if (ShapePointerMoved(e, xPt, yPt))
+            {
+                e.Handled = true;
+                return;
+            }
 
             // ── Поворот выделенной картинки ───────────────────────────────
             if (_imageRotating && _selectedImage is not null)
@@ -931,9 +978,20 @@ namespace Writersword.Modules.TextEditor.Document
                     _tableSelections.Clear();
                     _cellFlowRanges.Clear();
                     _cellFlowFull.Clear();
+                    // Протяжка запоминается ячейками-владельцами: по ним правила
+                    // объединения понимают, что объединённая ячейка взята целиком.
+                    _rawCellSelTable = _pressCellTable;
+                    _rawCellSel = (_pressCellRow, _pressCellCol,
+                                   geoEnd.Value.row, geoEnd.Value.col);
+
+                    // А само выделение идёт по КЛЕТКАМ СЕТКИ под указателем и
+                    // никуда не расширяется. Приведение к целым ячейкам здесь
+                    // разъезжалось на всю объединённую: протяжка по одному столбцу
+                    // через строку, объединённую на всю ширину, подсвечивала
+                    // таблицу целиком вместо этого столбца.
                     _tableSelections[_pressCellTable] = (
-                        _pressCellRow, _pressCellCol,
-                        geoEnd.Value.row, geoEnd.Value.col);
+                        _pressCellGridRow, _pressCellGridCol,
+                        geoEnd.Value.gridRow, geoEnd.Value.gridCol);
                     InvalidateFull();
                     return;
                 }
@@ -1166,6 +1224,12 @@ namespace Writersword.Modules.TextEditor.Document
                     e.Pointer.Capture(null);
                     e.Handled = true;
                 }
+                return;
+            }
+
+            if (ShapePointerReleased(e))
+            {
+                e.Handled = true;
                 return;
             }
 
@@ -1644,14 +1708,28 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // Клавиши выделенной фигуры: Delete удаляет её, Esc снимает выделение.
+            if (ShapeKeyDown(e))
+            {
+                e.Handled = true;
+                return;
+            }
+
             // Удаление выделенной картинки — раньше хоткеев и прочей обработки.
             if (_selectedImage is not null && (e.Key == Key.Delete || e.Key == Key.Back))
             {
                 _logger.Debug("[IMG] delete selected image {F}", _selectedImage.ImageFileName);
                 ExitImageCropMode(apply: false);
+                MoveCaretToImage(_selectedImage);
+
+                // Снимок документа, а не гранулярная команда свойств: удаление
+                // меняет состав блоков, и вернуть по значениям одного блока нечего —
+                // блока в документе уже нет.
+                BeginEdit("Удаление изображения");
                 DocVm?.RemoveImage(_selectedImage);
                 _selectedImage = null;
                 ImageSelectionChanged?.Invoke(false);
+                CommitEdit();
                 e.Handled = true;
                 return;
             }
@@ -2283,10 +2361,72 @@ namespace Writersword.Modules.TextEditor.Document
             if (IsEditingBlocked) return;
             if (IsInCell(_caretPara))
             {
+                if (TryInsertParagraphBeforeTable()) return;
                 CellNewParagraph();
                 return;
             }
             ExecuteNewParagraph();
+        }
+
+        /// <summary>
+        /// Enter в самом начале первой ячейки таблицы вставляет пустой абзац ПЕРЕД
+        /// таблицей, как в Word.
+        ///
+        /// Иначе до места над таблицей нечем добраться: таблица, прижатая к верху
+        /// страницы или стоящая первым блоком раздела, не пускает каретку выше себя —
+        /// щелчок над ней попадает либо в обтекаемую картинку (и выделяет её), либо
+        /// снова в ячейку. Сдвинуть такую таблицу вниз было невозможно вовсе.
+        ///
+        /// Условие узкое: ячейка (0, 0), её первый абзац, каретка в позиции 0 и без
+        /// выделения. Во всех прочих местах Enter делит абзац ячейки, как и раньше.
+        /// </summary>
+        private bool TryInsertParagraphBeforeTable()
+        {
+            if (HasSel()) return false;
+            if (_caretChar != 0) return false;
+
+            var cell = GetCurrentCell();
+            if (cell is null) return false;
+            if (cell.Cell.Row != 0 || cell.Cell.Column != 0) return false;
+            if (cell.CellParaIndex != 0) return false;
+
+            var document = DocVm?.Document;
+            if (document is null) return false;
+
+            foreach (var section in document.Sections)
+            {
+                int index = section.Blocks.IndexOf(cell.Table);
+                if (index < 0) continue;
+
+                BeginEdit("Абзац перед таблицей");
+                var para = new ParagraphBlock();
+                section.Blocks.Insert(index, para);
+                CommitEdit();
+
+                DocVm!.RebuildParagraphViewModelsPublic();
+                InvalidateCellLayoutCaches();
+                _cellVmCache.Clear();
+                RebuildLayouts();
+                InvalidateMeasure();
+
+                // Каретка встаёт в новый абзац — тот самый, до которого мышью было
+                // не дотянуться.
+                for (int i = 0; i < _layouts.Count; i++)
+                {
+                    if (!ReferenceEquals(_layouts[i].Vm?.Model, para)) continue;
+                    _caretPara = i;
+                    _caretChar = 0;
+                    break;
+                }
+
+                UpdateCellContext(true, IsInCell(_caretPara));
+                SyncSel();
+                ResetCaret();
+                InvalidateFull();
+                return true;
+            }
+
+            return false;
         }
 
         private void CellDeleteBack()
@@ -3413,7 +3553,14 @@ namespace Writersword.Modules.TextEditor.Document
         /// Используется при drag-выделении когда HitTest промахивается
         /// (курсор правее текста, на продолжении страницы и т.п.).
         /// </summary>
-        private (TableBlock table, int row, int col, int entryIdx)? HitTestTableCellGeometric(float xPt, float yPt)
+        /// <remarks>
+        /// row/col — начало ячейки-ВЛАДЕЛЬЦА точки (у объединённой это её левый
+        /// верхний угол), gridRow/gridCol — клетка сетки прямо под указателем.
+        /// Первое нужно каретке и правилам объединения, второе — выделению: оно
+        /// обязано идти ровно там, где вели мышь.
+        /// </remarks>
+        private (TableBlock table, int row, int col, int entryIdx, int gridRow, int gridCol)?
+            HitTestTableCellGeometric(float xPt, float yPt)
         {
             List<TableEntry> tables;
             lock (_renderLock) { tables = _tables; }
@@ -3469,8 +3616,8 @@ namespace Writersword.Modules.TextEditor.Document
                         {
                             var cell = te.Table.GetCell(row.Row, ci);
                             if (cell != null)
-                                return (te.Table, cell.Row, cell.Column, ti);
-                            return (te.Table, row.Row, ci, ti);
+                                return (te.Table, cell.Row, cell.Column, ti, row.Row, ci);
+                            return (te.Table, row.Row, ci, ti, row.Row, ci);
                         }
                         accX = colRight;
                     }
@@ -3478,8 +3625,8 @@ namespace Writersword.Modules.TextEditor.Document
                     int lastCol = te.Layout.ColumnWidthsPt.Count - 1;
                     var lastCell = te.Table.GetCell(row.Row, lastCol);
                     if (lastCell != null)
-                        return (te.Table, lastCell.Row, lastCell.Column, ti);
-                    return (te.Table, row.Row, lastCol, ti);
+                        return (te.Table, lastCell.Row, lastCell.Column, ti, row.Row, lastCol);
+                    return (te.Table, row.Row, lastCol, ti, row.Row, lastCol);
                 }
             }
             return null;

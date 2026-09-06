@@ -46,6 +46,19 @@ namespace Writersword.Modules.Characters.Models
         [JsonPropertyName("icon")]
         public string? IconFileName { get; set; }
 
+        /// <summary>
+        /// Порядок картинок в папке — именами файлов. Пустой список означает,
+        /// что порядок не задавали: тогда картинки идут так, как их отдаёт
+        /// хранилище, и ни одна существующая папка от появления этого поля не
+        /// перестраивается.
+        ///
+        /// Именами, а не ссылками: ссылка несёт в себе область хранения и
+        /// идентификатор папки, и при переносе папки между областями весь
+        /// список пришлось бы переписывать, а имена файлов переезжают как есть.
+        /// </summary>
+        [JsonPropertyName("order")]
+        public List<string> Order { get; set; } = new();
+
         // Runtime — не сериализуется.
         [JsonIgnore] public CharacterAvatarPackSource Source { get; set; }
         [JsonIgnore] public string? FolderPath { get; set; }

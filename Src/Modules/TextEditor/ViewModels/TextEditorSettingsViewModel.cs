@@ -55,6 +55,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public SettingValue<double> DefaultZoom { get; }
         public SettingValue<int> AutoSaveIntervalSeconds { get; }
         public SettingValue<double> MonitorSizeInches { get; }
+        public SettingValue<bool> BreakOnHyphen { get; }
         public SettingValue<bool> SubstituteMissingGlyphs { get; }
         public SettingValue<string> SubstituteFontFamily { get; }
 
@@ -143,6 +144,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             DefaultZoom = new SettingValue<double>(hardcoded.DefaultZoom, global.DefaultZoom);
             AutoSaveIntervalSeconds = new SettingValue<int>(hardcoded.AutoSaveIntervalSeconds, global.AutoSaveIntervalSeconds);
             MonitorSizeInches = new SettingValue<double>(hardcoded.MonitorSizeInches, global.MonitorSizeInches);
+            BreakOnHyphen = new SettingValue<bool>(hardcoded.BreakOnHyphen, global.BreakOnHyphen);
             SubstituteMissingGlyphs = new SettingValue<bool>(hardcoded.SubstituteMissingGlyphs, global.SubstituteMissingGlyphs);
             SubstituteFontFamily = new SettingValue<string>(hardcoded.SubstituteFontFamily, global.SubstituteFontFamily);
             ScriptFonts = BuildScriptFonts(global.ScriptFontMap);
@@ -171,6 +173,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             DefaultZoom = new SettingValue<double>(hardcoded.DefaultZoom, global.DefaultZoom, current.DefaultZoom);
             AutoSaveIntervalSeconds = new SettingValue<int>(hardcoded.AutoSaveIntervalSeconds, global.AutoSaveIntervalSeconds, current.AutoSaveIntervalSeconds);
             MonitorSizeInches = new SettingValue<double>(hardcoded.MonitorSizeInches, global.MonitorSizeInches, current.MonitorSizeInches);
+            BreakOnHyphen = new SettingValue<bool>(hardcoded.BreakOnHyphen, global.BreakOnHyphen, current.BreakOnHyphen);
             SubstituteMissingGlyphs = new SettingValue<bool>(hardcoded.SubstituteMissingGlyphs, global.SubstituteMissingGlyphs, current.SubstituteMissingGlyphs);
             SubstituteFontFamily = new SettingValue<string>(hardcoded.SubstituteFontFamily, global.SubstituteFontFamily, current.SubstituteFontFamily);
             ScriptFonts = BuildScriptFonts(current.ScriptFontMap);
@@ -245,6 +248,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             DefaultZoom = DefaultZoom.Value,
             AutoSaveIntervalSeconds = AutoSaveIntervalSeconds.Value,
             MonitorSizeInches = MonitorSizeInches.Value,
+            BreakOnHyphen = BreakOnHyphen.Value,
             SubstituteMissingGlyphs = SubstituteMissingGlyphs.Value,
             SubstituteFontFamily = SubstituteFontFamily.Value,
             ScriptFontMap = ScriptFonts.ToDictionary(e => e.ScriptKey, e => e.FontFamily)

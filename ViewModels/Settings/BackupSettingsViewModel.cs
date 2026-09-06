@@ -302,6 +302,12 @@ namespace Writersword.ViewModels.Settings
             }
         }
 
+        /// <summary>Переключиться на настройку открытого проекта.</summary>
+        public ReactiveCommand<Unit, Unit> ScopeProjectCommand { get; }
+
+        /// <summary>Переключиться на общую настройку.</summary>
+        public ReactiveCommand<Unit, Unit> ScopeGlobalCommand { get; }
+
         /// <summary>
         /// Путь выбранной области. Пусто в личной области означает, что
         /// проект следует общей настройке; пусто в общей — папка профиля.
@@ -469,6 +475,13 @@ namespace Writersword.ViewModels.Settings
             CycleIntervalUnitCommand = ReactiveCommand.Create(CycleIntervalUnit);
             DeletePointCommand = ReactiveCommand.CreateFromTask<BackupPointItem>(DeletePointAsync);
             OpenFolderCommand = ReactiveCommand.Create(OpenFolder);
+
+            // Переключатель области — кнопки общего стиля, а не радиокнопки,
+            // поэтому область меняют команды, а не двусторонняя привязка.
+            // На неоткрытом проекте личная сторона недоступна: править нечего.
+            ScopeProjectCommand = ReactiveCommand.Create(
+                () => { if (CanUseProjectScope) IsProjectScope = true; });
+            ScopeGlobalCommand = ReactiveCommand.Create(() => { IsProjectScope = false; });
             CompareCommand = ReactiveCommand.CreateFromTask<BackupPointItem>(CompareAsync);
 
             _ = RefreshAsync();

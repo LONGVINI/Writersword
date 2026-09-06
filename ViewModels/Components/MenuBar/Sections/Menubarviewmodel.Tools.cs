@@ -183,6 +183,23 @@ namespace Writersword.ViewModels.Components.MenuBar
         }
 
         /// <summary>
+        /// Показывает, кто сейчас работает с открытыми книгами.
+        ///
+        /// Отдельно от настроек синхронизации: те заполняют однажды и забывают,
+        /// а сюда заглядывают по ходу работы — узнать, не сел ли кто-то за ту же
+        /// книгу с другого устройства.
+        /// </summary>
+        private async Task OpenDevices()
+        {
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
+                && desktop.MainWindow != null)
+            {
+                var view = new DevicesView { DataContext = new DevicesViewModel() };
+                await view.ShowDialog(desktop.MainWindow);
+            }
+        }
+
+        /// <summary>
         /// Убирает из проекта файлы, на которые не осталось живых ссылок.
         ///
         /// Запускается только вручную: фоновая уборка удаляла файлы, которые

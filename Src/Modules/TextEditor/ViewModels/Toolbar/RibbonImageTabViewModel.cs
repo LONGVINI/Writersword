@@ -1,5 +1,7 @@
 using System.Windows.Input;
 using ReactiveUI;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Platform.Storage;
 using Writersword.Modules.TextEditor.Contracts;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Styles;
@@ -7,8 +9,15 @@ using Writersword.Modules.TextEditor.Models.Styles;
 namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 {
     /// <summary>
-    /// ViewModel контекстной вкладки «Формат» (работа с выделенной картинкой).
-    /// Появляется только когда на канвасе выделено изображение.
+    /// ViewModel контекстной вкладки «Формат» — одной на картинку и на фигуру.
+    /// Появляется, когда на канвасе выделен любой из этих объектов.
+    ///
+    /// Вкладка одна потому, что общего у объектов почти всё: размер, поворот,
+    /// прозрачность, обтекание, привязка к странице и линия по контуру. Различия
+    /// сведены к двум наборам групп — заливка с наконечниками у фигуры, обрезка
+    /// с отражением у картинки, — и показываются по признаку из
+    /// GetSelectedFloatingKind. Команды при этом остаются одни: вызовы SetImage*
+    /// канвас сам разводит на выделенный объект.
     /// </summary>
     public sealed class RibbonImageTabViewModel : ReactiveObject
     {
@@ -26,7 +35,25 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private decimal _opacityPercent = 100m;
         private decimal _borderThickness;
         private string _borderHexColor = "#00000000";
+        private ImageBorderAlign _borderAlign = ImageBorderAlign.Center;
+        private ShapeDashStyle _borderDash = ShapeDashStyle.Solid;
+        private decimal _borderCornerRadius;
         private bool _syncing;
+
+        // Единицы толщины рамки и скругления углов: 0 — пункты, 1 — мм, 2 — px.
+        // В модели и то и другое хранится в пунктах, здесь только показ.
+        private int _lineUnit;
+
+        // Признак выделенного объекта и поля, которых нет у картинки.
+        private bool _hasShape;
+        private bool _hasImage;
+        private bool _isLineLike;
+        private ShapeType _shapeType = ShapeType.Rectangle;
+        private ShapeArrowHead _startArrow = ShapeArrowHead.None;
+        private ShapeArrowHead _endArrow = ShapeArrowHead.None;
+        private string _fillHexColor = "#00000000";
+        private bool _hasFillImage;
+        private bool _fillImageStretch = true;
 
         // Отступы обтекания по сторонам (в текущих единицах отступов — см или px).
         private decimal _padTop;
@@ -74,7 +101,6 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 _currentWrap = value;
                 this.RaisePropertyChanged(nameof(CurrentWrap));
                 this.RaisePropertyChanged(nameof(IsWrapPaddingEnabled));
-                this.RaisePropertyChanged(nameof(WrapPaddingOpacity));
                 this.RaisePropertyChanged(nameof(IsPinAvailable));
             }
         }
@@ -104,15 +130,16 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         }
 
         /// <summary>
-        /// Отступы обтекания имеют смысл только когда текст реально обтекает картинку.
-        /// В режимах «В тексте» и «За текстом» группа отступов заблокирована.
-        /// Сторона обтекания включается по тому же условию.
+        /// Есть ли у картинки обтекание. По этому признаку лента показывает три
+        /// группы разом — отступы, сторону обтекания и привязку к странице: в
+        /// режимах «В тексте» и «За текстом» все три ни на что не влияют.
+        ///
+        /// Именно показывает, а не гасит. Гашение осталось от той поры, когда
+        /// отступы стояли в середине ленты и спрятать их значило сдвинуть всё,
+        /// что правее; теперь они стоят с краю рядом с остальными такими же.
         /// </summary>
         public bool IsWrapPaddingEnabled
             => _currentWrap == WrapMode.Square || _currentWrap == WrapMode.Tight;
-
-        /// <summary>Приглушение группы отступов, когда обтекание выключено.</summary>
-        public double WrapPaddingOpacity => IsWrapPaddingEnabled ? 1.0 : 0.4;
 
         /// <summary>Заблокированы ли пропорции при изменении размера.</summary>
         public bool IsAspectLocked
@@ -257,7 +284,33 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             set => OpacityPercent = (decimal)System.Math.Round(value, 0);
         }
 
-        /// <summary>Толщина рамки картинки в пунктах.</summary>
+        // Толщина линии и скругление живут в пунктах: пункт — единица типографская,
+        // и в ней же задаются шрифты и интерлиньяж. Показывать их можно в чём угодно,
+        // поэтому перевод стоит на границе — у поля, а не в модели.
+        private double LineUnitToPt(decimal value) => _lineUnit switch
+        {
+            1 => (double)value * 72.0 / 25.4,
+            2 => (double)value * 0.75,
+            _ => (double)value,
+        };
+
+        private decimal PtToLineUnit(double pt) => _lineUnit switch
+        {
+            1 => (decimal)System.Math.Round(pt * 25.4 / 72.0, 2),
+            2 => (decimal)System.Math.Round(pt * 96.0 / 72.0, 2),
+            _ => (decimal)System.Math.Round(pt, 2),
+        };
+
+        /// <summary>Подпись на кнопке единиц линии. Нажатие идёт по кругу пт → мм → px.</summary>
+        public string LineUnitLabel => _lineUnit switch { 1 => "мм", 2 => "px", _ => "пт" };
+
+        /// <summary>Шаг поля: в миллиметрах пункт слишком крупен, нужен мелкий шаг.</summary>
+        public decimal LineUnitIncrement => _lineUnit == 1 ? 0.1m : 0.5m;
+
+        /// <summary>Знаков после запятой: в пунктах хватает одного, в мм нужно два.</summary>
+        public string LineUnitFormat => _lineUnit == 1 ? "0.##" : "0.#";
+
+        /// <summary>Толщина рамки картинки в выбранных единицах.</summary>
         public decimal BorderThickness
         {
             get => _borderThickness;
@@ -277,10 +330,48 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                             _borderHexColor = "#000000";
                             this.RaisePropertyChanged(nameof(BorderHexColor));
                         }
-                        _target.SetImageBorder(_borderHexColor, (double)clamped);
+                        _target.SetImageBorder(_borderHexColor, LineUnitToPt(clamped));
                     }
                 }
                 this.RaisePropertyChanged(nameof(BorderThickness));
+            }
+        }
+
+        /// <summary>Положение рамки относительно границы картинки (для подсветки кнопок).</summary>
+        public ImageBorderAlign CurrentBorderAlign
+        {
+            get => _borderAlign;
+            private set
+            {
+                // Всегда raise — см. CurrentAlignment: переключатели взаимоисключающие.
+                _borderAlign = value;
+                this.RaisePropertyChanged(nameof(CurrentBorderAlign));
+            }
+        }
+
+        /// <summary>Штрих рамки картинки (для подсветки переключателей).</summary>
+        public ShapeDashStyle CurrentBorderDash
+        {
+            get => _borderDash;
+            private set
+            {
+                // Всегда raise — переключатели штриха взаимоисключающие, как и остальные.
+                _borderDash = value;
+                this.RaisePropertyChanged(nameof(CurrentBorderDash));
+            }
+        }
+
+        /// <summary>Скругление углов рамки в пунктах.</summary>
+        public decimal ImageCornerRadius
+        {
+            get => _borderCornerRadius;
+            set
+            {
+                decimal clamped = System.Math.Clamp(value, 0m, 400m);
+                if (_borderCornerRadius == clamped) return;
+                _borderCornerRadius = clamped;
+                this.RaisePropertyChanged(nameof(ImageCornerRadius));
+                if (!_syncing) _target.SetImageCornerRadius(LineUnitToPt(clamped));
             }
         }
 
@@ -295,9 +386,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 if (!_syncing)
                 {
                     // Выбор цвета при нулевой толщине сразу даёт видимую рамку.
+                    // 1.5 пункта — в текущих единицах поля, иначе в миллиметрах
+                    // рамка вышла бы втрое толще задуманного.
                     if (_borderThickness <= 0m && _borderHexColor != "#00000000")
                     {
-                        _borderThickness = 1.5m;
+                        _borderThickness = PtToLineUnit(1.5);
                         this.RaisePropertyChanged(nameof(BorderThickness));
                     }
                     // Выбор «нет цвета» — это отказ от рамки: обнуляем и толщину,
@@ -307,10 +400,119 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                         _borderThickness = 0m;
                         this.RaisePropertyChanged(nameof(BorderThickness));
                     }
-                    _target.SetImageBorder(_borderHexColor, (double)_borderThickness);
+                    _target.SetImageBorder(_borderHexColor, LineUnitToPt(_borderThickness));
                 }
                 this.RaisePropertyChanged(nameof(BorderHexColor));
             }
+        }
+
+        // ── Что выделено: фигура или картинка ─────────────────────────────
+
+        /// <summary>Выделена фигура: показываются заливка, вид фигуры и наконечники.</summary>
+        public bool IsShapeSelected => _hasShape;
+
+        /// <summary>Выделена картинка: доступна обрезка и замена файла.</summary>
+        public bool IsImageSelected => _hasImage;
+
+        /// <summary>
+        /// Линия или стрелка. У них нет площади, поэтому нет заливки и скругления,
+        /// зато есть наконечники.
+        /// </summary>
+        public bool IsLineLike => _hasShape && _isLineLike;
+
+        /// <summary>Замкнутая фигура: её можно залить цветом или картинкой.</summary>
+        public bool IsClosedShape => _hasShape && !_isLineLike;
+
+        /// <summary>Вид фигуры или форма подрезки картинки (для подсветки кнопок).</summary>
+        public ShapeType CurrentShapeType
+        {
+            get => _shapeType;
+            private set
+            {
+                // Всегда raise — см. CurrentAlignment: переключатели взаимоисключающие.
+                _shapeType = value;
+                this.RaisePropertyChanged(nameof(CurrentShapeType));
+            }
+        }
+
+        /// <summary>Цвет заливки фигуры в hex; #00000000 — заливки нет.</summary>
+        public string FillHexColor
+        {
+            get => _fillHexColor;
+            set
+            {
+                if (_fillHexColor == value) return;
+                _fillHexColor = value ?? "#00000000";
+                this.RaisePropertyChanged(nameof(FillHexColor));
+                if (!_syncing) _target.SetShapeFill(NormalizeFill(_fillHexColor));
+            }
+        }
+
+        /// <summary>Залита ли фигура картинкой — по этому признаку доступен сброс.</summary>
+        public bool HasFillImage
+        {
+            get => _hasFillImage;
+            private set
+            {
+                _hasFillImage = value;
+                this.RaisePropertyChanged(nameof(HasFillImage));
+                this.RaisePropertyChanged(nameof(CanClearFillImage));
+            }
+        }
+
+        /// <summary>
+        /// Можно ли убрать картинку и растянуть её. Только у фигуры: там картинка —
+        /// заливка контура, её есть чем заменить. У картинки убрать содержимое
+        /// нельзя — она сама и есть это содержимое, снятие файла оставило бы
+        /// пустой объект вместо удаления.
+        /// </summary>
+        public bool CanClearFillImage => _hasShape && _hasFillImage;
+
+        /// <summary>Растягивать картинку-заливку на весь габарит фигуры.</summary>
+        public bool FillImageStretch
+        {
+            get => _fillImageStretch;
+            set
+            {
+                if (_fillImageStretch == value) return;
+                _fillImageStretch = value;
+                this.RaisePropertyChanged(nameof(FillImageStretch));
+                if (!_syncing) _target.SetShapeFillImageStretch(value);
+            }
+        }
+
+        /// <summary>Линия без наконечников — для подсветки переключателя.</summary>
+        public bool HasNoArrows
+            => _startArrow == ShapeArrowHead.None && _endArrow == ShapeArrowHead.None;
+
+        /// <summary>Наконечник только в начале.</summary>
+        public bool HasStartArrow
+            => _startArrow != ShapeArrowHead.None && _endArrow == ShapeArrowHead.None;
+
+        /// <summary>Наконечник только в конце.</summary>
+        public bool HasEndArrow
+            => _startArrow == ShapeArrowHead.None && _endArrow != ShapeArrowHead.None;
+
+        /// <summary>Наконечники с обеих сторон.</summary>
+        public bool HasBothArrows
+            => _startArrow != ShapeArrowHead.None && _endArrow != ShapeArrowHead.None;
+
+        /// <summary>
+        /// Есть ли что зеркалить: у линии без наконечников и у линии со стрелками
+        /// на обоих концах переворот ничего не меняет.
+        /// </summary>
+        public bool CanFlipArrows => HasStartArrow || HasEndArrow;
+
+        /// <summary>
+        /// Прозрачный цвет из палитры значит «нет заливки»: в модель уходит null,
+        /// иначе фигура получила бы невидимую, но существующую заливку.
+        /// </summary>
+        private static string? NormalizeFill(string? hex)
+        {
+            if (string.IsNullOrWhiteSpace(hex)) return null;
+            if (hex.Length == 9 && hex.StartsWith("#00", System.StringComparison.OrdinalIgnoreCase))
+                return null;
+            return hex;
         }
 
         // ── Отступы обтекания ─────────────────────────────────────────────
@@ -445,10 +647,22 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         // ── Обтекание текстом ─────────────────────────────────────────────
         public ICommand WrapInlineCommand { get; }
         public ICommand WrapSquareCommand { get; }
+        public ICommand WrapInFrontCommand { get; }
         public ICommand WrapBehindCommand { get; }
 
         // ── Привязка к странице ───────────────────────────────────────────
         public ICommand TogglePinToPageCommand { get; }
+
+        // ── Положение рамки ───────────────────────────────────────────────
+        public ICommand BorderAlignInsideCommand { get; }
+        public ICommand BorderAlignCenterCommand { get; }
+        public ICommand BorderAlignOutsideCommand { get; }
+
+        // ── Штрих рамки ───────────────────────────────────────────────────
+        public ICommand BorderDashSolidCommand { get; }
+        public ICommand BorderDashDashCommand { get; }
+        public ICommand BorderDashDotCommand { get; }
+        public ICommand BorderDashDashDotCommand { get; }
 
         // ── Сторона обтекания ─────────────────────────────────────────────
         public ICommand WrapSideLargestCommand { get; }
@@ -466,6 +680,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         // ── Единицы отступов обтекания ────────────────────────────────────
         public ICommand TogglePadUnitCommand { get; }
 
+        // ── Единицы толщины линии и скругления ────────────────────────────
+        public ICommand ToggleLineUnitCommand { get; }
+
         // ── Связь сторон отступа ──────────────────────────────────────────
         public ICommand ToggleWrapPadLinkCommand { get; }
 
@@ -473,6 +690,28 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand ToggleCropModeCommand { get; }
         public ICommand FlipHorizontalCommand { get; }
         public ICommand FlipVerticalCommand { get; }
+
+        // ── Форма объекта ─────────────────────────────────────────────────
+        public ICommand ShapeRectangleCommand { get; }
+        public ICommand ShapeEllipseCommand { get; }
+        public ICommand ShapeLineCommand { get; }
+        public ICommand ShapeArrowCommand { get; }
+        public ICommand ShapeCalloutCommand { get; }
+
+        // ── Наконечники линии ─────────────────────────────────────────────
+        public ICommand ArrowNoneCommand { get; }
+        public ICommand ArrowStartCommand { get; }
+        public ICommand ArrowEndCommand { get; }
+        public ICommand ArrowBothCommand { get; }
+        public ICommand FlipArrowsCommand { get; }
+
+        // ── Заливка фигуры ────────────────────────────────────────────────
+        public ICommand PickFillImageCommand { get; }
+        public ICommand ClearFillImageCommand { get; }
+
+        // ── Порядок наложения ─────────────────────────────────────────────
+        public ICommand BringToFrontCommand { get; }
+        public ICommand SendToBackCommand { get; }
 
         // ── Прочее ────────────────────────────────────────────────────────
         public ICommand ToggleAspectCommand { get; }
@@ -493,6 +732,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 { _target.SetImageWrapMode(WrapMode.Inline); SyncFromTarget(); });
             WrapSquareCommand = ReactiveCommand.Create(() =>
                 { _target.SetImageWrapMode(WrapMode.Square); SyncFromTarget(); });
+            WrapInFrontCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageWrapMode(WrapMode.InFront); SyncFromTarget(); });
             WrapBehindCommand = ReactiveCommand.Create(() =>
                 { _target.SetImageWrapMode(WrapMode.Behind); SyncFromTarget(); });
 
@@ -506,6 +747,22 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 _target.SetImagePinnedPage(page);
                 SyncFromTarget();
             });
+
+            BorderAlignInsideCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageBorderAlign(ImageBorderAlign.Inside); SyncFromTarget(); });
+            BorderAlignCenterCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageBorderAlign(ImageBorderAlign.Center); SyncFromTarget(); });
+            BorderAlignOutsideCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageBorderAlign(ImageBorderAlign.Outside); SyncFromTarget(); });
+
+            BorderDashSolidCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageBorderDash(ShapeDashStyle.Solid); SyncFromTarget(); });
+            BorderDashDashCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageBorderDash(ShapeDashStyle.Dash); SyncFromTarget(); });
+            BorderDashDotCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageBorderDash(ShapeDashStyle.Dot); SyncFromTarget(); });
+            BorderDashDashDotCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageBorderDash(ShapeDashStyle.DashDot); SyncFromTarget(); });
 
             WrapSideLargestCommand = ReactiveCommand.Create(() =>
                 { _target.SetImageWrapSide(WrapSide.LargestOnly); SyncFromTarget(); });
@@ -525,6 +782,17 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             TogglePadUnitCommand = ReactiveCommand.Create(() => { PadUnitIsMm = !PadUnitIsMm; });
 
+            // По кругу пт → мм → px. Значения в модели не трогаем: меняется только
+            // то, в чём их показывать, поэтому достаточно перечитать себя.
+            ToggleLineUnitCommand = ReactiveCommand.Create(() =>
+            {
+                _lineUnit = (_lineUnit + 1) % 3;
+                this.RaisePropertyChanged(nameof(LineUnitLabel));
+                this.RaisePropertyChanged(nameof(LineUnitIncrement));
+                this.RaisePropertyChanged(nameof(LineUnitFormat));
+                SyncFromTarget();
+            });
+
             ToggleWrapPadLinkCommand = ReactiveCommand.Create(() =>
             {
                 IsWrapPadLinked = !IsWrapPadLinked;
@@ -542,14 +810,80 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             FlipVerticalCommand = ReactiveCommand.Create(() =>
                 { _target.ToggleImageFlipVertical(); });
 
+            // Форма меняет и фигуру, и подрезку картинки: канвас разводит вызов
+            // на выделенный объект, вкладке знать об этом не нужно.
+            ShapeRectangleCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageShapeType(ShapeType.Rectangle); SyncFromTarget(); });
+            ShapeEllipseCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageShapeType(ShapeType.Ellipse); SyncFromTarget(); });
+            ShapeLineCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageShapeType(ShapeType.Line); SyncFromTarget(); });
+            ShapeArrowCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageShapeType(ShapeType.Arrow); SyncFromTarget(); });
+            ShapeCalloutCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageShapeType(ShapeType.Callout); SyncFromTarget(); });
+
+            ArrowNoneCommand = ReactiveCommand.Create(() =>
+                { _target.SetShapeArrows(ShapeArrowHead.None, ShapeArrowHead.None); SyncFromTarget(); });
+            ArrowStartCommand = ReactiveCommand.Create(() =>
+                { _target.SetShapeArrows(ShapeArrowHead.Triangle, ShapeArrowHead.None); SyncFromTarget(); });
+            ArrowEndCommand = ReactiveCommand.Create(() =>
+                { _target.SetShapeArrows(ShapeArrowHead.None, ShapeArrowHead.Triangle); SyncFromTarget(); });
+            ArrowBothCommand = ReactiveCommand.Create(() =>
+                { _target.SetShapeArrows(ShapeArrowHead.Triangle, ShapeArrowHead.Triangle); SyncFromTarget(); });
+
+            // Меняет концы местами. Набирать стрелку заново, чтобы развернуть её,
+            // значит помнить, какой конец сейчас какой — а на листе это не видно.
+            FlipArrowsCommand = ReactiveCommand.Create(() =>
+                { _target.SetShapeArrows(_endArrow, _startArrow); SyncFromTarget(); });
+
+            PickFillImageCommand = ReactiveCommand.CreateFromTask(async () =>
+            {
+                var window = (Avalonia.Application.Current?.ApplicationLifetime
+                    as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+                if (window?.StorageProvider is null) return;
+
+                var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+                {
+                    Title = "Картинка внутрь фигуры",
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("Изображения")
+                        {
+                            Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.webp" }
+                        }
+                    }
+                });
+
+                if (files.Count == 0) return;
+                var path = files[0].TryGetLocalPath();
+                if (string.IsNullOrEmpty(path)) return;
+
+                _target.SetShapeFillImage(path);
+                SyncFromTarget();
+            });
+
+            ClearFillImageCommand = ReactiveCommand.Create(() =>
+                { _target.SetShapeFillImage(null); SyncFromTarget(); });
+
+            BringToFrontCommand = ReactiveCommand.Create(() =>
+                { _target.SetShapeZOrder(toFront: true); SyncFromTarget(); });
+            SendToBackCommand = ReactiveCommand.Create(() =>
+                { _target.SetShapeZOrder(toFront: false); SyncFromTarget(); });
+
             ToggleAspectCommand = ReactiveCommand.Create(() =>
                 { _target.SetImageLockAspect(!IsAspectLocked); SyncFromTarget(); });
             DeleteImageCommand = ReactiveCommand.Create(() => _target.DeleteSelectedImage());
         }
 
         /// <summary>
-        /// Читает параметры выделенной картинки из target и обновляет состояние вкладки.
-        /// Вызывается при выделении картинки и после каждой команды.
+        /// Читает параметры выделенного объекта из target и обновляет состояние
+        /// вкладки. Вызывается при выделении и после каждой команды.
+        ///
+        /// Общие поля читаются через GetSelectedImage*: канвас отдаёт по ним данные
+        /// того объекта, который выделен сейчас. Признак объекта нужен, чтобы
+        /// показать нужные группы и дочитать то, чего у картинки нет.
         /// </summary>
         public void SyncFromTarget()
         {
@@ -559,9 +893,38 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             _syncing = true;
             try
             {
+                var kind = _target.GetSelectedFloatingKind();
+                bool hasShape = kind?.HasShape ?? false;
+                bool hasImage = kind?.HasImage ?? true;
+                bool isLine = kind?.IsLine ?? false;
+
+                if (_hasShape != hasShape || _hasImage != hasImage || _isLineLike != isLine)
+                {
+                    _hasShape = hasShape;
+                    _hasImage = hasImage;
+                    _isLineLike = isLine;
+                    this.RaisePropertyChanged(nameof(IsShapeSelected));
+                    this.RaisePropertyChanged(nameof(IsImageSelected));
+                    this.RaisePropertyChanged(nameof(IsLineLike));
+                    this.RaisePropertyChanged(nameof(IsClosedShape));
+                    this.RaisePropertyChanged(nameof(CanClearFillImage));
+                }
+
+                SyncShapeOnly(hasShape);
+
+                CurrentShapeType = _target.GetSelectedImageShapeType() ?? ShapeType.Rectangle;
                 CurrentAlignment = info.Value.Align;
                 CurrentWrap = info.Value.Wrap;
                 CurrentWrapSide = _target.GetSelectedImageWrapSide() ?? WrapSide.LargestOnly;
+                CurrentBorderAlign = _target.GetSelectedImageBorderAlign() ?? ImageBorderAlign.Center;
+                CurrentBorderDash = _target.GetSelectedImageBorderDash() ?? ShapeDashStyle.Solid;
+
+                decimal radius = PtToLineUnit(_target.GetSelectedImageCornerRadius() ?? 0.0);
+                if (_borderCornerRadius != radius)
+                {
+                    _borderCornerRadius = radius;
+                    this.RaisePropertyChanged(nameof(ImageCornerRadius));
+                }
 
                 _pinnedPage = _target.GetSelectedImagePinnedPage() ?? 0;
                 this.RaisePropertyChanged(nameof(IsPinnedToPage));
@@ -604,7 +967,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                         this.RaisePropertyChanged(nameof(OpacityValue));
                     }
 
-                    decimal bt = (decimal)System.Math.Round(style.Value.BorderThicknessPt, 1);
+                    decimal bt = PtToLineUnit(style.Value.BorderThicknessPt);
                     if (_borderThickness != bt)
                     {
                         _borderThickness = bt;
@@ -635,6 +998,44 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             finally
             {
                 _syncing = false;
+            }
+        }
+
+        /// <summary>
+        /// Дочитывает то, чего у картинки нет: заливку, наконечники и картинку
+        /// внутри фигуры. Вызывается из SyncFromTarget под уже поднятым _syncing.
+        /// </summary>
+        private void SyncShapeOnly(bool hasShape)
+        {
+            if (!hasShape) return;
+
+            var s = _target.GetSelectedShapeInfo();
+            if (s is null) return;
+
+            HasFillImage = s.Value.HasFillImage;
+
+            if (_startArrow != s.Value.StartArrow || _endArrow != s.Value.EndArrow)
+            {
+                _startArrow = s.Value.StartArrow;
+                _endArrow = s.Value.EndArrow;
+                this.RaisePropertyChanged(nameof(HasNoArrows));
+                this.RaisePropertyChanged(nameof(HasStartArrow));
+                this.RaisePropertyChanged(nameof(HasEndArrow));
+                this.RaisePropertyChanged(nameof(HasBothArrows));
+                this.RaisePropertyChanged(nameof(CanFlipArrows));
+            }
+
+            if (_fillImageStretch != s.Value.FillImageStretch)
+            {
+                _fillImageStretch = s.Value.FillImageStretch;
+                this.RaisePropertyChanged(nameof(FillImageStretch));
+            }
+
+            string fill = s.Value.FillColor ?? "#00000000";
+            if (_fillHexColor != fill)
+            {
+                _fillHexColor = fill;
+                this.RaisePropertyChanged(nameof(FillHexColor));
             }
         }
     }

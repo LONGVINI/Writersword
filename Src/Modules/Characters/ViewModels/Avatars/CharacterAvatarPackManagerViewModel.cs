@@ -14,36 +14,25 @@ using Writersword.Src.Modules.Characters.Resources;
 namespace Writersword.Modules.Characters.ViewModels.Avatars
 {
     /// <summary>
-    /// Пункт списка «переложить в другую папку» у плитки картинки.
+    /// Выбранный на диске файл картинки: имя и отложенное чтение.
     ///
-    /// Список строится для каждой плитки свой, с уже подставленной картинкой:
-    /// иначе пришлось бы держать «выбранную для переноса» плитку отдельным
-    /// состоянием и разбирать в два шага, что и куда переносят.
+    /// Не байты: выборщик отдавал сразу содержимое всех выбранных файлов, и на
+    /// пятистах фотографиях в памяти оказывалось всё выбранное разом, ещё до
+    /// того как сохранится первая. Читается по одному, ровно перед записью.
     /// </summary>
-    public class CharacterAvatarPackMoveTargetViewModel
+    public sealed class CharacterPickedImage
     {
-        public string PackId { get; }
-        public string DisplayName { get; }
-        public CharacterAvatarPackScope Scope { get; }
-        public bool IsLocal => Scope == CharacterAvatarPackScope.Local;
-        public bool IsGlobal => Scope == CharacterAvatarPackScope.Global;
-        public string ScopeLabel { get; }
-        public ReactiveCommand<Unit, Unit> MoveCommand { get; }
+        private readonly Func<Task<byte[]?>> _read;
 
-        public CharacterAvatarPackMoveTargetViewModel(
-            string packId,
-            string displayName,
-            CharacterAvatarPackScope scope,
-            string avatarRef,
-            Func<string, string, Task> onMove)
+        public CharacterPickedImage(string name, Func<Task<byte[]?>> read)
         {
-            PackId = packId;
-            DisplayName = displayName;
-            Scope = scope;
-            ScopeLabel = CharacterAvatarScopeText.Label(scope);
-
-            MoveCommand = ReactiveCommand.CreateFromTask(() => onMove(avatarRef, packId));
+            Name = name;
+            _read = read;
         }
+
+        public string Name { get; }
+
+        public Task<byte[]?> ReadAsync() => _read();
     }
 
     /// <summary>
@@ -73,15 +62,65 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
 
     /// <summary>
     /// Плитка картинки в менеджере папок. Умеет то, чего в пикере нет:
-    /// удаление из хранилища с переспросом, перенос в другую папку и
-    /// назначение обложкой.
+    /// удаление из хранилища, перенос в другую папку и назначение обложкой.
     /// </summary>
     public class CharacterAvatarPackManagerItemViewModel : ReactiveObject
     {
+        private readonly ICharacterAvatarService _service;
+        private Avalonia.Media.Imaging.Bitmap? _thumbnail;
+        private bool _thumbnailRequested;
+
+        /// <summary>Миниатюра готова. Пока нет — плитка показывает заглушку.</summary>
+        public bool HasThumbnail => _thumbnail != null;
+
         public string AvatarRef { get; }
         public string FileName { get; }
         public string ToolTip => System.IO.Path.GetFileNameWithoutExtension(FileName);
-        public Avalonia.Media.Imaging.Bitmap? Thumbnail { get; }
+
+        /// <summary>
+        /// Миниатюра под плитку в шестьдесят восемь точек. Берётся при первом
+        /// показе и в размер плитки, а не при создании и во весь предел службы:
+        /// папка на пятьсот картинок раскодировалась при открытии целиком, и
+        /// каждая картинка занимала мегабайт ради квадратика.
+        /// </summary>
+        public Avalonia.Media.Imaging.Bitmap? Thumbnail
+        {
+            get
+            {
+                if (!_thumbnailRequested)
+                {
+                    _thumbnailRequested = true;
+
+                    // Уже построенную отдаём тем же кадром: иначе плитки,
+                    // которые только что были на экране, мигали бы заглушкой
+                    // при каждой прокрутке туда-обратно.
+                    _thumbnail = _service.TryGetThumbnail(AvatarRef, 96);
+                    if (_thumbnail == null) RequestThumbnail();
+                }
+                return _thumbnail;
+            }
+        }
+
+        /// <summary>
+        /// Построить миниатюру в стороне от UI-потока. Прокрутка реализует
+        /// новые плитки прямо во время движения, и раскодирование на месте
+        /// останавливало её на каждой новой строке.
+        /// </summary>
+        private async void RequestThumbnail()
+        {
+            Avalonia.Media.Imaging.Bitmap? bitmap = null;
+            try { bitmap = await _service.LoadThumbnailAsync(AvatarRef, 96); }
+            catch { }
+
+            if (bitmap == null) return;
+
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _thumbnail = bitmap;
+                this.RaisePropertyChanged(nameof(Thumbnail));
+                this.RaisePropertyChanged(nameof(HasThumbnail));
+            });
+        }
 
         /// <summary>Картинку разрешено трогать: встроенные папки только читаются.</summary>
         public bool CanModify { get; }
@@ -91,35 +130,33 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
         public bool IsCover
         {
             get => _isCover;
-            set => this.RaiseAndSetIfChanged(ref _isCover, value);
-        }
-
-        public ObservableCollection<CharacterAvatarPackMoveTargetViewModel> MoveTargets { get; } = new();
-        public bool HasMoveTargets => MoveTargets.Any();
-
-        /// <summary>
-        /// Сообщить о пересборке списка целей переноса. Сам список — коллекция
-        /// с уведомлениями, а признак «цели есть» из неё выводится и об
-        /// изменениях коллекции сам не узнаёт.
-        /// </summary>
-        public void NotifyMoveTargetsChanged() => this.RaisePropertyChanged(nameof(HasMoveTargets));
-
-        private bool _isConfirmingDelete;
-        public bool IsConfirmingDelete
-        {
-            get => _isConfirmingDelete;
-            private set
+            set
             {
-                this.RaiseAndSetIfChanged(ref _isConfirmingDelete, value);
-                this.RaisePropertyChanged(nameof(IsNotConfirmingDelete));
+                this.RaiseAndSetIfChanged(ref _isCover, value);
+                this.RaisePropertyChanged(nameof(CanSetCover));
             }
         }
 
-        public bool IsNotConfirmingDelete => !_isConfirmingDelete;
+        private bool _isDragging;
+        /// <summary>
+        /// Эту плитку сейчас тащат. Сама плитка остаётся в списке и ездит по
+        /// нему вместо места вставки — отдельного пустого места заводить не
+        /// нужно, а под курсором летит призрак.
+        /// </summary>
+        public bool IsDragging
+        {
+            get => _isDragging;
+            set => this.RaiseAndSetIfChanged(ref _isDragging, value);
+        }
 
-        public ReactiveCommand<Unit, Unit> RequestDeleteCommand { get; }
-        public ReactiveCommand<Unit, Unit> ConfirmDeleteCommand { get; }
-        public ReactiveCommand<Unit, Unit> CancelDeleteCommand { get; }
+        /// <summary>
+        /// Звёздочку «сделать обложкой» показываем только там, где она что-то
+        /// меняет. На самой обложке уже стоит отметка, и вторая звёздочка рядом
+        /// с ней читалась как две разные.
+        /// </summary>
+        public bool CanSetCover => CanModify && !IsCover;
+
+        public ReactiveCommand<Unit, Unit> DeleteCommand { get; }
         public ReactiveCommand<Unit, Unit> SetAsCoverCommand { get; }
 
         public CharacterAvatarPackManagerItemViewModel(
@@ -134,32 +171,28 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             FileName = item.FileName;
             CanModify = canModify && item.CanDelete;
             _isCover = isCover;
+            _service = svc;
 
-            RequestDeleteCommand = ReactiveCommand.Create(() =>
+            // Удаление без переспроса: вернуть картинку можно кнопкой в строке
+            // состояния, и лишнее нажатие на каждое удаление не нужно.
+            DeleteCommand = ReactiveCommand.Create(() =>
             {
-                if (CanModify) IsConfirmingDelete = true;
-            });
-
-            ConfirmDeleteCommand = ReactiveCommand.Create(() =>
-            {
-                IsConfirmingDelete = false;
                 if (CanModify) onDelete(AvatarRef);
             });
-
-            // Тело в скобках, а не выражением: присваивание как выражение
-            // отдаёт значение, и команда собралась бы как ReactiveCommand
-            // с результатом bool вместо Unit.
-            CancelDeleteCommand = ReactiveCommand.Create(() => { IsConfirmingDelete = false; });
 
             SetAsCoverCommand = ReactiveCommand.Create(() =>
             {
                 if (CanModify) onSetCover(FileName);
             });
 
-            try { Thumbnail = svc.LoadBitmap(item.AvatarRef); } catch { }
         }
 
-        public void Dispose() => Thumbnail?.Dispose();
+        /// <summary>
+        /// Миниатюра принадлежит службе и уничтожению не подлежит: её же
+        /// показывают другие ленты. Метод оставлен, потому что папка убирает
+        /// свои плитки списком и не должна знать, есть ли им что освобождать.
+        /// </summary>
+        public void Dispose() { }
     }
 
     /// <summary>
@@ -203,6 +236,43 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             set => this.RaiseAndSetIfChanged(ref _iconFileName, value);
         }
 
+        /// <summary>
+        /// Переставить обложку: имя файла и отметки на плитках. Отдельным
+        /// методом, потому что то же самое нужно и при пересборке списка —
+        /// правки окна ещё не дошли до хранилища, и заново собранная папка
+        /// иначе показала бы старую обложку.
+        /// </summary>
+        /// <summary>
+        /// Разложить плитки по списку имён файлов. Двигаем существующие плитки,
+        /// а не строим их заново: у плитки внутри лежит уже прочитанная
+        /// картинка, и пересборка ради перестановки читала бы с диска всю
+        /// папку. Плитки, которых в списке нет, остаются в конце.
+        /// </summary>
+        public void ApplyItemOrder(IReadOnlyList<string> fileNames)
+        {
+            var target = 0;
+            foreach (var name in fileNames)
+            {
+                var current = -1;
+                for (var i = target; i < Items.Count; i++)
+                    if (string.Equals(Items[i].FileName, name, StringComparison.OrdinalIgnoreCase))
+                    { current = i; break; }
+
+                if (current < 0) continue;
+                if (current != target) Items.Move(current, target);
+                target++;
+            }
+        }
+
+        public void ApplyCoverFlags(string? iconFileName)
+        {
+            IconFileName = iconFileName;
+
+            foreach (var item in Items)
+                item.IsCover = !string.IsNullOrEmpty(iconFileName)
+                    && string.Equals(item.FileName, iconFileName, StringComparison.OrdinalIgnoreCase);
+        }
+
         public string ScopeLabel => IsBuiltIn
             ? CharacterAvatarScopeText.BuiltIn
             : CharacterAvatarScopeText.Label(Scope);
@@ -227,11 +297,18 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             set => this.RaiseAndSetIfChanged(ref _isSelected, value);
         }
 
+        /// <summary>
+        /// Картинки этой папки можно переставлять. Встроенные паки лежат в
+        /// ресурсах сборки: порядок им записывать некуда.
+        /// </summary>
+        public bool CanReorder => IsUserPack;
+
         public CharacterAvatarPackManagerPackViewModel(
             CharacterAvatarPackInfo pack,
             ICharacterAvatarService svc,
             Action<string> onDeleteItem,
-            Action<string> onSetCover)
+            Action<string> onSetCover,
+            Func<string, bool>? isRemoved = null)
         {
             PackId = pack.Id;
             IsBuiltIn = pack.Source == CharacterAvatarPackSource.BuiltIn;
@@ -256,12 +333,19 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
 
             var canModify = !IsBuiltIn;
             foreach (var item in pack.Items)
+            {
+                // Убранное в этом сеансе окна в список не попадает: файл ещё на
+                // месте, но показывать его нельзя — иначе Ctrl+Z нечего было бы
+                // возвращать, картинка и так на виду.
+                if (isRemoved != null && isRemoved(item.AvatarRef)) continue;
+
                 Items.Add(new CharacterAvatarPackManagerItemViewModel(
                     item, svc, canModify,
                     isCover: !string.IsNullOrEmpty(pack.IconFileName)
                              && string.Equals(item.FileName, pack.IconFileName, StringComparison.OrdinalIgnoreCase),
                     onDelete: onDeleteItem,
                     onSetCover: onSetCover));
+            }
         }
 
         public void Dispose()
@@ -311,9 +395,7 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
                 SelectedPackName = _selectedPack?.DisplayName ?? string.Empty;
                 _suppressRename = false;
 
-                IsConfirmingPackDelete = false;
                 RaiseSelectionFlags();
-                RebuildMoveTargets();
             }
         }
 
@@ -327,7 +409,6 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             this.RaisePropertyChanged(nameof(CanCopyToProject));
             this.RaisePropertyChanged(nameof(SelectedIsLocal));
             this.RaisePropertyChanged(nameof(SelectedIsGlobal));
-            this.RaisePropertyChanged(nameof(CanResetCover));
             this.RaisePropertyChanged(nameof(SelectedPackIsEmpty));
         }
 
@@ -349,7 +430,6 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
         public bool CanCopyToProject => CanMakeLocal;
 
         /// <summary>Обложка задана вручную — есть что сбрасывать.</summary>
-        public bool CanResetCover => CanEditPack && !string.IsNullOrEmpty(SelectedPack?.IconFileName);
 
         public bool SelectedPackIsEmpty => SelectedPack?.IsEmpty == true;
 
@@ -406,28 +486,9 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             set => this.RaiseAndSetIfChanged(ref _isDropTarget, value);
         }
 
-        private bool _isConfirmingPackDelete;
-        /// <summary>
-        /// Удаление папки переспрашивает прямо в панели действий: вместе с ней
-        /// уходят все её картинки, и отменить это нечем.
-        /// </summary>
-        public bool IsConfirmingPackDelete
-        {
-            get => _isConfirmingPackDelete;
-            private set
-            {
-                this.RaiseAndSetIfChanged(ref _isConfirmingPackDelete, value);
-                this.RaisePropertyChanged(nameof(IsNotConfirmingPackDelete));
-            }
-        }
-
-        public bool IsNotConfirmingPackDelete => !_isConfirmingPackDelete;
-
         public ReactiveCommand<Unit, Unit> CloseCommand { get; }
         public ReactiveCommand<Unit, Unit> CreatePackCommand { get; }
-        public ReactiveCommand<Unit, Unit> RequestDeletePackCommand { get; }
-        public ReactiveCommand<Unit, Unit> ConfirmDeletePackCommand { get; }
-        public ReactiveCommand<Unit, Unit> CancelDeletePackCommand { get; }
+        public ReactiveCommand<Unit, Unit> DeletePackCommand { get; }
         public ReactiveCommand<string, Unit> SelectPackCommand { get; }
         public ReactiveCommand<Unit, Unit> ImportPackCommand { get; }
         public ReactiveCommand<Unit, Unit> ExportPackCommand { get; }
@@ -437,19 +498,22 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
         public ReactiveCommand<Unit, Unit> SetNewPackLocalCommand { get; }
         public ReactiveCommand<Unit, Unit> SetNewPackGlobalCommand { get; }
         public ReactiveCommand<Unit, Unit> AddImagesCommand { get; }
-        public ReactiveCommand<Unit, Unit> ResetCoverCommand { get; }
 
         public Func<Task<string?>>? RequestZipImportPicker { get; set; }
         public Func<string, Task<string?>>? RequestZipExportPicker { get; set; }
 
         /// <summary>Выбор картинок для добавления в папку. Возвращает пары «байты, имя».</summary>
-        public Func<Task<IReadOnlyList<(byte[] data, string name)>>>? RequestImagePicker { get; set; }
+        public Func<Task<IReadOnlyList<CharacterPickedImage>>>? RequestImagePicker { get; set; }
 
         public CharacterAvatarPackManagerViewModel(ICharacterAvatarService avatarService)
         {
             _avatarService = avatarService;
 
-            CloseCommand = ReactiveCommand.Create(() => CloseRequested?.Invoke());
+            CloseCommand = ReactiveCommand.Create(() =>
+            {
+                ApplyChanges();
+                CloseRequested?.Invoke();
+            });
 
             CreatePackCommand = ReactiveCommand.Create(() =>
             {
@@ -475,21 +539,22 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
                 Refresh(pack.Id);
             });
 
-            RequestDeletePackCommand = ReactiveCommand.Create(() =>
+            DeletePackCommand = ReactiveCommand.Create(() =>
             {
-                if (CanEditPack) IsConfirmingPackDelete = true;
-            });
-
-            ConfirmDeletePackCommand = ReactiveCommand.Create(() =>
-            {
-                IsConfirmingPackDelete = false;
                 var pack = SelectedPack;
                 if (pack?.IsUserPack != true || pack.IsLibrary) return;
-                _avatarService.DeletePack(pack.PackId, pack.Scope);
+
+                var id = pack.PackId;
+                var scope = pack.Scope;
+                _removedPacks[id] = scope;
+
+                PushStep(
+                    undo: () => { _removedPacks.Remove(id); Refresh(id); },
+                    redo: () => { _removedPacks[id] = scope; Refresh(); });
+
+                StatusMessage = "Папка убрана. Ctrl+Z — вернуть.";
                 Refresh();
             });
-
-            CancelDeletePackCommand = ReactiveCommand.Create(() => { IsConfirmingPackDelete = false; });
 
             SelectPackCommand = ReactiveCommand.Create<string>(id =>
                 SelectedPack = Packs.FirstOrDefault(p => p.PackId == id));
@@ -504,7 +569,6 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             SetNewPackGlobalCommand = ReactiveCommand.Create(() => { NewPackIsGlobal = true; });
 
             AddImagesCommand = ReactiveCommand.CreateFromTask(AddImagesAsync);
-            ResetCoverCommand = ReactiveCommand.Create(() => { SetCover(null); });
 
             Refresh();
         }
@@ -522,8 +586,25 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             var all = _avatarService.GetAllPacks();
 
             foreach (var pack in Ordered(all))
-                Packs.Add(new CharacterAvatarPackManagerPackViewModel(
-                    pack, _avatarService, DeleteItem, SetCover));
+            {
+                if (_removedPacks.ContainsKey(pack.Id)) continue;
+
+                var vm = new CharacterAvatarPackManagerPackViewModel(
+                    pack, _avatarService, DeleteItem, SetCover, _removedItems.Contains);
+
+                // Правки этого сеанса ещё не в хранилище — накладываем их на
+                // свежесобранную папку, иначе она покажет старое имя и обложку.
+                if (_pendingMeta.TryGetValue(pack.Id, out var meta))
+                {
+                    vm.DisplayName = meta.Name;
+                    vm.ApplyCoverFlags(meta.Icon);
+                }
+
+                if (_pendingOrder.TryGetValue(pack.Id, out var order))
+                    vm.ApplyItemOrder(order);
+
+                Packs.Add(vm);
+            }
 
             SelectedPack = Packs.FirstOrDefault(p => p.PackId == previousId) ?? Packs.FirstOrDefault();
         }
@@ -538,34 +619,6 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
 
             foreach (var pack in packs.Where(p => p.Source == CharacterAvatarPackSource.BuiltIn))
                 yield return pack;
-        }
-
-        /// <summary>
-        /// Пересобрать списки «переложить в…» у плиток выбранной папки.
-        /// Целями идут все пользовательские папки, кроме текущей: во встроенные
-        /// класть нечего, они лежат в ресурсах сборки.
-        /// </summary>
-        private void RebuildMoveTargets()
-        {
-            var pack = SelectedPack;
-            if (pack == null) return;
-
-            var targets = Packs
-                .Where(p => p.IsUserPack && p.PackId != pack.PackId)
-                .ToList();
-
-            foreach (var item in pack.Items)
-            {
-                item.MoveTargets.Clear();
-
-                if (item.CanModify)
-                    foreach (var target in targets)
-                        item.MoveTargets.Add(new CharacterAvatarPackMoveTargetViewModel(
-                            target.PackId, target.DisplayName, target.Scope,
-                            item.AvatarRef, MoveItemAsync));
-
-                item.NotifyMoveTargetsChanged();
-            }
         }
 
         // ── Переименование ────────────────────────────────────────────────
@@ -600,69 +653,273 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             if (name.Length == 0) return;
             if (string.Equals(name, pack.DisplayName, StringComparison.Ordinal)) return;
 
-            try
-            {
-                _avatarService.UpdatePackMeta(pack.PackId, pack.Scope, name, pack.IconFileName);
+            var id = pack.PackId;
+            var before = MetaOf(pack);
+            var after = (before.Scope, name, before.Icon);
+            const string message = "Имя папки изменено. Ctrl+Z — вернуть.";
 
-                // Имя правится в самой ленте, без пересборки списка: пересборка
-                // отобрала бы фокус у поля прямо посреди набора.
-                pack.DisplayName = name;
-                RebuildMoveTargets();
-            }
-            catch (Exception ex) { _logger.Error(ex, "CommitRename failed"); }
+            ApplyMeta(id, after, message);
+            PushStep(
+                undo: () => ApplyMeta(id, before, message),
+                redo: () => ApplyMeta(id, after, message));
         }
 
         // ── Обложка ───────────────────────────────────────────────────────
 
         /// <summary>
-        /// Назначить или снять обложку папки. null — снять: папка снова будет
-        /// показываться первой своей картинкой.
+        /// Назначить обложку папки — картинку, которой папка показывается в
+        /// списках. Отдельной кнопки «сбросить» нет: сброс возвращал папку к
+        /// показу первой своей картинки, то есть к состоянию, в котором она и
+        /// так живёт, пока обложку не выбрали. Кнопка почти всегда была
+        /// выключена и объяснить себя не могла.
         /// </summary>
         private void SetCover(string? fileName)
         {
             var pack = SelectedPack;
             if (pack == null || !CanEditPack) return;
 
-            try
+            var before = MetaOf(pack);
+            if (string.Equals(before.Icon, fileName, StringComparison.OrdinalIgnoreCase)) return;
+
+            var id = pack.PackId;
+            var after = (before.Scope, before.Name, fileName);
+            var message = fileName == null
+                ? "Обложка снята. Ctrl+Z — вернуть."
+                : "Обложка папки изменена. Ctrl+Z — вернуть.";
+
+            ApplyMeta(id, after, message);
+            PushStep(
+                undo: () => ApplyMeta(id, before, message),
+                redo: () => ApplyMeta(id, after, message));
+        }
+
+        /// <summary>Свойства папки с учётом ещё не записанных правок этого сеанса.</summary>
+        private (CharacterAvatarPackScope Scope, string Name, string? Icon) MetaOf(
+            CharacterAvatarPackManagerPackViewModel pack)
+            => _pendingMeta.TryGetValue(pack.PackId, out var meta)
+                ? meta
+                : (pack.Scope, pack.DisplayName, pack.IconFileName);
+
+        /// <summary>
+        /// Поставить папке имя и обложку. В хранилище они уйдут при закрытии
+        /// окна, сейчас правится только показ.
+        ///
+        /// Папка ищется по идентификатору, а не берётся ссылкой: пересборка
+        /// списка (любое удаление картинки её делает) заводит новые объекты, и
+        /// отмена, помнящая старый, правила бы то, чего уже нет на экране.
+        /// </summary>
+        private void ApplyMeta(
+            string packId,
+            (CharacterAvatarPackScope Scope, string Name, string? Icon) meta,
+            string message)
+        {
+            _pendingMeta[packId] = meta;
+
+            var pack = Packs.FirstOrDefault(p => p.PackId == packId);
+            if (pack != null)
             {
-                _avatarService.UpdatePackMeta(pack.PackId, pack.Scope, pack.DisplayName, fileName);
-                pack.IconFileName = fileName;
+                pack.DisplayName = meta.Name;
+                pack.ApplyCoverFlags(meta.Icon);
 
-                foreach (var item in pack.Items)
-                    item.IsCover = fileName != null
-                        && string.Equals(item.FileName, fileName, StringComparison.OrdinalIgnoreCase);
-
-                this.RaisePropertyChanged(nameof(CanResetCover));
-                StatusMessage = fileName == null
-                    ? "Обложка папки сброшена."
-                    : "Обложка папки изменена.";
+                // Поле над лентой показывает имя выбранной папки — при откате
+                // оно должно поехать вместе с ней, но не считаться новой правкой.
+                if (ReferenceEquals(pack, SelectedPack))
+                {
+                    _suppressRename = true;
+                    SelectedPackName = meta.Name;
+                    _suppressRename = false;
+                }
             }
-            catch (Exception ex) { _logger.Error(ex, "SetCover failed"); }
+
+            StatusMessage = message;
         }
 
         // ── Содержимое ────────────────────────────────────────────────────
 
-        private void DeleteItem(string avatarRef)
+        // ── Своя история окна ─────────────────────────────────────────────
+        //
+        // Пока окно открыто, удаление ничего не стирает: картинка или папка
+        // просто перестаёт показываться, а файл лежит на месте. Насовсем всё
+        // уходит при закрытии окна. Отсюда и Ctrl+Z: вернуть — это снять
+        // пометку, а не восстанавливать файл.
+        //
+        // История своя, отдельная от истории модуля: снаружи окна отменять эти
+        // шаги нечем и незачем — при закрытии они перестают быть обратимыми.
+        // Так же устроен и редактор цвета.
+        private readonly Stack<(Action Undo, Action Redo)> _undo = new();
+        private readonly Stack<(Action Undo, Action Redo)> _redo = new();
+
+        private readonly HashSet<string> _removedItems =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, CharacterAvatarPackScope> _removedPacks =
+            new(StringComparer.Ordinal);
+
+        // Имя и обложка папки — тоже не сразу в хранилище. Обе правки живут
+        // здесь до закрытия окна: так они откатываются мгновенно, а список
+        // папок, пересобранный по ходу дела, показывает их, а не то, что пока
+        // лежит на диске.
+        private readonly Dictionary<string, (CharacterAvatarPackScope Scope, string Name, string? Icon)> _pendingMeta =
+            new(StringComparer.Ordinal);
+
+        // Переставленный, но ещё не записанный порядок картинок: ключ — папка,
+        // значение — имена файлов сверху вниз. Живёт по тем же правилам, что и
+        // прочие правки окна: пока окно открыто, в хранилище ничего не уходит,
+        // Ctrl+Z возвращает, закрытие применяет.
+        private readonly Dictionary<string, List<string>> _pendingOrder =
+            new(StringComparer.Ordinal);
+
+        public bool CanUndo => _undo.Count > 0;
+        public bool CanRedo => _redo.Count > 0;
+
+        private void PushStep(Action undo, Action redo)
         {
-            _avatarService.DeleteAvatar(avatarRef);
-            _avatarService.RemoveRecentAvatar(avatarRef);
-            StatusMessage = "Картинка удалена.";
-            Refresh();
+            _undo.Push((undo, redo));
+            _redo.Clear();
+            RaiseHistoryFlags();
         }
 
-        private async Task MoveItemAsync(string avatarRef, string targetPackId)
+        private void RaiseHistoryFlags()
         {
-            try
-            {
-                await _avatarService.MoveAvatarToPackAsync(avatarRef, targetPackId);
+            this.RaisePropertyChanged(nameof(CanUndo));
+            this.RaisePropertyChanged(nameof(CanRedo));
+        }
 
-                // Ссылка картинки сменилась вместе с папкой — прежняя запись
-                // «Недавних» указывает в пустоту.
-                _avatarService.RemoveRecentAvatar(avatarRef);
-                StatusMessage = "Картинка переложена.";
-                Refresh();
+        /// <summary>Отменить последний шаг окна. false — отменять нечего.</summary>
+        public bool Undo()
+        {
+            if (_undo.Count == 0) return false;
+            var step = _undo.Pop();
+            step.Undo();
+            _redo.Push(step);
+            RaiseHistoryFlags();
+            return true;
+        }
+
+        /// <summary>Повторить отменённое. false — повторять нечего.</summary>
+        public bool Redo()
+        {
+            if (_redo.Count == 0) return false;
+            var step = _redo.Pop();
+            step.Redo();
+            _undo.Push(step);
+            RaiseHistoryFlags();
+            return true;
+        }
+
+        /// <summary>
+        /// Довести до хранилища всё, что окно накопило за сеанс: имена, обложки
+        /// и удаления. Зовётся при закрытии — до этого момента ни один файл не
+        /// тронут и любой шаг откатывается через Ctrl+Z.
+        /// </summary>
+        public void ApplyChanges()
+        {
+            // Сначала свойства, потом удаления: правку имени у папки, которую
+            // тут же удаляют, писать в хранилище незачем.
+            foreach (var (packId, meta) in _pendingMeta)
+            {
+                if (_removedPacks.ContainsKey(packId)) continue;
+                try { _avatarService.UpdatePackMeta(packId, meta.Scope, meta.Name, meta.Icon); }
+                catch (Exception ex) { _logger.Error(ex, "ApplyChanges: meta {Id}", packId); }
             }
-            catch (Exception ex) { _logger.Error(ex, "MoveItemAsync failed"); }
+
+            foreach (var (packId, scope) in _removedPacks)
+            {
+                try { _avatarService.DeletePack(packId, scope); }
+                catch (Exception ex) { _logger.Error(ex, "ApplyChanges: pack {Id}", packId); }
+            }
+
+            foreach (var avatarRef in _removedItems)
+            {
+                try
+                {
+                    _avatarService.DeleteAvatar(avatarRef);
+                    _avatarService.RemoveRecentAvatar(avatarRef);
+                }
+                catch (Exception ex) { _logger.Error(ex, "ApplyChanges: item {Ref}", avatarRef); }
+            }
+
+            // Порядок пишется последним: до этого из папки могли убрать
+            // картинку, и записанный раньше список назвал бы уже стёртый файл.
+            foreach (var (packId, order) in _pendingOrder)
+            {
+                if (_removedPacks.ContainsKey(packId)) continue;
+                try
+                {
+                    var scope = _pendingMeta.TryGetValue(packId, out var meta)
+                        ? meta.Scope
+                        : Packs.FirstOrDefault(p => p.PackId == packId)?.Scope
+                          ?? CharacterAvatarPackScope.Global;
+
+                    _avatarService.SetPackItemOrder(
+                        packId, scope, order.Where(f => !IsRemovedFile(packId, f)).ToList());
+                }
+                catch (Exception ex) { _logger.Error(ex, "ApplyChanges: order {Id}", packId); }
+            }
+
+            _pendingMeta.Clear();
+            _pendingOrder.Clear();
+            _removedPacks.Clear();
+            _removedItems.Clear();
+            _undo.Clear();
+            _redo.Clear();
+            RaiseHistoryFlags();
+        }
+
+        /// <summary>
+        /// Имя файла принадлежит картинке, убранной в этом сеансе окна. Ссылка
+        /// картинки строится из области, папки и имени файла, поэтому её
+        /// хватает, чтобы отличить убранную от одноимённой в соседней папке.
+        /// </summary>
+        private bool IsRemovedFile(string packId, string fileName)
+        {
+            var pack = Packs.FirstOrDefault(p => p.PackId == packId);
+            if (pack == null) return false;
+
+            return !pack.Items.Any(i =>
+                string.Equals(i.FileName, fileName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Записать новый порядок картинок папки в сеанс окна. Список уже
+        /// переставлен в самой папке — перетаскивание двигало плитки по ходу
+        /// дела, — поэтому пересборка тут не нужна: она только погасила бы и
+        /// заново прочитала все картинки ради того, что уже на экране.
+        /// </summary>
+        public void CommitItemOrder(string packId, List<string> before, List<string> after)
+        {
+            if (string.IsNullOrEmpty(packId)) return;
+            if (before.SequenceEqual(after, StringComparer.OrdinalIgnoreCase)) return;
+
+            var had = _pendingOrder.TryGetValue(packId, out var previous);
+            var restore = had ? new List<string>(previous!) : before;
+
+            PushStep(
+                undo: () => { SetPendingOrder(packId, had ? restore : null, before); },
+                redo: () => { SetPendingOrder(packId, after, after); });
+
+            _pendingOrder[packId] = new List<string>(after);
+            StatusMessage = "Порядок изменён. Ctrl+Z — вернуть.";
+        }
+
+        private void SetPendingOrder(string packId, List<string>? pending, List<string> visible)
+        {
+            if (pending == null) _pendingOrder.Remove(packId);
+            else _pendingOrder[packId] = new List<string>(pending);
+
+            Packs.FirstOrDefault(p => p.PackId == packId)?.ApplyItemOrder(visible);
+        }
+
+        private void DeleteItem(string avatarRef)
+        {
+            var packId = SelectedPack?.PackId;
+
+            _removedItems.Add(avatarRef);
+            PushStep(
+                undo: () => { _removedItems.Remove(avatarRef); Refresh(packId); },
+                redo: () => { _removedItems.Add(avatarRef); Refresh(packId); });
+
+            StatusMessage = "Картинка убрана. Ctrl+Z — вернуть.";
+            Refresh(packId);
         }
 
         private async Task AddImagesAsync()
@@ -678,9 +935,15 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             if (files == null || files.Count == 0) return;
 
             var added = 0;
-            foreach (var (data, name) in files)
+            foreach (var file in files)
             {
-                var saved = await _avatarService.SaveToPackAsync(data, name, pack.PackId);
+                // Читаем и тут же отдаём на запись: следующая картинка берётся
+                // только после того, как предыдущая улеглась и её байты стали
+                // не нужны.
+                var data = await file.ReadAsync();
+                if (data == null) continue;
+
+                var saved = await _avatarService.SaveToPackAsync(data, file.Name, pack.PackId);
                 if (saved != null) added++;
             }
 

@@ -194,9 +194,19 @@
 				</Panel>
 			</TabItem>
 
-			<!-- ── Формат (КОНТЕКСТНАЯ, картинка) ───────────────────────── -->
-			<!-- Видна только когда на канвасе выделено изображение.         -->
+			<!-- ── Формат (КОНТЕКСТНАЯ, плавающий объект) ───────────────── -->
+			<!-- Видна, когда на канвасе выделена картинка или фигура.        -->
 			<!-- IsImageTabVisible управляется из TextEditorViewModel.        -->
+			<!--                                                              -->
+			<!-- Вкладок на объект две, и делятся они ПО СМЫСЛУ, а не по типу: -->
+			<!-- «Формат» — чем объект является (форма, содержимое, линия по   -->
+			<!-- контуру), «Расположение» — как он стоит на листе (обтекание,  -->
+			<!-- размер, поворот, порядок). Деление по типу вернуло бы два     -->
+			<!-- разных набора инструментов у картинки и фигуры, а в одну      -->
+			<!-- полосу двенадцать групп не помещаются.                        -->
+			<!--                                                              -->
+			<!-- ViewModel у обеих одна: свойства и команды объекта общие,     -->
+			<!-- разделён только их показ.                                    -->
 			<TabItem Classes="ImageContextTab"
                      IsVisible="{Binding IsImageTabVisible}">
 				<TabItem.Header>
@@ -206,6 +216,23 @@
 				       IsHitTestVisible="{Binding IsEditingEnabled}"
 				       Opacity="{Binding ContentOpacity}">
 					<tabs:RibbonImageTab DataContext="{Binding Image}"/>
+				</Panel>
+			</TabItem>
+
+			<!-- ── Расположение (КОНТЕКСТНАЯ, плавающий объект) ─────────── -->
+			<!-- Показывается и скрывается вместе с «Форматом»: это две       -->
+			<!-- половины одного инструмента, порознь они не имеют смысла.    -->
+			<!-- Имя не «Макет» — так называется вкладка разметки страницы,   -->
+			<!-- и двух «Макетов» в ленте быть не должно.                     -->
+			<TabItem Classes="ImageContextTab"
+                     IsVisible="{Binding IsImageTabVisible}">
+				<TabItem.Header>
+					<TextBlock Text="Расположение"/>
+				</TabItem.Header>
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonImagePlacementTab DataContext="{Binding Image}"/>
 				</Panel>
 			</TabItem>
 

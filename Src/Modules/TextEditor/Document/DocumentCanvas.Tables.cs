@@ -76,15 +76,34 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (_activeTableBlock is null) return;
             BeginTableEdit(_activeTableBlock, "Add row");
-            int insertRow = above ? _activeCellRow : _activeCellRow + 1;
+
+            // «Сверху» и «снизу» отсчитываются от краёв самой активной ячейки, а не
+            // от строки под кареткой: у объединённой ячейки это разные места, и
+            // строка, вставленная по строке каретки, попадала внутрь объединения.
+            var anchorRow = _activeTableBlock.GetCell(_activeCellRow, _activeCellCol);
+            int insertRow = anchorRow is null
+                ? (above ? _activeCellRow : _activeCellRow + 1)
+                : (above ? anchorRow.Row : anchorRow.Row + anchorRow.RowSpan);
+
+            // Ячейка, объединённая через место вставки, становится на строку выше:
+            // новая строка проходит внутри неё. Раньше она оставалась прежней
+            // высоты, а поверх её клеток ложился целый ряд новых ячеек — сетка
+            // получала двух хозяев на клетку, и лишние ячейки не рисовались.
             foreach (var cell in _activeTableBlock.Cells)
+            {
                 if (cell.Row >= insertRow) cell.Row++;
-            for (int c = 0; c < _activeTableBlock.ColumnCount; c++)
-                _activeTableBlock.Cells.Add(new TableCell { Row = insertRow, Column = c });
+                else if (cell.Row + cell.RowSpan > insertRow) cell.RowSpan++;
+            }
+
             // Заданные высоты сдвигаются вместе со строками, иначе они достались бы
             // соседям: список адресуется индексом строки.
             _activeTableBlock.InsertRowMinHeight(insertRow);
             _activeTableBlock.RowCount++;
+
+            // Клетки новой строки, не занятые растянутыми ячейками, заполняет
+            // ремонт сетки — он же копирует в них оформление строки сверху.
+            Services.TableGridRepair.Repair(_activeTableBlock);
+
             if (above) _activeCellRow++;
             CommitTableEdit();
             RestoreCaretAfterTableStructure();
@@ -165,10 +184,15 @@ namespace Writersword.Modules.TextEditor.Document
                     int maxRow = Math.Max(kv.Value.sr, kv.Value.er);
                     int minCol = Math.Min(kv.Value.sc, kv.Value.ec);
                     int maxCol = Math.Max(kv.Value.sc, kv.Value.ec);
+                    // Ячейка входит в цель по ПЕРЕСЕЧЕНИЮ с выделением, а не по
+                    // тому, лежит ли внутри её начало. Выделение теперь идёт по
+                    // клеткам сетки, и объединённая ячейка часто задета частично —
+                    // залить или выровнять половину ячейки всё равно нельзя,
+                    // поэтому она берётся целиком.
                     foreach (var cell in kv.Key.Cells)
                     {
-                        if (cell.Row < minRow || cell.Row > maxRow) continue;
-                        if (cell.Column < minCol || cell.Column > maxCol) continue;
+                        if (cell.Row + cell.RowSpan - 1 < minRow || cell.Row > maxRow) continue;
+                        if (cell.Column + cell.ColSpan - 1 < minCol || cell.Column > maxCol) continue;
                         targets.Add(cell);
                         tables.Add(kv.Key);
                     }
@@ -384,22 +408,30 @@ namespace Writersword.Modules.TextEditor.Document
 
         private int QueryTableLineTool() => _lineTool;
 
-        // Объединение выделенных ячеек. Объединённая ячейка хранится как обычная,
-        // но с RowSpan/ColSpan больше единицы, а накрытых ею записей в Cells нет
-        // вовсе — GetCell разрешает любую точку прямоугольника в её владельца.
-        private void ExecuteTableMergeCells()
+        /// <summary>
+        /// Расширяет прямоугольник выделения до целых ячеек: объединённая ячейка,
+        /// задетая хотя бы одной клеткой, входит в него целиком.
+        ///
+        /// Указатель попадает в клетку сетки, а владелец этой клетки — объединённая
+        /// ячейка — может начинаться левее и выше. Прямоугольник строился по её
+        /// НАЧАЛУ, и протяжка вниз на широкую объединённую ячейку схлопывала правый
+        /// край выделения к её левому столбцу: уже выделенные ячейки справа гасли.
+        ///
+        /// Расширение повторяется, пока границы растут: втянутая ячейка может
+        /// зацепить следующую. Возвращает границы в порядке min/max.
+        /// </summary>
+        private static (int sr, int sc, int er, int ec) SnapCellRangeToWholeCells(
+            TableBlock table, int sr, int sc, int er, int ec)
         {
-            if (_activeTableBlock is not { } table) return;
-            if (!_tableSelections.TryGetValue(table, out var sel)) return;
+            int r1 = Math.Min(sr, er), r2 = Math.Max(sr, er);
+            int c1 = Math.Min(sc, ec), c2 = Math.Max(sc, ec);
 
-            int r1 = Math.Min(sel.sr, sel.er), r2 = Math.Max(sel.sr, sel.er);
-            int c1 = Math.Min(sel.sc, sel.ec), c2 = Math.Max(sel.sc, sel.ec);
-            if (r1 == r2 && c1 == c2) return;
+            if (r1 < 0) r1 = 0;
+            if (c1 < 0) c1 = 0;
+            if (r2 > table.RowCount - 1) r2 = table.RowCount - 1;
+            if (c2 > table.ColumnCount - 1) c2 = table.ColumnCount - 1;
+            if (r2 < r1 || c2 < c1) return (r1, c1, r2, c2);
 
-            // Прямоугольник расширяется до целых ячеек: в выделение мог попасть
-            // кусок уже объединённой ячейки, а разрезанной оставить её нельзя.
-            // Повторяем, пока границы не перестанут расти — расширение по одной
-            // ячейке может втянуть в прямоугольник следующую.
             bool grown;
             do
             {
@@ -420,10 +452,149 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             } while (grown);
 
+            return (r1, c1, r2, c2);
+        }
+
+        /// <summary>
+        /// Слепок сетки для лога: по клетке на каждую позицию, в клетке — начало
+        /// владеющей ею ячейки, либо «..» если клетка ничья. По такой строке видно
+        /// и объединения, и провалы, не поднимая отладчик.
+        /// </summary>
+        private static string DescribeGrid(TableBlock table)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(table.RowCount).Append('x').Append(table.ColumnCount)
+              .Append(" cells=").Append(table.Cells.Count).Append(' ');
+
+            for (int r = 0; r < table.RowCount; r++)
+            {
+                if (r > 0) sb.Append(" / ");
+                for (int c = 0; c < table.ColumnCount; c++)
+                {
+                    if (c > 0) sb.Append(' ');
+                    var cell = table.GetCell(r, c);
+                    if (cell is null) sb.Append("..");
+                    else sb.Append(cell.Row).Append(':').Append(cell.Column);
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        // Объединение выделенных ячеек. Объединённая ячейка хранится как обычная,
+        // но с RowSpan/ColSpan больше единицы, а накрытых ею записей в Cells нет
+        // вовсе — GetCell разрешает любую точку прямоугольника в её владельца.
+        private void ExecuteTableMergeCells()
+        {
+            if (_activeTableBlock is not { } table)
+            {
+                _logger.Debug("[TBL] merge: активной таблицы нет");
+                return;
+            }
+
+            if (!_tableSelections.TryGetValue(table, out var sel))
+            {
+                _logger.Debug("[TBL] merge: выделения ячеек нет");
+                return;
+            }
+
+            // Прямоугольник расширяется до целых ячеек: в выделение мог попасть
+            // кусок уже объединённой ячейки, а разрезанной оставить её нельзя.
+            // Тем же расширением живёт подсветка выделения, поэтому объединяется
+            // ровно то, что пользователь видел закрашенным.
+            var (r1, c1, r2, c2) = SnapCellRangeToWholeCells(
+                table, sel.sr, sel.sc, sel.er, sel.ec);
+
+            bool rawKnown = ReferenceEquals(_rawCellSelTable, table);
+            _logger.Debug(
+                "[TBL] merge: протяжка={RAW} выделение=({SR},{SC})-({ER},{EC}) прямоугольник=({R1},{C1})-({R2},{C2}) сетка={GRID}",
+                rawKnown
+                    ? $"({_rawCellSel.sr},{_rawCellSel.sc})-({_rawCellSel.er},{_rawCellSel.ec})"
+                    : "неизвестна",
+                sel.sr, sel.sc, sel.er, sel.ec,
+                r1, c1, r2, c2,
+                DescribeGrid(table));
+
+            // Прямоугольник объединения не выходит за габарит ячеек, на которых
+            // стоял указатель.
+            //
+            // Намерение задают не две точки протяжки, а две ЯЧЕЙКИ под ними целиком:
+            // указатель стоял внутри них, значит объединённая ячейка входит в
+            // выделение вся. Иначе её собственный размах читался бы как «расширение»,
+            // и повторно объединить уже объединённую ячейку было бы нельзя — она
+            // блокировала бы сама себя.
+            //
+            // Дальше общего габарита этих двух ячеек прямоугольник разъезжаться не
+            // должен. Ячейка, которую протяжка задела краем, но на которой указатель
+            // не стоял ни разу, утаскивает за собой целую полосу чужих клеток: они
+            // исчезают, хотя их никто не выделял. Прямоугольного объединения по такой
+            // протяжке не существует, поэтому не делаем ничего.
+            //
+            // Выделение при отказе остаётся на экране: по подсветке видно, какая
+            // ячейка расширила прямоугольник, и её можно захватить протяжкой
+            // осознанно — тогда объединение пройдёт.
+            if (rawKnown)
+            {
+                int intentR1 = int.MaxValue, intentC1 = int.MaxValue;
+                int intentR2 = int.MinValue, intentC2 = int.MinValue;
+
+                void IncludeEndpoint(int row, int col)
+                {
+                    var endpoint = table.GetCell(row, col);
+
+                    int er1 = endpoint?.Row ?? row;
+                    int ec1 = endpoint?.Column ?? col;
+                    int er2 = endpoint is null ? row : endpoint.Row + endpoint.RowSpan - 1;
+                    int ec2 = endpoint is null ? col : endpoint.Column + endpoint.ColSpan - 1;
+
+                    if (er1 < intentR1) intentR1 = er1;
+                    if (ec1 < intentC1) intentC1 = ec1;
+                    if (er2 > intentR2) intentR2 = er2;
+                    if (ec2 > intentC2) intentC2 = ec2;
+                }
+
+                IncludeEndpoint(_rawCellSel.sr, _rawCellSel.sc);
+                IncludeEndpoint(_rawCellSel.er, _rawCellSel.ec);
+
+                if (r1 < intentR1 || r2 > intentR2 || c1 < intentC1 || c2 > intentC2)
+                {
+                    _logger.Debug(
+                        "[TBL] merge: отказ — ячейки под указателем занимают "
+                        + "({IR1},{IC1})-({IR2},{IC2}), а прямоугольник разъехался "
+                        + "до ({R1},{C1})-({R2},{C2})",
+                        intentR1, intentC1, intentR2, intentC2, r1, c1, r2, c2);
+                    return;
+                }
+            }
+
             var target = table.GetCell(r1, c1);
-            if (target is null) return;
+            if (target is null)
+            {
+                _logger.Debug("[TBL] merge: в углу ({R1},{C1}) ячейки нет", r1, c1);
+                return;
+            }
+
+            // В прямоугольнике одна-единственная ячейка — объединять нечего.
+            // Проверка после расширения, а не до: выделение из двух клеток одной
+            // объединённой ячейки схлопывается сюда же, и раньше открывало шаг
+            // отмены, который ничего не менял.
+            if (target.Row == r1 && target.Column == c1
+                && target.Row + target.RowSpan - 1 == r2
+                && target.Column + target.ColSpan - 1 == c2)
+            {
+                _logger.Debug("[TBL] merge: в прямоугольнике одна ячейка, объединять нечего");
+                return;
+            }
 
             BeginTableEdit(table, "Merge cells");
+
+            // Внешние границы объединённой ячейки собираются с краёв прямоугольника,
+            // а не берутся целиком с левой верхней ячейки: низ рисовал нижний ряд,
+            // правую — правый столбец, и вместе с этими ячейками пропадали их линии.
+            var bottomEdge = table.GetCell(r2, c1);
+            var rightEdge = table.GetCell(r1, c2);
+            var bottomStyle = bottomEdge?.Borders.Bottom;
+            var rightStyle = rightEdge?.Borders.Right;
 
             var absorbed = new List<Models.Document.TableCell>();
             foreach (var cell in table.Cells)
@@ -447,6 +618,16 @@ namespace Writersword.Modules.TextEditor.Document
 
             target.RowSpan = r2 - r1 + 1;
             target.ColSpan = c2 - c1 + 1;
+
+            if (bottomStyle is { } bottomBorder) target.Borders.Bottom = bottomBorder;
+            if (rightStyle is { } rightBorder) target.Borders.Right = rightBorder;
+
+            Services.TableGridRepair.Repair(table);
+
+            _logger.Debug(
+                "[TBL] merge: цель=({TR},{TC}) span={RS}x{CS} поглощено={N} сетка={GRID}",
+                target.Row, target.Column, target.RowSpan, target.ColSpan,
+                absorbed.Count, DescribeGrid(table));
 
             CommitTableEdit();
 
@@ -485,6 +666,8 @@ namespace Writersword.Modules.TextEditor.Document
 
             cell.RowSpan = 1;
             cell.ColSpan = 1;
+
+            Services.TableGridRepair.Repair(table);
 
             CommitTableEdit();
 
@@ -594,6 +777,11 @@ namespace Writersword.Modules.TextEditor.Document
                     table.Cells.Add(added);
                 }
             }
+
+            // Деление со вставкой строки или столбца добавляет ячейку только
+            // на месте делимой: остальные клетки новой строки (столбца) до
+            // ремонта оставались ничьими и рисовались провалом без границ.
+            Services.TableGridRepair.Repair(table);
 
             CommitTableEdit();
 
@@ -720,11 +908,35 @@ namespace Writersword.Modules.TextEditor.Document
             if (_activeTableBlock is null) return;
             BeginEdit("Delete row");
             int deleteRow = _activeCellRow;
-            _activeTableBlock.Cells.RemoveAll(c => c.Row == deleteRow);
+
+            // Объединённая ячейка переживает удаление строки: она просто
+            // становится на строку короче. Раньше исчезала любая ячейка,
+            // начинавшаяся в удаляемой строке, вместе со всеми накрытыми ею
+            // клетками ниже — на их месте оставался провал без границ.
+            for (int i = _activeTableBlock.Cells.Count - 1; i >= 0; i--)
+            {
+                var cell = _activeTableBlock.Cells[i];
+
+                if (cell.Row == deleteRow)
+                {
+                    // Ячейка живёт и ниже удаляемой строки: остаётся на месте,
+                    // теряя одну строку. Общий сдвиг ниже её не тронет — её Row
+                    // уже равен deleteRow.
+                    if (cell.RowSpan > 1) cell.RowSpan--;
+                    else _activeTableBlock.Cells.RemoveAt(i);
+                }
+                else if (cell.Row < deleteRow && cell.Row + cell.RowSpan > deleteRow)
+                {
+                    // Накрывала удаляемую строку сверху — укорачивается.
+                    cell.RowSpan--;
+                }
+            }
+
             foreach (var cell in _activeTableBlock.Cells)
                 if (cell.Row > deleteRow) cell.Row--;
             _activeTableBlock.RemoveRowMinHeight(deleteRow);
             _activeTableBlock.RowCount--;
+            Services.TableGridRepair.Repair(_activeTableBlock);
             CommitEdit();
             if (_activeTableBlock.RowCount <= 0) { ExecuteTableDelete(); return; }
             _activeCellRow = Clamp(_activeCellRow, 0, _activeTableBlock.RowCount - 1);
@@ -735,17 +947,33 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (_activeTableBlock is null) return;
             BeginTableEdit(_activeTableBlock, "Add column");
-            int insertCol = left ? _activeCellCol : _activeCellCol + 1;
+
+            // «Слева» и «справа» отсчитываются от краёв самой активной ячейки —
+            // по той же причине, что и при вставке строки.
+            var anchorCol = _activeTableBlock.GetCell(_activeCellRow, _activeCellCol);
+            int insertCol = anchorCol is null
+                ? (left ? _activeCellCol : _activeCellCol + 1)
+                : (left ? anchorCol.Column : anchorCol.Column + anchorCol.ColSpan);
+
+            // Ячейка, объединённая через место вставки, становится на столбец шире —
+            // по той же причине, что и при вставке строки.
             foreach (var cell in _activeTableBlock.Cells)
+            {
                 if (cell.Column >= insertCol) cell.Column++;
-            for (int r = 0; r < _activeTableBlock.RowCount; r++)
-                _activeTableBlock.Cells.Add(new TableCell { Row = r, Column = insertCol });
+                else if (cell.Column + cell.ColSpan > insertCol) cell.ColSpan++;
+            }
+
             var colDef = new TableColumnDefinition { WidthType = TableColumnWidthType.Auto };
             if (insertCol < _activeTableBlock.Columns.Count)
                 _activeTableBlock.Columns.Insert(insertCol, colDef);
             else
                 _activeTableBlock.Columns.Add(colDef);
             _activeTableBlock.ColumnCount++;
+
+            // Клетки нового столбца, не занятые растянутыми ячейками, заполняет
+            // ремонт сетки — он же копирует в них оформление соседей.
+            Services.TableGridRepair.Repair(_activeTableBlock);
+
             if (left) _activeCellCol++;
             CommitTableEdit();
             RestoreCaretAfterTableStructure();
@@ -756,12 +984,30 @@ namespace Writersword.Modules.TextEditor.Document
             if (_activeTableBlock is null) return;
             BeginEdit("Delete column");
             int deleteCol = _activeCellCol;
-            _activeTableBlock.Cells.RemoveAll(c => c.Column == deleteCol);
+
+            // Объединённая ячейка переживает удаление столбца — становится на
+            // столбец уже. По той же причине, что и при удалении строки.
+            for (int i = _activeTableBlock.Cells.Count - 1; i >= 0; i--)
+            {
+                var cell = _activeTableBlock.Cells[i];
+
+                if (cell.Column == deleteCol)
+                {
+                    if (cell.ColSpan > 1) cell.ColSpan--;
+                    else _activeTableBlock.Cells.RemoveAt(i);
+                }
+                else if (cell.Column < deleteCol && cell.Column + cell.ColSpan > deleteCol)
+                {
+                    cell.ColSpan--;
+                }
+            }
+
             foreach (var cell in _activeTableBlock.Cells)
                 if (cell.Column > deleteCol) cell.Column--;
             if (deleteCol < _activeTableBlock.Columns.Count)
                 _activeTableBlock.Columns.RemoveAt(deleteCol);
             _activeTableBlock.ColumnCount--;
+            Services.TableGridRepair.Repair(_activeTableBlock);
             CommitEdit();
             if (_activeTableBlock.ColumnCount <= 0) { ExecuteTableDelete(); return; }
             _activeCellCol = Clamp(_activeCellCol, 0, _activeTableBlock.ColumnCount - 1);

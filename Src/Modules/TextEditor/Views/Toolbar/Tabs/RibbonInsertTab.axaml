@@ -139,6 +139,102 @@
 				<StackPanel Orientation="Horizontal">
 
 					<!-- ═══════════════════════════════════════════════════════
+                         ФАЙЛ — развёрнутая
+                         ═══════════════════════════════════════════════════════ -->
+					<Border Classes="RibbonGroup"
+                            IsVisible="{Binding IsFileGroupExpanded}">
+						<DockPanel>
+							<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+								<TextBlock Classes="RibbonGroupLabel"
+                                           Text="{x:Static loc:TextEditorStrings.File_Group}"/>
+							</Grid>
+							<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+								<Button Command="{Binding ImportDocumentCommand}"
+                                        Classes="RibbonBtnLarge"
+                                        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Import_Dialog_Title}"
+                                        behaviours:TooltipBehavior.ShowDelay="700">
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<PathIcon Data="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" Width="20" Height="20"/>
+										<TextBlock Text="{x:Static loc:TextEditorStrings.File_Import}" FontSize="9" TextAlignment="Center"/>
+									</StackPanel>
+								</Button>
+								<SplitButton Classes="RibbonSplit"
+                                             Command="{Binding ExportDocxCommand}"
+                                             behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Export_Dialog_Title}"
+                                             behaviours:TooltipBehavior.ShowDelay="700">
+									<SplitButton.Content>
+										<StackPanel Spacing="2" HorizontalAlignment="Center">
+											<PathIcon Data="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" Width="20" Height="20"/>
+											<TextBlock Text="{x:Static loc:TextEditorStrings.File_Export}" FontSize="9" TextAlignment="Center"/>
+										</StackPanel>
+									</SplitButton.Content>
+									<SplitButton.Flyout>
+										<MenuFlyout>
+											<MenuItem Header="{x:Static loc:TextEditorStrings.Export_Docx}"     Command="{Binding ExportDocxCommand}"/>
+											<MenuItem Header="{x:Static loc:TextEditorStrings.Export_PDF}"      Command="{Binding ExportPdfCommand}"/>
+											<MenuItem Header="{x:Static loc:TextEditorStrings.Export_Txt}"      Command="{Binding ExportTxtCommand}"/>
+											<MenuItem Header="{x:Static loc:TextEditorStrings.Export_Markdown}" Command="{Binding ExportMarkdownCommand}"/>
+										</MenuFlyout>
+									</SplitButton.Flyout>
+								</SplitButton>
+							</StackPanel>
+						</DockPanel>
+					</Border>
+
+					<!-- ФАЙЛ — свёрнутая -->
+					<Border Classes="RibbonGroupCollapsed"
+                            IsVisible="{Binding !IsFileGroupExpanded}">
+						<DockPanel>
+							<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+								<TextBlock Classes="RibbonGroupLabel"
+                                           Text="{x:Static loc:TextEditorStrings.File_Group}"/>
+							</Grid>
+							<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.File_Group}"
+                                    behaviours:TooltipBehavior.ShowDelay="700">
+								<Button.Flyout>
+									<Flyout Placement="Bottom">
+										<StackPanel Orientation="Horizontal" Spacing="4" Margin="8">
+											<Button Command="{Binding ImportDocumentCommand}"
+                                                    Classes="RibbonBtnLarge"
+                                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Import_Dialog_Title}"
+                                                    behaviours:TooltipBehavior.ShowDelay="700">
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Data="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" Width="20" Height="20"/>
+													<TextBlock Text="{x:Static loc:TextEditorStrings.File_Import}" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</Button>
+											<SplitButton Classes="RibbonSplit"
+                                                         Command="{Binding ExportDocxCommand}"
+                                                         behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Export_Dialog_Title}"
+                                                         behaviours:TooltipBehavior.ShowDelay="700">
+												<SplitButton.Content>
+													<StackPanel Spacing="2" HorizontalAlignment="Center">
+														<PathIcon Data="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" Width="20" Height="20"/>
+														<TextBlock Text="{x:Static loc:TextEditorStrings.File_Export}" FontSize="9" TextAlignment="Center"/>
+													</StackPanel>
+												</SplitButton.Content>
+												<SplitButton.Flyout>
+													<MenuFlyout>
+														<MenuItem Header="{x:Static loc:TextEditorStrings.Export_Docx}"     Command="{Binding ExportDocxCommand}"/>
+														<MenuItem Header="{x:Static loc:TextEditorStrings.Export_PDF}"      Command="{Binding ExportPdfCommand}"/>
+														<MenuItem Header="{x:Static loc:TextEditorStrings.Export_Txt}"      Command="{Binding ExportTxtCommand}"/>
+														<MenuItem Header="{x:Static loc:TextEditorStrings.Export_Markdown}" Command="{Binding ExportMarkdownCommand}"/>
+													</MenuFlyout>
+												</SplitButton.Flyout>
+											</SplitButton>
+										</StackPanel>
+									</Flyout>
+								</Button.Flyout>
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z" Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.File_Group}" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+						</DockPanel>
+					</Border>
+
+					<!-- ═══════════════════════════════════════════════════════
                          ТАБЛИЦА — развёрнутая
                          ═══════════════════════════════════════════════════════ -->
 					<Border Classes="RibbonGroup"

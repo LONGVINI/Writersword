@@ -1,0 +1,139 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+	<!-- Переключатель области: «Локальная» слева, «Глобальная» справа.
+	     Один на всё приложение — им переключаются и палитры цветов, и папки
+	     с аватарками. Раньше у каждого места была своя копия стилей, и они
+	     разошлись: разный фон дорожки, разные отступы, обратный порядок сторон.
+
+	     Вид прежний: цвета области — своя заливка у локальной стороны, своя у
+	     глобальной, те же, что у чипов области в списках. От переключателя
+	     вида аватара («Кружок / Полоска») в панели персонажа взято только
+	     поведение: плашка не проявляется, а едет, с той же длительностью и
+	     плавностью.
+
+	     Порядок сторон закреплён: слева то, что живёт в проекте, справа —
+	     общее для всех проектов.
+
+	     Плашка едет RenderTransform'ом, а не отступом: это преобразование при
+	     отрисовке, раскладку оно не трогает и лишних проходов измерения не
+	     вызывает. Отсюда и фиксированная ширина стороны — половина дорожки
+	     должна быть известна заранее, иначе плашке некуда ехать без вычисления
+	     по Bounds, а привязка влияющего на раскладку к результату раскладки
+	     заводит петлю перемеров.
+
+	     Разметка:
+	         <Border Classes="scopeTrack">
+	           <Panel>
+	             <Border Classes="scopeThumb" Classes.right="{Binding IsGlobal}"/>
+	             <StackPanel Orientation="Horizontal">
+	               <Button Classes="scope local"  Classes.active="{Binding IsLocal}"  Content="Локальная"/>
+	               <Button Classes="scope global" Classes.active="{Binding IsGlobal}" Content="Глобальная"/>
+	             </StackPanel>
+	           </Panel>
+	         </Border>
+	-->
+
+	<!-- Дорожка — подложка под обе стороны. Цвет свой (ScopeTrackBrush), а не
+	     общий фон окна: переключатель лежит на панелях разной светлоты, и от
+	     BgBaseBrush он на части из них сливался с тем, на чём стоит. Тонкая
+	     рамка держит край там, где дорожка и панель близки по светлоте. -->
+	<Style Selector="Border.scopeTrack">
+		<Setter Property="CornerRadius" Value="999"/>
+		<Setter Property="Padding" Value="2"/>
+		<Setter Property="Background" Value="{DynamicResource ScopeTrackBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+		<Setter Property="VerticalAlignment" Value="Center"/>
+		<Setter Property="HorizontalAlignment" Value="Left"/>
+	</Style>
+
+	<!-- Плашка выбранной стороны: ширина ровно в кнопку, ход — на её ширину. -->
+	<Style Selector="Border.scopeThumb">
+		<Setter Property="Width" Value="88"/>
+		<Setter Property="CornerRadius" Value="999"/>
+		<Setter Property="HorizontalAlignment" Value="Left"/>
+		<Setter Property="VerticalAlignment" Value="Stretch"/>
+		<Setter Property="IsHitTestVisible" Value="False"/>
+		<Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
+		<Setter Property="RenderTransform" Value="none"/>
+		<Setter Property="Transitions">
+			<Transitions>
+				<TransformOperationsTransition Property="RenderTransform"
+				                               Duration="0:0:0.22"
+				                               Easing="CubicEaseInOut"/>
+				<BrushTransition Property="Background" Duration="0:0:0.22"/>
+			</Transitions>
+		</Setter>
+	</Style>
+	<Style Selector="Border.scopeThumb.right">
+		<Setter Property="RenderTransform" Value="translateX(88px)"/>
+		<Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+	</Style>
+
+	<Style Selector="Button.scope">
+		<Setter Property="Width" Value="88"/>
+		<Setter Property="Padding" Value="10,4"/>
+		<Setter Property="MinWidth" Value="0"/>
+		<Setter Property="MinHeight" Value="0"/>
+		<Setter Property="CornerRadius" Value="999"/>
+		<Setter Property="BorderThickness" Value="0"/>
+		<Setter Property="FontSize" Value="11"/>
+		<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		<Setter Property="VerticalContentAlignment" Value="Center"/>
+		<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		<Setter Property="ZIndex" Value="1"/>
+		<Setter Property="FontWeight" Value="Normal"/>
+		<Setter Property="Transitions">
+			<Transitions>
+				<BrushTransition Property="Foreground" Duration="0:0:0.15"/>
+			</Transitions>
+		</Setter>
+	</Style>
+	<!-- Заливку даёт плашка, поэтому у самой кнопки её нет ни в одном
+	     состоянии: подсветка при наведении на невыбранную сторону — и та
+	     сидит на дорожке, а не на кнопке, иначе прямоугольник подсветки
+	     наезжал бы на едущую плашку. -->
+	<Style Selector="Button.scope /template/ ContentPresenter">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="BorderThickness" Value="0"/>
+		<Setter Property="CornerRadius" Value="999"/>
+	</Style>
+	<Style Selector="Button.scope:not(.active):pointerover">
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+	</Style>
+	<Style Selector="Button.scope.local.active">
+		<Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
+		<Setter Property="FontWeight" Value="SemiBold"/>
+	</Style>
+	<Style Selector="Button.scope.global.active">
+		<Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+		<Setter Property="FontWeight" Value="SemiBold"/>
+	</Style>
+
+	<!-- Недоступная сторона гасится, но остаётся читаемой: по ней должно быть
+	     понятно, что там вообще есть. Подсказку у выключенной кнопки перехватить
+	     нечем — она не получает событий мыши, поэтому подсказка вешается на
+	     обёртку вокруг неё. -->
+	<Style Selector="Button.scope:disabled">
+		<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+	</Style>
+
+	<!-- Широкий вариант: стороны со значком. Ширина кнопки и ход плашки — два
+	     согласованных числа, менять их можно только вместе, иначе плашка
+	     останавливается не под кнопкой.
+
+	     Стоит в конце файла намеренно: при равной силе селектора выигрывает
+	     объявленный последним, и выше по файлу эти правила проигрывали бы
+	     базовой ширине в 88. -->
+	<Style Selector="Border.scopeTrack.wide Border.scopeThumb">
+		<Setter Property="Width" Value="132"/>
+	</Style>
+	<Style Selector="Border.scopeTrack.wide Border.scopeThumb.right">
+		<Setter Property="RenderTransform" Value="translateX(132px)"/>
+	</Style>
+	<Style Selector="Border.scopeTrack.wide Button.scope">
+		<Setter Property="Width" Value="132"/>
+	</Style>
+
+</Styles>

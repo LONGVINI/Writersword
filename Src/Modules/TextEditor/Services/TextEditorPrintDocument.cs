@@ -40,13 +40,62 @@ namespace Writersword.Modules.TextEditor.Services
             _pageLayout = _renderer.BuildPageLayout(_document, _pageSettings, _styles);
         }
 
+        /// <summary>
+        /// Картинки, прочитанные для этой печати: и сами изображения документа, и
+        /// заливки фигур. Кеш живёт столько же, сколько документ печати, — одна и
+        /// та же картинка на десяти страницах читается из хранилища один раз.
+        /// </summary>
+        private readonly System.Collections.Generic.Dictionary<string, SKImage?> _printImages = new();
+
+        /// <summary>
+        /// Читает картинку из хранилища проекта. Экранный кеш канваса здесь не
+        /// годится: печать может идти без открытого канваса, и грузить она обязана
+        /// сама. Неудачное чтение запоминается как null — повторных попыток на
+        /// каждой странице не будет.
+        /// </summary>
+        private SKImage? ResolvePrintImage(string fileName)
+        {
+            if (string.IsNullOrEmpty(fileName)) return null;
+            if (_printImages.TryGetValue(fileName, out var cached)) return cached;
+
+            SKImage? image = null;
+            try
+            {
+                var ctx = Writersword.Core.Services.CoreServices
+                    .GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()?.ActiveTab?.Context;
+                var bytes = ctx?.ReadFile($"TextEditor/Images/{fileName}");
+                if (bytes is { Length: > 0 })
+                {
+                    // Растр декодируется сразу в пиксели: образ поверх освобождённого
+                    // растра роняет процесс в нативном коде при первой же отрисовке.
+                    using var bmp = SKBitmap.Decode(bytes);
+                    if (bmp is not null) image = SKImage.FromBitmap(bmp);
+                }
+            }
+            catch { image = null; }
+
+            _printImages[fileName] = image;
+            return image;
+        }
+
         /// <inheritdoc/>
         public void RenderPage(int pageIndex, SKCanvas canvas, float pageWidthPt, float pageHeightPt)
         {
             if (pageIndex < 0 || pageIndex >= _pageLayout.Pages.Count) return;
 
             var page = _pageLayout.Pages[pageIndex];
-            SKTextRenderer.RenderPage(canvas, page, SKColors.Transparent);
+
+            // Источник картинок ставится перед каждой страницей: рендер статический
+            // и общий, а замыкание здесь — на хранилище именно этого документа.
+            SKTextRenderer.PrintImageResolver = ResolvePrintImage;
+            try
+            {
+                SKTextRenderer.RenderPage(canvas, page, SKColors.Transparent);
+            }
+            finally
+            {
+                SKTextRenderer.PrintImageResolver = null;
+            }
         }
 
         /// <summary>

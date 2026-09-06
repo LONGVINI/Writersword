@@ -38,6 +38,12 @@
               Header="Синхронизация…"
               Command="{Binding OpenSyncSettingsCommand}"/>
 
+	<!-- Кто ещё держит открытые книги. Отдельным пунктом от настроек: те
+	     заполняют один раз и забывают, а сюда заглядывают по ходу работы. -->
+	<MenuItem x:Name="HotKey_Tools_Devices"
+              Header="Устройства…"
+              Command="{Binding OpenDevicesCommand}"/>
+
 	<!-- Ручная отправка. Обычно не нужна — координатор отправляет сам, —
 	     но пригодится, когда автоматика приостановлена из-за расхождения. -->
 	<MenuItem x:Name="HotKey_Tools_SyncPush"

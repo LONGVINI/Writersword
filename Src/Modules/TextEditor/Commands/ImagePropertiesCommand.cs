@@ -30,6 +30,10 @@ namespace Writersword.Modules.TextEditor.Commands
                 Opacity = i.Opacity;
                 BorderColor = i.BorderColor;
                 BorderThicknessPt = i.BorderThicknessPt;
+                BorderDashStyle = i.BorderDashStyle;
+                ShapeType = i.ShapeType;
+                CornerRadiusPt = i.CornerRadiusPt;
+                BorderAlign = i.BorderAlign;
                 FlipHorizontal = i.FlipHorizontal;
                 FlipVertical = i.FlipVertical;
                 CropLeftFrac = i.CropLeftFrac;
@@ -56,6 +60,10 @@ namespace Writersword.Modules.TextEditor.Commands
             public double Opacity { get; }
             public string? BorderColor { get; }
             public double BorderThicknessPt { get; }
+            public ShapeDashStyle BorderDashStyle { get; }
+            public ShapeType ShapeType { get; }
+            public double CornerRadiusPt { get; }
+            public ImageBorderAlign BorderAlign { get; }
             public bool FlipHorizontal { get; }
             public bool FlipVertical { get; }
             public double CropLeftFrac { get; }
@@ -83,6 +91,10 @@ namespace Writersword.Modules.TextEditor.Commands
                 i.Opacity = Opacity;
                 i.BorderColor = BorderColor;
                 i.BorderThicknessPt = BorderThicknessPt;
+                i.BorderDashStyle = BorderDashStyle;
+                i.ShapeType = ShapeType;
+                i.CornerRadiusPt = CornerRadiusPt;
+                i.BorderAlign = BorderAlign;
                 i.FlipHorizontal = FlipHorizontal;
                 i.FlipVertical = FlipVertical;
                 i.CropLeftFrac = CropLeftFrac;

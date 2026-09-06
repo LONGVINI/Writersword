@@ -10,8 +10,14 @@
 	     границу, двигала бы вместе с ней и буквы. -->
 	<Grid>
 
+		<!-- Горизонтальная прокрутка выключена, и это не про полосу, а про замер.
+		     Контейнер с «Auto» меряет содержимое бесконечной шириной, а канвас на
+		     бесконечность отвечает запасными 800 точками — шире телефонного экрана.
+		     Отсюда бралось пустое поле справа, в которое уезжала книга. С
+		     «Disabled» канвас меряется шириной вьюпорта, и ехать становится
+		     некуда: колонка чтения и так считается по этой ширине. -->
 		<ScrollViewer x:Name="Scroll"
-		              HorizontalScrollBarVisibility="Auto"
+		              HorizontalScrollBarVisibility="Disabled"
 		              VerticalScrollBarVisibility="Auto">
 			<doc:DocumentCanvas x:Name="PageCanvas" HorizontalAlignment="Stretch"/>
 		</ScrollViewer>
@@ -25,6 +31,23 @@
 		           HorizontalAlignment="Center"
 		           VerticalAlignment="Center"
 		           Margin="32"/>
+
+		<!-- Предупреждение о том, что книгу правят на другом устройстве.
+		     Сверху и поверх книги: читатель должен знать, что текст под рукой
+		     вот-вот устареет, но мешать чтению это не должно. -->
+		<Border x:Name="ForeignBanner"
+		        VerticalAlignment="Top"
+		        IsVisible="False"
+		        ZIndex="11"
+		        Background="{DynamicResource BgPanelBrush}"
+		        BorderBrush="{DynamicResource AccentDefaultBrush}"
+		        BorderThickness="0,0,0,2"
+		        Padding="12,8">
+			<TextBlock x:Name="ForeignBlock"
+			           FontSize="12"
+			           TextWrapping="Wrap"
+			           Foreground="{DynamicResource TextPrimaryBrush}"/>
+		</Border>
 
 		<views:ReaderHud x:Name="Hud" ZIndex="10"/>
 

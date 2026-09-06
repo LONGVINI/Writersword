@@ -79,6 +79,7 @@ namespace Writersword.ViewModels.Components.MenuBar
         /// </summary>
         public ReactiveCommand<Unit, Unit> PrepareForSharingCommand { get; }
         public ReactiveCommand<Unit, Unit> OpenSyncSettingsCommand { get; }
+        public ReactiveCommand<Unit, Unit> OpenDevicesCommand { get; }
         public ReactiveCommand<Unit, Unit> PushToStorageCommand { get; }
         public ReactiveCommand<Unit, Unit> PullFromStorageCommand { get; }
 
@@ -128,6 +129,7 @@ namespace Writersword.ViewModels.Components.MenuBar
             CompactProjectCommand = ReactiveCommand.CreateFromTask(CompactProject);
             PrepareForSharingCommand = ReactiveCommand.CreateFromTask(PrepareProjectForSharing);
             OpenSyncSettingsCommand = ReactiveCommand.CreateFromTask(OpenSyncSettings);
+            OpenDevicesCommand = ReactiveCommand.CreateFromTask(OpenDevices);
             PushToStorageCommand = ReactiveCommand.CreateFromTask(PushToStorage);
             PullFromStorageCommand = ReactiveCommand.CreateFromTask(PullFromStorage);
             ToggleFullscreenCommand = ReactiveCommand.Create(ToggleFullscreen);

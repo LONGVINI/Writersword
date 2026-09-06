@@ -11,6 +11,8 @@ using System;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.Document;
 using Writersword.Modules.TextEditor.ViewModels;
+using Writersword.Modules.TextEditor.ViewModels.StatusBar;
+using Writersword.Modules.TextEditor.Views.Dialogs;
 using Writersword.Modules.TextEditor.Views.Reading;
 
 namespace Writersword.Modules.TextEditor.Views
@@ -511,6 +513,18 @@ namespace Writersword.Modules.TextEditor.Views
                 vm.NotifyPageOffsetChanged(pageOffsetXPx);
             };
 
+            // Число страниц и строк → строка состояния и окно статистики. Считает их
+            // раскладка: по тексту документа ни то, ни другое не выводится.
+            canvas.PaginationChanged = (pageCount, lineCount) =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    vm.StatusBar.UpdatePagination(pageCount, lineCount),
+                    Avalonia.Threading.DispatcherPriority.Background);
+            };
+
+            // Окно полной статистики — обычный оверлей модуля.
+            vm.WordCountRequested = ShowStatisticsOverlay;
+
             // Полноэкранное чтение: окном и слоями распоряжается вью, модуль о них
             // ничего не знает.
             vm.FullscreenRequested = ApplyFullscreen;
@@ -606,12 +620,24 @@ namespace Writersword.Modules.TextEditor.Views
                     Avalonia.Threading.DispatcherPriority.Background);
             };
 
+            // Выделение/снятие фигуры → контекстная вкладка «Формат фигуры».
+            canvas.ShapeSelectionChanged = selected =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    vm.NotifyShapeSelectionChanged(selected),
+                    Avalonia.Threading.DispatcherPriority.Background);
+            };
+
             // Страница каретки → вертикальная линейка.
             // Вертикальная линейка использует FocusedPageIndex чтобы отображать
             // шкалу только для страницы где стоит каретка, как в Word.
             canvas.CaretPageChanged = pageIndex =>
             {
                 vm.Ruler.FocusedPageIndex = pageIndex;
+
+                // Та же страница — номер в строке состояния. Индекс раскладки нулевой,
+                // человеку страницы нумеруются с единицы.
+                vm.StatusBar.CurrentPage = pageIndex + 1;
             };
 
             _logger.Debug("SyncCanvas: MonitorSizeInches={V}", vm.MonitorSizeInches);
@@ -648,6 +674,36 @@ namespace Writersword.Modules.TextEditor.Views
             reading.ApplyTheme(result.Selected);
             vm.ReadingRibbon.RefreshAll();
             vm.ApplyReadingLayout();
+        }
+
+        /// <summary>
+        /// Показывает окно полной статистики документа. Величины берутся из строки
+        /// состояния: слова и знаки она пересчитывает по тексту перед открытием, а
+        /// страницы и строки держит от последней пересборки раскладки.
+        /// </summary>
+        private void ShowStatisticsOverlay()
+        {
+            if (DataContext is not TextEditorViewModel vm) return;
+
+            var overlay = this.FindControl<DocumentStatisticsOverlay>("StatisticsOverlay");
+            if (overlay is null) return;
+
+            var status = vm.StatusBar;
+            var stats = new DocumentStatistics(
+                Pages: status.PageCount,
+                Words: status.WordCount,
+                CharsNoSpaces: status.CharCountNoSpaces,
+                CharsWithSpaces: status.CharCount,
+                Paragraphs: status.ParagraphCount,
+                Lines: status.LineCount);
+
+            // Черновик и веб-разметка листов не строят: чисел страниц и строк там нет,
+            // и показывать вместо них остатки прежней постраничной раскладки нельзя.
+            bool draftLayout = status.ViewMode
+                is Models.Document.EditorViewMode.Draft
+                or Models.Document.EditorViewMode.Web;
+
+            overlay.Show(stats, draftLayout);
         }
 
     }

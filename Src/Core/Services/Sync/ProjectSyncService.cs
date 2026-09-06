@@ -54,6 +54,11 @@ namespace Writersword.Core.Services.Sync
         // меняются только при появлении новой книги.
         private ProjectIndex? _projectIndex;
 
+        // Служба отметок держится одна на подключение: она помнит версию файла
+        // отметок, и с этой памятью частый опрос почти ничего не стоит. Создавая
+        // её заново на каждый вызов, мы бы эту память выбрасывали.
+        private PresenceService? _presence;
+
         public ProjectSyncService(IRemoteStorage storage, SyncStateStore state, ILogger logger)
         {
             _storage = storage ?? throw new ArgumentNullException(nameof(storage));
@@ -427,6 +432,66 @@ namespace Writersword.Core.Services.Sync
             {
                 _log.Debug(ex, "Backup store restore could not reach the server");
                 return 0;
+            }
+        }
+
+        public async Task<PresenceReport> AnnouncePresenceAsync(
+            string projectName, DevicePresence self, CancellationToken ct = default)
+        {
+            ThrowIfDisposed();
+
+            if (_crypto is null || self is null || string.IsNullOrWhiteSpace(projectName))
+                return new PresenceReport();
+
+            try
+            {
+                return await Presence().AnnounceAsync(projectName, self, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                // Отметки — удобство поверх синхронизации. Их сбой не должен
+                // мешать ни отправке книги, ни её получению.
+                _log.Debug(ex, "Presence announce failed for {Project}", projectName);
+                return new PresenceReport();
+            }
+        }
+
+        public async Task<PresenceReport?> PeekPresenceAsync(
+            string projectName, string selfDeviceId, CancellationToken ct = default)
+        {
+            ThrowIfDisposed();
+
+            if (_crypto is null || string.IsNullOrWhiteSpace(projectName))
+                return null;
+
+            try
+            {
+                return await Presence().PeekAsync(projectName, selfDeviceId, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                _log.Debug(ex, "Presence peek failed for {Project}", projectName);
+                return null;
+            }
+        }
+
+        private PresenceService Presence()
+            => _presence ??= new PresenceService(_storage, _crypto!, _log);
+
+        public async Task ReleasePresenceAsync(
+            string projectName, string deviceId, CancellationToken ct = default)
+        {
+            ThrowIfDisposed();
+
+            if (_crypto is null || string.IsNullOrWhiteSpace(projectName)) return;
+
+            try
+            {
+                await Presence().ReleaseAsync(projectName, deviceId, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                _log.Debug(ex, "Presence release failed for {Project}", projectName);
             }
         }
 

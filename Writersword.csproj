@@ -289,6 +289,8 @@
 		<Folder Include="Src\WorkModes\Maps\" />
 		<Folder Include="Src\WorkModes\PlotPoints\" />
 		<Folder Include="Src\WorkModes\Poetry\" />
+		<Folder Include="Styles\Base\" />
+		<Folder Include="Styles\Themes\" />
 	</ItemGroup>
 
 	<!-- MenuBar Sections -->

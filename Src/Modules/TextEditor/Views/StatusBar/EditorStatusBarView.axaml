@@ -47,6 +47,23 @@
 			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
 			<Setter Property="Foreground" Value="White"/>
 		</Style>
+
+		<!-- Счётчики слева: обычные подписи, но по нажатию открывается окно
+		     полной статистики. Кнопка без рамки и без фона — в покое она
+		     неотличима от текста, подсветка появляется только под курсором. -->
+		<Style Selector="Button.StatBtn">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding"         Value="4 2"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+		</Style>
+		<Style Selector="Button.StatBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+		</Style>
 	</UserControl.Styles>
 
 	<Border Background="{DynamicResource StatusBarBackground}"
@@ -57,68 +74,75 @@
 
 			<StackPanel Grid.Column="0"
                         Orientation="Horizontal"
-                        Spacing="12"
+                        Spacing="6"
                         Margin="8 0"
                         VerticalAlignment="Center">
 
-				<StackPanel Orientation="Horizontal" Spacing="4">
-					<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Page}"
-                               FontSize="11"
-                               Foreground="{DynamicResource StatusBarForeground}"/>
-					<TextBlock FontSize="11" Foreground="{DynamicResource StatusBarForeground}">
-						<TextBlock.Text>
-							<MultiBinding StringFormat="{}{0} / {1}">
-								<Binding Path="CurrentPage"/>
-								<Binding Path="PageCount"/>
-							</MultiBinding>
-						</TextBlock.Text>
-					</TextBlock>
-				</StackPanel>
+				<Button Classes="StatBtn"
+				        Command="{Binding ShowStatisticsCommand}"
+				        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Stats_Title}">
+					<StackPanel Orientation="Horizontal" Spacing="4">
+						<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Page}"
+						           FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
+						<TextBlock FontSize="11" Foreground="{DynamicResource StatusBarForeground}">
+							<TextBlock.Text>
+								<MultiBinding StringFormat="{}{0} / {1}">
+									<Binding Path="CurrentPage"/>
+									<Binding Path="PageCountText"/>
+								</MultiBinding>
+							</TextBlock.Text>
+						</TextBlock>
+					</StackPanel>
+				</Button>
 
 				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
 
-				<StackPanel Orientation="Horizontal" Spacing="4">
-					<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Words}"
-                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
-					<TextBlock Text="{Binding WordCount}"
-                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
-				</StackPanel>
+				<Button Classes="StatBtn"
+				        Command="{Binding ShowStatisticsCommand}"
+				        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Stats_Title}">
+					<StackPanel Orientation="Horizontal" Spacing="4">
+						<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Words}"
+						           FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
+						<TextBlock Text="{Binding WordCountText}"
+						           FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
+					</StackPanel>
+				</Button>
 
 				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
 
-				<StackPanel Orientation="Horizontal" Spacing="4">
-					<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Chars}"
-                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
-					<TextBlock Text="{Binding CharCount}"
-                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
-				</StackPanel>
-
-				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
-
-				<StackPanel Orientation="Horizontal" Spacing="4">
-					<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Paragraphs}"
-                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
-					<TextBlock Text="{Binding ParagraphCount}"
-                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
-				</StackPanel>
+				<Button Classes="StatBtn"
+				        Command="{Binding ShowStatisticsCommand}"
+				        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Stats_Title}">
+					<StackPanel Orientation="Horizontal" Spacing="4">
+						<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Chars}"
+						           FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
+						<TextBlock Text="{Binding CharCountText}"
+						           FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
+					</StackPanel>
+				</Button>
 
 				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
 
 				<TextBlock Text="{Binding Language}"
                            FontSize="11"
+                           Margin="6 0 0 0"
                            Foreground="{DynamicResource StatusBarForeground}"
                            VerticalAlignment="Center"/>
 
 				<Border IsVisible="{Binding IsSpellCheckActive}"
                         Background="{DynamicResource AccentDefaultBrush}"
-                        CornerRadius="2" Padding="4 1">
+                        CornerRadius="2" Padding="4 1"
+                        Margin="6 0 0 0"
+                        VerticalAlignment="Center">
 					<TextBlock Text="{x:Static loc:TextEditorStrings.SpellCheck_Active}"
                                FontSize="10" Foreground="White"/>
 				</Border>
 
 				<Border IsVisible="{Binding IsReadOnly}"
                         Background="{DynamicResource WarningColor}"
-                        CornerRadius="2" Padding="4 1">
+                        CornerRadius="2" Padding="4 1"
+                        Margin="6 0 0 0"
+                        VerticalAlignment="Center">
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Editor_ReadOnly}"
                                FontSize="10" Foreground="White"/>
 				</Border>
@@ -257,7 +281,7 @@
 					Тест
 				</Button>
 				<!-- КОНЕЦ ТЕСТОВАЯ КНОПКА -->
-				
+
 				<TextBox Name="ZoomTextBox"
 						 FontSize="12"
 						 Foreground="{DynamicResource StatusBarForeground}"

@@ -1,0 +1,144 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
+             x:Class="Writersword.Modules.TextEditor.Views.Dialogs.DocumentStatisticsOverlay">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.StatLabel">
+            <Setter Property="FontSize"            Value="12"/>
+            <Setter Property="Foreground"          Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="VerticalAlignment"   Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+        </Style>
+        <Style Selector="TextBlock.StatValue">
+            <Setter Property="FontSize"            Value="12"/>
+            <Setter Property="FontWeight"          Value="SemiBold"/>
+            <Setter Property="Foreground"          Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="VerticalAlignment"   Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
+        <Style Selector="Border.StatRow">
+            <Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="12 7"/>
+        </Style>
+        <Style Selector="Button.IconClose">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width"           Value="28"/>
+            <Setter Property="Height"          Value="28"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="0"/>
+            <Setter Property="Foreground"      Value="{DynamicResource TextMutedBrush}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment"   Value="Center"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+        </Style>
+        <Style Selector="Button.IconClose:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+        </Style>
+        <Style Selector="Button.DialogAccent">
+            <Setter Property="Background"      Value="{DynamicResource AccentDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="18 8"/>
+            <Setter Property="Foreground"      Value="White"/>
+            <Setter Property="FontWeight"      Value="SemiBold"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid>
+        <Border x:Name="Scrim" Background="#B3000000"/>
+
+        <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                Margin="24" Width="340"
+                Background="{DynamicResource BgBaseBrush}"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="1" CornerRadius="16" Padding="20 18">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
+            </Border.Effect>
+
+            <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="* Auto">
+                    <TextBlock Grid.Column="0"
+                               Text="{x:Static loc:TextEditorStrings.Stats_Title}"
+                               FontSize="16" FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    <Button Grid.Column="1" x:Name="CloseBtn" Classes="IconClose">
+                        <PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                                  Width="14" Height="14"/>
+                    </Button>
+                </Grid>
+
+                <StackPanel Spacing="6">
+
+                    <Border Classes="StatRow">
+                        <Grid ColumnDefinitions="* Auto">
+                            <TextBlock Grid.Column="0" Classes="StatLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Stats_Pages}"/>
+                            <TextBlock Grid.Column="1" x:Name="PagesValue" Classes="StatValue"/>
+                        </Grid>
+                    </Border>
+
+                    <Border Classes="StatRow">
+                        <Grid ColumnDefinitions="* Auto">
+                            <TextBlock Grid.Column="0" Classes="StatLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Stats_Words}"/>
+                            <TextBlock Grid.Column="1" x:Name="WordsValue" Classes="StatValue"/>
+                        </Grid>
+                    </Border>
+
+                    <Border Classes="StatRow">
+                        <Grid ColumnDefinitions="* Auto">
+                            <TextBlock Grid.Column="0" Classes="StatLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Stats_CharsNoSpaces}"/>
+                            <TextBlock Grid.Column="1" x:Name="CharsNoSpacesValue" Classes="StatValue"/>
+                        </Grid>
+                    </Border>
+
+                    <Border Classes="StatRow">
+                        <Grid ColumnDefinitions="* Auto">
+                            <TextBlock Grid.Column="0" Classes="StatLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Stats_CharsWithSpaces}"/>
+                            <TextBlock Grid.Column="1" x:Name="CharsWithSpacesValue" Classes="StatValue"/>
+                        </Grid>
+                    </Border>
+
+                    <Border Classes="StatRow">
+                        <Grid ColumnDefinitions="* Auto">
+                            <TextBlock Grid.Column="0" Classes="StatLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Stats_Paragraphs}"/>
+                            <TextBlock Grid.Column="1" x:Name="ParagraphsValue" Classes="StatValue"/>
+                        </Grid>
+                    </Border>
+
+                    <Border Classes="StatRow">
+                        <Grid ColumnDefinitions="* Auto">
+                            <TextBlock Grid.Column="0" Classes="StatLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Stats_Lines}"/>
+                            <TextBlock Grid.Column="1" x:Name="LinesValue" Classes="StatValue"/>
+                        </Grid>
+                    </Border>
+
+                </StackPanel>
+
+                <TextBlock x:Name="DraftHint"
+                           FontSize="11" TextWrapping="Wrap"
+                           IsVisible="False"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           Text="{x:Static loc:TextEditorStrings.Stats_DraftHint}"/>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0 6 0 0">
+                    <Button x:Name="OkBtn" Classes="DialogAccent"
+                            Content="{x:Static loc:TextEditorStrings.Stats_Close}"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+
+</UserControl>

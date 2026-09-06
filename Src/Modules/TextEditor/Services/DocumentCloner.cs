@@ -166,7 +166,12 @@ namespace Writersword.Modules.TextEditor.Services
             return clone;
         }
 
-        private static BlockModel CloneBlock(BlockModel source)
+        /// <summary>
+        /// Глубокая копия одного блока. Идентификатор переносится как есть: клон
+        /// нужен и для снимков документа, где Id обязан совпадать. Тому, кто кладёт
+        /// копию рядом с оригиналом, Id надо заменить самому.
+        /// </summary>
+        public static BlockModel CloneBlock(BlockModel source)
         {
             switch (source)
             {
@@ -315,6 +320,10 @@ namespace Writersword.Modules.TextEditor.Services
                 Opacity = source.Opacity,
                 BorderColor = source.BorderColor,
                 BorderThicknessPt = source.BorderThicknessPt,
+                BorderDashStyle = source.BorderDashStyle,
+                ShapeType = source.ShapeType,
+                CornerRadiusPt = source.CornerRadiusPt,
+                BorderAlign = source.BorderAlign,
                 FlipHorizontal = source.FlipHorizontal,
                 FlipVertical = source.FlipVertical,
                 CropLeftFrac = source.CropLeftFrac,
@@ -344,18 +353,43 @@ namespace Writersword.Modules.TextEditor.Services
                 Id = source.Id,
                 Hash = source.Hash,
                 ShapeType = source.ShapeType,
-                XPt = source.XPt,
-                YPt = source.YPt,
                 WidthPt = source.WidthPt,
                 HeightPt = source.HeightPt,
+                LockAspectRatio = source.LockAspectRatio,
+                RotationDeg = source.RotationDeg,
+                Opacity = source.Opacity,
                 FillColor = source.FillColor,
+                FillImageFileName = source.FillImageFileName,
+                FillImageStretch = source.FillImageStretch,
                 StrokeColor = source.StrokeColor,
                 StrokeThicknessPt = source.StrokeThicknessPt,
+                DashStyle = source.DashStyle,
+                StrokeAlign = source.StrokeAlign,
+                CornerRadiusPt = source.CornerRadiusPt,
+                StartArrow = source.StartArrow,
+                EndArrow = source.EndArrow,
+                FlipHorizontal = source.FlipHorizontal,
+                FlipVertical = source.FlipVertical,
+                CropLeftFrac = source.CropLeftFrac,
+                CropTopFrac = source.CropTopFrac,
+                CropRightFrac = source.CropRightFrac,
+                CropBottomFrac = source.CropBottomFrac,
+                WrapMode = source.WrapMode,
+                WrapSide = source.WrapSide,
+                WrapPadTopPt = source.WrapPadTopPt,
+                WrapPadBottomPt = source.WrapPadBottomPt,
+                WrapPadLeftPt = source.WrapPadLeftPt,
+                WrapPadRightPt = source.WrapPadRightPt,
+                Alignment = source.Alignment,
                 Anchor = source.Anchor,
+                PinnedPage = source.PinnedPage,
+                OffsetXPt = source.OffsetXPt,
+                OffsetYPt = source.OffsetYPt,
                 ZOrder = source.ZOrder,
                 InnerText = source.InnerText,
                 IsGrouped = source.IsGrouped,
-                GroupId = source.GroupId
+                GroupId = source.GroupId,
+                AltText = source.AltText
             };
         }
 

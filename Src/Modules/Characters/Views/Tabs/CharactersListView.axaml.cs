@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -88,9 +88,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private DispatcherTimer? _autoScrollTimer;
         private double _autoScrollVel;
         private Point _lastDragPos;
-
-        private static readonly Serilog.ILogger _perfLog =
-            Serilog.Log.ForContext<CharactersListView>();
 
         public CharactersListView()
         {
@@ -435,7 +432,15 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         private void UpdateGridLayouts(int cols)
         {
-            double minItemWidth = (DataContext as CharactersViewModel)?.CardMinWidth ?? 152.0;
+            var vm = DataContext as CharactersViewModel;
+            double minItemWidth = vm?.CardMinWidth ?? 152.0;
+
+            // Высота ячейки — высота карточки плюс её поля, те же 12 точек,
+            // что заложены в CardMinWidth. Без неё раскладка выводит высоту
+            // строки из первого измеренного элемента и при неудачном первом
+            // проходе реализует всю папку разом.
+            double minItemHeight = (vm?.CardTotalHeight ?? 108.0) + 12.0;
+
             foreach (var repeater in this.GetVisualDescendants().OfType<ItemsRepeater>())
             {
                 switch (repeater.Layout)
@@ -452,6 +457,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
                             layout.MaximumRowsOrColumns = cols;
                         if (Math.Abs(layout.MinItemWidth - minItemWidth) > 0.5)
                             layout.MinItemWidth = minItemWidth;
+                        if (Math.Abs(layout.MinItemHeight - minItemHeight) > 0.5)
+                            layout.MinItemHeight = minItemHeight;
                         break;
                 }
             }
@@ -791,8 +798,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (oldPh >= 0)
             {
                 int newPh = Math.Min(targetIndex, targetFolderVm.Characters.Count - 1);
-                snap = SnapshotPositions(targetFolderVm, Math.Min(oldPh, newPh), Math.Max(oldPh, newPh));
 
+                snap = SnapshotPositions(targetFolderVm, Math.Min(oldPh, newPh), Math.Max(oldPh, newPh));
                 vm.UpdateDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
                 BeginFlipAnimation(snap);
             }
@@ -805,27 +812,9 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 // и давал рывок при пересечении границы папок; застрявшие
                 // трансформы таких карточек доводит мягкая чистка в
                 // BeginFlipAnimation.
-                // Замер этапов кросс-папочного шага — временная диагностика
-                // остаточного рывка на границе папок.
-                var swSnap = System.Diagnostics.Stopwatch.StartNew();
                 snap = SnapshotPositions(FindPlaceholderFolder(vm), targetFolderVm);
-                swSnap.Stop();
-
-                var swData = System.Diagnostics.Stopwatch.StartNew();
                 vm.UpdateDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
-                swData.Stop();
-
-                var swFlip = System.Diagnostics.Stopwatch.StartNew();
                 BeginFlipAnimation(snap);
-                swFlip.Stop();
-
-                _perfLog.Debug(
-                    "[CrossStep] '{Target}': snapshot={Snap:F1} ms, data={Data:F1} ms, flip={Flip:F1} ms, cards={Cards}",
-                    targetFolderVm.Name,
-                    swSnap.Elapsed.TotalMilliseconds,
-                    swData.Elapsed.TotalMilliseconds,
-                    swFlip.Elapsed.TotalMilliseconds,
-                    snap.Count);
             }
         }
 
@@ -1392,6 +1381,15 @@ namespace Writersword.Modules.Characters.Views.Tabs
                         if (ReferenceEquals(ctrl.DataContext, folderVm) && ctrl is StackPanel)
                         { headerControl = ctrl; break; }
                     }
+
+                    // Найденное кладётся в кэш. Без этого промах не разовый:
+                    // заголовок искался полным обходом дерева вида заново на
+                    // каждом шаге предпросмотра, и так по каждой папке, которой
+                    // в кэше нет. RebuildDragCaches наполняет кэш только из
+                    // реализованных заголовков, поэтому свёрнутая или уехавшая
+                    // за край папка промахивалась всё перетаскивание.
+                    if (headerControl is not null)
+                        _folderHeaderCache[folderVm.FolderId] = headerControl;
                 }
 
                 if (headerControl is null) continue;

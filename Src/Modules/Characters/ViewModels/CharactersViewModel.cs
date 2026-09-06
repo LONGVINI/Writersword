@@ -222,8 +222,16 @@ namespace Writersword.Modules.Characters.ViewModels
             get => _isInspectorOpen;
             set
             {
+                if (_isInspectorOpen == value) return;
+
                 this.RaiseAndSetIfChanged(ref _isInspectorOpen, value);
                 this.RaisePropertyChanged(nameof(EffectiveInspectorWidth));
+
+                // Панель выезжает анимацией ширины, то есть двигает границу
+                // списка каждый кадр. Пересчитывать под неё карточки на каждом
+                // кадре не нужно — размер им считается один раз, когда панель
+                // встала на место.
+                BeginLayoutSettle();
             }
         }
 
@@ -721,12 +729,85 @@ namespace Writersword.Modules.Characters.ViewModels
         // UniformGridLayout сам вычислит число колонок и растянет карточки через ItemsStretch.Fill.
         public double CardMinWidth => CardWidthRange(_viewMode).min + 12.0;
 
+        // Пока панель выезжает, ширина списка приходит новая каждый кадр.
+        // Пересчёт размеров карточки тянет за собой рассылку двух с половиной
+        // десятков уведомлений по всем показанным карточкам, у каждой из
+        // которых на эти значения завязаны рефлексивные привязки, и следом
+        // полный проход раскладки списка. Тридцать таких проходов за двести
+        // миллисекунд — это и есть рывок при открытии панели.
+        //
+        // Раскладку при этом трогать нельзя: ширину карточкам задаёт сама
+        // раскладка (UniformGridLayout, ItemsStretch=Fill), и стоит её
+        // придержать — либо карточки едут шире-уже при неизменной высоте, либо
+        // список замирает и перестраивается рывком в конце. Обе крайности уже
+        // проверены и обе смотрятся хуже, чем то, что было.
+        //
+        // Поэтому едет всё как прежде, а срезается только частота пересчёта:
+        // за анимацию он делается три-четыре раза вместо тридцати. Высота
+        // карточки отстаёт от ширины не больше чем на пятьдесят миллисекунд —
+        // на глаз это незаметно, а работы становится в восемь раз меньше.
+        // Последний пересчёт идёт по ширине, на которой панель остановилась,
+        // поэтому в покое размеры точные.
+        //
+        // Полоски-разделителя это не касается: её тянут руками, окно ожидания
+        // не открывается, и карточки идут за указателем как прежде.
+        private Avalonia.Threading.DispatcherTimer? _layoutSettleTimer;
+        private double _pendingContainerWidth;
+        private bool _layoutSettling;
+        private long _lastSettleRecalcTick;
+
+        // Длительность анимации панели плюс запас на кадр-другой.
+        private const int LayoutSettleMs = 260;
+
+        // Минимальный промежуток между пересчётами во время анимации.
+        private const long SettleRecalcThrottleMs = 55;
+
         public void UpdateContainerWidth(double width)
         {
             if (width < 1.0) return;
             if (Math.Abs(_containerWidth - width) < 10.0) return;
+
+            if (_layoutSettling)
+            {
+                // Запоминаем в любом случае: даже если этот кадр пропущен,
+                // именно его ширина может оказаться последней.
+                _pendingContainerWidth = width;
+
+                var now = Environment.TickCount64;
+                if (now - _lastSettleRecalcTick < SettleRecalcThrottleMs) return;
+                _lastSettleRecalcTick = now;
+            }
+
             _containerWidth = width;
             RecalculateCardDimensions();
+        }
+
+        private void BeginLayoutSettle()
+        {
+            _pendingContainerWidth = 0.0;
+            _lastSettleRecalcTick = 0;
+            _layoutSettling = true;
+
+            if (_layoutSettleTimer == null)
+            {
+                _layoutSettleTimer = new Avalonia.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(LayoutSettleMs)
+                };
+                _layoutSettleTimer.Tick += (_, _) =>
+                {
+                    _layoutSettleTimer!.Stop();
+                    _layoutSettling = false;
+
+                    // Последняя пришедшая ширина и есть та, на которой панель
+                    // остановилась. Не пришло ни одной — менять нечего.
+                    if (_pendingContainerWidth >= 1.0)
+                        UpdateContainerWidth(_pendingContainerWidth);
+                };
+            }
+
+            _layoutSettleTimer.Stop();
+            _layoutSettleTimer.Start();
         }
 
         private static (double min, double max) CardWidthRange(CharactersViewMode mode) => mode switch
@@ -823,6 +904,19 @@ namespace Writersword.Modules.Characters.ViewModels
                 || Math.Abs(_raisedColorButtonSize - CardColorButtonSize) > 0.01;
             if (!changed) return;
 
+            // Форма карточки — плитка или строка списка — зависит только от
+            // режима показа и от того, хватает ли ширины на строку. Пока это
+            // не поменялось, докинг цветной зоны, выравнивания, ориентация
+            // кнопок и их поля измениться не могут, и рассылать их незачем.
+            //
+            // Разделение стоит того: при плавном изменении ширины (выезд
+            // панели, ресайз окна, полоска-разделитель) уведомлений уходит
+            // вдвое меньше, а каждое из них у каждой показанной карточки
+            // пересчитывает свои привязки.
+            var shapeChanged =
+                _raisedViewMode != _viewMode
+                || _raisedUseListRow != UseListRowLayout;
+
             _raisedViewMode = _viewMode;
             _raisedUseListRow = UseListRowLayout;
             _raisedCardsPerRow = _cardsPerRow;
@@ -832,10 +926,18 @@ namespace Writersword.Modules.Characters.ViewModels
             _raisedActionIconSize = CardActionIconSize;
             _raisedColorButtonSize = CardColorButtonSize;
 
-            RaiseCardDimensionProperties();
+            RaiseCardSizeProperties();
+            if (shapeChanged) RaiseCardShapeProperties();
         }
 
-        private void RaiseCardDimensionProperties()
+        /// <summary>
+        /// Размеры: всё, что считается от ширины карточки. Рассылается на
+        /// каждом пересчёте.
+        ///
+        /// CardDeadBadgeMargin здесь, а не в форме: он складывается из размеров
+        /// кнопок, и от ширины зависит наравне с ними, хотя форму тоже читает.
+        /// </summary>
+        private void RaiseCardSizeProperties()
         {
             this.RaisePropertyChanged(nameof(CardWidth));
             this.RaisePropertyChanged(nameof(CardTopHeight));
@@ -849,6 +951,18 @@ namespace Writersword.Modules.Characters.ViewModels
             this.RaisePropertyChanged(nameof(CardActionIconSize));
             this.RaisePropertyChanged(nameof(CardColorButtonSize));
             this.RaisePropertyChanged(nameof(CardsPerRow));
+            this.RaisePropertyChanged(nameof(CardDeadBadgeMargin));
+        }
+
+        /// <summary>
+        /// Форма: докинг цветной зоны, выравнивания, ориентация кнопок, поля,
+        /// скругления. Всё это выводится из UseListRowLayout, а минимальная
+        /// ширина слота — из режима показа. Ни то, ни другое от плавного
+        /// изменения ширины не меняется, поэтому рассылается только когда
+        /// карточка действительно сменила форму.
+        /// </summary>
+        private void RaiseCardShapeProperties()
+        {
             this.RaisePropertyChanged(nameof(CardMinWidth));
             this.RaisePropertyChanged(nameof(UseListRowLayout));
             this.RaisePropertyChanged(nameof(CardZoneDock));
@@ -862,7 +976,6 @@ namespace Writersword.Modules.Characters.ViewModels
             this.RaisePropertyChanged(nameof(CardPickerHAlign));
             this.RaisePropertyChanged(nameof(CardPickerMargin));
             this.RaisePropertyChanged(nameof(CardEditBtnsMargin));
-            this.RaisePropertyChanged(nameof(CardDeadBadgeMargin));
             this.RaisePropertyChanged(nameof(CardZoneCornerRadius));
         }
 
@@ -2695,6 +2808,11 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public void Dispose()
         {
+            // Таймер держит ссылку на вью-модель, пока тикает: модуль
+            // закрыли посреди анимации панели — считать уже нечего и некому.
+            _layoutSettleTimer?.Stop();
+            _layoutSettleTimer = null;
+
             _disposables.Dispose();
 
             // Явно очищаем данные персонажей — освобождаем аватарки и

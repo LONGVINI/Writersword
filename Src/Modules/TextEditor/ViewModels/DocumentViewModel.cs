@@ -1,4 +1,6 @@
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using ReactiveUI;
 using Serilog;
@@ -7,9 +9,14 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Writersword.Core.Models.Print;
 using Writersword.Core.Services;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.Core.Models.Backup;
+using Writersword.Modules.TextEditor.Resources;
 using Writersword.Modules.TextEditor.Contracts;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
@@ -170,6 +177,37 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Func<Writersword.Modules.TextEditor.Models.Styles.TextAlignment?>? GetSelectedImageAlignmentDelegate { get; set; }
 
         // Делегаты команд контекстной вкладки «Формат» (работают с выделенной картинкой).
+        // Правки выделенной фигуры уходят в канвас: выделение живёт там же, где
+        // раскладка, и вью-модель о нём ничего не знает.
+        public Func<(ShapeType Type, WrapMode Wrap, WrapSide WrapSide, ShapeDashStyle Dash, ShapeArrowHead StartArrow, ShapeArrowHead EndArrow, string? FillColor, string? StrokeColor, double StrokeThicknessPt, double CornerRadiusPt, double Opacity, double WidthPt, double HeightPt, double RotationDeg, bool LockAspect, int PinnedPage, bool HasFillImage, bool FillImageStretch)?>? GetSelectedShapeInfoDelegate { get; set; }
+        public Action<ShapeType>? SetShapeTypeDelegate { get; set; }
+        public Action<string?>? SetShapeFillDelegate { get; set; }
+        public Action<string?>? SetShapeStrokeDelegate { get; set; }
+        public Action<double>? SetShapeStrokeThicknessDelegate { get; set; }
+        public Action<ShapeDashStyle>? SetShapeDashDelegate { get; set; }
+        public Action<double>? SetShapeCornerRadiusDelegate { get; set; }
+        public Action<ShapeArrowHead, ShapeArrowHead>? SetShapeArrowsDelegate { get; set; }
+        public Action<double>? SetShapeOpacityDelegate { get; set; }
+        public Action<double>? SetShapeWidthDelegate { get; set; }
+        public Action<double>? SetShapeHeightDelegate { get; set; }
+        public Action<double>? SetShapeRotationDelegate { get; set; }
+        public Action<bool>? SetShapeLockAspectDelegate { get; set; }
+        public Action<WrapMode>? SetShapeWrapModeDelegate { get; set; }
+        public Action<WrapSide>? SetShapeWrapSideDelegate { get; set; }
+        public Action<double, double, double, double>? SetShapeWrapPaddingDelegate { get; set; }
+        public Action<bool>? SetShapePinnedDelegate { get; set; }
+        public Action<bool>? SetShapeZOrderDelegate { get; set; }
+        public Action<string?>? SetShapeFillImageDelegate { get; set; }
+        public Action<bool>? SetShapeFillImageStretchDelegate { get; set; }
+        public Action? DeleteSelectedShapeDelegate { get; set; }
+
+        public Action<ShapeDashStyle>? SetImageBorderDashDelegate { get; set; }
+        public Func<ShapeDashStyle?>? GetSelectedImageBorderDashDelegate { get; set; }
+        public Action<ShapeType>? SetImageShapeTypeDelegate { get; set; }
+        public Func<ShapeType?>? GetSelectedImageShapeTypeDelegate { get; set; }
+        public Action<double>? SetImageCornerRadiusDelegate { get; set; }
+        public Func<double?>? GetSelectedImageCornerRadiusDelegate { get; set; }
+
         public Action<WrapMode>? SetImageWrapModeDelegate { get; set; }
         public Action<WrapSide>? SetImageWrapSideDelegate { get; set; }
         public Func<WrapSide?>? GetSelectedImageWrapSideDelegate { get; set; }
@@ -185,6 +223,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Action<double>? SetImageHeightDelegate { get; set; }
         public Action<double>? SetImageOpacityDelegate { get; set; }
         public Action<string?, double>? SetImageBorderDelegate { get; set; }
+        public Action<ImageBorderAlign>? SetImageBorderAlignDelegate { get; set; }
+        public Func<ImageBorderAlign?>? GetSelectedImageBorderAlignDelegate { get; set; }
         public Func<(double WidthPt, double HeightPt, double Opacity, string? BorderColor, double BorderThicknessPt)?>? GetSelectedImageStyleDelegate { get; set; }
         public Action? ToggleImageFlipHorizontalDelegate { get; set; }
         public Action? ToggleImageFlipVerticalDelegate { get; set; }
@@ -192,6 +232,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Func<bool>? GetImageCropModeDelegate { get; set; }
         public Action<double, double, double, double>? SetImageWrapPaddingDelegate { get; set; }
         public Func<(double TopPt, double BottomPt, double LeftPt, double RightPt)?>? GetSelectedImageWrapPaddingDelegate { get; set; }
+
+        /// <summary>
+        /// Что выделено на листе: фигура, картинка, есть ли внутри картинка и
+        /// является ли объект линией. Лента «Формат» одна на оба объекта и по
+        /// этому признаку показывает группы, которые есть только у одного из них.
+        /// </summary>
+        public Func<(bool HasShape, bool HasImage, bool HasFillImage, bool IsLine)?>? GetSelectedFloatingKindDelegate { get; set; }
+
         public Action<int>? TableSetCellVAlignDelegate { get; set; }
 
         /// <summary>
@@ -299,6 +347,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         /// <summary>Вызывается канвасом после Undo/Redo снапшота — уведомляет подписчиков.</summary>
         public void RaiseDocumentRestored() => DocumentRestored?.Invoke();
+
+        /// <summary>
+        /// Сообщает, что параметры страницы поменялись целиком: размер бумаги,
+        /// ориентация, поля, колонки. По этому уведомлению канвас пересобирает
+        /// геометрию листа и резолвер стилей, а линейка — свои поля. Нужен тем,
+        /// кто меняет настройки в обход вью-модели: импорт и снимки Undo.
+        /// </summary>
+        public void RaisePageSettingsChanged() => this.RaisePropertyChanged(nameof(PageSettings));
 
         /// <summary>Начинает снапшот-правку страницы (напр. drag полей на линейке) для Undo.</summary>
         public void BeginPageEdit(string description) => BeginEditDelegate?.Invoke(description);
@@ -1055,6 +1111,45 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         // ── Команды выделенной картинки (контекстная вкладка «Формат») ─────
+        // ── Выделенная фигура ─────────────────────────────────────────────
+        public (ShapeType Type, WrapMode Wrap, WrapSide WrapSide, ShapeDashStyle Dash, ShapeArrowHead StartArrow, ShapeArrowHead EndArrow, string? FillColor, string? StrokeColor, double StrokeThicknessPt, double CornerRadiusPt, double Opacity, double WidthPt, double HeightPt, double RotationDeg, bool LockAspect, int PinnedPage, bool HasFillImage, bool FillImageStretch)? GetSelectedShapeInfo()
+            => GetSelectedShapeInfoDelegate?.Invoke();
+
+        public void SetShapeType(ShapeType type) { if (IsReadOnly) return; SetShapeTypeDelegate?.Invoke(type); }
+        public void SetShapeFill(string? hexColor) { if (IsReadOnly) return; SetShapeFillDelegate?.Invoke(hexColor); }
+        public void SetShapeStroke(string? hexColor) { if (IsReadOnly) return; SetShapeStrokeDelegate?.Invoke(hexColor); }
+        public void SetShapeStrokeThickness(double thicknessPt) { if (IsReadOnly) return; SetShapeStrokeThicknessDelegate?.Invoke(thicknessPt); }
+        public void SetShapeDash(ShapeDashStyle dash) { if (IsReadOnly) return; SetShapeDashDelegate?.Invoke(dash); }
+        public void SetShapeCornerRadius(double radiusPt) { if (IsReadOnly) return; SetShapeCornerRadiusDelegate?.Invoke(radiusPt); }
+        public void SetShapeArrows(ShapeArrowHead start, ShapeArrowHead end) { if (IsReadOnly) return; SetShapeArrowsDelegate?.Invoke(start, end); }
+        public void SetShapeOpacity(double opacity) { if (IsReadOnly) return; SetShapeOpacityDelegate?.Invoke(opacity); }
+        public void SetShapeWidth(double widthPt) { if (IsReadOnly) return; SetShapeWidthDelegate?.Invoke(widthPt); }
+        public void SetShapeHeight(double heightPt) { if (IsReadOnly) return; SetShapeHeightDelegate?.Invoke(heightPt); }
+        public void SetShapeRotation(double degrees) { if (IsReadOnly) return; SetShapeRotationDelegate?.Invoke(degrees); }
+        public void SetShapeLockAspect(bool locked) { if (IsReadOnly) return; SetShapeLockAspectDelegate?.Invoke(locked); }
+        public void SetShapeWrapMode(WrapMode mode) { if (IsReadOnly) return; SetShapeWrapModeDelegate?.Invoke(mode); }
+        public void SetShapeWrapSide(WrapSide side) { if (IsReadOnly) return; SetShapeWrapSideDelegate?.Invoke(side); }
+        public void SetShapeWrapPadding(double topPt, double bottomPt, double leftPt, double rightPt)
+        { if (IsReadOnly) return; SetShapeWrapPaddingDelegate?.Invoke(topPt, bottomPt, leftPt, rightPt); }
+        public void SetShapePinned(bool pinned) { if (IsReadOnly) return; SetShapePinnedDelegate?.Invoke(pinned); }
+        public void SetShapeZOrder(bool toFront) { if (IsReadOnly) return; SetShapeZOrderDelegate?.Invoke(toFront); }
+        public void SetShapeFillImage(string? filePath) { if (IsReadOnly) return; SetShapeFillImageDelegate?.Invoke(filePath); }
+        public void SetShapeFillImageStretch(bool stretch) { if (IsReadOnly) return; SetShapeFillImageStretchDelegate?.Invoke(stretch); }
+        public void DeleteSelectedShape() { if (IsReadOnly) return; DeleteSelectedShapeDelegate?.Invoke(); }
+
+        public void SetImageBorderDash(ShapeDashStyle dash)
+        { if (IsReadOnly) return; SetImageBorderDashDelegate?.Invoke(dash); }
+        public ShapeDashStyle? GetSelectedImageBorderDash()
+            => GetSelectedImageBorderDashDelegate?.Invoke();
+        public void SetImageShapeType(ShapeType type)
+        { if (IsReadOnly) return; SetImageShapeTypeDelegate?.Invoke(type); }
+        public ShapeType? GetSelectedImageShapeType()
+            => GetSelectedImageShapeTypeDelegate?.Invoke();
+        public void SetImageCornerRadius(double radiusPt)
+        { if (IsReadOnly) return; SetImageCornerRadiusDelegate?.Invoke(radiusPt); }
+        public double? GetSelectedImageCornerRadius()
+            => GetSelectedImageCornerRadiusDelegate?.Invoke();
+
         public void SetImageWrapMode(WrapMode mode) { if (IsReadOnly) return; SetImageWrapModeDelegate?.Invoke(mode); }
         public void SetImageWrapSide(WrapSide side) { if (IsReadOnly) return; SetImageWrapSideDelegate?.Invoke(side); }
         public WrapSide? GetSelectedImageWrapSide() => GetSelectedImageWrapSideDelegate?.Invoke();
@@ -1071,6 +1166,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetImageHeight(double heightPt) { if (IsReadOnly) return; SetImageHeightDelegate?.Invoke(heightPt); }
         public void SetImageOpacity(double opacity) { if (IsReadOnly) return; SetImageOpacityDelegate?.Invoke(opacity); }
         public void SetImageBorder(string? colorHex, double thicknessPt) { if (IsReadOnly) return; SetImageBorderDelegate?.Invoke(colorHex, thicknessPt); }
+        public void SetImageBorderAlign(ImageBorderAlign align) { if (IsReadOnly) return; SetImageBorderAlignDelegate?.Invoke(align); }
+        public ImageBorderAlign? GetSelectedImageBorderAlign() => GetSelectedImageBorderAlignDelegate?.Invoke();
         public (double WidthPt, double HeightPt, double Opacity, string? BorderColor, double BorderThicknessPt)? GetSelectedImageStyle()
             => GetSelectedImageStyleDelegate?.Invoke();
         public void ToggleImageFlipHorizontal() { if (IsReadOnly) return; ToggleImageFlipHorizontalDelegate?.Invoke(); }
@@ -1081,6 +1178,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         { if (IsReadOnly) return; SetImageWrapPaddingDelegate?.Invoke(topPt, bottomPt, leftPt, rightPt); }
         public (double TopPt, double BottomPt, double LeftPt, double RightPt)? GetSelectedImageWrapPadding()
             => GetSelectedImageWrapPaddingDelegate?.Invoke();
+        public (bool HasShape, bool HasImage, bool HasFillImage, bool IsLine)? GetSelectedFloatingKind()
+            => GetSelectedFloatingKindDelegate?.Invoke();
 
         public void IncreaseIndent()
             => ApplyParaProperty(p => p.LeftIndent = (p.LeftIndent ?? 0) + 18);
@@ -2094,7 +2193,175 @@ namespace Writersword.Modules.TextEditor.ViewModels
             AltText = src.AltText
         };
 
-        public void InsertShape(ShapeType st) { }
+        // Оформление и положение только что вставленной фигуры.
+        private const string ShapeDefaultFill = "#DCE6F1";
+        private const string ShapeDefaultStroke = "#2F5597";
+        private const double ShapeInsertOffsetPt = 36.0;
+        private const double ShapeCascadeStepPt = 14.0;
+
+        /// <summary>
+        /// Вставляет фигуру на страницу каретки. Фигура плавающая: место блока в
+        /// потоке задаёт только её страницу, а положение на листе — собственные
+        /// смещения от начала текстовой области.
+        /// </summary>
+        public void InsertShape(ShapeType st)
+        {
+            if (IsReadOnly) return;
+            if (_document.Sections.Count == 0) return;
+
+            var section = _document.Sections[0];
+            bool isStrokeOnly = st is ShapeType.Line or ShapeType.Arrow;
+
+            var shape = new ShapeBlock
+            {
+                ShapeType = st,
+                WidthPt = isStrokeOnly ? 180.0 : 160.0,
+                HeightPt = isStrokeOnly ? 24.0 : 100.0,
+                FillColor = isStrokeOnly ? null : ShapeDefaultFill,
+                StrokeColor = ShapeDefaultStroke,
+                StrokeThicknessPt = isStrokeOnly ? 1.5 : 1.0
+            };
+
+            // Каждая следующая фигура ставится со сдвигом: вставленные подряд не
+            // ложатся ровно друг на друга, и видно каждую.
+            int existing = 0;
+            foreach (var block in section.Blocks)
+                if (block is ShapeBlock) existing++;
+
+            double cascade = ShapeCascadeStepPt * (existing % 8);
+            shape.OffsetXPt = ShapeInsertOffsetPt + cascade;
+            shape.OffsetYPt = ShapeInsertOffsetPt + cascade;
+
+            BeginEditDelegate?.Invoke("Вставка фигуры");
+            int idx = _activeParagraph is not null
+                ? section.Blocks.IndexOf(_activeParagraph.Model)
+                : -1;
+            if (idx >= 0) section.Blocks.Insert(idx + 1, shape);
+            else section.Blocks.Add(shape);
+            CommitEditDelegate?.Invoke();
+
+            StructureChanged?.Invoke();
+            ShapeInserted?.Invoke(shape);
+        }
+
+        /// <summary>
+        /// Кладёт в документ готовую фигуру — вставку из буфера или дубликат.
+        /// Оформление и размеры уже заданы вызывающим, здесь только место в потоке,
+        /// снимок для отмены и уведомление канваса.
+        /// </summary>
+        public void InsertShapeBlock(ShapeBlock shape)
+        {
+            if (IsReadOnly) return;
+            if (shape is null) return;
+            if (_document.Sections.Count == 0) return;
+
+            var section = _document.Sections[0];
+
+            BeginEditDelegate?.Invoke("Вставка фигуры");
+            int idx = _activeParagraph is not null
+                ? section.Blocks.IndexOf(_activeParagraph.Model)
+                : -1;
+            if (idx >= 0) section.Blocks.Insert(idx + 1, shape);
+            else section.Blocks.Add(shape);
+            CommitEditDelegate?.Invoke();
+
+            StructureChanged?.Invoke();
+            ShapeInserted?.Invoke(shape);
+        }
+
+        /// <summary>
+        /// Кладёт файл картинки в хранилище проекта и возвращает его имя внутри ZIP.
+        /// Тем же путём и в ту же папку, что и обычная вставка изображения: заливка
+        /// фигуры картинкой хранится так же, как сама картинка документа.
+        /// null — файла нет или хранилище недоступно.
+        /// </summary>
+        public string? StoreImageFile(string filePath)
+        {
+            if (IsReadOnly) return null;
+            if (string.IsNullOrEmpty(filePath) || !System.IO.File.Exists(filePath)) return null;
+
+            byte[] data;
+            try { data = System.IO.File.ReadAllBytes(filePath); }
+            catch { return null; }
+            if (data.Length == 0) return null;
+
+            var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
+            if (ctx is null) return null;
+
+            string ext = System.IO.Path.GetExtension(filePath);
+            if (string.IsNullOrWhiteSpace(ext)) ext = ".png";
+            if (!ext.StartsWith(".")) ext = "." + ext;
+
+            string fileName = $"img_{System.Guid.NewGuid():N}{ext}";
+            ctx.WriteFile($"TextEditor/Images/{fileName}", data);
+
+            // Байты уходят на диск сразу: кеш восстановления хранит только JSON
+            // документа и после аварии сошлётся на этот файл — тот обязан существовать.
+            ctx.FlushStorage();
+            return fileName;
+        }
+
+        /// <summary>
+        /// Фигура вставлена в документ. Канвас по этому событию делает её выделенной:
+        /// сразу видно, что появилось на странице, и её можно двигать без поиска.
+        /// </summary>
+        public event Action<ShapeBlock>? ShapeInserted;
+
+        /// <summary>
+        /// Переставляет фигуру, стоящую в потоке, сразу за указанным абзацем.
+        /// Для такой фигуры место блока в потоке и есть её положение на листе,
+        /// поэтому «перетащить» её значит переставить блок.
+        ///
+        /// Снимок для отмены берёт вызывающий: меняется состав и порядок блоков.
+        /// </summary>
+        public void MoveShapeAfterParagraph(ShapeBlock shape, ParagraphBlock target)
+        {
+            if (IsReadOnly) return;
+            if (shape is null || target is null) return;
+
+            foreach (var section in _document.Sections)
+            {
+                int from = section.Blocks.IndexOf(shape);
+                if (from < 0) continue;
+
+                int targetIdx = section.Blocks.IndexOf(target);
+                if (targetIdx < 0) return;
+
+                // Индекс цели считается ПОСЛЕ изъятия фигуры: убрав блок, стоявший
+                // выше, мы сдвигаем всё, что ниже, на единицу.
+                section.Blocks.RemoveAt(from);
+                targetIdx = section.Blocks.IndexOf(target);
+                if (targetIdx < 0) { section.Blocks.Insert(from, shape); return; }
+
+                int to = targetIdx + 1;
+                if (to == from) { section.Blocks.Insert(from, shape); return; }
+
+                section.Blocks.Insert(to, shape);
+                StructureChanged?.Invoke();
+                return;
+            }
+        }
+
+        /// <summary>
+        /// Убирает фигуру из документа. Снимок для отмены берёт вызывающий: удаление
+        /// меняет состав блоков, и одной командой свойств его не откатить.
+        /// </summary>
+        public void RemoveShape(ShapeBlock shape)
+        {
+            if (IsReadOnly) return;
+            if (shape is null) return;
+
+            foreach (var section in _document.Sections)
+            {
+                if (!section.Blocks.Contains(shape)
+                    && !section.FloatingObjects.Contains(shape)) continue;
+
+                section.Blocks.Remove(shape);
+                section.FloatingObjects.Remove(shape);
+                StructureChanged?.Invoke();
+                return;
+            }
+        }
         public void InsertFloatingTextBox() { }
         public void InsertPageBreak()
         {
@@ -2477,10 +2744,394 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void RunSpellCheck() { }
         public void ShowWordCount() { }
         public void Print() { }
-        public void ExportToPdf() { }
-        public void ExportToDocx() { }
-        public void ExportToTxt() { }
-        public void ExportToMarkdown() { }
+
+        // ── Импорт и экспорт документа ────────────────────────────────────
+
+        /// <summary>Формат файла для экспорта.</summary>
+        private enum ExportFileFormat
+        {
+            Docx,
+            Pdf,
+            Txt,
+            Markdown
+        }
+
+        public void ExportToPdf() => _ = ExportDocumentAsync(ExportFileFormat.Pdf);
+        public void ExportToDocx() => _ = ExportDocumentAsync(ExportFileFormat.Docx);
+        public void ExportToTxt() => _ = ExportDocumentAsync(ExportFileFormat.Txt);
+        public void ExportToMarkdown() => _ = ExportDocumentAsync(ExportFileFormat.Markdown);
+
+        /// <summary>
+        /// Импортирует документ и заменяет им содержимое текущего.
+        /// Работа асинхронная (диалог подтверждения и разбор файла), поэтому метод
+        /// интерфейса только запускает её: команда риббона возврата не ждёт.
+        /// </summary>
+        public void ImportFromFile(string filePath) => _ = ImportDocumentAsync(filePath);
+
+        private async Task ImportDocumentAsync(string filePath)
+        {
+            var notifications = CoreServices.GetService<INotificationService>();
+
+            if (IsReadOnly)
+            {
+                notifications?.ShowWarning(TextEditorStrings.Import_ReadOnly);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
+            {
+                notifications?.ShowError(TextEditorStrings.Import_FileNotFound);
+                return;
+            }
+
+            string extension = System.IO.Path.GetExtension(filePath).ToLowerInvariant();
+            if (extension != ".docx" && extension != ".txt")
+            {
+                notifications?.ShowWarning(
+                    string.Format(TextEditorStrings.Import_Unsupported, extension));
+                return;
+            }
+
+            // Импорт заменяет весь документ целиком — спрашиваем разрешение.
+            var dialogs = CoreServices.GetService<IDialogService>();
+            if (dialogs is not null)
+            {
+                var answer = await dialogs.ShowMessageAsync(
+                    TextEditorStrings.Import_Confirm_Title,
+                    TextEditorStrings.Import_Confirm_Message,
+                    Writersword.Core.Enums.MessageBoxType.Question,
+                    Writersword.Core.Enums.MessageBoxButtons.YesNo);
+
+                if (answer != Writersword.Core.Enums.MessageBoxResult.Yes) return;
+            }
+
+            // Импорт затирает содержимое документа целиком, поэтому перед ним
+            // снимается точка восстановления проекта. Если снять её не удалось,
+            // пользователь решает сам, продолжать ли без страховки.
+            if (!await CreatePreImportBackupAsync())
+            {
+                if (dialogs is null) 
+                {
+                    notifications?.ShowWarning(TextEditorStrings.Import_Backup_Failed);
+                }
+                else
+                {
+                    var backupAnswer = await dialogs.ShowMessageAsync(
+                        TextEditorStrings.Import_Backup_Failed_Title,
+                        TextEditorStrings.Import_Backup_Failed_Message,
+                        Writersword.Core.Enums.MessageBoxType.Warning,
+                        Writersword.Core.Enums.MessageBoxButtons.YesNo);
+
+                    if (backupAnswer != Writersword.Core.Enums.MessageBoxResult.Yes) return;
+                }
+            }
+            else
+            {
+                notifications?.ShowInfo(TextEditorStrings.Import_Backup_Created);
+            }
+
+            ImportResult result;
+            try
+            {
+                var importer = new ImportService();
+                result = extension == ".docx"
+                    ? await importer.ImportFromDocxAsync(filePath)
+                    : await importer.ImportFromTxtAsync(filePath);
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "[IMPORT] Не удалось импортировать {Path}", filePath);
+                notifications?.ShowError(string.Format(TextEditorStrings.Import_Failed, ex.Message));
+                return;
+            }
+
+            if (!result.Success || result.Document is null)
+            {
+                _log.Warning("[IMPORT] Импорт не удался: {Error}", result.ErrorMessage);
+                notifications?.ShowError(
+                    string.Format(TextEditorStrings.Import_Failed, result.ErrorMessage ?? string.Empty));
+                return;
+            }
+
+            // Картинки кладём в проект до показа документа: иначе ссылки на них повиснут.
+            if (result.ExtractedImages.Count > 0)
+            {
+                var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
+                if (ctx is null)
+                {
+                    notifications?.ShowWarning(TextEditorStrings.Import_ImagesNotSaved);
+                }
+                else
+                {
+                    try
+                    {
+                        foreach (var image in result.ExtractedImages)
+                            ctx.WriteFile($"TextEditor/Images/{image.Key}", image.Value);
+
+                        // Байты картинок должны лежать на диске сразу: кеш восстановления
+                        // хранит только JSON документа и сошлётся на эти файлы.
+                        ctx.FlushStorage();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "[IMPORT] Не удалось сохранить картинки импортированного документа");
+                        notifications?.ShowWarning(TextEditorStrings.Import_ImagesNotSaved);
+                    }
+                }
+            }
+
+            ApplyImportedDocument(result.Document);
+
+            notifications?.ShowSuccess(TextEditorStrings.Import_Success);
+
+            foreach (var warning in result.Warnings)
+                notifications?.ShowWarning(warning);
+        }
+
+        /// <summary>
+        /// Снимает точку восстановления проекта перед импортом.
+        /// Точка берётся с файла проекта на диске, поэтому текущее состояние
+        /// документа сначала сохраняется. Тип точки — пользовательский:
+        /// прореживание истории такие точки не удаляет, и вернуться к тексту
+        /// до импорта можно и через несколько дней.
+        /// </summary>
+        private async Task<bool> CreatePreImportBackupAsync()
+        {
+            try
+            {
+                var tab = CoreServices.GetService<ITabCollection>()?.ActiveTab;
+                string? projectPath = tab?.Context?.FilePath;
+
+                if (tab is null || string.IsNullOrWhiteSpace(projectPath))
+                    return false;
+
+                var workflow = CoreServices.GetService<IProjectWorkflow>();
+                var backups = CoreServices.GetService<IBackupService>();
+
+                if (workflow is null || backups is null) return false;
+
+                if (!await workflow.SaveDocumentAsync(tab, showNotification: false))
+                    return false;
+
+                return await backups.CreateSnapshotAsync(projectPath!, BackupTrigger.UserPoint);
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "[IMPORT] Не удалось снять точку восстановления перед импортом");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Переносит содержимое импортированного документа в текущий.
+        /// Сам объект документа не подменяется: на него ссылаются вкладка, канвас
+        /// и сериализатор проекта — заменяется только содержимое.
+        /// </summary>
+        private void ApplyImportedDocument(DocumentModel imported)
+        {
+            BeginEditDelegate?.Invoke("Импорт документа");
+
+            _document.Title = imported.Title;
+
+            _document.Styles.Clear();
+            foreach (var style in imported.Styles)
+                _document.Styles.Add(style);
+
+            // Настройки страницы копируются по значениям, а не подменой объекта:
+            // ссылку на них держат канвас, линейка и печать, и подмена оставила бы
+            // их со старым листом.
+            CopyPageSettings(imported.PageSettings, _document.PageSettings);
+
+            _document.ColumnSettings.ColumnCount = imported.ColumnSettings.ColumnCount;
+            _document.ColumnSettings.GapMm = imported.ColumnSettings.GapMm;
+            _document.ColumnSettings.ShowSeparator = imported.ColumnSettings.ShowSeparator;
+
+            _document.Sections.Clear();
+            foreach (var section in imported.Sections)
+                _document.Sections.Add(section);
+
+            if (_document.Sections.Count == 0)
+            {
+                var section = new SectionModel();
+                section.Blocks.Add(new ParagraphBlock());
+                _document.Sections.Add(section);
+            }
+
+            // Аннотации ссылаются на прежние абзацы и чанки — после замены содержимого
+            // они указывают в пустоту.
+            _document.Annotations.Clear();
+
+            CommitEditDelegate?.Invoke();
+
+            _activeParagraph = null;
+            TableActiveCellParagraph = null;
+
+            RebuildStyleNames();
+            RebuildParagraphViewModels();
+
+            // Канвас пересобирает геометрию листа и резолвер стилей по уведомлению
+            // о PageSettings: без него он продолжает раскладывать документ на прежнем
+            // листе и со старым набором стилей, и число страниц не меняется.
+            RaisePageSettingsChanged();
+            this.RaisePropertyChanged(nameof(CanvasSettings));
+
+            // Кэш раскладки абзацев ключуется по их вью-моделям: после импорта они
+            // все новые, поэтому чистим кэш целиком.
+            FireParagraphFormatChanged();
+
+            StructureChanged?.Invoke();
+            DocumentRestored?.Invoke();
+            ContentModified?.Invoke();
+        }
+
+        /// <summary>Переносит физические параметры страницы из импортированного документа.</summary>
+        private static void CopyPageSettings(TextEditorPageSettings source, TextEditorPageSettings target)
+        {
+            target.PaperSize = source.PaperSize;
+            target.WidthMm = source.WidthMm;
+            target.HeightMm = source.HeightMm;
+            target.Orientation = source.Orientation;
+            target.MarginTopMm = source.MarginTopMm;
+            target.MarginBottomMm = source.MarginBottomMm;
+            target.MarginLeftMm = source.MarginLeftMm;
+            target.MarginRightMm = source.MarginRightMm;
+            target.MarginGutterMm = source.MarginGutterMm;
+            target.HeaderDistanceMm = source.HeaderDistanceMm;
+            target.FooterDistanceMm = source.FooterDistanceMm;
+        }
+
+        private async Task ExportDocumentAsync(ExportFileFormat format)
+        {
+            var notifications = CoreServices.GetService<INotificationService>();
+
+            var window = (Avalonia.Application.Current?.ApplicationLifetime
+                as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+
+            if (window?.StorageProvider is null)
+            {
+                notifications?.ShowError(TextEditorStrings.Export_Failed_NoDialog);
+                return;
+            }
+
+            (string extension, string typeName) = format switch
+            {
+                ExportFileFormat.Docx => (".docx", TextEditorStrings.FileType_Docx),
+                ExportFileFormat.Pdf => (".pdf", TextEditorStrings.FileType_Pdf),
+                ExportFileFormat.Txt => (".txt", TextEditorStrings.FileType_Txt),
+                _ => (".md", TextEditorStrings.FileType_Markdown)
+            };
+
+            var file = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = TextEditorStrings.Export_Dialog_Title,
+                SuggestedFileName = BuildExportFileName(extension),
+                DefaultExtension = extension.TrimStart('.'),
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType(typeName) { Patterns = new[] { "*" + extension } }
+                }
+            });
+
+            if (file is null) return;
+
+            string? path = file.TryGetLocalPath();
+            if (string.IsNullOrEmpty(path))
+            {
+                notifications?.ShowError(TextEditorStrings.Export_Failed_NoDialog);
+                return;
+            }
+
+            // Картинки читаются из архива проекта здесь, в потоке UI: сам экспорт
+            // работает в фоне, а хранилище проекта для параллельного чтения не рассчитано.
+            var images = CollectDocumentImages();
+            byte[]? ResolveImage(string fileName) =>
+                images.TryGetValue(fileName, out var data) ? data : null;
+
+            ExportResult result;
+            try
+            {
+                var exporter = new ExportService();
+                result = format switch
+                {
+                    ExportFileFormat.Docx => await exporter.ExportToDocxAsync(_document, path, ResolveImage),
+                    ExportFileFormat.Pdf => await exporter.ExportToPdfAsync(_document, path, ResolveImage),
+                    ExportFileFormat.Txt => await exporter.ExportToTxtAsync(_document, path),
+                    _ => await exporter.ExportToMarkdownAsync(_document, path)
+                };
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "[EXPORT] Не удалось экспортировать в {Path}", path);
+                notifications?.ShowError(string.Format(TextEditorStrings.Export_Failed, ex.Message));
+                return;
+            }
+
+            if (!result.Success)
+            {
+                _log.Warning("[EXPORT] Экспорт не удался: {Error}", result.ErrorMessage);
+                notifications?.ShowError(
+                    string.Format(TextEditorStrings.Export_Failed, result.ErrorMessage ?? string.Empty));
+                return;
+            }
+
+            notifications?.ShowSuccess(
+                string.Format(TextEditorStrings.Export_Success, System.IO.Path.GetFileName(path)));
+
+            foreach (var warning in result.Warnings)
+                notifications?.ShowWarning(warning);
+        }
+
+        /// <summary>Имя файла по умолчанию для диалога экспорта — из заголовка документа.</summary>
+        private string BuildExportFileName(string extension)
+        {
+            string title = string.IsNullOrWhiteSpace(_document.Title) ? "Document" : _document.Title;
+
+            foreach (char invalid in System.IO.Path.GetInvalidFileNameChars())
+                title = title.Replace(invalid, '_');
+
+            title = title.Trim();
+            if (title.Length == 0) title = "Document";
+            if (title.Length > 100) title = title.Substring(0, 100);
+
+            return title + extension;
+        }
+
+        /// <summary>
+        /// Байты всех картинок документа по именам файлов. Экспорт получает их
+        /// готовым словарём: у сервиса экспорта нет доступа к архиву проекта.
+        /// </summary>
+        private Dictionary<string, byte[]> CollectDocumentImages()
+        {
+            var result = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+
+            var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
+            if (ctx is null) return result;
+
+            foreach (var section in _document.Sections)
+            {
+                foreach (var block in section.InlineObjects
+                    .Concat(section.FloatingObjects)
+                    .Concat(section.Blocks))
+                {
+                    if (block is not ImageBlock image) continue;
+                    if (string.IsNullOrWhiteSpace(image.ImageFileName)) continue;
+                    if (result.ContainsKey(image.ImageFileName)) continue;
+
+                    try
+                    {
+                        var data = ctx.ReadFile($"TextEditor/Images/{image.ImageFileName}");
+                        if (data is { Length: > 0 })
+                            result[image.ImageFileName] = data;
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warning(ex, "[EXPORT] Не удалось прочитать картинку {File}", image.ImageFileName);
+                    }
+                }
+            }
+
+            return result;
+        }
 
         // ── Внутренние методы ─────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-using Avalonia.Media.Imaging;
+﻿using Avalonia.Media.Imaging;
 using ReactiveUI;
 using Serilog;
 using System;
@@ -51,8 +51,52 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
         /// <summary>Область хранения — по ней раздел решает, что можно.</summary>
         public CharacterAvatarPackScope Scope { get; }
 
+        private readonly ICharacterAvatarService _service;
         private Bitmap? _thumbnail;
-        public Bitmap? Thumbnail { get => _thumbnail; private set => this.RaiseAndSetIfChanged(ref _thumbnail, value); }
+        private bool _thumbnailRequested;
+
+        /// <summary>
+        /// Миниатюра плитки. Берётся при первом показе и в размер плитки, а не
+        /// при создании и во весь предел службы: окно строило все плитки разом,
+        /// и открытие на папке в пятьсот картинок означало пятьсот полных
+        /// раскодирований до того, как окно вообще покажется.
+        /// </summary>
+        public Bitmap? Thumbnail
+        {
+            get
+            {
+                if (!_thumbnailRequested)
+                {
+                    _thumbnailRequested = true;
+
+                    // Уже построенную отдаём тем же кадром: иначе плитки,
+                    // которые только что были на экране, мигали бы заглушкой
+                    // при каждой прокрутке туда-обратно.
+                    _thumbnail = _service.TryGetThumbnail(AvatarRef, 96);
+                    if (_thumbnail == null) RequestThumbnail();
+                }
+                return _thumbnail;
+            }
+        }
+
+        /// <summary>Миниатюра готова. Пока нет — плитка показывает заглушку.</summary>
+        public bool HasThumbnail => _thumbnail != null;
+
+        private async void RequestThumbnail()
+        {
+            Bitmap? bitmap = null;
+            try { bitmap = await _service.LoadThumbnailAsync(AvatarRef, 96); }
+            catch (Exception ex) { _logger.Error(ex, "Thumbnail failed {Ref}", AvatarRef); }
+
+            if (bitmap == null) return;
+
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _thumbnail = bitmap;
+                this.RaisePropertyChanged(nameof(Thumbnail));
+                this.RaisePropertyChanged(nameof(HasThumbnail));
+            });
+        }
 
         private bool _isConfirmingDelete;
         /// <summary>Плитка переспрашивает про удаление и показывает «Да/Нет».</summary>
@@ -136,8 +180,7 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             // с результатом bool вместо Unit.
             CancelDeleteCommand = ReactiveCommand.Create(() => { IsConfirmingDelete = false; });
 
-            try { Thumbnail = svc.LoadBitmap(AvatarRef); }
-            catch (Exception ex) { _logger.Error(ex, "Thumbnail failed {Ref}", AvatarRef); }
+            _service = svc;
         }
 
         public bool MatchesSearch(string query)
@@ -146,7 +189,12 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             return ToolTip.Contains(query, StringComparison.OrdinalIgnoreCase);
         }
 
-        public void Dispose() => _thumbnail?.Dispose();
+        /// <summary>
+        /// Миниатюра принадлежит службе и уничтожению не подлежит: её же
+        /// показывают другие ленты. Метод оставлен, потому что разделы убирают
+        /// свои плитки списком и не должны знать, есть ли им что освобождать.
+        /// </summary>
+        public void Dispose() { }
     }
 
     /// <summary>
@@ -214,7 +262,7 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             DisplayName = ResolveDisplayName(pack);
 
             if (!string.IsNullOrEmpty(pack.IconRef))
-                try { IconBitmap = svc.LoadBitmap(pack.IconRef); } catch { }
+                try { IconBitmap = svc.LoadThumbnail(pack.IconRef, 64); } catch { }
 
             foreach (var item in pack.Items)
                 Items.Add(new CharacterAvatarPickerItemViewModel(
@@ -257,7 +305,8 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
 
         public void Dispose()
         {
-            _iconBitmap?.Dispose();
+            // Обложка раздела берётся из кеша миниатюр службы и общая:
+            // уничтожать её нельзя, её показывают и другие ленты.
             foreach (var i in Items) i.Dispose();
         }
     }

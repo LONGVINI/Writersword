@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Services;
@@ -72,6 +73,34 @@ namespace Writersword.Modules.Characters.Services
         private readonly object _byteCacheLock = new object();
         private const int ByteCacheMaxEntries = 150;
 
+        // Предел не только по числу записей, но и по объёму. Считать одни
+        // записи мало: полторы сотни фотографий с телефона — это под гигабайт
+        // байтов, и при массовом добавлении кеш разрастался ровно до этого,
+        // хотя пригодиться успевала едва ли одна запись из ста.
+        private const long ByteCacheMaxBytes = 64L * 1024 * 1024;
+        private long _byteCacheBytes;
+
+        // Готовые миниатюры по паре «ссылка + сторона». Ленты аватарок строят
+        // одни и те же картинки при каждом открытии, а раскодирование даже в
+        // нужный размер остаётся самой дорогой частью показа.
+        //
+        // Кеш отдельный от LoadBitmap и берётся только через LoadThumbnail,
+        // потому что часть вызывающих LoadBitmap свои битмапы уничтожает
+        // (карточка, окно обрезки, полный пикер) — отдавать им общий битмап
+        // нельзя, второй показ получил бы уничтоженный.
+        //
+        // Вытесненная запись не уничтожается: она может быть прямо сейчас на
+        // экране, а битмап освободится сборщиком, когда его перестанут держать.
+        private readonly Dictionary<string, Bitmap> _thumbCache = new(StringComparer.Ordinal);
+        private readonly Queue<string> _thumbCacheOrder = new();
+        private readonly object _thumbCacheLock = new object();
+        private const int ThumbCacheMaxEntries = 800;
+
+        // Крупные картинки в кеш не идут: одна сторона в пятьсот двенадцать
+        // точек — это мегабайт на запись, и восемьсот таких заняли бы больше,
+        // чем весь остальной проект.
+        private const int ThumbCacheMaxSide = 256;
+
         // Отпечатки содержимого по адресу файла. Нужны поиску дубликата при
         // добавлении картинки: без кэша каждая новая картинка перечитывала бы
         // и хешировала всё хранилище целиком.
@@ -85,10 +114,15 @@ namespace Writersword.Modules.Characters.Services
                 if (_byteCache.ContainsKey(avatarRef)) return;
                 _byteCache[avatarRef] = data;
                 _byteCacheOrder.Enqueue(avatarRef);
-                while (_byteCacheOrder.Count > ByteCacheMaxEntries)
+                _byteCacheBytes += data.LongLength;
+
+                while (_byteCacheOrder.Count > 0
+                       && (_byteCacheOrder.Count > ByteCacheMaxEntries
+                           || _byteCacheBytes > ByteCacheMaxBytes))
                 {
                     var oldest = _byteCacheOrder.Dequeue();
-                    _byteCache.Remove(oldest);
+                    if (_byteCache.Remove(oldest, out var dropped))
+                        _byteCacheBytes -= dropped.LongLength;
                 }
             }
         }
@@ -101,8 +135,11 @@ namespace Writersword.Modules.Characters.Services
 
         private void EvictCachedBytes(string avatarRef)
         {
+            EvictThumbnails(avatarRef);
+
             lock (_byteCacheLock)
-                _byteCache.Remove(avatarRef);
+                if (_byteCache.Remove(avatarRef, out var dropped))
+                    _byteCacheBytes -= dropped.LongLength;
 
             lock (_hashCacheLock)
                 _hashCache.Remove(avatarRef);
@@ -255,17 +292,32 @@ namespace Writersword.Modules.Characters.Services
         /// на вопрос «лежит ли она уже в проекте» не является.
         /// </summary>
         private string? FindStoredByContent(byte[] imageData, Func<string, bool>? where)
+            => FindStoredByContent(imageData, where, projectOnly: false);
+
+        private string? FindStoredByContent(
+            byte[] imageData, Func<string, bool>? where, bool projectOnly)
         {
             if (imageData == null || imageData.Length == 0) return null;
 
-            var wanted = ComputeHash(imageData);
+            // Отпечаток самой искомой картинки считается лениво: если по длине
+            // не подошёл никто, считать его не за чем.
+            string? wanted = null;
 
             // Порядок обхода задаёт и порядок предпочтения: сначала то, что
             // лежит в самом проекте — такая картинка уедет вместе с ним и не
             // рассыплется на чужой машине.
-            foreach (var candidate in EnumerateStoredRefs())
+            foreach (var candidate in EnumerateStoredRefs(projectOnly))
             {
                 if (where != null && !where(candidate)) continue;
+
+                // У одинакового содержимого длина обязана совпадать. Длина
+                // стоит одного обращения к файловой системе, а отпечаток —
+                // чтения файла целиком: на папке в пятьсот картинок это
+                // разница между «сразу» и «подождите».
+                var length = StoredLength(candidate);
+                if (length >= 0 && length != imageData.LongLength) continue;
+
+                wanted ??= ComputeHash(imageData);
 
                 var hash = GetHashOf(candidate);
                 if (hash != null && string.Equals(hash, wanted, StringComparison.Ordinal))
@@ -276,11 +328,62 @@ namespace Writersword.Modules.Characters.Services
         }
 
         /// <summary>
+        /// Длина хранимого файла без его чтения. Отрицательное значение
+        /// означает «неизвестно» — вызывающий не должен считать это ответом
+        /// «не совпадает».
+        ///
+        /// Архив проекта длину не сообщает: такого запроса у хранилища нет, и
+        /// заводить его ради одной проверки значит править ядро. Проектных
+        /// картинок при этом столько же, сколько персонажей, а не сколько
+        /// картинок в папках, — там перебор и без того короткий.
+        /// </summary>
+        private long StoredLength(string? avatarRef)
+        {
+            var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
+            if (string.IsNullOrEmpty(baseRef)) return -1;
+
+            var cached = TryGetCachedBytes(baseRef);
+            if (cached != null) return cached.LongLength;
+
+            try
+            {
+                if (baseRef!.StartsWith("lib:", StringComparison.Ordinal))
+                {
+                    var info = new FileInfo(Path.Combine(LibraryPath, baseRef["lib:".Length..]));
+                    return info.Exists ? info.Length : -1;
+                }
+
+                if (baseRef.StartsWith("pack:", StringComparison.Ordinal))
+                {
+                    var parts = baseRef["pack:".Length..].Split(':', 2);
+                    if (parts.Length != 2) return -1;
+
+                    var info = new FileInfo(Path.Combine(UserPacksPath, parts[0], parts[1]));
+                    return info.Exists ? info.Length : -1;
+                }
+            }
+            catch { }
+
+            return -1;
+        }
+
+        /// <summary>
         /// Адреса всех картинок, которые служба может отдать и удалить.
         /// Встроенные паки не перечисляются: совпадение с ресурсом сборки
         /// пришлось бы всё равно копировать в проект при первой же правке.
         /// </summary>
-        private IEnumerable<string> EnumerateStoredRefs()
+        private IEnumerable<string> EnumerateStoredRefs() => EnumerateStoredRefs(false);
+
+        /// <summary>
+        /// Адреса всех хранимых картинок. projectOnly обрывает обход на том,
+        /// что уезжает вместе с проектом.
+        ///
+        /// Обрывать есть смысл: перебор доходит до глобальных папок, а каждая
+        /// из них при этом перечитывается с диска целиком — список файлов,
+        /// описание, порядок. Укладка картинки в проект ищет только среди
+        /// проектных, и до этой работы ей дела нет.
+        /// </summary>
+        private IEnumerable<string> EnumerateStoredRefs(bool projectOnly)
         {
             foreach (var item in GetProjectAvatars())
                 yield return item.AvatarRef;
@@ -288,6 +391,8 @@ namespace Writersword.Modules.Characters.Services
             foreach (var pack in GetLocalPacks())
                 foreach (var item in pack.Items)
                     yield return item.AvatarRef;
+
+            if (projectOnly) yield break;
 
             foreach (var item in GetLibraryItems())
                 yield return item.AvatarRef;
@@ -434,7 +539,7 @@ namespace Writersword.Modules.Characters.Services
 
             // Та же картинка могла лечь в проект раньше — с другого персонажа
             // или из другого пака. Второй копии в архиве взяться неоткуда.
-            var stored = FindStoredByContent(bytes, IsInProjectArchive)
+            var stored = FindStoredByContent(bytes, IsInProjectArchive, projectOnly: true)
                 ?? await SaveToProjectAsync(bytes, ExtractFileName(baseRef),
                     iconFormats ? AllowedIconExtensions : AllowedExtensions);
 
@@ -544,6 +649,97 @@ namespace Writersword.Modules.Characters.Services
         // драйверов. Уменьшаем до безопасного размера перед отдачей в UI.
         private const int AvatarMaxSide = 512;
 
+        /// <summary>
+        /// Миниатюра для ленты картинок. От LoadBitmap отличается тем, что
+        /// результат общий и запоминается: повторное открытие ленты не
+        /// раскодирует ничего заново.
+        ///
+        /// Возвращённый битмап принадлежит службе. Уничтожать его нельзя —
+        /// его же показывает и всякий следующий, кто спросит ту же картинку.
+        /// </summary>
+        // Сколько миниатюр строится одновременно в стороне от UI-потока.
+        // Раскодирование упирается в процессор, и пускать туда всё разом
+        // незачем: пул наплодит потоков, а быстрее не станет. Двух-четырёх
+        // хватает, чтобы прокрутка успевала подставлять картинки.
+        private readonly SemaphoreSlim _thumbGate =
+            new(Math.Max(1, Math.Min(4, Environment.ProcessorCount / 2)));
+
+        /// <summary>
+        /// Готовая миниатюра, если её уже строили. Ничего не читает и не
+        /// раскодирует: нужна показу, чтобы отличить «уже есть, показывай
+        /// сразу» от «надо построить, пока покажи заглушку».
+        /// </summary>
+        public Bitmap? TryGetThumbnail(string? avatarRef, int maxSide)
+        {
+            if (string.IsNullOrEmpty(avatarRef) || maxSide > ThumbCacheMaxSide) return null;
+
+            lock (_thumbCacheLock)
+                return _thumbCache.TryGetValue($"{avatarRef}|{maxSide}", out var cached) ? cached : null;
+        }
+
+        /// <summary>
+        /// Миниатюра в стороне от UI-потока. Прокрутка ленты реализует новые
+        /// плитки прямо во время движения, и раскодирование каждой из них на
+        /// UI-потоке останавливало прокрутку ровно на это время.
+        /// </summary>
+        public async Task<Bitmap?> LoadThumbnailAsync(string? avatarRef, int maxSide)
+        {
+            var ready = TryGetThumbnail(avatarRef, maxSide);
+            if (ready != null) return ready;
+
+            await _thumbGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                return await Task.Run(() => LoadThumbnail(avatarRef, maxSide)).ConfigureAwait(false);
+            }
+            finally { _thumbGate.Release(); }
+        }
+
+        public Bitmap? LoadThumbnail(string? avatarRef, int maxSide)
+        {
+            if (string.IsNullOrEmpty(avatarRef)) return null;
+            if (maxSide > ThumbCacheMaxSide) return LoadBitmap(avatarRef, maxSide);
+
+            var key = $"{avatarRef}|{maxSide}";
+
+            lock (_thumbCacheLock)
+                if (_thumbCache.TryGetValue(key, out var cached)) return cached;
+
+            var bitmap = LoadBitmap(avatarRef, maxSide);
+            if (bitmap == null) return null;
+
+            lock (_thumbCacheLock)
+            {
+                // Пока строили, ту же картинку мог построить и запомнить кто-то
+                // ещё: отдаём запомненную, чтобы на экране был один битмап, а не
+                // два одинаковых.
+                if (_thumbCache.TryGetValue(key, out var raced)) return raced;
+
+                _thumbCache[key] = bitmap;
+                _thumbCacheOrder.Enqueue(key);
+                while (_thumbCacheOrder.Count > ThumbCacheMaxEntries)
+                    _thumbCache.Remove(_thumbCacheOrder.Dequeue());
+            }
+
+            return bitmap;
+        }
+
+        /// <summary>
+        /// Забыть миниатюры картинки. Вызывается там же, где выбрасываются её
+        /// байты: файла больше нет или он переехал, и запомненная миниатюра
+        /// показывала бы то, чего в хранилище уже не лежит.
+        /// </summary>
+        private void EvictThumbnails(string avatarRef)
+        {
+            lock (_thumbCacheLock)
+            {
+                var stale = _thumbCache.Keys
+                    .Where(k => k.StartsWith(avatarRef + "|", StringComparison.Ordinal))
+                    .ToList();
+                foreach (var key in stale) _thumbCache.Remove(key);
+            }
+        }
+
         public Bitmap? LoadBitmap(string? avatarRef) => LoadBitmap(avatarRef, AvatarMaxSide);
 
         public Bitmap? LoadBitmap(string? avatarRef, int maxSide)
@@ -556,6 +752,37 @@ namespace Writersword.Modules.Characters.Services
             var crop = CharacterAvatarRef.CropFor(avatarRef, forStrip);
             var bytes = LoadAvatarBytes(avatarRef);
             if (bytes == null) return null;
+
+            // Картинка без кадра раскодируется сразу в нужный размер, а не
+            // целиком с последующим уменьшением. Разница не косметическая:
+            // фотография 4000×3000 в полном разрешении — это сорок восемь
+            // мегабайт точек, из которых для плитки в девяносто шесть точек
+            // нужны десятки килобайт. На ленте в пятьсот картинок полное
+            // раскодирование съедало и время, и память целиком.
+            //
+            // Сторона выбирается по большей: раскодирование по ширине у
+            // вертикальной картинки оставило бы высоту выше предела.
+            if (crop == null || crop.IsFull)
+            {
+                var size = ReadImageSize(bytes);
+                if (size.HasValue && Math.Max(size.Value.Width, size.Value.Height) > maxSide)
+                {
+                    try
+                    {
+                        using var scaledMs = new MemoryStream(bytes);
+                        return size.Value.Width >= size.Value.Height
+                            ? Bitmap.DecodeToWidth(scaledMs, maxSide, BitmapInterpolationMode.HighQuality)
+                            : Bitmap.DecodeToHeight(scaledMs, maxSide, BitmapInterpolationMode.HighQuality);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Заголовок прочитан, а раскодирование по размеру не
+                        // далось — идём общим путём, он ниже и работает всегда.
+                        _logger.Error(ex, "Scaled decode failed for {Ref}", avatarRef);
+                    }
+                }
+            }
+
             try
             {
                 using var ms = new MemoryStream(bytes);
@@ -643,12 +870,112 @@ namespace Writersword.Modules.Characters.Services
             }
         }
 
+        /// <summary>
+        /// Размер картинки из заголовка файла, без раскодирования точек.
+        ///
+        /// Нужен раскодированию в нужный размер: чтобы попросить у декодера
+        /// уменьшенную картинку, надо заранее знать, какая сторона больше, и
+        /// не раздуть мелкий значок до предела, которого он не достигал.
+        /// Полное раскодирование ради двух чисел стоило бы ровно того, что
+        /// этой проверкой и экономится.
+        ///
+        /// Разбираются те четыре формата, которые служба принимает
+        /// (AllowedExtensions). Неразобранный файл возвращает null — вызывающий
+        /// уходит на общий путь, а не остаётся без картинки.
+        /// </summary>
+        private static PixelSize? ReadImageSize(byte[] data)
+        {
+            try
+            {
+                if (data.Length >= 24
+                    && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47)
+                {
+                    // PNG: подпись, затем длина и тип блока, затем IHDR —
+                    // ширина и высота четырьмя байтами каждая, старшим вперёд.
+                    var w = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
+                    var h = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
+                    return w > 0 && h > 0 ? new PixelSize(w, h) : null;
+                }
+
+                if (data.Length >= 4 && data[0] == 0xFF && data[1] == 0xD8)
+                {
+                    // JPEG: идём по маркерам до кадрового (SOF). Кадровых
+                    // маркеров несколько — базовый, прогрессивный, без потерь;
+                    // из ряда C0..CF исключены не кадровые C4, C8 и CC.
+                    var i = 2;
+                    while (i + 9 < data.Length)
+                    {
+                        if (data[i] != 0xFF) { i++; continue; }
+
+                        var marker = data[i + 1];
+                        if (marker == 0xFF) { i++; continue; }
+                        if (marker == 0xD8 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7))
+                        { i += 2; continue; }
+
+                        var length = (data[i + 2] << 8) | data[i + 3];
+                        if (length < 2) return null;
+
+                        if (marker >= 0xC0 && marker <= 0xCF
+                            && marker != 0xC4 && marker != 0xC8 && marker != 0xCC)
+                        {
+                            var h = (data[i + 5] << 8) | data[i + 6];
+                            var w = (data[i + 7] << 8) | data[i + 8];
+                            return w > 0 && h > 0 ? new PixelSize(w, h) : null;
+                        }
+
+                        i += 2 + length;
+                    }
+                    return null;
+                }
+
+                if (data.Length >= 30
+                    && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
+                    && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P')
+                {
+                    // WebP: три разных вида блока, и размер в каждом лежит
+                    // по-своему.
+                    var kind = Encoding.ASCII.GetString(data, 12, 4);
+
+                    if (kind == "VP8X")
+                    {
+                        var w = 1 + (data[24] | (data[25] << 8) | (data[26] << 16));
+                        var h = 1 + (data[27] | (data[28] << 8) | (data[29] << 16));
+                        return new PixelSize(w, h);
+                    }
+
+                    if (kind == "VP8 " && data.Length >= 30)
+                    {
+                        var w = ((data[27] << 8) | data[26]) & 0x3FFF;
+                        var h = ((data[29] << 8) | data[28]) & 0x3FFF;
+                        return w > 0 && h > 0 ? new PixelSize(w, h) : null;
+                    }
+
+                    if (kind == "VP8L" && data.Length >= 25)
+                    {
+                        var bits = data[21] | (data[22] << 8) | (data[23] << 16) | (data[24] << 24);
+                        var w = (bits & 0x3FFF) + 1;
+                        var h = ((bits >> 14) & 0x3FFF) + 1;
+                        return new PixelSize(w, h);
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
         public PixelSize? GetImageSize(string? avatarRef)
         {
             // Размер нужен исходный, до кадра: окно обрезки считает кадр в
             // долях этого исходника и рисует рамку поверх него целиком.
             var bytes = LoadAvatarBytes(avatarRef);
             if (bytes == null) return null;
+
+            // Заголовок отвечает на этот вопрос сам; раскодирование остаётся
+            // запасным путём для файла, чей заголовок разобрать не вышло.
+            var fromHeader = ReadImageSize(bytes);
+            if (fromHeader.HasValue) return fromHeader;
+
             try
             {
                 using var ms = new MemoryStream(bytes);
@@ -773,7 +1100,7 @@ namespace Writersword.Modules.Characters.Services
             if (!Directory.Exists(LibraryPath)) return new List<CharacterAvatarItem>();
             try
             {
-                return Directory.GetFiles(LibraryPath)
+                var items = Directory.GetFiles(LibraryPath)
                     .Where(f => AllowedExtensions.Contains(
                         Path.GetExtension(f).ToLowerInvariant()))
                     .Select(f => new CharacterAvatarItem
@@ -785,6 +1112,11 @@ namespace Writersword.Modules.Characters.Services
                         Scope = CharacterAvatarPackScope.Global
                     })
                     .ToList();
+
+                // Имени и обложки у склада нет, а порядок есть: он такое же
+                // свойство показа, как у любой папки. Описание лежит рядом с
+                // картинками и в выдачу не попадает — расширение не картиночное.
+                return ApplyItemOrder(items, ReadLibraryMeta().Order);
             }
             catch (Exception ex)
             {
@@ -846,6 +1178,7 @@ namespace Writersword.Modules.Characters.Services
                             Scope = CharacterAvatarPackScope.Local
                         })
                         .ToList();
+                    pack.Items = ApplyItemOrder(pack.Items, pack.Order);
                     pack.IconRef = pack.Items
                         .FirstOrDefault(i => i.FileName == pack.IconFileName)?.AvatarRef
                         ?? pack.Items.FirstOrDefault()?.AvatarRef;
@@ -1025,6 +1358,99 @@ namespace Writersword.Modules.Characters.Services
                 SavePackJson(pack);
             }
             catch (Exception ex) { _logger.Error(ex, "UpdatePackMeta failed: {Id}", packId); }
+        }
+
+        /// <summary>
+        /// Разложить картинки по сохранённому порядку. Пустой порядок оставляет
+        /// список нетронутым: папки, порядок которым не задавали, должны
+        /// выглядеть ровно так же, как выглядели.
+        ///
+        /// Картинки, которых в порядке нет (положили после того, как порядок
+        /// записали), встают после перечисленных, между собой по имени: иначе
+        /// добавленная картинка вставала бы в случайное место.
+        /// </summary>
+        private static List<CharacterAvatarItem> ApplyItemOrder(
+            List<CharacterAvatarItem> items, List<string>? order)
+        {
+            if (order == null || order.Count == 0) return items;
+
+            var position = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < order.Count; i++)
+                if (!position.ContainsKey(order[i])) position[order[i]] = i;
+
+            return items
+                .OrderBy(i => position.TryGetValue(i.FileName, out var p) ? p : int.MaxValue)
+                .ThenBy(i => i.FileName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private CharacterAvatarPackInfo ReadLibraryMeta()
+        {
+            try
+            {
+                var path = Path.Combine(LibraryPath, PackMetaFileName);
+                if (!File.Exists(path)) return new CharacterAvatarPackInfo { Id = LibraryPackId };
+
+                return JsonSerializer.Deserialize<CharacterAvatarPackInfo>(File.ReadAllText(path))
+                       ?? new CharacterAvatarPackInfo { Id = LibraryPackId };
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "ReadLibraryMeta failed");
+                return new CharacterAvatarPackInfo { Id = LibraryPackId };
+            }
+        }
+
+        public void SetPackItemOrder(
+            string packId, CharacterAvatarPackScope scope, IReadOnlyList<string> fileNames)
+        {
+            if (string.IsNullOrEmpty(packId)) return;
+
+            var order = fileNames?.ToList() ?? new List<string>();
+
+            try
+            {
+                if (packId == LibraryPackId)
+                {
+                    Directory.CreateDirectory(LibraryPath);
+                    var meta = ReadLibraryMeta();
+                    meta.Id = LibraryPackId;
+                    meta.Order = order;
+                    File.WriteAllText(
+                        Path.Combine(LibraryPath, PackMetaFileName),
+                        JsonSerializer.Serialize(meta, new JsonSerializerOptions { WriteIndented = true }));
+                    return;
+                }
+
+                if (scope == CharacterAvatarPackScope.Local)
+                {
+                    var local = ReadLocalPackMeta(packId) ?? new CharacterAvatarPackInfo();
+                    local.Id = packId;
+                    local.Source = CharacterAvatarPackSource.UserLocal;
+                    local.FolderPath = $"{ZipPacksFolder}/{packId}";
+                    local.Order = order;
+                    WriteLocalPackMeta(local);
+                    return;
+                }
+
+                var dir = Path.Combine(UserPacksPath, packId);
+                // Встроенный пак своей папки в данных приложения не имеет —
+                // записывать порядок некуда, и это не ошибка.
+                if (!Directory.Exists(dir)) return;
+
+                var jsonPath = Path.Combine(dir, PackMetaFileName);
+                var pack = File.Exists(jsonPath)
+                    ? JsonSerializer.Deserialize<CharacterAvatarPackInfo>(File.ReadAllText(jsonPath))
+                    : null;
+
+                pack ??= new CharacterAvatarPackInfo();
+                pack.Id = packId;
+                pack.Source = CharacterAvatarPackSource.UserGlobal;
+                pack.FolderPath = dir;
+                pack.Order = order;
+                SavePackJson(pack);
+            }
+            catch (Exception ex) { _logger.Error(ex, "SetPackItemOrder failed: {Id}", packId); }
         }
 
         public void DeletePack(string packId, CharacterAvatarPackScope scope)
@@ -1558,6 +1984,7 @@ namespace Writersword.Modules.Characters.Services
                         Scope = CharacterAvatarPackScope.Global
                     })
                     .ToList();
+                pack.Items = ApplyItemOrder(pack.Items, pack.Order);
                 pack.IconRef = pack.Items
                     .FirstOrDefault(i => i.FileName == pack.IconFileName)?.AvatarRef
                     ?? pack.Items.FirstOrDefault()?.AvatarRef;
