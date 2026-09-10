@@ -1,3 +1,4 @@
+﻿using Avalonia.Threading;
 using ReactiveUI;
 using SkiaSharp;
 using System;
@@ -48,6 +49,17 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         /// </summary>
         void GoReadingPage(int pageIndex, bool animate);
 
+        /// <summary>
+        /// Поставить ленту на долю всей длины, 0..100. Страниц у ленты нет, и место
+        /// в ней меряется только этим.
+        ///
+        /// <paramref name="takeFocus"/> — вернуть клавиатуру канвасу. Нужно после
+        /// ввода в поле: фокус остался бы в нём, и стрелки перестали бы прокручивать.
+        /// Ползунок фокус не отдаёт: отобрать его посреди перетаскивания значит
+        /// оборвать само перетаскивание.
+        /// </summary>
+        void GoReadingPercent(double percent, bool takeFocus);
+
         /// <summary>Выход из чтения обратно к страницам.</summary>
         void ExitReading();
 
@@ -56,6 +68,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
 
         /// <summary>Открыть окно видов чтения.</summary>
         void OpenReadingThemes();
+
+        /// <summary>
+        /// Выбрать картинку поля вокруг книги: открывается общая библиотека фонов —
+        /// готовые плитки и свои файлы, — та же, что и у фона рабочей области.
+        /// </summary>
+        void PickReadingBackdropImage();
+
+        /// <summary>
+        /// Завести новый вид: окно видов открывается с уже созданной копией
+        /// выбранного и курсором в имени.
+        /// </summary>
+        void CreateReadingTheme();
 
         /// <summary>
         /// Запомнить предпочтения чтения так, чтобы они пережили и перезапуск, и
@@ -69,7 +93,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
     /// «Настроить виды…»: выбор вида и его правка живут в одном месте, и тянуться за
     /// ними в разные концы ленты не приходится.
     /// </summary>
-    public sealed class ReadingThemeItem
+    public sealed class ReadingThemeItem : ReactiveObject
     {
         public ReadingThemeItem(ReadingTheme? theme, string label,
                                 bool isCommand = false, bool isCustom = false)
@@ -94,6 +118,35 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
 
         /// <summary>Значок шестерни виден только у пункта-действия.</summary>
         public bool ShowGear => IsCommand;
+
+        /// <summary>Виден ли образец: у пункта-действия его нет — вида за ним не стоит.</summary>
+        public bool ShowPreview => !IsCommand;
+
+        private bool _isSelected;
+
+        /// <summary>
+        /// Этим видом книга нарисована сейчас. Плитки стоят сеткой, и отметить
+        /// выбранную нечем, кроме неё самой: выпадающий список показывал выбранное
+        /// в своей строке, у сетки такой строки нет.
+        /// </summary>
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set => this.RaiseAndSetIfChanged(ref _isSelected, value);
+        }
+
+        /// <summary>Цвет листа на образце.</summary>
+        public string SheetColor => Theme?.SheetColor ?? "#FFFFFF";
+
+        /// <summary>Цвет букв на образце.</summary>
+        public string InkColor => Theme?.InkColor ?? "#1A1A1A";
+
+        /// <summary>
+        /// Цвет поля вокруг листа. Берётся тем же расчётом, что и в книге: у вида
+        /// своя заливка, а нет её — поле выводится из бумаги. Иначе образец показывал
+        /// бы лист без того, на чём он лежит, а поля на экране больше, чем книги.
+        /// </summary>
+        public string FieldColor => ReadingTheme.FieldColorHex(Theme);
 
         public override string ToString() => Label;
     }
@@ -147,6 +200,16 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             AvailableFonts = LoadFontList();
             RebuildThemeItems();
 
+            CreateThemeCommand = ReactiveCommand.Create(() => _host.CreateReadingTheme());
+            PickBackdropImageCommand = ReactiveCommand.Create(() => _host.PickReadingBackdropImage());
+            OpenThemesCommand = ReactiveCommand.Create(() => _host.OpenReadingThemes());
+            SelectThemeCommand = ReactiveCommand.Create<ReadingThemeItem?>(item =>
+            {
+                if (item is null) return;
+                SelectedThemeItem = item;
+            });
+            ClearBackdropImageCommand = ReactiveCommand.Create(ClearBackdropImage);
+
             SetFlowSpreadCommand = ReactiveCommand.Create(() => Flow = ReadingFlow.Spread);
             SetFlowSingleCommand = ReactiveCommand.Create(() => Flow = ReadingFlow.Single);
             SetFlowColumnCommand = ReactiveCommand.Create(() => Flow = ReadingFlow.Column);
@@ -157,8 +220,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             LastPageCommand = ReactiveCommand.Create(() => _host.GoReadingLast());
             GoToPageCommand = ReactiveCommand.Create(GoToTypedPage);
 
+            StartPercentCommand = ReactiveCommand.Create(() => PercentPosition = 0.0);
+            EndPercentCommand = ReactiveCommand.Create(() => PercentPosition = 100.0);
+            GoToPercentCommand = ReactiveCommand.Create(GoToTypedPercent);
+
             FontBiggerCommand = ReactiveCommand.Create(() => FontStep += 1);
             FontSmallerCommand = ReactiveCommand.Create(() => FontStep -= 1);
+            FontStepResetCommand = ReactiveCommand.Create(() => FontStep = 0);
             ResetTextCommand = ReactiveCommand.Create(ResetText);
 
             ZoomInCommand = ReactiveCommand.Create(() => Zoom = Zoom * 1.12);
@@ -225,6 +293,17 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         /// </summary>
         private void SyncCustomThemeItem()
         {
+            // Пока список разбирает щелчок по строке, трогать его состав нельзя:
+            // выбор он доводит по индексу, а вставка или удаление пункта этот индекс
+            // обесценивает — падение приходит из недр самого списка, уже после того,
+            // как обработчик вернул управление. Правка откладывается на следующий
+            // такт: к нему список с выбором закончил.
+            if (_selectionInFlight)
+            {
+                Dispatcher.UIThread.Post(SyncCustomThemeItem, DispatcherPriority.Background);
+                return;
+            }
+
             bool custom = IsThemeCustom();
             var existing = ThemeItems.FirstOrDefault(i => i.IsCustom);
 
@@ -254,7 +333,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 _suppressThemeSelection = false;
             }
 
+            SyncSelectedMark();
             this.RaisePropertyChanged(nameof(SelectedThemeItem));
+        }
+
+        /// <summary>
+        /// Держит отметку на плитке выбранного вида. Сетка плиток своего выделения не
+        /// имеет — отмечает себя сама плитка.
+        /// </summary>
+        private void SyncSelectedMark()
+        {
+            foreach (var item in ThemeItems)
+                item.IsSelected = ReferenceEquals(item, _selectedThemeItem);
         }
 
         /// <summary>
@@ -270,16 +360,26 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         /// <summary>Пересобирает список: виды могли добавиться, уехать или сменить имя.</summary>
         public void RebuildThemeItems()
         {
+            // Та же причина, что и у SyncCustomThemeItem: состав списка не меняется,
+            // пока список разбирает щелчок.
+            if (_selectionInFlight)
+            {
+                Dispatcher.UIThread.Post(RebuildThemeItems, DispatcherPriority.Background);
+                return;
+            }
+
             var previous = SelectedThemeItem?.Theme?.Id ?? S?.ThemeId;
 
             _suppressThemeSelection = true;
             try
             {
                 ThemeItems.Clear();
+
+                // Пункта «Настроить виды…» в списке больше нет: сетка плиток — это
+                // виды, и строка-действие среди них читалась бы как ещё один вид.
+                // Окно видов открывает кнопка с палитрой рядом с сеткой.
                 foreach (var theme in _host.ReadingThemes())
                     ThemeItems.Add(new ReadingThemeItem(theme, theme.Name));
-
-                ThemeItems.Add(new ReadingThemeItem(null, ThemeSettingsLabel, isCommand: true));
 
                 _selectedThemeItem = ThemeItems.FirstOrDefault(
                     i => i.Theme is { } t && string.Equals(t.Id, previous, StringComparison.Ordinal))
@@ -290,12 +390,17 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 _suppressThemeSelection = false;
             }
 
+            SyncSelectedMark();
             this.RaisePropertyChanged(nameof(SelectedThemeItem));
             SyncCustomThemeItem();
         }
 
         private ReadingThemeItem? _selectedThemeItem;
         private bool _suppressThemeSelection;
+
+        // Список сейчас разбирает щелчок по строке. Всё, что меняет состав пунктов,
+        // на это время откладывается — см. SyncCustomThemeItem.
+        private bool _selectionInFlight;
 
         /// <summary>
         /// Выбранный вид. Пункт «Настроить виды…» видом не становится: он открывает
@@ -325,18 +430,30 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 }
 
                 _selectedThemeItem = value;
+                SyncSelectedMark();
                 this.RaisePropertyChanged();
 
                 if (S is { } s && value.Theme is { } theme)
                 {
-                    s.ApplyTheme(theme);
-                    RaiseThemeDependent();
+                    _selectionInFlight = true;
+                    try
+                    {
+                        s.ApplyTheme(theme);
+                        RaiseThemeDependent();
 
-                    // Шрифт вида участвует в вёрстке, поэтому пересборка, а не
-                    // перерисовка: другой шрифт — другие переносы строк.
-                    _host.ApplyReadingLayout();
-                    _host.PersistReadingPreferences();
-                    SyncCustomThemeItem();
+                        // Шрифт вида участвует в вёрстке, поэтому пересборка, а не
+                        // перерисовка: другой шрифт — другие переносы строк.
+                        _host.ApplyReadingLayout();
+                        _host.PersistReadingPreferences();
+                    }
+                    finally
+                    {
+                        _selectionInFlight = false;
+                    }
+
+                    // Состав списка правится следующим тактом — щелчок к нему уже
+                    // разобран целиком.
+                    Dispatcher.UIThread.Post(SyncCustomThemeItem, DispatcherPriority.Background);
                 }
             }
         }
@@ -355,6 +472,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             this.RaisePropertyChanged(nameof(TextColorHex));
             this.RaisePropertyChanged(nameof(BackdropColorHex));
             this.RaisePropertyChanged(nameof(UseBackdropImage));
+            this.RaisePropertyChanged(nameof(HasBackdropImage));
         }
 
         // ── Списки ────────────────────────────────────────────────────────
@@ -420,12 +538,16 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         /// <summary>Листание и формат листа есть только там, где есть страницы.</summary>
         public bool IsPaged => Flow != ReadingFlow.Column;
 
+        /// <summary>Лента: место в тексте меряется долей, а не номером страницы.</summary>
+        public bool IsRibbon => Flow == ReadingFlow.Column;
+
         private void RaiseFlowDependent()
         {
             this.RaisePropertyChanged(nameof(IsFlowSpread));
             this.RaisePropertyChanged(nameof(IsFlowSingle));
             this.RaisePropertyChanged(nameof(IsFlowColumn));
             this.RaisePropertyChanged(nameof(IsPaged));
+            this.RaisePropertyChanged(nameof(IsRibbon));
             this.RaisePropertyChanged(nameof(PageStep));
 
             // Шаг листания сменился вместе с подачей: то, что в развороте было
@@ -541,6 +663,108 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         }
 
         public int PageCount => _pageCount;
+
+        // ── Место в ленте ─────────────────────────────────────────────────
+        // Лента — не книга: страниц в ней нет, и мерить место в ней нечем, кроме доли
+        // всей длины. Поэтому здесь свои поле и ползунок, а не те же, что у страниц:
+        // «41 %» и «страница 7» — разные величины, и общий бегунок пришлось бы
+        // пересчитывать туда-сюда, теряя точность на каждом переводе.
+
+        private double _percent;
+        private string _percentInput = "0 %";
+
+        // Пока место приходит от ленты, обратные вызовы не нужны: иначе отчёт о
+        // прокрутке сам же и запустил бы новую прокрутку.
+        private bool _suppressPercentNav;
+
+        /// <summary>Сообщает ленте чтения, где стоит текст. Зовётся канвасом.</summary>
+        public void SetPercentState(double percent)
+        {
+            double value = Math.Clamp(percent, 0.0, 100.0);
+            if (Math.Abs(value - _percent) < 0.05) return;
+
+            _suppressPercentNav = true;
+            try
+            {
+                _percent = value;
+                _percentInput = FormatPercentInput();
+            }
+            finally
+            {
+                _suppressPercentNav = false;
+            }
+
+            this.RaisePropertyChanged(nameof(PercentPosition));
+            this.RaisePropertyChanged(nameof(PercentInput));
+            this.RaisePropertyChanged(nameof(PercentNumberText));
+        }
+
+        /// <summary>Положение ползунка ленты: доля всей длины, 0..100.</summary>
+        public double PercentPosition
+        {
+            get => _percent;
+            set
+            {
+                if (_suppressPercentNav) return;
+
+                double target = Math.Clamp(value, 0.0, 100.0);
+                if (Math.Abs(target - _percent) < 0.05) return;
+
+                _percent = target;
+                _percentInput = FormatPercentInput();
+                this.RaisePropertyChanged();
+                this.RaisePropertyChanged(nameof(PercentInput));
+                this.RaisePropertyChanged(nameof(PercentNumberText));
+                _host.GoReadingPercent(target, takeFocus: false);
+            }
+        }
+
+        /// <summary>Содержимое поля целиком, вместе со знаком процента.</summary>
+        public string PercentInput
+        {
+            get => _percentInput;
+            set => this.RaiseAndSetIfChanged(ref _percentInput, value ?? string.Empty);
+        }
+
+        /// <summary>Одно число, без знака: то, что поле показывает, пока его правят.</summary>
+        public string PercentNumberText
+            => Math.Round(_percent).ToString(System.Globalization.CultureInfo.CurrentCulture);
+
+        private string FormatPercentInput()
+            => $"{Math.Round(_percent).ToString(System.Globalization.CultureInfo.CurrentCulture)} %";
+
+        /// <summary>Возвращает поле к тому месту, где лента стоит.</summary>
+        public void ResetPercentInput() => PercentInput = FormatPercentInput();
+
+        /// <summary>
+        /// Переходит на введённую долю. Негодный ввод не делает ничего: поле
+        /// возвращается к текущему месту, лента остаётся там же. Клавиатуру канвас
+        /// забирает себе в любом случае — иначе фокус остался бы в поле.
+        /// </summary>
+        private void GoToTypedPercent()
+        {
+            string raw = (_percentInput ?? string.Empty).Replace("%", string.Empty).Trim();
+
+            bool parsed = double.TryParse(
+                raw,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.CurrentCulture,
+                out double value);
+
+            if (!parsed || value < 0.0 || value > 100.0)
+            {
+                ResetPercentInput();
+                _host.GoReadingPercent(_percent, takeFocus: true);
+                return;
+            }
+
+            _percent = value;
+            PercentInput = FormatPercentInput();
+            this.RaisePropertyChanged(nameof(PercentPosition));
+            this.RaisePropertyChanged(nameof(PercentNumberText));
+
+            _host.GoReadingPercent(value, takeFocus: true);
+        }
 
         /// <summary>Верхняя граница ползунка. Не меньше единицы — пустой книги не бывает.</summary>
         public double PageMax => Math.Max(1, _pageCount);
@@ -853,6 +1077,17 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             set
             {
                 if (T is not { } t || t.UseBackdropImage == value) return;
+
+                // Включать нечего, пока файл не выбран: тумблер щёлкал, вид считался
+                // изменённым, а на экране не менялось ничего. Вместо молчания
+                // открывается библиотека фонов — там и заготовки, и свои файлы.
+                if (value && string.IsNullOrWhiteSpace(t.BackdropImagePath))
+                {
+                    this.RaisePropertyChanged();
+                    _host.PickReadingBackdropImage();
+                    return;
+                }
+
                 t.UseBackdropImage = value;
                 this.RaisePropertyChanged();
                 TouchTheme();
@@ -1021,6 +1256,44 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
 
         // ── Команды ───────────────────────────────────────────────────────
 
+        /// <summary>Завести свой вид, не открывая список видов отдельным шагом.</summary>
+        public ICommand CreateThemeCommand { get; }
+
+        /// <summary>Открыть окно видов: список, правка, области хранения.</summary>
+        public ICommand OpenThemesCommand { get; }
+
+        /// <summary>
+        /// Выбрать вид его плиткой. Сетка плиток — не список с выделением, нажатие по
+        /// плитке и есть выбор.
+        /// </summary>
+        public ICommand SelectThemeCommand { get; }
+
+        /// <summary>
+        /// Выбрать картинку поля из библиотеки фонов — той же, что и у фона рабочей
+        /// области при правке.
+        /// </summary>
+        public ICommand PickBackdropImageCommand { get; }
+
+        /// <summary>Убрать картинку с поля. Заливка вида остаётся.</summary>
+        public ICommand ClearBackdropImageCommand { get; }
+
+        /// <summary>Есть ли что убирать: картинка выбрана и лежит на поле.</summary>
+        public bool HasBackdropImage
+            => T is { } t && !string.IsNullOrWhiteSpace(t.BackdropImagePath);
+
+        private void ClearBackdropImage()
+        {
+            if (T is not { } t) return;
+            if (string.IsNullOrWhiteSpace(t.BackdropImagePath) && !t.UseBackdropImage) return;
+
+            t.UseBackdropImage = false;
+            t.BackdropImagePath = null;
+
+            this.RaisePropertyChanged(nameof(UseBackdropImage));
+            this.RaisePropertyChanged(nameof(HasBackdropImage));
+            TouchTheme();
+        }
+
         public ICommand SetFlowSpreadCommand { get; }
         public ICommand SetFlowSingleCommand { get; }
         public ICommand SetFlowColumnCommand { get; }
@@ -1031,8 +1304,25 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         public ICommand LastPageCommand { get; }
         public ICommand GoToPageCommand { get; }
 
+        /// <summary>К началу ленты — те же нулевые проценты.</summary>
+        public ICommand StartPercentCommand { get; }
+
+        /// <summary>К концу ленты.</summary>
+        public ICommand EndPercentCommand { get; }
+
+        /// <summary>Перейти на долю, набранную в поле.</summary>
+        public ICommand GoToPercentCommand { get; }
+
         public ICommand FontBiggerCommand { get; }
         public ICommand FontSmallerCommand { get; }
+        /// <summary>
+        /// Ступень обратно к авторской. Висит на самой подписи между «A−» и «A+»:
+        /// перебирать ступени назад по одной, чтобы вернуться к нулю, — работа,
+        /// которой быть не должно. Шрифт и цвет при этом не трогаются: их
+        /// возвращает отдельная кнопка сброса.
+        /// </summary>
+        public ICommand FontStepResetCommand { get; }
+
         public ICommand ResetTextCommand { get; }
 
         public ICommand ZoomInCommand { get; }

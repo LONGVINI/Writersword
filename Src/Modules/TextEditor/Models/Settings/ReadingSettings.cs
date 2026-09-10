@@ -83,8 +83,14 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// </summary>
         public int FontStep { get; set; }
 
-        public const int MinFontStep = -3;
-        public const int MaxFontStep = 6;
+        // Пределы ступени. Они не про «правильный» размер букв, а про то, за какой
+        // границей чтение ломается физически: на очень мелком тексте пропадает
+        // разбиение на строки, на очень крупном одно слово занимает страницу, и
+        // раскладка перестаёт сходиться. Внутри этих границ читатель волен делать с
+        // размером что угодно — прежние −3…+6 отсекали куда раньше, чем начинались
+        // настоящие неприятности, и людям со слабым зрением крупного не хватало.
+        public const int MinFontStep = -8;
+        public const int MaxFontStep = 20;
 
         /// <summary>Множитель кегля, соответствующий текущей ступени.</summary>
         [JsonIgnore]
@@ -93,7 +99,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             get
             {
                 int step = Math.Clamp(FontStep, MinFontStep, MaxFontStep);
-                return Math.Clamp(1.0 + step * 0.06, 0.8, 1.4);
+                return Math.Clamp(1.0 + step * 0.06, 0.5, 2.2);
             }
         }
 

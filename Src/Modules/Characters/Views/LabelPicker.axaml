@@ -1,0 +1,108 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="using:Writersword.Modules.Characters.Models"
+             xmlns:controls="using:Writersword.Modules.Characters.Controls"
+             x:Class="Writersword.Modules.Characters.Views.LabelPicker"
+             Width="248">
+
+	<!-- Быстрый выбор метки из уже заведённых в проекте.
+	     Раньше кнопка «добавить метку» вела прямиком в редактор: чтобы
+	     поставить персонажу «Ранен», которая в проекте есть с первой главы,
+	     приходилось заново выбирать значок и цвет. Теперь редактор — это про
+	     «завести новую», а поставить существующую можно за один щелчок.
+
+	     Ширина фиксированная: список открывается у кнопки, и прыгающая под
+	     длиной имён ширина читалась бы как другое окно каждый раз. -->
+
+	<UserControl.Styles>
+		<Style Selector="Button.pickRow">
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="8,5"/>
+			<Setter Property="CornerRadius" Value="6"/>
+		</Style>
+		<Style Selector="Button.pickRow:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<Style Selector="Button.createRow">
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="8,6"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.createRow:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<StackPanel Spacing="6">
+
+		<!-- Поиск сразу под курсором: с десятком меток он не нужен, с сотней —
+		     единственный способ найти нужную. Enter ставит первую в списке. -->
+		<TextBox x:Name="SearchBox"
+		         PlaceholderText="Поиск метки…"
+		         FontSize="12"
+		         Padding="8,5"
+		         CornerRadius="6"
+		         Background="{DynamicResource BgSurfaceBrush}"
+		         Foreground="{DynamicResource TextPrimaryBrush}"
+		         BorderBrush="{DynamicResource BorderDefaultBrush}"
+		         BorderThickness="1"
+		         TextChanged="OnSearchChanged"
+		         KeyDown="OnSearchKeyDown"/>
+
+		<ScrollViewer MaxHeight="264"
+		              HorizontalScrollBarVisibility="Disabled"
+		              VerticalScrollBarVisibility="Auto">
+			<ItemsControl x:Name="Rows">
+				<ItemsControl.ItemTemplate>
+					<DataTemplate x:DataType="models:CharacterLabel">
+						<Button Classes="pickRow" Click="OnPickClick">
+							<StackPanel Orientation="Horizontal" Spacing="8">
+								<controls:CharacterLabelIcon Label="{Binding}" IconSize="18"
+								                             VerticalAlignment="Center"/>
+								<TextBlock Text="{Binding Name}"
+								           FontSize="12"
+								           VerticalAlignment="Center"
+								           TextTrimming="CharacterEllipsis"
+								           Foreground="{DynamicResource TextPrimaryBrush}"/>
+							</StackPanel>
+						</Button>
+					</DataTemplate>
+				</ItemsControl.ItemTemplate>
+			</ItemsControl>
+		</ScrollViewer>
+
+		<TextBlock x:Name="EmptyHint"
+		           Text="Меток в проекте пока нет"
+		           FontSize="11.5"
+		           Margin="8,2,8,4"
+		           IsVisible="False"
+		           Foreground="{DynamicResource TextMutedBrush}"/>
+
+		<Border BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0"/>
+
+		<!-- Полный редактор — отсюда и только отсюда: в него заходят, когда
+		     метки нужного вида ещё нет. -->
+		<Button Classes="createRow" Click="OnCreateClick">
+			<StackPanel Orientation="Horizontal" Spacing="8">
+				<Path Data="M6,1 L6,11 M1,6 L11,6"
+				      Stroke="{DynamicResource AccentDefaultBrush}"
+				      StrokeThickness="1.6"
+				      StrokeLineCap="Round"
+				      Width="12" Height="12"
+				      VerticalAlignment="Center"/>
+				<TextBlock x:Name="CreateCaption"
+				           Text="Новая метка…"
+				           FontSize="12"
+				           VerticalAlignment="Center"/>
+			</StackPanel>
+		</Button>
+	</StackPanel>
+</UserControl>

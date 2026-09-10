@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -123,28 +123,14 @@ namespace Writersword.Modules.TextEditor.Services
 
             ApplyFinalSectionPageSettings(body, doc, resolver, warnings);
 
-            int nonFinalSectionBreaks = 0;
-            foreach (var element in body.Elements())
-            {
-                switch (element)
-                {
-                    case W.Paragraph p:
-                        if (HasOwnSectionProperties(p)) nonFinalSectionBreaks++;
-                        ImportParagraphWithBreaks(p, section, resolver, numbering, listIdMap,
-                            mainPart, extractedImages, warnings);
-                        break;
+            // Разрывы разделов считаются отдельным проходом: так разбор элементов не
+            // тащит за собой счётчик и может вызывать сам себя для содержимого
+            // контейнеров, вложенных на любую глубину.
+            int nonFinalSectionBreaks = body.Descendants<W.Paragraph>()
+                .Count(HasOwnSectionProperties);
 
-                    case W.Table t:
-                        var tableBlock = ImportTable(t, section, resolver, numbering, listIdMap,
-                            mainPart, extractedImages, warnings, depth: 0);
-                        if (tableBlock is not null)
-                            section.Blocks.Add(tableBlock);
-                        break;
-
-                    // W.SectionProperties как прямой потомок Body — параметры финального
-                    // раздела, уже учтены в ApplyFinalSectionPageSettings.
-                }
-            }
+            ImportBlockElements(body.Elements(), section, resolver, numbering, listIdMap,
+                mainPart, extractedImages, warnings);
 
             if (section.Blocks.Count == 0)
                 section.Blocks.Add(new ParagraphBlock());
@@ -161,6 +147,50 @@ namespace Writersword.Modules.TextEditor.Services
         }
 
         // ── Параграфы и разрывы страниц ────────────────────────────────────
+
+        /// <summary>
+        /// Разбирает элементы уровня блока: абзацы, таблицы и контейнеры содержимого
+        /// (w:sdt). В контейнер Word заворачивает оглавление, элементы управления и
+        /// блоки шаблонов — без разбора его содержимого документ молча теряет целые
+        /// куски текста, а у оглавления это разом все его строки.
+        /// </summary>
+        private void ImportBlockElements(
+            IEnumerable<OpenXmlElement> elements,
+            SectionModel section,
+            DocxFormatResolver resolver,
+            DocxNumberingMap numbering,
+            Dictionary<int, Guid> listIdMap,
+            MainDocumentPart mainPart,
+            Dictionary<string, byte[]> extractedImages,
+            List<string> warnings)
+        {
+            foreach (var element in elements)
+            {
+                switch (element)
+                {
+                    case W.Paragraph p:
+                        ImportParagraphWithBreaks(p, section, resolver, numbering, listIdMap,
+                            mainPart, extractedImages, warnings);
+                        break;
+
+                    case W.Table t:
+                        var tableBlock = ImportTable(t, section, resolver, numbering, listIdMap,
+                            mainPart, extractedImages, warnings, depth: 0);
+                        if (tableBlock is not null)
+                            section.Blocks.Add(tableBlock);
+                        break;
+
+                    case W.SdtBlock sdt:
+                        if (sdt.SdtContentBlock is { } sdtContent)
+                            ImportBlockElements(sdtContent.ChildElements, section, resolver,
+                                numbering, listIdMap, mainPart, extractedImages, warnings);
+                        break;
+
+                    // W.SectionProperties как прямой потомок Body — параметры финального
+                    // раздела, уже учтены в ApplyFinalSectionPageSettings.
+                }
+            }
+        }
 
         /// <summary>
         /// Импортирует один W.Paragraph. Разрыв страницы (w:br type="page") внутри
@@ -199,7 +229,7 @@ namespace Writersword.Modules.TextEditor.Services
                         mainPart, extractedImages, warnings);
 
                 if (chunk.Runs.Count == 0)
-                    chunk.Runs.Add(new RunModel { Text = string.Empty, Properties = effPara.ToRunProperties() });
+                    chunk.Runs.Add(BuildParagraphMarkRun(p, resolver, effPara));
 
                 chunk.InvalidateLength();
                 section.Blocks.Add(para);
@@ -293,7 +323,43 @@ namespace Writersword.Modules.TextEditor.Services
                     // Текст, удалённый с отслеживанием правок — не переносим в импорт
                     // (эквивалент «принять все правки» для удалений).
                     break;
+
+                case W.SimpleField simpleField:
+                    // В w:fldSimple Word хранит последнее вычисленное значение поля
+                    // обычными ранами: код поля не нужен, а значение — это видимый
+                    // текст документа, и терять его нельзя.
+                    foreach (var innerRun in simpleField.Elements<W.Run>())
+                        AppendRun(innerRun, chunk, section, resolver, effPara, mainPart, extractedImages, warnings);
+                    break;
+
+                case W.MoveToRun moveTo:
+                    // Приёмник перемещения равнозначен вставке: принятая правка
+                    // оставляет его текст в документе.
+                    foreach (var innerRun in moveTo.Elements<W.Run>())
+                        AppendRun(innerRun, chunk, section, resolver, effPara, mainPart, extractedImages, warnings);
+                    break;
+
+                case W.MoveFromRun:
+                    // Источник перемещения равнозначен удалению. Разбирать его нельзя:
+                    // фрагмент удвоился бы, оставшись и на старом месте, и на новом.
+                    break;
             }
+        }
+
+        /// <summary>
+        /// Ран пустого абзаца. Высоту такой строки задаёт форматирование знака конца
+        /// абзаца (w:pPr/w:rPr): пустая строка кеглем 36 пт занимает 36 пт, а не
+        /// размер по умолчанию. Без этого каждый пустой абзац крадёт по два десятка
+        /// пунктов, и разбивка на страницы расходится с Word.
+        /// </summary>
+        private static RunModel BuildParagraphMarkRun(
+            W.Paragraph p, DocxFormatResolver resolver, EffectiveParagraph effPara)
+        {
+            var markFormat = effPara.BaseRun.Clone();
+            markFormat.MergeFrom(p.ParagraphProperties?.ParagraphMarkRunProperties,
+                resolver.ThemeMajorFont, resolver.ThemeMinorFont);
+
+            return new RunModel { Text = string.Empty, Properties = markFormat.ToRunProperties() };
         }
 
         private void AppendRun(
@@ -444,10 +510,16 @@ namespace Writersword.Modules.TextEditor.Services
                 .ToList() ?? new List<long>();
 
             var rows = table.Elements<W.TableRow>().ToList();
+
+            // Колонок в таблице столько, сколько их в самой широкой строке. Сумма по
+            // всем строкам давала бы у таблицы 3x3 девять колонок, и ширины ячеек
+            // расходились бы втрое.
             int columnCount = columnWidthsTwips.Count > 0
                 ? columnWidthsTwips.Count
-                : rows.SelectMany(r => r.Elements<W.TableCell>())
-                    .Sum(c => c.TableCellProperties?.GridSpan?.Val?.Value ?? 1);
+                : rows.Select(r => r.Elements<W.TableCell>()
+                        .Sum(c => c.TableCellProperties?.GridSpan?.Val?.Value ?? 1))
+                    .DefaultIfEmpty(0)
+                    .Max();
             if (columnCount <= 0) columnCount = 1;
 
             var block = new TableBlock
@@ -503,32 +575,23 @@ namespace Writersword.Modules.TextEditor.Services
                     }
 
                     var paragraphs = new List<ParagraphBlock>();
-                    foreach (var p in wCell.Elements<W.Paragraph>())
+                    foreach (var cellChild in wCell.ChildElements)
                     {
-                        var effPara = resolver.ResolveEffectiveParagraph(p);
-                        string? styleName = resolver.MapStyleName(p, effPara);
-                        var para = new ParagraphBlock { Properties = effPara.ToParagraphProperties(styleName) };
-                        para.ListProperties = numbering.Resolve(p, listIdMap);
-
-                        var chunk = new TextChunk();
-                        para.Chunks.Clear();
-                        para.Chunks.Add(chunk);
-
-                        // Картинки внутри ячейки регистрируются в SectionModel.InlineObjects
-                        // документа целиком (как и обычные инлайн-картинки в тексте) — ячейка
-                        // хранит только ссылку на них через Guid рана, поэтому сюда передаётся
-                        // секция документа, а не что-то специфичное для таблицы.
-                        foreach (var child in p.ChildElements)
+                        switch (cellChild)
                         {
-                            if (child is W.ParagraphProperties) continue;
-                            AppendRunOrDrawing(child, chunk, section, resolver, effPara,
-                                mainPart, extractedImages, warnings);
-                        }
+                            case W.Paragraph cellParagraph:
+                                paragraphs.Add(ImportCellParagraph(cellParagraph, section, resolver,
+                                    numbering, listIdMap, mainPart, extractedImages, warnings));
+                                break;
 
-                        if (chunk.Runs.Count == 0)
-                            chunk.Runs.Add(new RunModel { Text = string.Empty, Properties = effPara.ToRunProperties() });
-                        chunk.InvalidateLength();
-                        paragraphs.Add(para);
+                            case W.Table nested:
+                                warnings.Add("Вложенные таблицы не поддерживаются: их содержимое " +
+                                             "перенесено в ячейку обычными абзацами.");
+                                foreach (var nestedParagraph in nested.Descendants<W.Paragraph>())
+                                    paragraphs.Add(ImportCellParagraph(nestedParagraph, section, resolver,
+                                        numbering, listIdMap, mainPart, extractedImages, warnings));
+                                break;
+                        }
                     }
                     if (paragraphs.Count == 0) paragraphs.Add(new ParagraphBlock());
 
@@ -569,6 +632,45 @@ namespace Writersword.Modules.TextEditor.Services
             }
 
             return block;
+        }
+
+        /// <summary>
+        /// Абзац внутри ячейки таблицы. Картинки регистрируются в
+        /// SectionModel.InlineObjects документа целиком, как и обычные инлайн-картинки
+        /// в тексте: ячейка хранит только ссылку на них через Guid рана, поэтому сюда
+        /// передаётся секция документа, а не что-то специфичное для таблицы.
+        /// </summary>
+        private ParagraphBlock ImportCellParagraph(
+            W.Paragraph p,
+            SectionModel section,
+            DocxFormatResolver resolver,
+            DocxNumberingMap numbering,
+            Dictionary<int, Guid> listIdMap,
+            MainDocumentPart mainPart,
+            Dictionary<string, byte[]> extractedImages,
+            List<string> warnings)
+        {
+            var effPara = resolver.ResolveEffectiveParagraph(p);
+            string? styleName = resolver.MapStyleName(p, effPara);
+            var para = new ParagraphBlock { Properties = effPara.ToParagraphProperties(styleName) };
+            para.ListProperties = numbering.Resolve(p, listIdMap);
+
+            var chunk = new TextChunk();
+            para.Chunks.Clear();
+            para.Chunks.Add(chunk);
+
+            foreach (var child in p.ChildElements)
+            {
+                if (child is W.ParagraphProperties) continue;
+                AppendRunOrDrawing(child, chunk, section, resolver, effPara,
+                    mainPart, extractedImages, warnings);
+            }
+
+            if (chunk.Runs.Count == 0)
+                chunk.Runs.Add(BuildParagraphMarkRun(p, resolver, effPara));
+
+            chunk.InvalidateLength();
+            return para;
         }
 
         private static CellBorders ResolveCellBorders(W.TableCellBorders? cellBorders, W.TableBorders? tableBorders)
@@ -910,6 +1012,16 @@ namespace Writersword.Modules.TextEditor.Services
         public double? LineValue;
         public bool? KeepTogether, KeepWithNext, PageBreakBefore;
         public int? OutlineLevel;
+
+        /// <summary>
+        /// Позиции табуляции абзаца. null — уровень каскада о них молчит, берём от предка.
+        ///
+        /// Список замещается целиком, а не сливается по позициям: в Word свой w:tabs у
+        /// абзаца отменяет наследованные, и слияние дало бы строку оглавления с двумя
+        /// правыми позициями — своей и стилевой.
+        /// </summary>
+        public List<Models.Styles.TabStop>? TabStops;
+
         public RunFormat BaseRun = new();
 
         public void MergeFrom(OpenXmlCompositeElement? container)
@@ -960,6 +1072,88 @@ namespace Writersword.Modules.TextEditor.Services
             if (container.GetFirstChild<W.PageBreakBefore>() is not null) PageBreakBefore = true;
 
             if (container.GetFirstChild<W.OutlineLevel>()?.Val?.Value is int ol) OutlineLevel = ol;
+
+            MergeTabs(container.GetFirstChild<W.Tabs>());
+        }
+
+        /// <summary>
+        /// Читает позиции табуляции абзаца.
+        ///
+        /// Без них строка оглавления, приехавшая из Word, разваливается: там номер
+        /// страницы прижат к правому полю правой позицией с точечным заполнителем, а
+        /// голый символ табуляции без позиции уходит к ближайшей отметке шага по
+        /// умолчанию и прилипает к названию главы.
+        ///
+        /// Позиция w:val="clear" снимает унаследованную отметку и своей не ставит —
+        /// в список она не идёт.
+        /// </summary>
+        private void MergeTabs(W.Tabs? tabs)
+        {
+            if (tabs is null) return;
+
+            var result = new List<Models.Styles.TabStop>();
+
+            foreach (var tab in tabs.Elements<W.TabStop>())
+            {
+                var kind = tab.Val?.Value;
+                if (kind == W.TabStopValues.Clear) continue;
+
+                if (tab.Position?.Value is not int twips) continue;
+
+                // Word умеет ставить позиции левее нуля (выносы на поле). В модели
+                // отсчёт идёт от левого края текста абзаца, и отрицательная отметка
+                // означала бы прыжок назад — такие пропускаем.
+                double positionPt = twips / TwipsPerPoint;
+                if (positionPt < 0) continue;
+
+                result.Add(new Models.Styles.TabStop
+                {
+                    PositionPt = positionPt,
+                    Alignment = MapTabAlignment(kind),
+                    Leader = MapTabLeader(tab.Leader?.Value)
+                });
+            }
+
+            // Пустой w:tabs (одни только clear) — это тоже сказанное слово: абзац
+            // отказался от наследованных позиций. Отдаём пустой список, а не null.
+            TabStops = result;
+        }
+
+        private static Models.Styles.TabAlignment MapTabAlignment(W.TabStopValues? kind)
+        {
+            if (kind == W.TabStopValues.Right) return Models.Styles.TabAlignment.Right;
+            if (kind == W.TabStopValues.Center) return Models.Styles.TabAlignment.Center;
+            if (kind == W.TabStopValues.Decimal) return Models.Styles.TabAlignment.Decimal;
+
+            // Bar — вертикальная черта на позиции, а не прыжок текста. Рисовать её
+            // нечем, но и терять позицию нельзя: ведёт себя как обычная левая.
+            return Models.Styles.TabAlignment.Left;
+        }
+
+        private static Models.Styles.TabLeaderStyle MapTabLeader(W.TabStopLeaderCharValues? leader)
+        {
+            if (leader == W.TabStopLeaderCharValues.Dot) return Models.Styles.TabLeaderStyle.Dots;
+            if (leader == W.TabStopLeaderCharValues.Hyphen) return Models.Styles.TabLeaderStyle.Dashes;
+
+            // Underscore и heavy — обе сплошные линии, толщину линии модель не различает.
+            if (leader == W.TabStopLeaderCharValues.Underscore
+                || leader == W.TabStopLeaderCharValues.Heavy)
+                return Models.Styles.TabLeaderStyle.Line;
+
+            // MiddleDot в модели отдельного вида не имеет — ближе всего точки.
+            if (leader == W.TabStopLeaderCharValues.MiddleDot)
+                return Models.Styles.TabLeaderStyle.Dots;
+
+            return Models.Styles.TabLeaderStyle.None;
+        }
+
+        private static List<Models.Styles.TabStop>? CloneTabs(List<Models.Styles.TabStop>? source)
+        {
+            if (source is null) return null;
+
+            var copy = new List<Models.Styles.TabStop>(source.Count);
+            foreach (var tab in source) copy.Add(tab.Clone());
+            return copy;
         }
 
         private static bool TryTwips(string s, out double pt)
@@ -970,11 +1164,15 @@ namespace Writersword.Modules.TextEditor.Services
             return true;
         }
 
-        /// <summary>Глубокая копия: базовое символьное форматирование копируется тоже.</summary>
+        /// <summary>
+        /// Глубокая копия: базовое символьное форматирование копируется тоже, как и
+        /// позиции табуляции — иначе уровень каскада правил бы список своего предка.
+        /// </summary>
         public ParaFormat Clone()
         {
             var copy = (ParaFormat)MemberwiseClone();
             copy.BaseRun = BaseRun.Clone();
+            copy.TabStops = CloneTabs(TabStops);
             return copy;
         }
 
@@ -1006,7 +1204,18 @@ namespace Writersword.Modules.TextEditor.Services
                 KeepTogether = KeepTogether ?? false,
                 KeepWithNext = KeepWithNext ?? false,
                 PageBreakBefore = PageBreakBefore ?? false,
-                OutlineLevel = OutlineLevel ?? 0
+                // Word считает уровни от нуля: outlineLvl=0 у «Заголовка 1». В модели
+                // Writersword ноль означает обычный текст, а главы идут с единицы, и
+                // экспорт вычитает единицу обратно. Без сдвига круг docx → рукопись →
+                // docx поднимал бы каждый заголовок на уровень вверх.
+                //
+                // Девятка у Word — не десятый уровень, а пометка «основной текст»; такой
+                // абзац заголовком не становится.
+                OutlineLevel = OutlineLevel is int lvl && lvl >= 0 && lvl <= 8 ? lvl + 1 : 0,
+
+                // Позиции копируются, а не отдаются ссылкой: каскад держит свой список
+                // и переиспользует его для следующих абзацев того же стиля.
+                TabStops = CloneTabs(TabStops)
             };
         }
 
@@ -1040,6 +1249,12 @@ namespace Writersword.Modules.TextEditor.Services
         private readonly ParaFormat _documentDefaults = new();
         private readonly string? _themeMajorFont;
         private readonly string? _themeMinorFont;
+
+        /// <summary>Шрифт темы для заголовков: на него ссылается w:asciiTheme="majorHAnsi".</summary>
+        public string? ThemeMajorFont => _themeMajorFont;
+
+        /// <summary>Шрифт темы для основного текста: w:asciiTheme="minorHAnsi".</summary>
+        public string? ThemeMinorFont => _themeMinorFont;
 
         public DocxFormatResolver(DocumentFormat.OpenXml.Packaging.MainDocumentPart mainPart)
         {

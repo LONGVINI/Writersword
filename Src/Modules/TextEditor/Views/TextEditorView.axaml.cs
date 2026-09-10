@@ -1,15 +1,18 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Media.Transformation;
+using Avalonia.Platform.Storage;
 using ReactiveUI;
 using Serilog;
 using System;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.Document;
+using Writersword.Modules.TextEditor.Models.Settings;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Modules.TextEditor.ViewModels.StatusBar;
 using Writersword.Modules.TextEditor.Views.Dialogs;
@@ -60,9 +63,314 @@ namespace Writersword.Modules.TextEditor.Views
             WireContentTopOffset();
             WirePageTooltip();
             WireReadingRibbon();
+            WireFocusMode();
         }
 
         public TextEditorView() : this(new UndoRedoStack()) { }
+
+        // ── Режим фокуса ──────────────────────────────────────────────────
+
+        private IDisposable? _focusSubscription;
+
+        // Полоса у верхней кромки рабочей области, при заходе в которую лента
+        // возвращается. Двадцати точек хватает, чтобы попасть намеренно, и мало,
+        // чтобы задеть случайно, целясь в первую строку текста.
+        private const double FocusHoverBandPx = 20;
+
+        // Ниже этой границы лента снова уезжает. Отступ от её нижнего края нужен,
+        // иначе лента, выехав под курсором, сама уводит его за свою границу — и
+        // тут же прячется.
+        private const double FocusHideBelowPx = 40;
+
+        /// <summary>
+        /// Держит верх в согласии с фокусом: показывает язычок, возвращает ленту при
+        /// заходе к верхней кромке и убирает её, когда указатель уходит к тексту.
+        /// </summary>
+        private void WireFocusMode()
+        {
+            DataContextChanged += (_, _) => SubscribeFocusState();
+            SubscribeFocusState();
+
+            // Наведение слушается на всём модуле: лента в фокусе убрана, и ловить
+            // указатель на ней самой нечем — её ещё нет.
+            AddHandler(PointerMovedEvent, OnFocusPointerMoved, RoutingStrategies.Tunnel);
+        }
+
+        private void SubscribeFocusState()
+        {
+            _focusSubscription?.Dispose();
+            _focusSubscription = null;
+
+            if (DataContext is not TextEditorViewModel vm)
+            {
+                ApplyFocusUiState();
+                return;
+            }
+
+            _focusSubscription = vm
+                .WhenAnyValue(x => x.IsFocusMode, x => x.IsReadingMode, x => x.IsRibbonCollapsed,
+                              x => x.IsFocusRibbonPeeking)
+                .Subscribe(_ => ApplyFocusUiState());
+
+            ApplyFocusUiState();
+        }
+
+        /// <summary>
+        /// Держит язычок ленты редактора в согласии с ней самой: показывает его
+        /// везде, кроме чтения, и разворачивает стрелку туда, куда лента уйдёт по
+        /// нажатию. Стрелка вниз — лента убрана и вернётся, вверх — лента на месте
+        /// и уедет.
+        /// </summary>
+        private void ApplyFocusUiState()
+        {
+            var tab = this.FindControl<Button>("EditorRibbonTab");
+            var arrow = this.FindControl<Avalonia.Controls.Shapes.Path>("EditorRibbonTabArrow");
+            if (tab is null) return;
+
+            if (DataContext is not TextEditorViewModel vm)
+            {
+                tab.IsVisible = false;
+                return;
+            }
+
+            // В чтении у ленты правки язычка нет: там своя лента и свой язычок.
+            tab.IsVisible = !vm.IsReadingMode;
+
+            if (arrow is not null)
+            {
+                arrow.RenderTransform = TransformOperations.Parse(
+                    vm.IsRibbonVisible ? "rotate(180deg)" : "rotate(0deg)");
+            }
+        }
+
+        /// <summary>
+        /// Возвращает ленту, когда указатель подходит к верхней кромке, и убирает,
+        /// когда он уходит вниз. Работает только в фокусе и только если человек не
+        /// отказался от наведения на вкладке «Вид»: с тачпада случайный заезд к
+        /// верху экрана мешает больше, чем помогает.
+        /// </summary>
+        private void OnFocusPointerMoved(object? sender, PointerEventArgs e)
+        {
+            if (DataContext is not TextEditorViewModel vm) return;
+            if (!vm.IsFocusMode || vm.IsReadingMode) return;
+
+            if (vm.EditorView is not { FocusRibbonOnHover: true })
+            {
+                // Наведение выключено: лента живёт только язычком, и уводить её
+                // движением мыши нельзя — иначе поднятая язычком лента исчезала бы
+                // от первого же движения к тексту.
+                return;
+            }
+
+            double y = e.GetPosition(this).Y;
+
+            if (!vm.IsFocusRibbonPeeking)
+            {
+                if (y <= FocusHoverBandPx) vm.IsFocusRibbonPeeking = true;
+                return;
+            }
+
+            var ribbon = this.FindControl<ContentControl>("EditorRibbonHost");
+            double ribbonBottom = ribbon?.Bounds.Height ?? 0;
+            if (ribbonBottom < 1) ribbonBottom = FocusHoverBandPx;
+
+            if (y > ribbonBottom + FocusHideBelowPx) vm.IsFocusRibbonPeeking = false;
+        }
+
+        // ── Фон позади страниц ────────────────────────────────────────────
+
+        // Разобранная картинка фона и адрес, по которому она прочитана. Держится
+        // до смены адреса: читать файл и раскодировать его на каждую правку света
+        // незачем, а правок света бывает по десятку в секунду.
+        private Bitmap? _backdropBitmap;
+        private string? _backdropBitmapRef;
+
+        /// <summary>
+        /// Перекладывает слой фона под прокруткой: цвет поля, картинка, её укладка
+        /// и плотность. Фона нет — слои прячутся, и поле снова заливает канвас.
+        /// </summary>
+        private void ApplyBackdropLayer()
+        {
+            var fill = this.FindControl<Border>("BackdropFillLayer");
+            var image = this.FindControl<Border>("BackdropImageLayer");
+            if (fill is null || image is null) return;
+
+            var backdrop = (DataContext as TextEditorViewModel)?.WindowBackdrop();
+            if (backdrop is not { } b)
+            {
+                // Картинки нет — остаётся серая подложка. Прятать её нельзя: поле
+                // заливает канвас, а он занимает высоту документа, и под коротким
+                // документом сквозь прокрутку просвечивала бы тёмная оболочка.
+                fill.Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
+                fill.IsVisible = true;
+
+                image.IsVisible = false;
+                image.Background = null;
+                ReleaseBackdropBitmap();
+                return;
+            }
+
+            fill.Background = Color.TryParse(b.FieldHex, out var color)
+                ? new SolidColorBrush(color)
+                : new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
+            fill.IsVisible = true;
+
+            var bitmap = ResolveBackdropBitmap(b.ImageRef);
+            if (bitmap is null)
+            {
+                // Цвет поля остаётся: слой уже закрыл собой канвас, и снимать его
+                // здесь значит показать серую подложку вместо фона.
+                image.IsVisible = false;
+                image.Background = null;
+                return;
+            }
+
+            image.Background = new ImageBrush(bitmap)
+            {
+                Stretch = b.Fit switch
+                {
+                    ReadingBackdropFit.Contain => Stretch.Uniform,
+                    ReadingBackdropFit.Stretch => Stretch.Fill,
+                    ReadingBackdropFit.Tile => Stretch.None,
+                    _ => Stretch.UniformToFill
+                },
+                // Замощение повторяет картинку в её собственном размере — тем же
+                // правилом, что и картинка бумаги.
+                TileMode = b.Fit == ReadingBackdropFit.Tile ? TileMode.Tile : TileMode.None,
+                DestinationRect = b.Fit == ReadingBackdropFit.Tile
+                    ? new RelativeRect(0, 0, bitmap.PixelSize.Width, bitmap.PixelSize.Height,
+                                       RelativeUnit.Absolute)
+                    : new RelativeRect(0, 0, 1, 1, RelativeUnit.Relative)
+            };
+
+            image.Opacity = b.Opacity;
+            image.IsVisible = true;
+        }
+
+        /// <summary>Картинка по адресу вида. Читается один раз и держится до смены адреса.</summary>
+        private Bitmap? ResolveBackdropBitmap(string? reference)
+        {
+            if (string.IsNullOrWhiteSpace(reference)) return null;
+
+            if (_backdropBitmap is not null
+                && string.Equals(_backdropBitmapRef, reference, StringComparison.Ordinal))
+                return _backdropBitmap;
+
+            ReleaseBackdropBitmap();
+
+            try
+            {
+                // Адрес разбирает библиотека фонов: она знает и свои папки, и
+                // прежние адреса видов чтения, и пути на диске.
+                var data = Models.Settings.BackdropLibrary.Read(reference);
+                if (data is null || data.Length == 0)
+                {
+                    _logger.Warning("Background image is set but unreadable: {Ref}", reference);
+                    return null;
+                }
+
+                using var stream = new System.IO.MemoryStream(data);
+                _backdropBitmap = new Bitmap(stream);
+                _backdropBitmapRef = reference;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Failed to read the background image: {Ref}", reference);
+                ReleaseBackdropBitmap();
+            }
+
+            return _backdropBitmap;
+        }
+
+        private void ReleaseBackdropBitmap()
+        {
+            _backdropBitmap?.Dispose();
+            _backdropBitmap = null;
+            _backdropBitmapRef = null;
+        }
+
+        // ── Картинка позади страниц ───────────────────────────────────────
+
+        /// <summary>
+        /// Выбирает картинку, которая ляжет на поле вокруг листа.
+        ///
+        /// Файл не запоминается путём на диске: путь переживает ни переезд папки,
+        /// ни чистку загрузок, а фон после этого молча пропадает. Копия ложится в
+        /// хранилище — и именно в данные программы, а не в архив проекта.
+        ///
+        /// Место хранения следует за настройкой. Вид рабочей области лежит в общих
+        /// настройках модуля и одинаков во всех проектах; картинка, уложенная в
+        /// архив одного проекта, в остальных не нашлась бы, и фон появлялся бы
+        /// через раз — там, где его когда-то выбрали. Картинки видов чтения тем
+        /// временем продолжают ездить с рукописью: вид, помеченный «в документе»,
+        /// обязан доехать до получателя целиком.
+        /// </summary>
+        /// <summary>
+        /// Библиотека фонов для поля вокруг книги. Окно то же самое, что и у фона
+        /// рабочей области, — заготовки, папки и свои файлы лежат в одном месте;
+        /// отличается только то, куда ложится выбранное.
+        /// </summary>
+        private async void PickReadingBackdropImage()
+        {
+            if (DataContext is not TextEditorViewModel vm) return;
+
+            var overlay = this.FindControl<Backdrops.BackdropPickerOverlay>("BackdropOverlay");
+            if (overlay is null) return;
+
+            var result = await overlay.ShowAsync(vm.ReadingBackdropReference);
+            if (result is null) return;
+
+            if (string.IsNullOrWhiteSpace(result.Reference))
+            {
+                vm.ClearReadingBackdropImage();
+                return;
+            }
+
+            vm.SetReadingBackdropImage(result.Reference!);
+        }
+
+        private async void PickBackdropImage()
+        {
+            if (DataContext is not TextEditorViewModel vm) return;
+
+            var overlay = this.FindControl<Backdrops.BackdropPickerOverlay>("BackdropOverlay");
+            if (overlay is null) return;
+
+            var result = await overlay.ShowAsync(vm.WindowBackdrop()?.ImageRef);
+            if (result is null) return;
+
+            if (string.IsNullOrWhiteSpace(result.Reference))
+            {
+                vm.ClearBackdropImage();
+                return;
+            }
+
+            vm.SetBackdropImage(result.Reference!);
+        }
+
+        /// <summary>
+        /// Язычок ленты редактора.
+        ///
+        /// В фокусе он поднимает ленту на время, не выходя из режима: человек берёт
+        /// инструмент и возвращается к тексту. В обычной правке — сворачивает и
+        /// разворачивает её насовсем, как язычок ленты чтения и как двойной щелчок
+        /// по вкладке в Word.
+        /// </summary>
+        private void OnEditorRibbonTabClick(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is not TextEditorViewModel vm) return;
+
+            if (vm.IsFocusMode)
+            {
+                vm.IsFocusRibbonPeeking = !vm.IsFocusRibbonPeeking;
+                return;
+            }
+
+            // Лента, вызванная наведением, при сворачивании должна уйти вместе со
+            // всеми: иначе признак остаётся поднятым и лента возвращается сама.
+            vm.IsFocusRibbonPeeking = false;
+            vm.IsRibbonCollapsed = !vm.IsRibbonCollapsed;
+        }
 
         private void WireCanvas()
         {
@@ -525,6 +833,9 @@ namespace Writersword.Modules.TextEditor.Views
             // Окно полной статистики — обычный оверлей модуля.
             vm.WordCountRequested = ShowStatisticsOverlay;
 
+            // Окно «Табуляция» — тоже оверлей модуля: открывается из меню линейки.
+            vm.TabSettingsRequested = ShowTabSettingsOverlay;
+
             // Полноэкранное чтение: окном и слоями распоряжается вью, модуль о них
             // ничего не знает.
             vm.FullscreenRequested = ApplyFullscreen;
@@ -553,8 +864,23 @@ namespace Writersword.Modules.TextEditor.Views
                 c.Focus();
             };
 
+            // Лента: место в тексте — доля всей длины, и переход идёт по ней.
+            vm.ReadingGoToPercentRequested = (percent, takeFocus) =>
+                SpreadCanvas?.GoReadingPercent(percent, takeFocus);
+
             // Виды чтения — обычный оверлей модуля.
             vm.ReadingThemesRequested = ShowThemeOverlay;
+            vm.ReadingThemeCreateRequested = ShowThemeOverlayWithNewTheme;
+
+            // Картинка позади страниц выбирается файловым окном, а его знает
+            // только вью: модель модуля про окна не осведомлена.
+            vm.BackdropImageRequested = PickBackdropImage;
+            vm.ReadingBackdropImageRequested = PickReadingBackdropImage;
+
+            // Слой фона под прокруткой перекладывает тоже вью — кисти и чтение
+            // картинки в окно живут здесь.
+            vm.BackdropLayerChanged = ApplyBackdropLayer;
+            ApplyBackdropLayer();
 
             // Выход из чтения и из полного экрана по клавише: в книге все нажатия
             // разбирает канвас, и наружу они не уходят.
@@ -571,6 +897,20 @@ namespace Writersword.Modules.TextEditor.Views
             canvas.ReadingFullscreenTogglePressed = () =>
                 vm.ReadingRibbon.Fullscreen = !vm.ReadingRibbon.Fullscreen;
 
+            // Выход из фокуса по Esc. Первое нажатие при поднятой ленте убирает её
+            // обратно, второе выходит из режима: человек, вызвавший ленту язычком,
+            // ждёт от Esc отмены последнего действия, а не всего режима.
+            canvas.FocusEscapePressed = () =>
+            {
+                if (vm.IsFocusRibbonPeeking)
+                {
+                    vm.IsFocusRibbonPeeking = false;
+                    return;
+                }
+
+                vm.IsFocusMode = false;
+            };
+
             // Смена разворота → подпись в ленте чтения.
             canvas.SpreadPageChanged = () =>
             {
@@ -578,6 +918,10 @@ namespace Writersword.Modules.TextEditor.Views
                     vm.UpdateSpreadPageLabel(canvas.SpreadPageNumber, canvas.SpreadPageCount),
                     Avalonia.Threading.DispatcherPriority.Background);
             };
+
+            // Прокрутка ленты → доля прочитанного в поле и на ползунке.
+            canvas.ReadingPercentChanged = percent =>
+                vm.ReadingRibbon.SetPercentState(percent);
 
             // Уведомление о входе/выходе каретки из таблицы.
             canvas.CaretEnteredTable = (offsets, widths, tableOffsetMm, activeCol) =>
@@ -656,7 +1000,16 @@ namespace Writersword.Modules.TextEditor.Views
         /// Показывает окно видов чтения и применяет результат. Окно правит копию:
         /// отказ должен возвращать всё ровно таким, каким было до открытия.
         /// </summary>
-        private async void ShowThemeOverlay()
+        private void ShowThemeOverlay() => ShowThemeOverlay(false);
+
+        /// <summary>
+        /// Показывает окно видов, сразу заведя новый вид копией выбранного. Просьба
+        /// приходит кнопкой «Создать вид» — из ленты чтения и из вкладки «Вид»:
+        /// заводится вид в обоих случаях одинаково.
+        /// </summary>
+        private void ShowThemeOverlayWithNewTheme() => ShowThemeOverlay(true);
+
+        private async void ShowThemeOverlay(bool startWithNewTheme)
         {
             if (DataContext is not TextEditorViewModel vm) return;
             if (vm.Reading is not { } reading) return;
@@ -664,7 +1017,7 @@ namespace Writersword.Modules.TextEditor.Views
             var overlay = this.FindControl<ReadingThemeOverlay>("ThemeOverlay");
             if (overlay is null) return;
 
-            var result = await overlay.ShowAsync(vm.ReadingThemes(), reading.ThemeId);
+            var result = await overlay.ShowAsync(vm.ReadingThemes(), reading.ThemeId, startWithNewTheme);
             if (result is null) return;
 
             vm.SaveReadingThemes(result.Themes);
@@ -681,6 +1034,25 @@ namespace Writersword.Modules.TextEditor.Views
         /// состояния: слова и знаки она пересчитывает по тексту перед открытием, а
         /// страницы и строки держит от последней пересборки раскладки.
         /// </summary>
+        /// <summary>
+        /// Показывает окно «Табуляция» на позициях абзаца под кареткой. Единицы берутся
+        /// у линейки: окно открывается из неё, и мерить в двух местах по-разному нельзя.
+        /// </summary>
+        private void ShowTabSettingsOverlay()
+        {
+            if (DataContext is not TextEditorViewModel vm) return;
+            if (vm.DocumentViewModel is null) return;
+
+            var overlay = this.FindControl<TabSettingsOverlay>("TabsOverlay");
+            if (overlay is null) return;
+
+            overlay.Applied = (stops, stepPt) => vm.ApplyTabSettings(stops, stepPt);
+            overlay.Show(
+                vm.DocumentViewModel.GetActiveTabStops(),
+                vm.DocumentViewModel.Document.DefaultTabStopPt,
+                vm.Ruler.Units);
+        }
+
         private void ShowStatisticsOverlay()
         {
             if (DataContext is not TextEditorViewModel vm) return;

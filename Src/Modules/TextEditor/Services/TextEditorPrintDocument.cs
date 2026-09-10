@@ -88,6 +88,14 @@ namespace Writersword.Modules.TextEditor.Services
             // Источник картинок ставится перед каждой страницей: рендер статический
             // и общий, а замыкание здесь — на хранилище именно этого документа.
             SKTextRenderer.PrintImageResolver = ResolvePrintImage;
+
+            // Экранные подмены снимаются на время печати по той же причине, по
+            // которой они ставятся: рендер один на все проходы. Вид рабочей области —
+            // кремовая бумага, ночной лист, приглушённый свет — относится к глазам
+            // перед экраном, а не к бумаге в лотке, и уходить в принтер вместе с
+            // текстом ему нельзя. Возврат — в Dispose области, что бы ни случилось.
+            using var neutral = NeutralRenderScope.Begin();
+
             try
             {
                 SKTextRenderer.RenderPage(canvas, page, SKColors.Transparent);

@@ -109,11 +109,25 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             string? styleName = para.Properties.StyleName;
 
-            float leftIndentPt = (float)(para.Properties.LeftIndent
+            // Отступы абзаца ужимаются вместе с листом чтения — тем же множителем, что
+            // поля, картинки и колонки таблиц. Лист книги уже печатного, и печатный
+            // отступ съедает у него куда большую долю колонки, а вынесенный влево
+            // номер списка и вовсе уезжает за край листа: вынос отсчитывается от
+            // текстовой зоны, а она на карманном формате вдвое ближе к краю.
+            //
+            // В правке множитель равен единице — там лист документа, и трогать его
+            // отступы нельзя ничем.
+            float indentScale = ReadingContentScale;
+
+            float docLeftIndentPt = (float)(para.Properties.LeftIndent
                                         ?? styles.ResolveLeftIndent(styleName));
-            float rightIndentPt = (float)(para.Properties.RightIndent
+            float docRightIndentPt = (float)(para.Properties.RightIndent
                                         ?? styles.ResolveRightIndent(styleName));
-            float firstLineIndentPt = (float)(para.Properties.FirstLineIndent ?? 0.0);
+            float docFirstLineIndentPt = (float)(para.Properties.FirstLineIndent ?? 0.0);
+
+            float leftIndentPt = docLeftIndentPt * indentScale;
+            float rightIndentPt = docRightIndentPt * indentScale;
+            float firstLineIndentPt = docFirstLineIndentPt * indentScale;
 
             // Элемент списка. Без собственного левого отступа берём отступ по уровню.
             // Затем меряем ширину цифры/символа маркера и отодвигаем текст ПЕРВОЙ строки так,
@@ -127,10 +141,18 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (listProps is not null && listProps.MarkerType != ListMarkerType.None)
             {
                 if (para.Properties.LeftIndent is null)
-                    leftIndentPt = (float)listProps.EffectiveTextIndentPt();
+                {
+                    docLeftIndentPt = (float)listProps.EffectiveTextIndentPt();
+                    leftIndentPt = docLeftIndentPt * indentScale;
+                }
 
-                double markerAbs = listProps.MarkerIndentPt
-                    ?? Math.Max(0.0, leftIndentPt - ListProperties.DefaultHangingPt);
+                // Позиция номера считается в документных пунктах и ужимается тем же
+                // множителем: она абсолютна от поля, и ужатая наполовину зона с
+                // печатным номером разъехались бы — номер оказался бы левее листа.
+                double markerAbs = (listProps.MarkerIndentPt
+                    ?? Math.Max(0.0, docLeftIndentPt - ListProperties.DefaultHangingPt))
+                    * indentScale;
+
 
                 string markerText = listProps.ComputedMarkerText ?? string.Empty;
                 if (markerText.Length > 0)
@@ -224,7 +246,10 @@ namespace Writersword.Modules.TextEditor.Rendering
             WrapTokensToLines(
                 tokens, layout, textWidthPt, lineSpacing,
                 wrapZones, wrapPreferPushDown, wrapPages, emptyLineFormat,
-                styles.BreakOnHyphen);
+                styles.BreakOnHyphen,
+                // Свои позиции табуляции абзаца берут верх над шагом по умолчанию;
+                // нет своих — символ табуляции идёт к ближайшей отметке шага.
+                para.Properties.TabStops, styles.DefaultTabStopPt);
             layout.TextLength = GetPlainTextLength(para);
 
             return layout;
@@ -1207,6 +1232,15 @@ namespace Writersword.Modules.TextEditor.Rendering
                         continue;
                     }
 
+                    // Прыжок табуляции сам по себе пуст: рисуется только заполнитель,
+                    // если он назначен. Сам символ табуляции печатать нечем — в шрифтах
+                    // у него нет рисунка.
+                    if (seg.IsTabJump)
+                    {
+                        DrawTabLeader(canvas, seg, segX, baseY);
+                        continue;
+                    }
+
                     // Задник за текстом: плоский цвет либо градиент по прямоугольнику сегмента.
                     // Ширина обрезается по хвостовым пробелам в конце строки.
                     bool hlGradient = IsGradientCode(seg.HighlightCode);
@@ -1549,7 +1583,9 @@ namespace Writersword.Modules.TextEditor.Rendering
             bool wrapPreferPushDown = false,
             WrapPageContext? wrapPages = null,
             SKRunSegment? emptyLineFormat = null,
-            bool breakOnHyphen = true)
+            bool breakOnHyphen = true,
+            IReadOnlyList<Models.Styles.TabStop>? tabStops = null,
+            float defaultTabStopPt = 35.4f)
         {
             // Сохраняем ширину текстовой области — используется в ComputeAlignmentOffset.
             // textAreaWidthPt = availableWidthPt - leftIndentPt - rightIndentPt,
@@ -1987,6 +2023,125 @@ namespace Writersword.Modules.TextEditor.Rendering
             var wordBuffer = new List<(string Char, SKRunSegment Format, int GlobalIndex)>();
             float wordWidth = 0f;
 
+            // ── Табуляция ─────────────────────────────────────────────────
+            //
+            // Символ табуляции — не «широкий пробел», а прыжок к назначенной точке строки:
+            // его ширина считается по позиции табуляции, а не по шрифту. На этом держится
+            // всё, что должно стоять столбиком без таблицы — номера страниц в оглавлении
+            // прежде всего.
+            //
+            // Правая, средняя и десятичная позиции узнают свою ширину задним числом: пока
+            // кусок текста за прыжком не кончился, неизвестно, насколько его двигать. Такой
+            // прыжок откладывается и закрывается на следующем табе или в конце строки —
+            // тогда сегменты за ним сдвигаются, а сам прыжок дорастает на ту же величину.
+
+            // Прыжок не может быть нулевым: два таба подряд слились бы в один, и текст
+            // встал бы на место предыдущего.
+            const float MinTabJumpPt = 1f;
+
+            float tabStepPt = defaultTabStopPt > 1f ? defaultTabStopPt : 35.4f;
+
+            SKRunSegment? pendingTabSeg = null;
+            Models.Styles.TabStop? pendingTabStop = null;
+            int pendingContentSegIdx = -1;
+            float pendingContentStartW = 0f;
+
+            // Ближайшая своя позиция правее точки. null — свои кончились.
+            Models.Styles.TabStop? NextExplicitStop(float fromAbsPt)
+            {
+                if (tabStops is null || tabStops.Count == 0) return null;
+
+                Models.Styles.TabStop? best = null;
+                foreach (var stop in tabStops)
+                {
+                    if (stop.PositionPt <= fromAbsPt + 0.01f) continue;
+                    if (best is null || stop.PositionPt < best.PositionPt) best = stop;
+                }
+                return best;
+            }
+
+            // Ближайшая отметка шага по умолчанию правее точки.
+            float NextDefaultStopPt(float fromAbsPt)
+            {
+                float index = (float)Math.Floor(fromAbsPt / tabStepPt) + 1f;
+                return index * tabStepPt;
+            }
+
+            void ClearPendingTab()
+            {
+                pendingTabSeg = null;
+                pendingTabStop = null;
+                pendingContentSegIdx = -1;
+                pendingContentStartW = 0f;
+            }
+
+            // Ширина куска от начала до десятичного разделителя. Разделителя нет —
+            // весь кусок: целое число Word прижимает к позиции правым краем.
+            float DecimalPrefixWidth()
+            {
+                string sep = pendingTabStop?.DecimalSeparator is { Length: > 0 } custom
+                    ? custom
+                    : System.Globalization.CultureInfo.CurrentCulture
+                        .NumberFormat.NumberDecimalSeparator;
+
+                char sepChar = sep.Length > 0 ? sep[0] : '.';
+
+                float width = 0f;
+                for (int si = pendingContentSegIdx; si < currentLine.Segments.Count; si++)
+                {
+                    var seg = currentLine.Segments[si];
+                    for (int k = 0; k < seg.Text.Length; k++)
+                    {
+                        if (seg.Text[k] == sepChar) return width;
+                        width += MeasureChar(seg.Text[k].ToString(), seg);
+                    }
+                }
+
+                return width;
+            }
+
+            // Закрывает отложенный прыжок тем, что успело набраться после него.
+            void ResolvePendingTab()
+            {
+                if (pendingTabSeg is null || pendingTabStop is null)
+                {
+                    ClearPendingTab();
+                    return;
+                }
+
+                float stopW = (float)pendingTabStop.PositionPt - lineIndentPt;
+                float contentWidth = currentW - pendingContentStartW;
+                if (contentWidth < 0f) contentWidth = 0f;
+
+                float desiredStartW = pendingTabStop.Alignment switch
+                {
+                    Models.Styles.TabAlignment.Right => stopW - contentWidth,
+                    Models.Styles.TabAlignment.Center => stopW - contentWidth * 0.5f,
+                    Models.Styles.TabAlignment.Decimal => stopW - DecimalPrefixWidth(),
+                    _ => pendingContentStartW
+                };
+
+                float delta = desiredStartW - pendingContentStartW;
+
+                // Двигаем только вправо. Сдвиг влево затащил бы кусок под текст, стоящий
+                // до табуляции, и строка наложилась бы сама на себя; Word в такой строке
+                // тоже оставляет текст на месте — позиция просто не срабатывает.
+                if (delta <= 0.01f)
+                {
+                    ClearPendingTab();
+                    return;
+                }
+
+                for (int si = pendingContentSegIdx; si < currentLine.Segments.Count; si++)
+                    currentLine.Segments[si].X += delta;
+
+                pendingTabSeg.Width += delta;
+                currentW += delta;
+                currentLine.TextWidth = currentW;
+
+                ClearPendingTab();
+            }
+
             // Раскладывает посчитанные отрезки на текущую (ещё пустую) строку.
             void ApplyBandToCurrentLine()
             {
@@ -2069,6 +2224,10 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             void StartNewLine(int firstCharIndex, float probeHPt, float requiredWidthPt)
             {
+                // Прыжок, не закрытый к переносу, закрывается тем, что успело набраться:
+                // строка кончилась, и ждать продолжения куска больше нечего.
+                ResolvePendingTab();
+
                 FinalizeLine(currentLine, layout, lineSpacing);
                 lineProbeHPt = probeHPt;
                 bandExtraTop = ComputeBand(
@@ -2154,9 +2313,82 @@ namespace Writersword.Modules.TextEditor.Rendering
                 wordWidth = 0f;
             }
 
+            // Прыжок табуляции: слово перед ним закрывается, ширина считается по позиции.
+            void AppendTab(SKRunSegment format, int globalIdx)
+            {
+                ResolvePendingTab();
+
+                // Позиции табуляции отсчитываются от левого края текста абзаца — там же,
+                // где их показывает линейка. Отступ первой строки уже съеден полосой,
+                // поэтому в её координатах он добавляется обратно.
+                float fromAbsW = currentW + lineIndentPt;
+
+                var explicitStop = NextExplicitStop(fromAbsW);
+                float targetAbsW = explicitStop is not null
+                    ? (float)explicitStop.PositionPt
+                    : NextDefaultStopPt(fromAbsW);
+
+                // Прыжок откладывается, когда текст за ним прижимается к отметке правым
+                // краем, серединой или разделителем: его ширина зависит от того, что за
+                // ним встанет, а этого мы ещё не знаем.
+                bool deferred = explicitStop is not null
+                    && explicitStop.Alignment != Models.Styles.TabAlignment.Left;
+
+                float jump;
+
+                if (deferred)
+                {
+                    // Наименьший прыжок сейчас, дорастёт в ResolvePendingTab.
+                    //
+                    // Гнать его сразу до отметки нельзя, хотя так и просится: у правой
+                    // позиции на отметке должен КОНЧАТЬСЯ идущий следом кусок, а не
+                    // начинаться. Прыгнув до отметки, мы поставили бы начало куска туда,
+                    // где ему полагается кончиться, и его пришлось бы тащить влево — а
+                    // влево двигать нечего, там уже стоит текст до табуляции. Именно
+                    // поэтому номера страниц в оглавлении липли к названию главы, и
+                    // точкам между ними не оставалось места.
+                    jump = MinTabJumpPt;
+                }
+                else
+                {
+                    jump = targetAbsW - lineIndentPt - currentW;
+                    if (jump < MinTabJumpPt) jump = MinTabJumpPt;
+
+                    // Прыжок за правый край строку не переносит: табуляция упирается в
+                    // край, как в Word. Перенос оторвал бы номер страницы от своей строки.
+                    if (currentW + jump > fragEndW)
+                        jump = Math.Max(fragEndW - currentW, MinTabJumpPt);
+                }
+
+                AppendCharToLine(currentLine, "\t", format, globalIdx,
+                    ref currentW, jump, forceNewSegment: true, fragIdx);
+                segmentBreakPending = false;
+
+                var tabSeg = currentLine.Segments[^1];
+                tabSeg.IsTabJump = true;
+                tabSeg.TabLeader = explicitStop is null
+                    ? SKTabLeader.None
+                    : (SKTabLeader)(int)explicitStop.Leader;
+
+                // Левая позиция закрыта сразу: её кусок начинается ровно на отметке, и
+                // ждать конца текста незачем.
+                if (deferred)
+                {
+                    pendingTabSeg = tabSeg;
+                    pendingTabStop = explicitStop;
+                    pendingContentSegIdx = currentLine.Segments.Count;
+                    pendingContentStartW = currentW;
+                }
+            }
+
             foreach (var (ch, format, globalIdx) in tokens)
             {
-                if (ch == " " || ch == "\t")
+                if (ch == "\t")
+                {
+                    FlushWord();
+                    AppendTab(format, globalIdx);
+                }
+                else if (ch == " ")
                 {
                     FlushWord();
 
@@ -2188,6 +2420,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             }
 
             FlushWord();
+            ResolvePendingTab();
 
             if (currentLine.Segments.Count > 0 || layout.Lines.Count == 0)
             {
@@ -2253,7 +2486,12 @@ namespace Writersword.Modules.TextEditor.Rendering
             bool objectInvolved = format.IsInlineObject
                 || (lastSeg is not null && lastSeg.IsInlineObject);
 
-            if (!objectInvolved && lastSeg is not null
+            // Прыжок табуляции тоже стоит особняком: его ширину правит выравнивание уже
+            // после того, как строка набрана, и слитый с соседями он потерялся бы среди
+            // пробелов — сдвигать было бы нечего.
+            bool tabInvolved = ch == "\t" || (lastSeg is not null && lastSeg.IsTabJump);
+
+            if (!objectInvolved && !tabInvolved && lastSeg is not null
                 && IsSameFormat(lastSeg, format) && curSpace == lastSpace)
             {
                 lastSeg.Text += ch;
@@ -2600,10 +2838,81 @@ namespace Writersword.Modules.TextEditor.Rendering
             return font.MeasureText(ch);
         }
 
+        /// <summary>
+        /// Рисует заполнитель прыжка табуляции: точки, чёрточки или сплошную линию.
+        ///
+        /// Точки ставятся по сетке от начала прыжка, а не подгоняются под его ширину:
+        /// в оглавлении соседние строки имеют разную длину названия, и подогнанные под
+        /// каждую строку точки вставали бы вразнобой. По общей сетке они выстраиваются
+        /// столбиками сверху вниз — именно так набирают книжные оглавления.
+        ///
+        /// Последняя точка отбрасывается, если налезает на текст за прыжком: зазор перед
+        /// номером страницы читается как воздух, а слипшиеся точка и цифра — как опечатка.
+        /// </summary>
+        private static void DrawTabLeader(SKCanvas canvas, SKRunSegment seg, float xPt, float baseYPt)
+        {
+            if (seg.TabLeader == SKTabLeader.None) return;
+            if (seg.Width <= 0.5f) return;
+
+            SKColor color = ApplyReadingInk(seg.Color);
+
+            if (seg.TabLeader == SKTabLeader.Line)
+            {
+                using var linePaint = new SKPaint
+                {
+                    Color = color,
+                    StrokeWidth = Math.Max(0.5f, seg.FontSizePt * 0.05f),
+                    IsAntialias = true
+                };
+
+                float lineY = baseYPt + seg.FontSizePt * 0.12f;
+                canvas.DrawLine(xPt, lineY, xPt + seg.Width, lineY, linePaint);
+                return;
+            }
+
+            string mark = seg.TabLeader == SKTabLeader.Dashes ? "-" : ".";
+
+            var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
+            var font = GetOrCreateFont(typeface, seg.FontSizePt);
+
+            float markWidth = MeasureChar(mark, seg);
+            if (markWidth <= 0.01f) return;
+
+            // Шаг сетки: у точки он шире собственной ширины знака — сплошная дорожка точек
+            // читается как многоточие, а не как ведущая линия.
+            float stepPt = seg.TabLeader == SKTabLeader.Dots
+                ? Math.Max(markWidth * 2f, seg.FontSizePt * 0.28f)
+                : Math.Max(markWidth * 1.6f, seg.FontSizePt * 0.22f);
+
+            // Зазор перед текстом за прыжком — в один шаг сетки.
+            float limit = xPt + seg.Width - stepPt;
+
+            using var paint = new SKPaint { Color = color, IsAntialias = true };
+
+            for (float x = xPt + stepPt; x <= limit; x += stepPt)
+                canvas.DrawText(mark, x, baseYPt, font, paint);
+        }
+
         private static SKGlyphMetrics[] BuildGlyphMetrics(SKRunSegment seg, SKFont font)
         {
             if (string.IsNullOrEmpty(seg.Text))
                 return Array.Empty<SKGlyphMetrics>();
+
+            // Прыжок табуляции — один «глиф» шириной во весь прыжок. Без этого каретка
+            // и выделение мерили бы его глифом табуляции из шрифта, который почти везде
+            // нулевой ширины: каретка вставала бы в начало прыжка, а выделение его теряло.
+            if (seg.IsTabJump)
+            {
+                return new[]
+                {
+                    new SKGlyphMetrics
+                    {
+                        CharIndex = seg.GlobalCharOffset,
+                        X = 0f,
+                        Width = seg.Width
+                    }
+                };
+            }
 
             // Объект в строке — один «глиф» со своей шириной. Хит-тест, каретка и
             // выделение работают с ним как с обычным символом.
@@ -3086,6 +3395,13 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// Цвет с оттенком автор задал сознательно и остаётся авторским: тема меняет
         /// вид документа, а не его содержание.
         /// </summary>
+        /// <summary>
+        /// Цвет документной краски на текущей бумаге. Тот же расчёт, что применяется к
+        /// тексту при отрисовке, — нужен всем, кто рисует рядом с текстом и обязан
+        /// попасть в его цвет: каретке в первую очередь.
+        /// </summary>
+        public static SKColor ResolveInk(SKColor authorColor) => ApplyReadingInk(authorColor);
+
         private static SKColor ApplyReadingInk(SKColor c)
         {
             if (DefaultTextColorOverride is not { } ink) return c;
@@ -3205,6 +3521,15 @@ namespace Writersword.Modules.TextEditor.Rendering
                     if (seg.IsInlineObject)
                     {
                         DrawInlineObject?.Invoke(canvas, seg, segX, baseY);
+                        continue;
+                    }
+
+                    // Прыжок табуляции сам по себе пуст: рисуется только заполнитель,
+                    // если он назначен. Сам символ табуляции печатать нечем — в шрифтах
+                    // у него нет рисунка.
+                    if (seg.IsTabJump)
+                    {
+                        DrawTabLeader(canvas, seg, segX, baseY);
                         continue;
                     }
 

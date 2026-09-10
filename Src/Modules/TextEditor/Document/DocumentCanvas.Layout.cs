@@ -568,8 +568,13 @@ namespace Writersword.Modules.TextEditor.Document
                     }
                 case EditorViewMode.Reading:
                     {
-                        float cw = (float)(_canvasWidth * PxToPt);
-                        return Math.Max(ReadingColumnWidthPt(cw) - DraftPadWPt * 2f, 1f);
+                        // Лента верстается страницами документа, а не колонкой по
+                        // ширине окна: ширина текста у неё та же, что на бумаге.
+                        // Без этой ветки прогрев кеша шейпил абзацы под колонку,
+                        // пересчёт просил ширину листа, и кеш не сходился никогда.
+                        float rw = GetPageWidthPt();
+                        var (rl, _, rr, _) = GetPagePaddingPt();
+                        return Math.Max(rw - rl - rr, 1f);
                     }
                 default:
                     return Math.Max((float)(_canvasWidth * PxToPt) - DraftPadWPt * 2f, 1f);
@@ -914,10 +919,22 @@ namespace Writersword.Modules.TextEditor.Document
 
             newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
 
-            float pageOffsetXPx = pageXPt * PtToPx * (float)Zoom
-                - (float)(_parentScrollViewer?.Offset.X ?? 0);
-            _lastPageOffsetXPx = pageOffsetXPx;
-            PageOffsetXChanged?.Invoke(pageOffsetXPx);
+            // Первичная отправка идёт по левому краю потока: раскладка ещё строится, и
+            // на какой лист попадёт каретка, пока неизвестно. Точное значение по листу
+            // каретки уходит в линейку в PublishPassResults, когда страницы посчитаны.
+            //
+            // Делается это только на самой первой сборке. Дальше страницы уже посчитаны,
+            // и слать левый край потока значит на каждом кадре уводить линейку на первый
+            // лист и возвращать обратно. При двух листах в ряду это било в глаза больше
+            // всего: перетаскивание любой стрелки пересобирает раскладку десятки раз в
+            // секунду, и линейка на каждом кадре срывалась к середине.
+            if (_pages.Count == 0)
+            {
+                float pageOffsetXPx = pageXPt * PtToPx * (float)Zoom
+                    - (float)(_parentScrollViewer?.Offset.X ?? 0);
+                _lastPageOffsetXPx = pageOffsetXPx;
+                PageOffsetXChanged?.Invoke(pageOffsetXPx);
+            }
 
             var blocks = DocVm!.Document.Sections[0].Blocks;
 
@@ -1249,8 +1266,10 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (block is ShapeBlock shapeBlock)
                 {
-                    float shapeWpt = (float)Math.Max(shapeBlock.WidthPt, ShapeMinSidePt);
-                    float shapeHpt = (float)Math.Max(shapeBlock.HeightPt, ShapeMinSidePt);
+                    // Габарит берётся через общий пересчёт чтения — тем же путём, что
+                    // и у картинки: лист чтения меньше печатного, и фигура в исходном
+                    // размере на нём непропорционально крупная.
+                    var (shapeWpt, shapeHpt) = ReadingShapeSize(shapeBlock);
 
                     if (shapeBlock.WrapMode == WrapMode.Inline)
                     {
@@ -1342,8 +1361,15 @@ namespace Writersword.Modules.TextEditor.Document
                         }
                         else
                         {
-                            newShapes.Add(BuildShapeEntry(
-                                shapeBlock, pageXPt, pageYPt, ml, mt, newPages, pageIdx));
+                            var built = BuildShapeEntry(
+                                shapeBlock, pageXPt, pageYPt, ml, mt, newPages, pageIdx);
+
+                            var (avX, avY) = AvoidReadingOverlap(
+                                built.XPt, built.Ypt, built.WidthPt, built.HeightPt,
+                                shapeBlock.RotationDeg, built.PageIndex,
+                                newPages, newImages, newShapes, newTables, shapeBlock);
+
+                            newShapes.Add(built with { XPt = avX, Ypt = avY });
                         }
                     }
                     continue;
@@ -1452,8 +1478,11 @@ namespace Writersword.Modules.TextEditor.Document
                         else
                         {
                             // Плавающая: позиция по смещению относительно области страницы.
-                            float fx = pageXPt + ml + (float)imageBlock.OffsetXPt;
-                            float fy = pageYPt + mt + (float)imageBlock.OffsetYPt;
+                            // Смещение приводится к листу чтения тем же множителем, что
+                            // и размер: поля ужаты, лист уже, и печатное смещение уводило
+                            // картинку за обрез.
+                            float fx = pageXPt + ml + ReadingOffsetXPt(imageBlock.OffsetXPt);
+                            float fy = pageYPt + mt + ReadingOffsetYPt(imageBlock.OffsetYPt);
 
                             // Проходы сходимости обтекания обязаны видеть картинку ТАМ ЖЕ,
                             // где по ней построены зоны, то есть на позиции первого прохода.
@@ -1481,8 +1510,15 @@ namespace Writersword.Modules.TextEditor.Document
 
                             if (frozen is { } fz)
                             {
+                                var frozenSheet = newPages[Math.Clamp(
+                                    fz.PageIndex, 0, Math.Max(0, newPages.Count - 1))];
+                                var (fzX, fzY, fzW, fzH) = FitFloatingToSheet(
+                                    fz.XPt, fz.Ypt, imgWpt, imgHpt, imageBlock.RotationDeg,
+                                    frozenSheet.PadLeftPt, frozenSheet.Ypt,
+                                    frozenSheet.WidthPt, frozenSheet.HeightPt);
+
                                 newImages.Add(new ImageEntry(
-                                    imageBlock, fz.Ypt, fz.XPt, imgWpt, imgHpt, fz.PageIndex));
+                                    imageBlock, fzY, fzX, fzW, fzH, fz.PageIndex));
                             }
                             else
                             {
@@ -1491,10 +1527,28 @@ namespace Writersword.Modules.TextEditor.Document
                                 // записи: если она там ещё «страница блока в потоке», а к концу
                                 // прохода станет другой, картинка рисуется на одной странице,
                                 // а текст сдвигает на другой — ровно то, чего быть не должно.
+                                int floatPageIdx = ResolveFloatingObjectPage(
+                                    fx, fy, imgWpt, imgHpt, newPages, pageIdx);
+
+                                // В книге объект загоняется в лист: он меньше печатного,
+                                // и картинка, стоявшая у края бумаги, иначе уходит за
+                                // обрез или наезжает на соседнее содержимое.
+                                var floatSheet = newPages[Math.Clamp(
+                                    floatPageIdx, 0, Math.Max(0, newPages.Count - 1))];
+                                var (ffX, ffY, ffW, ffH) = FitFloatingToSheet(
+                                    fx, fy, imgWpt, imgHpt, imageBlock.RotationDeg,
+                                    floatSheet.PadLeftPt, floatSheet.Ypt,
+                                    floatSheet.WidthPt, floatSheet.HeightPt);
+
+                                // Соседей по листу объект не знает — знание приходит
+                                // отсюда: он уступает уже размещённым и отходит вниз.
+                                (ffX, ffY) = AvoidReadingOverlap(
+                                    ffX, ffY, ffW, ffH, imageBlock.RotationDeg,
+                                    floatPageIdx, newPages, newImages, newShapes, newTables,
+                                    imageBlock);
+
                                 newImages.Add(new ImageEntry(
-                                    imageBlock, fy, fx, imgWpt, imgHpt,
-                                    ResolveFloatingObjectPage(
-                                        fx, fy, imgWpt, imgHpt, newPages, pageIdx)));
+                                    imageBlock, ffY, ffX, ffW, ffH, floatPageIdx));
                             }
                         }
                     }
@@ -1930,11 +1984,19 @@ namespace Writersword.Modules.TextEditor.Document
                 var (pinnedW, pinnedH) = ReadingImageSize(pinned);
                 if (pinnedW <= 0f || pinnedH <= 0f) continue;
 
-                newImages.Add(new ImageEntry(
-                    pinned,
-                    pinnedPage.Ypt + pinnedPage.PadTopPt + (float)pinned.OffsetYPt,
-                    pinnedPage.PadLeftPt + pinnedPage.MarginLeftPt + (float)pinned.OffsetXPt,
-                    pinnedW, pinnedH, pinnedIdx));
+                var (pinX, pinY, pinW, pinH) = FitFloatingToSheet(
+                    pinnedPage.PadLeftPt + pinnedPage.MarginLeftPt
+                        + ReadingOffsetXPt(pinned.OffsetXPt),
+                    pinnedPage.Ypt + pinnedPage.PadTopPt + ReadingOffsetYPt(pinned.OffsetYPt),
+                    pinnedW, pinnedH, pinned.RotationDeg,
+                    pinnedPage.PadLeftPt, pinnedPage.Ypt,
+                    pinnedPage.WidthPt, pinnedPage.HeightPt);
+
+                (pinX, pinY) = AvoidReadingOverlap(
+                    pinX, pinY, pinW, pinH, pinned.RotationDeg,
+                    pinnedIdx, newPages, newImages, newShapes, newTables, pinned);
+
+                newImages.Add(new ImageEntry(pinned, pinY, pinX, pinW, pinH, pinnedIdx));
             }
 
             // Привязанные фигуры — по тому же правилу: отсчёт от краёв СВОЕЙ страницы.
@@ -1945,14 +2007,22 @@ namespace Writersword.Modules.TextEditor.Document
                 if (pinnedShapeIdx >= newPages.Count) continue;
 
                 var pinnedShapePage = newPages[pinnedShapeIdx];
-                newShapes.Add(new ShapeEntry(
-                    pinnedShape,
-                    pinnedShapePage.Ypt + pinnedShapePage.PadTopPt + (float)pinnedShape.OffsetYPt,
+                var (pinnedShapeW, pinnedShapeH) = ReadingShapeSize(pinnedShape);
+                var (pinShX, pinShY, pinShW, pinShH) = FitFloatingToSheet(
                     pinnedShapePage.PadLeftPt + pinnedShapePage.MarginLeftPt
-                        + (float)pinnedShape.OffsetXPt,
-                    (float)Math.Max(pinnedShape.WidthPt, ShapeMinSidePt),
-                    (float)Math.Max(pinnedShape.HeightPt, ShapeMinSidePt),
-                    pinnedShapeIdx));
+                        + ReadingOffsetXPt(pinnedShape.OffsetXPt),
+                    pinnedShapePage.Ypt + pinnedShapePage.PadTopPt
+                        + ReadingOffsetYPt(pinnedShape.OffsetYPt),
+                    pinnedShapeW, pinnedShapeH, pinnedShape.RotationDeg,
+                    pinnedShapePage.PadLeftPt, pinnedShapePage.Ypt,
+                    pinnedShapePage.WidthPt, pinnedShapePage.HeightPt);
+
+                (pinShX, pinShY) = AvoidReadingOverlap(
+                    pinShX, pinShY, pinShW, pinShH, pinnedShape.RotationDeg,
+                    pinnedShapeIdx, newPages, newImages, newShapes, newTables, pinnedShape);
+
+                newShapes.Add(new ShapeEntry(
+                    pinnedShape, pinShY, pinShX, pinShW, pinShH, pinnedShapeIdx));
             }
 
             // Страницы, которые держат сами картинки. Перетащенная на следующий лист
@@ -2034,6 +2104,21 @@ namespace Writersword.Modules.TextEditor.Document
                 newCanvasH = PageGapPt + rows * (newPages[0].HeightPt + PageGapPt);
             }
 
+            // Лента: страницы склеены встык, и холст ровно такой, сколько занимает вся
+            // склейка. Ни межстраничных зазоров, ни постраничных полей в этой высоте
+            // нет — иначе внизу осталась бы пустая полоса высотой в поля всех страниц.
+            //
+            // Полоса каждой страницы меряется занятой высотой, а не полем листа:
+            // пагинация оставляет внизу остаток, на который не влезла строка или
+            // строка таблицы, и в ленте этот остаток был бы разрывом — таблица,
+            // перенесённая на следующий лист, расходилась на два куска.
+            _passRibbonBandHeights = ReadingRibbon && newPages.Count > 0
+                ? BuildRibbonBandHeights(newPages, newLayouts, newTables, newImages, newShapes)
+                : Array.Empty<float>();
+
+            if (_passRibbonBandHeights.Length > 0)
+                newCanvasH = ReadingRibbonHeightPt(newPages, _passRibbonBandHeights);
+
             // Результат прохода: промежуточные проходы сходимости обтекания его только
             // копят, наружу уходит последний. Иначе рендер успевает поймать промежуточный
             // кадр — в первом проходе абзац ещё не знает про картинку и верстается во всю
@@ -2069,6 +2154,17 @@ namespace Writersword.Modules.TextEditor.Document
         {
             lock (_renderLock)
             {
+                // Полосы и сдвиги ленты кладутся здесь же, под тем же замком: они
+                // описывают именно этот набор страниц, и разъехаться с ним не должны.
+                bool ribbonNow = ReadingRibbon
+                    && _passRibbonBandHeights.Length == _passPages.Count
+                    && _passPages.Count > 0;
+
+                _ribbonBandHeights = ribbonNow ? _passRibbonBandHeights : Array.Empty<float>();
+                _ribbonPageDy = ribbonNow
+                    ? BuildRibbonPageDeltas(_passPages, _passRibbonBandHeights)
+                    : Array.Empty<float>();
+
                 _layouts = _passLayouts;
                 _pages = _passPages;
                 _tables = _passTables;
@@ -2078,6 +2174,10 @@ namespace Writersword.Modules.TextEditor.Document
                 _canvasHeightPt = _passCanvasHeightPt;
                 _canvasHeight = _passCanvasHeightPt * PtToPx;
             }
+
+            // Страницы посчитаны — можно сказать линейке, где стоит лист каретки. При
+            // листах в ряд он уехал в свою колонку, и разметка линейки должна уехать с ним.
+            NotifyPageOffsetX();
 
             // Число страниц и строк меняется ровно здесь, вместе с видимой раскладкой.
             // Уведомление идёт за пределами замка: получатель работает со строкой
@@ -2268,6 +2368,12 @@ namespace Writersword.Modules.TextEditor.Document
             // строку: те рисует рендер текста на их месте в строке.
             var newFlowBlockImages = new List<ImageEntry>();
 
+            // Фигуры потока. Прежде поток не строил их вовсе — список фигур уходил
+            // наружу пустым, и рамка, стрелка или ромб в черновике просто пропадали:
+            // объект в рукописи есть, а на экране его нет. Плавать в потоке фигуре
+            // негде, поэтому она встаёт на месте своего блока — как картинка.
+            var newFlowShapes = new List<ShapeEntry>();
+
             for (int bi = 0; bi < blocks.Count; bi++)
             {
                 var block = blocks[bi];
@@ -2287,8 +2393,45 @@ namespace Writersword.Modules.TextEditor.Document
                     continue;
                 }
 
+                // Фигура в потоке: занимает свою высоту и сдвигает текст ниже, встаёт
+                // по своему выравниванию. Обтекать в потоке нечего — колонка одна.
+                if (block is ShapeBlock flowShape)
+                {
+                    var (fsW, fsH) = ReadingShapeSize(flowShape);
+                    if (fsW <= 0f || fsH <= 0f) continue;
+
+                    double fsRad = flowShape.RotationDeg * Math.PI / 180.0;
+                    float fsBoxW = fsW * (float)Math.Abs(Math.Cos(fsRad))
+                                 + fsH * (float)Math.Abs(Math.Sin(fsRad));
+                    float fsBoxH = fsW * (float)Math.Abs(Math.Sin(fsRad))
+                                 + fsH * (float)Math.Abs(Math.Cos(fsRad));
+
+                    float fsSlack = textWidthPt - fsBoxW;
+                    float fsBoxX = padWPt;
+                    if (fsSlack > 0f)
+                    {
+                        fsBoxX += flowShape.Alignment switch
+                        {
+                            Models.Styles.TextAlignment.Center => fsSlack / 2f,
+                            Models.Styles.TextAlignment.Right => fsSlack,
+                            _ => 0f
+                        };
+                    }
+
+                    // Запись хранит неповёрнутый прямоугольник, центрированный в
+                    // габарите: поворот делает сам рендерер фигуры.
+                    newFlowShapes.Add(new ShapeEntry(
+                        flowShape,
+                        yPt + (fsBoxH - fsH) / 2f,
+                        fsBoxX + (fsBoxW - fsW) / 2f,
+                        fsW, fsH, 0));
+
+                    yPt += fsBoxH;
+                    continue;
+                }
+
                 // Картинка в потоке. Раньше её здесь просто не было: поток верстал
-                // только текст, и всякая картинка-блок в «Ленте» и в черновике
+                // только текст, и всякая картинка-блок в черновике и веб-режиме
                 // пропадала — объект в документе есть, а на экране его нет.
                 //
                 // Обтекания в потоке быть не может: колонка одна, страниц нет, и
@@ -2301,13 +2444,14 @@ namespace Writersword.Modules.TextEditor.Document
                     var (fiW, fiH) = ReadingImageSize(flowImage);
                     if (fiW <= 0f || fiH <= 0f) continue;
 
-                    // Картинка шире колонки ужимается по ширине: колонка в потоке
-                    // задаётся окном, и вылезшая за неё картинка попала бы под обрез.
+                    // Картинка шире колонки ужимается под неё с сохранением пропорций:
+                    // листа в потоке нет, обрезать её нечем, и без этого она уходила бы
+                    // за край холста.
                     if (fiW > textWidthPt)
                     {
-                        float k = textWidthPt / fiW;
-                        fiW = textWidthPt;
-                        fiH *= k;
+                        float fiFit = textWidthPt / fiW;
+                        fiW *= fiFit;
+                        fiH *= fiFit;
                     }
 
                     double fiRad = flowImage.RotationDeg * Math.PI / 180.0;
@@ -2409,9 +2553,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _tables = newTables;
                 _images = newFlowImages;
 
-                // Черновик страниц не рисует, а фигура живёт координатами листа —
-                // показывать её здесь негде.
-                _shapes = new List<ShapeEntry>();
+                _shapes = newFlowShapes;
                 _canvasHeightPt = newCanvasH;
                 _canvasHeight = newCanvasH * PtToPx;
             }

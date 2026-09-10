@@ -18,6 +18,7 @@ namespace Writersword.Modules.Notes
 {
     public sealed class NotesModule : BaseModule, IStateSnapshotModule
     {
+        private const int SupportedFormatVersion = 1;
         private readonly ILogger<NotesModule> _logger;
         private NotesViewModel? _viewModel;
 
@@ -80,12 +81,26 @@ namespace Writersword.Modules.Notes
 
         public override void SetCustomData(object? data)
         {
-            if (_viewModel == null)
+            var viewModel = _viewModel;
+            if (viewModel == null)
                 return;
 
             try
             {
-                _viewModel.LoadData(ConvertCustomData(data));
+                var convertedData = ConvertCustomData(data);
+
+                // Коллекции и выбранная страница связаны с представлением;
+                // загрузка из фонового потока применяется в потоке интерфейса.
+                void Load()
+                {
+                    if (ReferenceEquals(_viewModel, viewModel))
+                        viewModel.LoadData(convertedData);
+                }
+
+                if (Dispatcher.UIThread.CheckAccess())
+                    Load();
+                else
+                    Dispatcher.UIThread.InvokeAsync(Load).GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
@@ -97,7 +112,8 @@ namespace Writersword.Modules.Notes
 
         public override void SetSessionData(object? data)
         {
-            if (_viewModel == null || data == null)
+            var viewModel = _viewModel;
+            if (viewModel == null || data == null)
                 return;
 
             try
@@ -108,7 +124,16 @@ namespace Writersword.Modules.Notes
                     JToken token => token.ToObject<NotesSessionData>(),
                     _ => JToken.FromObject(data).ToObject<NotesSessionData>()
                 };
-                _viewModel.RestoreSession(session);
+                void Restore()
+                {
+                    if (ReferenceEquals(_viewModel, viewModel))
+                        viewModel.RestoreSession(session);
+                }
+
+                if (Dispatcher.UIThread.CheckAccess())
+                    Restore();
+                else
+                    Dispatcher.UIThread.InvokeAsync(Restore).GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
@@ -137,13 +162,37 @@ namespace Writersword.Modules.Notes
             if (data is JValue value && value.Type == JTokenType.String)
                 return CreateLegacyData(value.Value<string>() ?? string.Empty);
 
-            var result = data switch
+            if (data is NotesData typed)
             {
-                NotesData typed => typed,
-                JToken token => token.ToObject<NotesData>(),
-                _ => JToken.FromObject(data).ToObject<NotesData>()
-            };
-            return result ?? throw new InvalidOperationException("Notes data is empty after deserialization");
+                if (typed.FormatVersion != SupportedFormatVersion)
+                    throw new InvalidOperationException("Unsupported Notes format version");
+                return typed;
+            }
+
+            var token = data as JToken ?? JToken.FromObject(data);
+
+            // Десериализация неизвестного объекта иначе создаёт пустую NotesData
+            // со значениями по умолчанию и подменяет сохранённые заметки.
+            if (token is not JObject document ||
+                document.GetValue(nameof(NotesData.Pages), StringComparison.OrdinalIgnoreCase) is not JArray)
+            {
+                throw new InvalidOperationException("Notes data must contain a Pages array");
+            }
+
+            // Отсутствующая версия соответствует исходному блочному формату.
+            // Явную чужую версию нельзя читать как текущую и затем перезаписывать.
+            var version = document.GetValue(nameof(NotesData.FormatVersion), StringComparison.OrdinalIgnoreCase);
+            if (version != null &&
+                (version.Type != JTokenType.Integer || version.Value<int>() != SupportedFormatVersion))
+            {
+                throw new InvalidOperationException("Unsupported Notes format version");
+            }
+
+            var result = document.ToObject<NotesData>()
+                ?? throw new InvalidOperationException("Notes data is empty after deserialization");
+            if (result.FormatVersion != SupportedFormatVersion)
+                throw new InvalidOperationException("Unsupported Notes format version");
+            return result;
         }
 
         private static NotesData CreateLegacyData(string text)

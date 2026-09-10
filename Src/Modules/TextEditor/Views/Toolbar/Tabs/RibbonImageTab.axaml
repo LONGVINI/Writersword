@@ -267,24 +267,21 @@
 							<ToggleButton Classes="SegSquare"
 							              Command="{Binding ShapeRectangleCommand}"
 							              IsChecked="{Binding CurrentShapeType, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Rectangle, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Прямоугольник"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Прямоугольник">
 								<PathIcon Width="14" Height="14" Data="M3 5h18v14H3V5zm2 2v10h14V7H5z"/>
 							</ToggleButton>
 
 							<ToggleButton Classes="SegSquare"
 							              Command="{Binding ShapeEllipseCommand}"
 							              IsChecked="{Binding CurrentShapeType, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Ellipse, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Эллипс"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Эллипс">
 								<PathIcon Width="14" Height="14" Data="M12 5c5 0 9 3.1 9 7s-4 7-9 7-9-3.1-9-7 4-7 9-7zm0 2c-3.9 0-7 2.2-7 5s3.1 5 7 5 7-2.2 7-5-3.1-5-7-5z"/>
 							</ToggleButton>
 
 							<ToggleButton Classes="SegSquare"
 							              Command="{Binding ShapeCalloutCommand}"
 							              IsChecked="{Binding CurrentShapeType, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Callout, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Выноска"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Выноска">
 								<PathIcon Width="14" Height="14" Data="M3 4h18v11H9l-4 5v-5H3V4zm2 2v7h2v3l2.4-3H19V6H5z"/>
 							</ToggleButton>
 
@@ -292,8 +289,7 @@
 							              IsEnabled="{Binding IsShapeSelected}"
 							              Command="{Binding ShapeLineCommand}"
 							              IsChecked="{Binding CurrentShapeType, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Line, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Линия"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Линия">
 								<PathIcon Width="14" Height="14" Data="M3 18.6L18.6 3 21 5.4 5.4 21 3 18.6z"/>
 							</ToggleButton>
 
@@ -301,8 +297,7 @@
 							              IsEnabled="{Binding IsShapeSelected}"
 							              Command="{Binding ShapeArrowCommand}"
 							              IsChecked="{Binding CurrentShapeType, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Arrow, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Стрелка"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Стрелка">
 								<PathIcon Width="14" Height="14" Data="M3 11h10v2H3v-2zm10-5l8 6-8 6V6z"/>
 							</ToggleButton>
 
@@ -333,8 +328,7 @@
 								<controls:ColorPickerButton Width="20" Height="20" VerticalAlignment="Center"
 								                            IsEnabled="{Binding IsClosedShape}"
 								                            HexColor="{Binding FillHexColor, Mode=TwoWay}"
-								                            behaviours:TooltipBehavior.Tip="Цвет заливки фигуры. «Нет цвета» убирает заливку"
-								                            behaviours:TooltipBehavior.ShowDelay="700"/>
+								                            behaviours:TooltipBehavior.Tip="Цвет заливки фигуры. «Нет цвета» убирает заливку"/>
 								<TextBlock FontSize="10" VerticalAlignment="Center"
 								           IsEnabled="{Binding IsClosedShape}"
 								           Foreground="{DynamicResource TextSecondaryBrush}"
@@ -346,8 +340,7 @@
 
 								<Button Classes="RibbonBtn" MinWidth="70" MinHeight="24"
 								        Command="{Binding PickFillImageCommand}"
-								        behaviours:TooltipBehavior.Tip="У фигуры — положить картинку внутрь: она обрежется по её контуру. У картинки — заменить файл, сохранив размер, поворот, обрезку и оформление"
-								        behaviours:TooltipBehavior.ShowDelay="700">
+								        behaviours:TooltipBehavior.Tip="У фигуры — положить картинку внутрь: она обрежется по её контуру. У картинки — заменить файл, сохранив размер, поворот, обрезку и оформление">
 									<StackPanel Orientation="Horizontal" Spacing="4">
 										<PathIcon Width="13" Height="13" Data="M4 5h16v14H4V5zm2 2v8l3.5-3.5L13 15l3-3 2 2V7H6z"/>
 										<TextBlock FontSize="10" VerticalAlignment="Center" Text="Картинка"/>
@@ -357,8 +350,7 @@
 								<Button Classes="RibbonBtn" MinWidth="26" MinHeight="24"
 								        IsEnabled="{Binding CanClearFillImage}"
 								        Command="{Binding ClearFillImageCommand}"
-								        behaviours:TooltipBehavior.Tip="Убрать картинку из фигуры"
-								        behaviours:TooltipBehavior.ShowDelay="700">
+								        behaviours:TooltipBehavior.Tip="Убрать картинку из фигуры">
 									<PathIcon Width="13" Height="13" Data="M6.2 4.8L4.8 6.2 9.6 11l-4.8 4.8 1.4 1.4L11 12.4l4.8 4.8 1.4-1.4-4.8-4.8 4.8-4.8-1.4-1.4L11 9.6 6.2 4.8z"/>
 								</Button>
 							
@@ -368,7 +360,6 @@
 							          IsEnabled="{Binding CanClearFillImage}"
 							          IsChecked="{Binding FillImageStretch, Mode=TwoWay}"
 							          behaviours:TooltipBehavior.Tip="Растянуть картинку на весь габарит. Выключено — картинка вписывается целиком, сохраняя пропорции"
-							          behaviours:TooltipBehavior.ShowDelay="700"
 							          Content="Растянуть"/>
 
 						</StackPanel>
@@ -386,8 +377,7 @@
 						              IsEnabled="{Binding IsImageSelected}"
 						              Command="{Binding ToggleCropModeCommand}"
 						              IsChecked="{Binding IsCropMode, Mode=OneWay}"
-						              behaviours:TooltipBehavior.Tip="Режим обрезки: маркеры двигают рамку кадрирования, размер картинки заблокирован. Срез применяется при выходе из режима — повторный клик или Enter, Esc отменяет"
-						              behaviours:TooltipBehavior.ShowDelay="700">
+						              behaviours:TooltipBehavior.Tip="Режим обрезки: маркеры двигают рамку кадрирования, размер картинки заблокирован. Срез применяется при выходе из режима — повторный клик или Enter, Esc отменяет">
 							<StackPanel Spacing="2" HorizontalAlignment="Center">
 								<PathIcon Width="18" Height="18"
 								          Data="M17 15h2V7c0-1.1-.9-2-2-2H9v2h8v8zM7 17V1H5v4H1v2h4v10c0 1.1.9 2 2 2h10v4h2v-4h4v-2H7z"/>
@@ -416,32 +406,28 @@
 							<ToggleButton Classes="SegSquare"
 							              Command="{Binding ArrowNoneCommand}"
 							              IsChecked="{Binding HasNoArrows, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Без наконечников — простая линия"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Без наконечников — простая линия">
 								<PathIcon Width="14" Height="14" Data="M3 11h18v2H3v-2z"/>
 							</ToggleButton>
 
 							<ToggleButton Classes="SegSquare"
 							              Command="{Binding ArrowStartCommand}"
 							              IsChecked="{Binding HasStartArrow, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Стрелка в начале"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Стрелка в начале">
 								<PathIcon Width="14" Height="14" Data="M21 11H11v2h10v-2zM10 6v12l-8-6 8-6z"/>
 							</ToggleButton>
 
 							<ToggleButton Classes="SegSquare"
 							              Command="{Binding ArrowEndCommand}"
 							              IsChecked="{Binding HasEndArrow, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Стрелка в конце"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Стрелка в конце">
 								<PathIcon Width="14" Height="14" Data="M3 11h10v2H3v-2zm10-5l8 6-8 6V6z"/>
 							</ToggleButton>
 
 							<ToggleButton Classes="SegSquare"
 							              Command="{Binding ArrowBothCommand}"
 							              IsChecked="{Binding HasBothArrows, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Стрелки с обеих сторон"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Стрелки с обеих сторон">
 								<PathIcon Width="14" Height="14" Data="M9 6v12l-7-6 7-6zm6 0l7 6-7 6V6zM8 11h8v2H8v-2z"/>
 							</ToggleButton>
 
@@ -452,8 +438,7 @@
 							<Button Classes="RibbonBtn" MinWidth="26" MinHeight="24"
 							        IsEnabled="{Binding CanFlipArrows}"
 							        Command="{Binding FlipArrowsCommand}"
-							        behaviours:TooltipBehavior.Tip="Развернуть: наконечники меняются концами. Набирать стрелку заново, чтобы её перевернуть, значит помнить, какой конец сейчас какой"
-							        behaviours:TooltipBehavior.ShowDelay="700">
+							        behaviours:TooltipBehavior.Tip="Развернуть: наконечники меняются концами. Набирать стрелку заново, чтобы её перевернуть, значит помнить, какой конец сейчас какой">
 								<PathIcon Width="14" Height="14" Data="M7 7h11l-3-3 1.4-1.4L21.8 8l-5.4 5.4L15 12l3-3H7V7zm10 10H6l3 3-1.4 1.4L2.2 16l5.4-5.4L9 12l-3 3h11v2z"/>
 							</Button>
 
@@ -471,8 +456,7 @@
 
 							<Button Classes="RibbonBtn" MinHeight="56" MinWidth="40"
 							        Command="{Binding FlipHorizontalCommand}"
-							        behaviours:TooltipBehavior.Tip="Отразить картинку по горизонтали"
-							        behaviours:TooltipBehavior.ShowDelay="700">
+							        behaviours:TooltipBehavior.Tip="Отразить картинку по горизонтали">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
 									          Data="M15 21h2v-2h-2v2zm4-12h2V7h-2v2zM3 5v14c0 1.1.9 2 2 2h4v-2H5V5h4V3H5c-1.1 0-2 .9-2 2zm16-2v2h2c0-1.1-.9-2-2-2zM11 23h2V1h-2v22zm8-6h2v-2h-2v2zM15 5h2V3h-2v2zm4 8h2v-2h-2v2zm0 8c1.1 0 2-.9 2-2h-2v2z"/>
@@ -482,8 +466,7 @@
 
 							<Button Classes="RibbonBtn" MinHeight="56" MinWidth="40"
 							        Command="{Binding FlipVerticalCommand}"
-							        behaviours:TooltipBehavior.Tip="Отразить картинку по вертикали"
-							        behaviours:TooltipBehavior.ShowDelay="700">
+							        behaviours:TooltipBehavior.Tip="Отразить картинку по вертикали">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<!-- Та же фигура, что у «По гориз.», развёрнутая на 90 градусов.      -->
 									<!-- Прежний путь рисовал только уголки и штрихи по периметру, без      -->
@@ -514,8 +497,7 @@
 							<StackPanel Orientation="Horizontal" Spacing="4">
 								<controls:ColorPickerButton Width="20" Height="20" VerticalAlignment="Center"
 								                            HexColor="{Binding BorderHexColor, Mode=TwoWay}"
-								                            behaviours:TooltipBehavior.Tip="Цвет рамки картинки. «Нет цвета» убирает рамку"
-								                            behaviours:TooltipBehavior.ShowDelay="700"/>
+								                            behaviours:TooltipBehavior.Tip="Цвет рамки картинки. «Нет цвета» убирает рамку"/>
 								<TextBlock FontSize="10" VerticalAlignment="Center"
 								           Foreground="{DynamicResource TextSecondaryBrush}"
 								           Text="Рамка"/>
@@ -525,14 +507,12 @@
 								               Increment="{Binding LineUnitIncrement}"
 								               FormatString="{Binding LineUnitFormat}"
 								               ClipValueToMinMax="True"
-								               behaviours:TooltipBehavior.Tip="Толщина рамки, 0 — без рамки"
-								               behaviours:TooltipBehavior.ShowDelay="700"/>
+								               behaviours:TooltipBehavior.Tip="Толщина рамки, 0 — без рамки"/>
 
 								<Button Classes="UnitToggle" Content="{Binding LineUnitLabel}"
 								        VerticalAlignment="Center"
 								        Command="{Binding ToggleLineUnitCommand}"
-								        behaviours:TooltipBehavior.Tip="Единицы толщины и скругления — пункты, миллиметры или пиксели. Нажатие переключает по кругу"
-								        behaviours:TooltipBehavior.ShowDelay="700"/>
+								        behaviours:TooltipBehavior.Tip="Единицы толщины и скругления — пункты, миллиметры или пиксели. Нажатие переключает по кругу"/>
 
 								<Rectangle Width="1" Height="18" Margin="2 0"
 								           VerticalAlignment="Center"
@@ -541,8 +521,7 @@
 								<ToggleButton Classes="SegSquare"
 								              Command="{Binding BorderAlignInsideCommand}"
 								              IsChecked="{Binding CurrentBorderAlign, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Inside, Mode=OneWay}"
-								              behaviours:TooltipBehavior.Tip="Рамка внутрь картинки: наружу габарита не выходит, текст обтекает по краю картинки"
-								              behaviours:TooltipBehavior.ShowDelay="700">
+								              behaviours:TooltipBehavior.Tip="Рамка внутрь картинки: наружу габарита не выходит, текст обтекает по краю картинки">
 									<PathIcon Width="14" Height="14"
 									          Data="M4 4h16v16H4V4zM8 8v8h8V8H8z"/>
 								</ToggleButton>
@@ -550,8 +529,7 @@
 								<ToggleButton Classes="SegSquare"
 								              Command="{Binding BorderAlignCenterCommand}"
 								              IsChecked="{Binding CurrentBorderAlign, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Center, Mode=OneWay}"
-								              behaviours:TooltipBehavior.Tip="Рамка по границе картинки: половина толщины внутрь, половина наружу"
-								              behaviours:TooltipBehavior.ShowDelay="700">
+								              behaviours:TooltipBehavior.Tip="Рамка по границе картинки: половина толщины внутрь, половина наружу">
 									<PathIcon Width="14" Height="14"
 									          Data="M2 2h20v20H2V2zM6 6v12h12V6H6z"/>
 								</ToggleButton>
@@ -559,8 +537,7 @@
 								<ToggleButton Classes="SegSquare"
 								              Command="{Binding BorderAlignOutsideCommand}"
 								              IsChecked="{Binding CurrentBorderAlign, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Outside, Mode=OneWay}"
-								              behaviours:TooltipBehavior.Tip="Рамка снаружи картинки: габарит растёт на её толщину, и текст отходит на неё же"
-								              behaviours:TooltipBehavior.ShowDelay="700">
+								              behaviours:TooltipBehavior.Tip="Рамка снаружи картинки: габарит растёт на её толщину, и текст отходит на неё же">
 									<PathIcon Width="14" Height="14"
 									          Data="M0 0h24v24H0V0zM4 4v16h16V4H4z"/>
 								</ToggleButton>
@@ -576,16 +553,14 @@
 								<Slider Classes="knob" Width="72"
 								        Minimum="0" Maximum="100"
 								        Value="{Binding OpacityValue, Mode=TwoWay}"
-								        behaviours:TooltipBehavior.Tip="Видимость картинки: 100% — полностью непрозрачная, 0% — невидимая"
-								        behaviours:TooltipBehavior.ShowDelay="700"/>
+								        behaviours:TooltipBehavior.Tip="Видимость картинки: 100% — полностью непрозрачная, 0% — невидимая"/>
 								<NumericUpDown Classes="Ribbon" Width="64"
 								               Value="{Binding OpacityPercent, Mode=TwoWay}"
 								               Minimum="0" Maximum="100"
 								               Increment="5"
 								               FormatString="0"
 								               ClipValueToMinMax="True"
-								               behaviours:TooltipBehavior.Tip="Видимость картинки в процентах: 100% — полностью непрозрачная, 0% — невидимая"
-								               behaviours:TooltipBehavior.ShowDelay="700"/>
+								               behaviours:TooltipBehavior.Tip="Видимость картинки в процентах: 100% — полностью непрозрачная, 0% — невидимая"/>
 							</StackPanel>
 
 						</StackPanel>
@@ -607,32 +582,28 @@
 								<ToggleButton Classes="SegSquare"
 								              Command="{Binding BorderDashSolidCommand}"
 								              IsChecked="{Binding CurrentBorderDash, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Solid, Mode=OneWay}"
-								              behaviours:TooltipBehavior.Tip="Сплошная рамка"
-								              behaviours:TooltipBehavior.ShowDelay="700">
+								              behaviours:TooltipBehavior.Tip="Сплошная рамка">
 									<PathIcon Width="14" Height="14" Data="M3 11h18v2H3v-2z"/>
 								</ToggleButton>
 
 								<ToggleButton Classes="SegSquare"
 								              Command="{Binding BorderDashDashCommand}"
 								              IsChecked="{Binding CurrentBorderDash, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Dash, Mode=OneWay}"
-								              behaviours:TooltipBehavior.Tip="Пунктирная рамка"
-								              behaviours:TooltipBehavior.ShowDelay="700">
+								              behaviours:TooltipBehavior.Tip="Пунктирная рамка">
 									<PathIcon Width="14" Height="14" Data="M3 11h5v2H3v-2zm7 0h5v2h-5v-2zm7 0h4v2h-4v-2z"/>
 								</ToggleButton>
 
 								<ToggleButton Classes="SegSquare"
 								              Command="{Binding BorderDashDotCommand}"
 								              IsChecked="{Binding CurrentBorderDash, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Dot, Mode=OneWay}"
-								              behaviours:TooltipBehavior.Tip="Рамка из точек"
-								              behaviours:TooltipBehavior.ShowDelay="700">
+								              behaviours:TooltipBehavior.Tip="Рамка из точек">
 									<PathIcon Width="14" Height="14" Data="M3 11h2v2H3v-2zm4 0h2v2H7v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2z"/>
 								</ToggleButton>
 
 								<ToggleButton Classes="SegSquare"
 								              Command="{Binding BorderDashDashDotCommand}"
 								              IsChecked="{Binding CurrentBorderDash, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=DashDot, Mode=OneWay}"
-								              behaviours:TooltipBehavior.Tip="Штрихпунктирная рамка"
-								              behaviours:TooltipBehavior.ShowDelay="700">
+								              behaviours:TooltipBehavior.Tip="Штрихпунктирная рамка">
 									<PathIcon Width="14" Height="14" Data="M3 11h6v2H3v-2zm8 0h2v2h-2v-2zm4 0h6v2h-6v-2z"/>
 								</ToggleButton>
 							</StackPanel>
@@ -651,8 +622,7 @@
 								               Increment="{Binding LineUnitIncrement}"
 								               FormatString="{Binding LineUnitFormat}"
 								               ClipValueToMinMax="True"
-								               behaviours:TooltipBehavior.Tip="Скругление углов: по нему обрезается содержимое и идёт рамка. Единицы — те же, что у толщины рамки"
-								               behaviours:TooltipBehavior.ShowDelay="700"/>
+								               behaviours:TooltipBehavior.Tip="Скругление углов: по нему обрезается содержимое и идёт рамка. Единицы — те же, что у толщины рамки"/>
 							</StackPanel>
 
 						</StackPanel>

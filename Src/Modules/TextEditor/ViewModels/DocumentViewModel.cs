@@ -1,4 +1,4 @@
-using Avalonia.Controls.ApplicationLifetimes;
+﻿using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -98,6 +98,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         // Делегаты для создания undo-снапшота форматирования.
         // Устанавливаются DocumentCanvas при подключении.
+        /// <summary>
+        /// Пересобрать раскладку целиком. Нужен там, где изменилось общее для всего
+        /// документа: шаг табуляции по умолчанию попадает в резолвер стилей при его
+        /// сборке, и точечный пересчёт затронутых абзацев про него ничего не знает.
+        /// </summary>
+        public Action? RelayoutAllDelegate { get; set; }
+
+        public void RelayoutAll() => RelayoutAllDelegate?.Invoke();
+
         public Action<string>? BeginEditDelegate { get; set; }
         public Action? CommitEditDelegate { get; set; }
 
@@ -302,6 +311,54 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public DocumentModel Document => _document;
 
+        // ── Оглавление и навигатор ────────────────────────────────────────
+
+        /// <summary>
+        /// Карта «абзац — номер страницы» текущей раскладки. Ставит канвас: по тексту
+        /// документа номер страницы не выводится, его знает только раскладка.
+        /// </summary>
+        public Func<System.Collections.Generic.Dictionary<Guid, int>>? GetBlockPageNumbersDelegate { get; set; }
+
+        /// <summary>Переход к абзацу по его месту в потоке документа. Ставит канвас.</summary>
+        public Action<int>? GoToParagraphDelegate { get; set; }
+
+        /// <summary>
+        /// Карта «абзац — номер страницы». Пустая, пока раскладка не построена: показывать
+        /// в оглавлении выдуманные номера хуже, чем не показывать никаких.
+        /// </summary>
+        public System.Collections.Generic.Dictionary<Guid, int> GetBlockPageNumbers()
+            => GetBlockPageNumbersDelegate?.Invoke()
+               ?? new System.Collections.Generic.Dictionary<Guid, int>();
+
+        /// <summary>Уводит рукопись к абзацу по его месту в потоке документа.</summary>
+        public void GoToParagraph(int paragraphIndex) => GoToParagraphDelegate?.Invoke(paragraphIndex);
+
+        /// <summary>
+        /// Показать или убрать навигатор. Ставит модуль: панель принадлежит ему, а не
+        /// рукописи, и документ о её существовании ничего не знает — команда риббона
+        /// просто проходит его насквозь.
+        /// </summary>
+        public Action? ToggleNavigatorDelegate { get; set; }
+
+        /// <inheritdoc/>
+        public void ToggleNavigator() => ToggleNavigatorDelegate?.Invoke();
+
+        /// <summary>
+        /// Вид рабочей области изменился: режим показа, масштаб, число листов в ряду или
+        /// цвет листа. Модуль ловит это и кладёт значение в общие настройки программы —
+        /// вид одинаков во всех рукописях и в файл документа не пишется.
+        /// </summary>
+        public event Action? ViewPreferenceChanged;
+
+        /// <summary>Сообщает наружу, что вид рабочей области изменился.</summary>
+        private void RaiseViewPreferenceChanged() => ViewPreferenceChanged?.Invoke();
+
+        /// <summary>
+        /// Каретка перешла в другой абзац потока. Число — место абзаца в Paragraphs.
+        /// Навигатор подсвечивает по нему главу, в которой человек сейчас работает.
+        /// </summary>
+        public event Action<int>? ActiveParagraphChanged;
+
         public ObservableCollection<ParagraphViewModel> Paragraphs { get; } = new();
         public ObservableCollection<string> AvailableStyleNames { get; } = new();
 
@@ -325,6 +382,41 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// например уборкой картинок вне страниц при закрытии.
         /// </summary>
         public void RaiseStructureChanged() => StructureChanged?.Invoke();
+
+        /// <summary>
+        /// Набор стилей документа пополнился или изменился.
+        ///
+        /// Канвас строит указатель имён стилей один раз и о стиле, дописанном позже, сам
+        /// не узнаёт: строка сослалась бы на имя, которого в указателе нет, и вышла бы
+        /// обычным текстом. Именно так вело себя оглавление в рукописи, начатой до
+        /// появления стилей Toc1…Toc9.
+        /// </summary>
+        public event Action? StylesChanged;
+
+        /// <summary>
+        /// Сообщает, что список стилей документа изменился: обновляет список имён для
+        /// ленты и просит канвас пересобрать резолвер стилей.
+        /// </summary>
+        public void RaiseStylesChanged()
+        {
+            RebuildStyleNames();
+            StylesChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Номера страниц в оглавлениях устарели: раскладка ещё не пересчитана под новое
+        /// содержимое потока. Канвас ловит это, дожидается пересчёта и зовёт
+        /// <see cref="ApplyTocPageNumbers"/>.
+        /// </summary>
+        /// <remarks>
+        /// Признак — обновлять ли оглавления, которым самообновление выключено. Его
+        /// поднимают явные действия человека: вставка, правка настроек, кнопка
+        /// «Обновить». Сдвиг страниц сам по себе такого права не даёт.
+        /// </remarks>
+        public event Action<bool>? TocPageNumbersStale;
+
+        /// <summary>Просит хозяина раскладки пересчитать номера страниц в оглавлениях.</summary>
+        private void RequestTocPageNumbers(bool force = false) => TocPageNumbersStale?.Invoke(force);
 
         /// <summary>
         /// Документ восстановлен после Undo/Redo (снапшот заменил состояние). Владелец (риббон,
@@ -425,9 +517,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
             get => _viewMode;
             set
             {
+                bool changed = _viewMode != value;
+
                 this.RaiseAndSetIfChanged(ref _viewMode, value);
                 this.RaisePropertyChanged(nameof(IsSpreadReading));
                 this.RaisePropertyChanged(nameof(IsColumnReading));
+
+                if (changed) RaiseViewPreferenceChanged();
             }
         }
 
@@ -438,6 +534,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// <see cref="ReadingVisualChanged"/> (достаточно перерисовки).
         /// </summary>
         public Models.Settings.ReadingSettings Reading { get; } = new();
+
+        /// <summary>
+        /// Вид рабочей области при правке: цвет листа и текста, свет, обработка
+        /// картинок, что убирается в режиме фокуса.
+        ///
+        /// Объект живой, как и настройки чтения: его правит лента, а канвас читает
+        /// при каждой отрисовке. О смене сообщает <see cref="ReadingVisualChanged"/> —
+        /// раскладка от цвета листа не зависит, и пересобирать её незачем.
+        /// </summary>
+        public Models.Settings.EditorViewSettings EditorView { get; } = new();
 
         /// <summary>
         /// Настройки чтения изменились так, что раскладку нужно пересобрать: другой
@@ -502,7 +608,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
             get => _pagesPerRow;
             // 0 — авто: столько страниц в ряду, сколько влезает по ширине при текущем
             // масштабе. Отдалили — стало больше, приблизили — меньше, вплоть до одной.
-            set => this.RaiseAndSetIfChanged(ref _pagesPerRow, Math.Clamp(value, 0, 12));
+            set
+            {
+                int clamped = Math.Clamp(value, 0, 12);
+                bool changed = _pagesPerRow != clamped;
+
+                this.RaiseAndSetIfChanged(ref _pagesPerRow, clamped);
+
+                if (changed) RaiseViewPreferenceChanged();
+            }
         }
 
         public double Zoom
@@ -511,8 +625,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
             set
             {
                 double clamped = Math.Max(0.25, Math.Min(5.0, value));
+                bool changed = Math.Abs(_zoom - clamped) > 0.0001;
+
                 this.RaiseAndSetIfChanged(ref _zoom, clamped);
+
+                // Масштаб держится в модели документа, но в файл оттуда не уезжает:
+                // поле помечено как несохраняемое. Живёт он в общих настройках — их и
+                // обновляет сообщение наружу.
                 _document.Zoom = clamped;
+
+                if (changed) RaiseViewPreferenceChanged();
             }
         }
 
@@ -563,6 +685,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             TableActiveCellParagraph = null;
             _activeParagraph = vm;
             FireCursorContextChanged();
+            ActiveParagraphChanged?.Invoke(Paragraphs.IndexOf(vm));
         }
 
         public void FireCursorContextChanged()
@@ -759,6 +882,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // Разрыв страницы перед абзацем не наследуем — иначе каждый Enter добавлял бы
             // новый разрыв. Это совпадает с поведением Word.
             newBlock.Properties.PageBreakBefore = false;
+
+            // Принадлежность к оглавлению не наследуется: Enter в конце его строки даёт
+            // обычный абзац рукописи, а не ещё одну строку оглавления, которую следующая
+            // пересборка всё равно снесёт. По той же причине не наследуется и ручная
+            // пометка «взять в оглавление» — её ставят конкретному абзацу.
+            newBlock.Properties.TocOwnerId = null;
+            newBlock.Properties.TocEntryLevel = 0;
+            newBlock.Properties.TocTargetBlockId = null;
+            newBlock.Properties.IncludeInToc = false;
 
             // Элемент списка: новый абзац продолжает тот же список (тот же ListId), нумерация
             // считается движком автоматически. Перезапуск нумерации не наследуем.
@@ -1197,6 +1329,44 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetLeftIndentPt(double pt) => ApplyParaProperty(p => p.LeftIndent = pt);
         public void SetFirstLineIndentPt(double pt) => ApplyParaProperty(p => p.FirstLineIndent = pt);
         public void SetRightIndentPt(double pt) => ApplyParaProperty(p => p.RightIndent = pt);
+
+        /// <summary>
+        /// Записывает абзацу набор позиций табуляции целиком. Частичной правки здесь нет
+        /// намеренно: набор всегда приходит готовым — с линейки или из окна настройки, —
+        /// и сравнивать его с прежним не за чем.
+        ///
+        /// Каждому абзацу достаётся своя копия списка: выделение может охватывать несколько
+        /// абзацев, а общий список означал бы, что правка одного из них молча меняет все
+        /// остальные и их шаги отмены.
+        /// </summary>
+        public void SetTabStops(System.Collections.Generic.IReadOnlyList<TabStop>? stops)
+            => ApplyParaProperty(p =>
+            {
+                if (stops is null || stops.Count == 0)
+                {
+                    p.TabStops = null;
+                    return;
+                }
+
+                var copy = new System.Collections.Generic.List<TabStop>(stops.Count);
+                foreach (var stop in stops) copy.Add(stop.Clone());
+                p.TabStops = copy;
+            });
+
+        /// <summary>
+        /// Позиции табуляции абзаца под кареткой — копия для окна настройки.
+        /// Пусто, когда своих позиций у абзаца нет.
+        /// </summary>
+        public System.Collections.Generic.List<TabStop> GetActiveTabStops()
+        {
+            var props = TableActiveCellParagraph?.Properties ?? _activeParagraph?.Model.Properties;
+            var result = new System.Collections.Generic.List<TabStop>();
+            if (props?.TabStops is null) return result;
+
+            foreach (var stop in props.TabStops) result.Add(stop.Clone());
+            result.Sort(static (a, b) => a.PositionPt.CompareTo(b.PositionPt));
+            return result;
+        }
 
         /// <summary>
         /// Снимок свойств текущего абзаца (активного или абзаца активной ячейки) для пред-заполнения
@@ -2389,7 +2559,583 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertEndnote() => AddAnnotation(InlineAnnotationType.Endnote);
         public void InsertBookmark(string name) => AddAnnotation(InlineAnnotationType.Bookmark, bookmarkName: name);
         public void InsertHyperlink(string url, string? text) => AddAnnotation(InlineAnnotationType.Hyperlink, url: url);
-        public void InsertTOC() { }
+        /// <summary>
+        /// Название по умолчанию над списком. Ставит модуль — строка приходит из ресурсов,
+        /// а документ о языке интерфейса не знает.
+        /// </summary>
+        public Func<string>? TocDefaultTitleProvider { get; set; }
+
+        /// <summary>
+        /// Вставляет оглавление на место каретки и сразу наполняет его.
+        ///
+        /// Оглавление кладётся перед абзацем, в котором стоит каретка, а не после: его
+        /// ставят в начало книги, и «перед» — это то место, куда человек метил, поставив
+        /// курсор в первую строку.
+        /// </summary>
+        public void InsertTOC()
+        {
+            if (IsReadOnly) return;
+            if (_document.Sections.Count == 0) return;
+
+            // Рукопись могла быть начата до появления стилей оглавления — дописываем их,
+            // иначе строки сослались бы на несуществующий стиль и вышли обычным текстом.
+            TocService.EnsureBuiltInStyles(_document);
+
+            // Дописанные стили надо донести до раскладки: указатель имён у неё строится
+            // один раз, и о стиле, добавленном после, она сама не узнает.
+            RaiseStylesChanged();
+
+            var settings = new Models.Toc.TocSettings();
+            var blocks = _document.Sections[0].Blocks;
+
+            // Куда вставлять: перед активным абзацем, а нет его — в самое начало.
+            int at = 0;
+            if (_activeParagraph is not null)
+            {
+                int idx = blocks.IndexOf(_activeParagraph.Model);
+                if (idx >= 0) at = idx;
+            }
+
+            var headings = TocService.Collect(_document, settings, GetBlockPageNumbers());
+
+            var paragraphs = TocService.BuildParagraphs(
+                settings, headings,
+                TocService.TextWidthPt(_document),
+                TocDefaultTitleProvider?.Invoke() ?? "Оглавление");
+
+            if (paragraphs.Count == 0) return;
+
+            BeginUndoStep("Оглавление");
+
+            _document.TableOfContents ??= new System.Collections.Generic.List<Models.Toc.TocSettings>();
+            _document.TableOfContents.Add(settings);
+
+            InsertParagraphBlocks(at, paragraphs);
+
+            CommitUndoStep();
+            RaiseStructureChanged();
+
+            // Каретка уходит в оглавление. Это не вежливость: контекстная вкладка ленты
+            // живёт от того, где стоит каретка, и без перехода человек получал бы
+            // вставленный список и ни одного инструмента к нему, пока сам не догадается
+            // щёлкнуть внутрь.
+            MoveCaretToParagraphBlock(paragraphs[0]);
+
+            // Номера страниц посчитаны по раскладке, которой оглавление ещё не сдвинуло.
+            // Правда о страницах будет известна только после пересчёта — за ним следует
+            // второй проход.
+            RequestTocPageNumbers(force: true);
+        }
+
+        /// <summary>
+        /// Как выглядят строки оглавления одного уровня: кегль, жирность, курсив.
+        ///
+        /// Значения резолвятся по цепочке BasedOn: стили Toc2…Toc9 наследуют друг друга,
+        /// и своего кегля у большинства из них нет. Показывать в ленте пустоту там, где
+        /// на листе стоит унаследованное значение, значит врать человеку о том, что он
+        /// правит.
+        /// </summary>
+        /// <returns>null — уровень вне 1…9 или стиля в рукописи нет.</returns>
+        public (double FontSizePt, bool IsBold, bool IsItalic)? GetTocLevelStyle(int level)
+        {
+            if (level < 1 || level > 9) return null;
+
+            string name = TocService.TocStyleName(level);
+
+            double size = 0;
+            bool bold = false;
+            bool italic = false;
+
+            bool sizeFound = false;
+            bool boldFound = false;
+            bool italicFound = false;
+            bool anyStyle = false;
+
+            var visited = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string? current = name;
+
+            while (current is not null && visited.Add(current))
+            {
+                var style = _document.FindStyle(current);
+                if (style is null) break;
+
+                anyStyle = true;
+
+                var run = style.RunProperties;
+                if (run is not null)
+                {
+                    if (!sizeFound && run.FontSize.HasValue)
+                    {
+                        size = run.FontSize.Value;
+                        sizeFound = true;
+                    }
+
+                    if (!boldFound)
+                    {
+                        bold = run.IsBold;
+                        boldFound = true;
+                    }
+
+                    if (!italicFound)
+                    {
+                        italic = run.IsItalic;
+                        italicFound = true;
+                    }
+                }
+
+                current = style.BasedOn;
+            }
+
+            if (!anyStyle) return null;
+
+            if (!sizeFound) size = Rendering.StyleResolver.FallbackFontSizePt;
+
+            return (size, bold, italic);
+        }
+
+        /// <summary>
+        /// Правит стиль строк оглавления одного уровня. Переданы только те свойства,
+        /// которые меняются: остальные остаются такими, какими их видит цепочка BasedOn.
+        ///
+        /// Правка идёт по стилю, а не по абзацам, и это принципиально: строк оглавления
+        /// в книге сотни, они пересобираются, и форматирование, положенное на абзац,
+        /// исчезло бы при первом же обновлении. Стиль переживает пересборку.
+        /// </summary>
+        public void SetTocLevelStyle(int level, double? fontSizePt, bool? isBold, bool? isItalic)
+        {
+            if (IsReadOnly) return;
+            if (level < 1 || level > 9) return;
+            if (fontSizePt is null && isBold is null && isItalic is null) return;
+
+            TocService.EnsureBuiltInStyles(_document);
+
+            string name = TocService.TocStyleName(level);
+            var style = _document.FindStyle(name);
+            if (style is null) return;
+
+            BeginUndoStep("Стиль оглавления");
+
+            style.RunProperties ??= new Models.Inline.RunProperties();
+
+            if (fontSizePt is double size)
+            {
+                double clamped = size < 1 ? 1 : (size > 400 ? 400 : size);
+                style.RunProperties.FontSize = clamped;
+            }
+
+            if (isBold is bool bold) style.RunProperties.IsBold = bold;
+            if (isItalic is bool italic) style.RunProperties.IsItalic = italic;
+
+            CommitUndoStep();
+
+            RaiseStylesChanged();
+            RaiseContentModified();
+        }
+
+        /// <summary>
+        /// Возвращает стилям оглавления встроенный вид.
+        ///
+        /// Сбрасываются только они: человек мог править и обычные стили книги, а
+        /// «сбросить» на кнопке во вкладке оглавления обещает ровно оглавление.
+        /// </summary>
+        public void ResetTocStyles()
+        {
+            if (IsReadOnly) return;
+
+            var builtIn = new System.Collections.Generic.Dictionary<string, Models.Styles.DocumentStyle>(
+                StringComparer.Ordinal);
+
+            foreach (var style in Models.Styles.DocumentStyle.CreateBuiltInStyles())
+                builtIn[style.Name] = style;
+
+            _document.Styles ??= new System.Collections.Generic.List<Models.Styles.DocumentStyle>();
+
+            BeginUndoStep("Сброс стилей оглавления");
+
+            for (int level = 0; level <= 9; level++)
+            {
+                string name = level == 0 ? "TocTitle" : TocService.TocStyleName(level);
+                if (!builtIn.TryGetValue(name, out var fresh)) continue;
+
+                int at = _document.Styles.FindIndex(
+                    st => string.Equals(st.Name, name, StringComparison.Ordinal));
+
+                if (at >= 0) _document.Styles[at] = fresh;
+                else _document.Styles.Add(fresh);
+            }
+
+            CommitUndoStep();
+
+            RaiseStylesChanged();
+            RaiseContentModified();
+        }
+
+        /// <summary>
+        /// Оглавление, внутри которого стоит каретка. null — каретка не в оглавлении.
+        /// По нему риббон решает, показывать ли свою вкладку и что в ней отражать.
+        /// </summary>
+        public Models.Toc.TocSettings? ActiveToc()
+        {
+            var ownerId = _activeParagraph?.Model.Properties.TocOwnerId;
+            if (ownerId is null || _document.TableOfContents is null) return null;
+
+            foreach (var toc in _document.TableOfContents)
+                if (toc.Id == ownerId.Value) return toc;
+
+            return null;
+        }
+
+        /// <summary>
+        /// Уводит рукопись к главе, из которой взята строка оглавления под кареткой.
+        ///
+        /// Это ответ на возражение против перехода по щелчку: строка оглавления — текст,
+        /// её правят, и отбирать у щелчка постановку каретки нельзя. Переход остаётся
+        /// отдельным действием — кнопкой в ленте.
+        /// </summary>
+        public void GoToTocTarget()
+        {
+            var targetId = _activeParagraph?.Model.Properties.TocTargetBlockId;
+            if (targetId is null) return;
+
+            var blocks = _document.Sections[0].Blocks;
+            int paragraphIndex = 0;
+
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                if (blocks[i] is not ParagraphBlock para) continue;
+
+                if (para.Id == targetId.Value)
+                {
+                    GoToParagraph(paragraphIndex);
+                    return;
+                }
+
+                paragraphIndex++;
+            }
+        }
+
+        /// <summary>
+        /// Пересобирает одно оглавление — после того, как человек поправил его настройки.
+        /// </summary>
+        public void RebuildToc(Models.Toc.TocSettings settings)
+        {
+            if (IsReadOnly || settings is null) return;
+
+            var (start, count) = TocService.FindRange(_document, settings.Id);
+            if (start < 0) return;
+
+            // Рукопись, начатая до появления стилей оглавления, их не содержит, а правка
+            // настроек — первый момент, когда это выясняется на уже вставленном списке.
+            TocService.EnsureBuiltInStyles(_document);
+            RaiseStylesChanged();
+
+            var headings = TocService.Collect(_document, settings, GetBlockPageNumbers());
+
+            var paragraphs = TocService.BuildParagraphs(
+                settings, headings,
+                TocService.TextWidthPt(_document),
+                TocDefaultTitleProvider?.Invoke() ?? "Оглавление");
+
+            BeginUndoStep("Настройки оглавления");
+
+            // Каретка стоит на одной из сносимых строк, и после замены она указывала бы
+            // на вью-модель, которой в документе больше нет: место в списке теряется,
+            // вкладка ленты пустеет, а каретка на листе повисает. Место запоминается
+            // строкой от начала оглавления и восстанавливается по новому списку.
+            int caretOffset = TocCaretOffset(start, count);
+
+            RemoveParagraphBlocks(start, count);
+            InsertParagraphBlocks(start, paragraphs);
+
+            CommitUndoStep();
+            RaiseStructureChanged();
+
+            RestoreTocCaret(start, paragraphs.Count, caretOffset);
+            RequestTocPageNumbers(force: true);
+        }
+
+        /// <summary>
+        /// Убирает оглавление из рукописи вместе с его настройками.
+        ///
+        /// Пустой абзац на месте снесённого оглавления не оставляется: человек просил
+        /// убрать оглавление, а не заменить его пустой строкой. Если оно было единственным
+        /// содержимым раздела, пустой абзац заводится — документ без абзацев невозможен.
+        /// </summary>
+        public void RemoveToc(Models.Toc.TocSettings settings)
+        {
+            if (IsReadOnly || settings is null) return;
+
+            var (start, count) = TocService.FindRange(_document, settings.Id);
+            if (start < 0) return;
+
+            BeginUndoStep("Удаление оглавления");
+
+            bool caretWasInside = TocCaretOffset(start, count) >= 0;
+
+            RemoveParagraphBlocks(start, count);
+            _document.TableOfContents?.Remove(settings);
+
+            if (Paragraphs.Count == 0)
+            {
+                var empty = new ParagraphBlock();
+                _document.Sections[0].Blocks.Add(empty);
+                Paragraphs.Add(CreateParagraphViewModel(empty));
+            }
+
+            CommitUndoStep();
+            RaiseStructureChanged();
+
+            // Каретка стояла на снесённой строке: без переноса она указывает на
+            // вью-модель, которой в документе больше нет. Место её то же — туда встал
+            // текст, шедший за оглавлением.
+            if (caretWasInside)
+            {
+                int index = CountParagraphsBefore(start);
+                if (index >= Paragraphs.Count) index = Paragraphs.Count - 1;
+
+                if (index >= 0)
+                {
+                    GoToParagraph(index);
+                    SetActiveParagraph(Paragraphs[index]);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Пересобирает все оглавления рукописи: заголовки могли смениться, страницы уехать.
+        ///
+        /// Старые строки сносятся и заменяются новыми целиком. Править их по месту было бы
+        /// дешевле, но неверно: между двумя пересборками главу могли переименовать, увести
+        /// на другой уровень или удалить — сравнивать тут нечего.
+        /// </summary>
+        public void UpdateTOC()
+        {
+            if (IsReadOnly) return;
+            if (_document.TableOfContents is not { Count: > 0 }) return;
+
+            // Стили оглавления могли не дойти до рукописи: файл начат до их появления,
+            // а список стилей при открытии не пополняется. Без них строки ссылаются на
+            // несуществующее имя и выходят обычным текстом.
+            TocService.EnsureBuiltInStyles(_document);
+            RaiseStylesChanged();
+
+            bool changed = false;
+            BeginUndoStep("Обновление оглавления");
+
+            int caretStart = -1;
+            int caretOffset = -1;
+            int caretNewCount = 0;
+
+            foreach (var settings in _document.TableOfContents)
+            {
+                var (start, count) = TocService.FindRange(_document, settings.Id);
+                if (start < 0) continue;
+
+                var headings = TocService.Collect(_document, settings, GetBlockPageNumbers());
+
+                var paragraphs = TocService.BuildParagraphs(
+                    settings, headings,
+                    TocService.TextWidthPt(_document),
+                    TocDefaultTitleProvider?.Invoke() ?? "Оглавление");
+
+                int offset = TocCaretOffset(start, count);
+                if (offset >= 0)
+                {
+                    caretStart = start;
+                    caretOffset = offset;
+                    caretNewCount = paragraphs.Count;
+                }
+
+                RemoveParagraphBlocks(start, count);
+                InsertParagraphBlocks(start, paragraphs);
+                changed = true;
+            }
+
+            CommitUndoStep();
+
+            if (!changed) return;
+
+            RaiseStructureChanged();
+
+            if (caretStart >= 0)
+                RestoreTocCaret(caretStart, caretNewCount, caretOffset);
+
+            RequestTocPageNumbers(force: true);
+        }
+
+        /// <summary>
+        /// Какой по счёту строкой оглавления стоит каретка. -1 — каретка вне этого
+        /// оглавления, и трогать её при пересборке незачем.
+        /// </summary>
+        private int TocCaretOffset(int blockStart, int blockCount)
+        {
+            if (_activeParagraph is null || blockCount <= 0) return -1;
+
+            var blocks = _document.Sections[0].Blocks;
+            int paragraphOffset = 0;
+
+            for (int i = blockStart; i < blockStart + blockCount && i < blocks.Count; i++)
+            {
+                if (blocks[i] is not ParagraphBlock para) continue;
+
+                if (ReferenceEquals(para, _activeParagraph.Model)) return paragraphOffset;
+
+                paragraphOffset++;
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// Возвращает каретку в оглавление после его замены. Строки могло стать меньше —
+        /// тогда каретка встаёт на последнюю: уводить её из оглавления нельзя, иначе
+        /// вкладка ленты закрывается посреди работы человека с ней.
+        /// </summary>
+        private void RestoreTocCaret(int blockStart, int newParagraphCount, int caretOffset)
+        {
+            if (caretOffset < 0 || newParagraphCount <= 0) return;
+
+            int offset = caretOffset >= newParagraphCount ? newParagraphCount - 1 : caretOffset;
+            int index = CountParagraphsBefore(blockStart) + offset;
+
+            if (index < 0 || index >= Paragraphs.Count) return;
+
+            GoToParagraph(index);
+            SetActiveParagraph(Paragraphs[index]);
+        }
+
+        /// <summary>
+        /// Ставит каретку в этот абзац потока — по его месту в списке абзацев.
+        /// </summary>
+        private void MoveCaretToParagraphBlock(ParagraphBlock block)
+        {
+            if (block is null) return;
+
+            for (int i = 0; i < Paragraphs.Count; i++)
+            {
+                if (!ReferenceEquals(Paragraphs[i].Model, block)) continue;
+
+                GoToParagraph(i);
+                SetActiveParagraph(Paragraphs[i]);
+                return;
+            }
+        }
+
+        /// <summary>
+        /// Второй проход оглавления: проставляет строкам номера страниц по готовой
+        /// раскладке, не пересобирая список.
+        ///
+        /// Первый проход неизбежно врёт. Оглавление вставляют в начало книги, оно само
+        /// сдвигает всё, что за ним, и номера, посчитанные до его появления на листе,
+        /// устаревают в тот же миг. Пересобирать список ради цифр нельзя: человек мог
+        /// поправить в строке слово, и пересборка стёрла бы правку. Поэтому правится
+        /// только хвост строки за табуляцией.
+        ///
+        /// Шаг отмены здесь не открывается намеренно: это не правка человека, а
+        /// доводка того, что он уже сделал, и отдельного Ctrl+Z ей не полагается.
+        /// </summary>
+        /// <param name="force">
+        /// true — обновить все оглавления рукописи, даже те, которым выключено
+        /// самообновление. Так работает кнопка «Обновить».
+        /// </param>
+        /// <returns>true — хотя бы одна строка изменилась.</returns>
+        public bool ApplyTocPageNumbers(bool force = false)
+        {
+            if (IsReadOnly) return false;
+            if (_document.TableOfContents is not { Count: > 0 }) return false;
+            if (_document.Sections.Count == 0) return false;
+
+            var pageMap = GetBlockPageNumbers();
+            if (pageMap.Count == 0) return false;
+
+            double textWidthPt = TocService.TextWidthPt(_document);
+            var blocks = _document.Sections[0].Blocks;
+            bool changed = false;
+
+            foreach (var settings in _document.TableOfContents)
+            {
+                if (!force && !settings.AutoUpdate) continue;
+
+                var (start, count) = TocService.FindRange(_document, settings.Id);
+                if (start < 0) continue;
+
+                int vmIndex = CountParagraphsBefore(start);
+
+                for (int i = start; i < start + count && i < blocks.Count; i++)
+                {
+                    if (blocks[i] is not ParagraphBlock entry) continue;
+
+                    int currentVmIndex = vmIndex;
+                    vmIndex++;
+
+                    var targetId = entry.Properties.TocTargetBlockId;
+                    if (targetId is null) continue;
+
+                    pageMap.TryGetValue(targetId.Value, out int page);
+
+                    if (!TocService.ApplyPageNumber(entry, settings, page, textWidthPt))
+                        continue;
+
+                    changed = true;
+
+                    if (currentVmIndex >= 0 && currentVmIndex < Paragraphs.Count)
+                        Paragraphs[currentVmIndex].RefreshPlainTextFromModel();
+                }
+            }
+
+            if (changed) RaiseContentModified();
+
+            return changed;
+        }
+
+        /// <summary>
+        /// Вставляет готовые абзацы в поток документа вместе с их вью-моделями.
+        /// Полная пересборка списка абзацев здесь не годится: она рвёт каретку и выделение.
+        /// </summary>
+        private void InsertParagraphBlocks(
+            int blockIndex, System.Collections.Generic.List<ParagraphBlock> paragraphs)
+        {
+            var blocks = _document.Sections[0].Blocks;
+            int vmIndex = CountParagraphsBefore(blockIndex);
+
+            for (int i = 0; i < paragraphs.Count; i++)
+            {
+                blocks.Insert(blockIndex + i, paragraphs[i]);
+                Paragraphs.Insert(vmIndex + i, CreateParagraphViewModel(paragraphs[i]));
+            }
+        }
+
+        /// <summary>Убирает из потока абзацы диапазона вместе с их вью-моделями.</summary>
+        private void RemoveParagraphBlocks(int blockIndex, int count)
+        {
+            if (count <= 0) return;
+
+            var blocks = _document.Sections[0].Blocks;
+            int vmIndex = CountParagraphsBefore(blockIndex);
+
+            for (int i = 0; i < count && blockIndex < blocks.Count; i++)
+            {
+                if (blocks[blockIndex] is ParagraphBlock && vmIndex < Paragraphs.Count)
+                    Paragraphs.RemoveAt(vmIndex);
+
+                blocks.RemoveAt(blockIndex);
+            }
+        }
+
+        /// <summary>
+        /// Сколько абзацев лежит в потоке до этого блока. Paragraphs содержит только абзацы,
+        /// а Blocks — ещё таблицы, картинки и разрывы, поэтому места в них не совпадают.
+        /// </summary>
+        private int CountParagraphsBefore(int blockIndex)
+        {
+            var blocks = _document.Sections[0].Blocks;
+            int count = 0;
+
+            for (int i = 0; i < blockIndex && i < blocks.Count; i++)
+                if (blocks[i] is ParagraphBlock) count++;
+
+            return count;
+        }
         public void InsertComment(string text) => AddAnnotation(InlineAnnotationType.Comment, content: text);
 
         // ── Таблица ───────────────────────────────────────────────────────
@@ -2695,11 +3441,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void SetZoom(double zoom) => Zoom = zoom;
 
-        public void SetViewMode(EditorViewMode mode)
-        {
-            ViewMode = mode;
-            _document.ViewMode = mode;
-        }
+        public void SetViewMode(EditorViewMode mode) => ViewMode = mode;
 
         /// <summary>Ставит подачу чтения: разворот, одиночный лист или сплошная лента.</summary>
         public void SetReadingFlow(Models.Settings.ReadingFlow flow) => ReadingFlow = flow;
@@ -2711,6 +3453,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             _document.CanvasSettings.ApplyPreset(preset);
             this.RaisePropertyChanged(nameof(CanvasSettings));
+            RaiseViewPreferenceChanged();
         }
 
         public void SetCanvasColors(string pageBackground, string textColor)
@@ -2719,6 +3462,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _document.CanvasSettings.PageBackgroundColor = pageBackground;
             _document.CanvasSettings.DefaultTextColor = textColor;
             this.RaisePropertyChanged(nameof(CanvasSettings));
+            RaiseViewPreferenceChanged();
         }
 
         public void ZoomIn()

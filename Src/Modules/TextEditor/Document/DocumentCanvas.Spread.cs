@@ -195,8 +195,9 @@ namespace Writersword.Modules.TextEditor.Document
             _spreadFlipTargetLeft = targetLeft;
             _spreadFlipAngle = 0f;
 
-            // Пока лист летит, подсказка не нужна: уголок уже поднят по-настоящему.
-            _spreadCornerHint = 0f;
+            // Подсказка гасится не здесь, а когда лист действительно поднимется
+            // (см. UpdateSpreadCornerHint): взятый, но лежащий плашмя лист выглядит
+            // ровно так же, как до нажатия, и уголок — часть этой же картинки.
 
             // Какие страницы уходят вместе с листом. Вперёд переворачивается правая
             // страница разворота, и её изнанкой оказывается левая целевого; назад —
@@ -223,6 +224,22 @@ namespace Writersword.Modules.TextEditor.Document
             return true;
         }
 
+        // Угол, начиная с которого лист считается поднятым.
+        //
+        // Взятый рукой, но ещё не сдвинутый лист лежит на месте, и рисовать его нужно
+        // ровно так же, как в покое: вектором, на своём месте, со своей тенью сгиба.
+        // Прежде подмена на снимок случалась в момент нажатия — половина, которая не
+        // двигалась вовсе, разом становилась растровой, тень сгиба подменялась
+        // запечённой в снимок, а корешок уходил под лист. На глаз это и был тот самый
+        // рывок при захвате страницы, ещё до всякого движения.
+        private const float SpreadLeafLiftedDeg = 0.6f;
+
+        /// <summary>
+        /// Поднят ли летящий лист. Пока он лежит плашмя, книга рисуется как в покое —
+        /// ни снимка, ни подмены страниц под ним.
+        /// </summary>
+        private bool SpreadLeafLifted => _spreadFlipDir != 0 && _spreadFlipAngle > SpreadLeafLiftedDeg;
+
         /// <summary>
         /// Страницы, лежащие под летящим листом: то, что открывается по ходу переворота.
         /// </summary>
@@ -231,13 +248,13 @@ namespace Writersword.Modules.TextEditor.Document
             if (SpreadSinglePage)
             {
                 // Одиночный лист: под ним видна та страница, к которой он ложится.
-                if (_spreadFlipDir > 0) return (_spreadLeftPage + 1, -1);
-                if (_spreadFlipDir < 0) return (_spreadLeftPage - 1, -1);
+                if (SpreadLeafLifted && _spreadFlipDir > 0) return (_spreadLeftPage + 1, -1);
+                if (SpreadLeafLifted && _spreadFlipDir < 0) return (_spreadLeftPage - 1, -1);
                 return (_spreadLeftPage, -1);
             }
 
-            if (_spreadFlipDir > 0) return (_spreadLeftPage, _spreadFlipTargetLeft + 1);
-            if (_spreadFlipDir < 0) return (_spreadFlipTargetLeft, _spreadLeftPage + 1);
+            if (SpreadLeafLifted && _spreadFlipDir > 0) return (_spreadLeftPage, _spreadFlipTargetLeft + 1);
+            if (SpreadLeafLifted && _spreadFlipDir < 0) return (_spreadFlipTargetLeft, _spreadLeftPage + 1);
             return (_spreadLeftPage, _spreadLeftPage + 1);
         }
 
@@ -279,6 +296,10 @@ namespace Writersword.Modules.TextEditor.Document
             _spreadReleasing = false;
             _spreadFlyFront = -1;
             _spreadFlyBack = -1;
+
+            // Уголок мог остаться поднятым с момента захвата: пока лист лежал плашмя,
+            // подсказка держалась. Лист улетел — держать её больше не за чем.
+            ClearSpreadCornerHint();
 
             StopSpreadTimer();
 
@@ -389,6 +410,47 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.RaiseReadingVisualChanged();
         }
 
+        // Отпечаток того, от чего зависит вёрстка абзаца ПРИ НЕИЗМЕННОЙ ширине
+        // колонки: гарнитура чтения, ступень кегля и ужатие содержимого. Кэш
+        // раскладок ключуется текстом и шириной и этих трёх вещей не различает,
+        // поэтому их смену приходится сбрасывать руками.
+        private string? _readingShapeSignature;
+
+        private string BuildReadingShapeSignature()
+        {
+            if (!SpreadMode && !ReadingActive) return "off";
+
+            var r = Reading;
+            if (r is null) return "off";
+
+            var t = ActiveTheme;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+
+            return string.Concat(
+                string.IsNullOrWhiteSpace(t?.FontFamily) ? "-" : t!.FontFamily,
+                "|", r.FontScale.ToString("F3", ci),
+                "|", ReadingContentScale.ToString("F3", ci));
+        }
+
+        /// <summary>
+        /// Сверяет отпечаток вёрстки чтения с тем, под который построены раскладки
+        /// абзацев, и обесценивает кеш, если он разошёлся.
+        ///
+        /// Зовётся не только при правке настроек, но и перед каждой пересборкой: лента
+        /// верстается по ширине листа документа — той же, что и правка, — и по одной
+        /// лишь ширине кеш не отличил бы абзац, зашейпленный шрифтом рукописи, от того
+        /// же абзаца, зашейпленного шрифтом чтения.
+        /// </summary>
+        private void SyncReadingShapeSignature()
+        {
+            string signature = BuildReadingShapeSignature();
+            if (string.Equals(_readingShapeSignature, signature, StringComparison.Ordinal)) return;
+
+            _readingShapeSignature = signature;
+            _layoutCache.Clear();
+            InvalidateCellLayoutCaches();
+        }
+
         /// <summary>
         /// Принимает изменённые настройки чтения: пересобирает раскладку под новый лист
         /// и открывает книгу там же, где читатель остановился.
@@ -398,8 +460,22 @@ namespace Writersword.Modules.TextEditor.Document
             if (DocVm is null) return;
 
             ResetSpreadState();
-            _layoutCache.Clear();
-            InvalidateCellLayoutCaches();
+
+            // Размер листа освежается до сравнения отпечатка: от него зависит ужатие
+            // содержимого, а оно в отпечаток входит.
+            if (SpreadMode) ComputeSpreadPageSize();
+
+            // Кэш раскладок абзацев проверяет текст и ширину колонки сам: сменился
+            // формат листа — записи с прежней шириной он отбросит без посторонней
+            // помощи. Руками сбрасывается только то, чего он не видит, — гарнитура
+            // чтения, ступень кегля и ужатие содержимого.
+            //
+            // Безусловная чистка обесценивала раскладки ВСЕХ абзацев, включая те, для
+            // которых не изменилось ничего, и каждое нажатие в ленте уходило в полный
+            // прогрев кэша. Смена подачи — разворот, лист, лента — на вёрстку строки
+            // не влияет вовсе, и платить за неё секундой прогрева не за что.
+            SyncReadingShapeSignature();
+
             _spreadNeedsCaretSync = true;
 
             RebuildLayouts();
@@ -612,6 +688,10 @@ namespace Writersword.Modules.TextEditor.Document
                     return;
                 }
 
+                // Бумага под снимком: у сглаженного края картинки кромка полупрозрачна,
+                // и без неё по краю листа просвечивало поле.
+                canvas.DrawRect(x, y, w, h, PagePaint());
+
                 using var paint = new SKPaint { IsAntialias = true };
                 canvas.DrawImage(
                     img,
@@ -796,6 +876,18 @@ namespace Writersword.Modules.TextEditor.Document
             int hPx = (int)Math.Ceiling(page.HeightPt * pxPerPt);
             if (wPx <= 0 || hPx <= 0 || (long)wPx * hPx > 64_000_000L) return;
 
+            // Масштаб снимка берётся от РАЗМЕРА ПОВЕРХНОСТИ, а не от желаемого
+            // разрешения, и это не мелочь. Поверхность целочисленная, ширина листа в
+            // точках — нет: при округлении вверх у снимка оставалась прозрачная кромка
+            // шириной в пиксель. Растянутая потом на всю страницу, она превращалась в
+            // щель по краю летящего листа, сквозь которую просвечивало поле — с
+            // картинкой поля это стало видно цветными точками у корешка.
+            //
+            // Разница между осями меньше десятой доли процента и на глаз неразличима,
+            // а кромки у снимка больше нет вовсе.
+            float snapScaleX = (float)(wPx / Math.Max(page.WidthPt, 0.001f));
+            float snapScaleY = (float)(hPx / Math.Max(page.HeightPt, 0.001f));
+
             SKSurface? surface = null;
             try
             {
@@ -804,7 +896,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 var c = surface.Canvas;
                 c.Clear(SKColors.Transparent);
-                c.Scale((float)pxPerPt);
+                c.Scale(snapScaleX, snapScaleY);
                 c.DrawRect(0, 0, page.WidthPt, page.HeightPt, PagePaint());
                 DrawReadingPaperImage(c, 0, 0, page.WidthPt, page.HeightPt);
 
@@ -1085,6 +1177,41 @@ namespace Writersword.Modules.TextEditor.Document
             canvas.Translate(2f + lift * 5f, 3f + lift * 7f);
             canvas.DrawPath(path, paint);
             canvas.Restore();
+        }
+
+        /// <summary>
+        /// Бумага летящего листа: его силуэт, залитый цветом страницы. Кладётся под
+        /// снимок содержимого — сквозь сглаженные кромки полос ничего постороннего
+        /// проступать не должно.
+        /// </summary>
+        private void DrawLeafPaper(SKCanvas canvas, int n)
+        {
+            n = Math.Min(n, LeafStripsMax);
+            if (n < 1) return;
+
+            using var path = new SKPath();
+            path.MoveTo(_leafTop[0]);
+            for (int i = 1; i <= n; i++) path.LineTo(_leafTop[i]);
+            for (int i = n; i >= 0; i--) path.LineTo(_leafBottom[i]);
+            path.Close();
+
+            // Заливка с обводкой в один экранный пиксель: силуэт расширяется на
+            // половину точки в каждую сторону, и сглаженная кромка полосы ложится на
+            // бумагу, а не ровно на её границу — иначе на самом краю листа осталась бы
+            // та же полупрозрачная нитка, ради которой всё и делается.
+            float pxPerPt = PtToPx * (float)Math.Max(Zoom, 0.01);
+            float hairPt = pxPerPt > 0.01f ? 1f / pxPerPt : 0.75f;
+
+            using var paint = new SKPaint
+            {
+                Color = ReadingPaperColor(),
+                IsAntialias = true,
+                Style = SKPaintStyle.StrokeAndFill,
+                StrokeWidth = hairPt,
+                StrokeJoin = SKStrokeJoin.Round
+            };
+
+            canvas.DrawPath(path, paint);
         }
 
         /// <summary>
@@ -1413,7 +1540,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void DrawSpreadFlip(SKCanvas canvas)
         {
-            if (!SpreadMode || _spreadFlipDir == 0) return;
+            if (!SpreadMode || !SpreadLeafLifted) return;
             if (_pages.Count == 0) return;
 
             // Геометрия разворота берётся с той же страницы, что и в раскладке:
@@ -1463,6 +1590,12 @@ namespace Writersword.Modules.TextEditor.Document
 
             DrawLeafShadow(canvas, 0, Strips, lift);
 
+            // Силуэт листа заливается бумагой до содержимого. Полосы снимка кладутся
+            // сглаженными, и на их кромках просвечивало то, что лежит под книгой:
+            // тонкая щель по корешку, заметная сразу, как только лист берут рукой.
+            // У настоящего листа под текстом бумага, а не поле, — здесь так же.
+            DrawLeafPaper(canvas, Strips);
+
             // Снимки держатся под замком всё время, пока ими рисуют: освободить их
             // может поток правки, и между взятием ссылки и отрисовкой её хватило бы,
             // чтобы образ перестал существовать.
@@ -1503,14 +1636,17 @@ namespace Writersword.Modules.TextEditor.Document
 
             float lift = Math.Clamp(liftFactor, 0f, 1f);
 
-            // Щель чуть расходится при подъёме листа, но остаётся узкой: широкая полоса
-            // по центру читается не как сгиб, а как разрыв между двумя листами.
-            float slot = Math.Max(pg.WidthPt * 0.0035f, 1f) * (1f + lift * 0.8f);
-            byte slotAlpha = (byte)Math.Clamp(92f + lift * 50f, 0f, 200f);
-
-            using (var slotPaint = new SKPaint { Color = new SKColor(0x0F, 0x0B, 0x08, slotAlpha) })
-                canvas.DrawRect(spineX - slot / 2f, y, slot, pg.HeightPt, slotPaint);
-
+            // Прорези по корешку нет ни в покое, ни в полёте листа.
+            //
+            // Тёмная полоса шириной в точку садится на дробную координату экрана: при
+            // любом движении книги она переезжает на соседний пиксель, то расширяясь,
+            // то сужаясь. Читается это не как сгиб, а как дыра между листами, которая
+            // ещё и дрожит, — а сгиб на бумаге и без неё виден по мягкой тени вдоль
+            // краёв страниц (DrawSpreadSpine и запечённая тень в снимке листа).
+            //
+            // Белой пустоты под вставшим ребром листом не открывается: бумага под
+            // разворотом сплошная (DrawSpreadPaperBed), и под самим листом лежит его
+            // собственная (DrawLeafPaper).
             if (lift < 0.02f) return;
 
             // Отсвет темноты на соседних страницах — он и заменяет тень поднятого
@@ -1552,9 +1688,30 @@ namespace Writersword.Modules.TextEditor.Document
             float totalW = SpreadSinglePage ? pg.WidthPt : pg.WidthPt * 2f;
             float marginX = (viewWPt - totalW) / 2f;
 
-            float x = marginX + (SpreadSinglePage || leftSlot ? 0f : pg.WidthPt) + _readingPanXPt;
-            float y = (viewHPt - pg.HeightPt) / 2f + _readingPanYPt;
-            return (x, y);
+            float originX = marginX + _readingPanXPt;
+            float originY = (viewHPt - pg.HeightPt) / 2f + _readingPanYPt;
+
+            // На целую точку экрана ставится УГОЛ КНИГИ, и только он. Половина,
+            // начавшаяся на половине пикселя, рисуется с одним округлением, а летящий
+            // лист и тени ложатся на неё со своим — отсюда уход книги на точку в
+            // сторону при перевороте.
+            //
+            // Округлять при этом каждую половину порознь нельзя, и это стоило отдельной
+            // щели по корешку. Ширина листа в точках экрана целой не бывает: левая
+            // половина кончалась, скажем, на 893,5, а правая, округлив свой угол,
+            // начиналась с 894 — между ними оставалась ровно та полоса, ради которой
+            // всё и затевалось. Поэтому правая половина отсчитывается ОТ угла книги
+            // шириной листа, без своего округления: где кончается одна, там и
+            // начинается другая, до последней доли точки.
+            float pxPerPt = PtToPx * (float)Math.Max(Zoom, 0.01);
+            if (pxPerPt > 0.01f)
+            {
+                originX = MathF.Round(originX * pxPerPt) / pxPerPt;
+                originY = MathF.Round(originY * pxPerPt) / pxPerPt;
+            }
+
+            float x = originX + (SpreadSinglePage || leftSlot ? 0f : pg.WidthPt);
+            return (x, originY);
         }
 
         /// <summary>

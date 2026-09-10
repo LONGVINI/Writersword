@@ -1,0 +1,362 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+	<!--
+	    Ленты редактора: группы, кнопки, поля.
+
+	    Собрано здесь, а не в разметке вкладок, по той же причине, по которой
+	    здесь лежат кнопки и списки: лента одна на всю программу, и вкладки
+	    обязаны выглядеть одинаково. Пока каждая вкладка носила эти стили в
+	    себе, они расходились по паре точек — у одной кнопка шириной сорок, у
+	    другой сорок четыре, — и лента дёргалась при переключении.
+
+	    Размеры не произвольны. Тело ленты — 88 точек на все вкладки, из них
+	    подпись группы и отступы забирают около тридцати. Отсюда: большая
+	    кнопка 56, малая 26, ползунок 18, список 24, флажок 18. Штатные
+	    фирменные вдвое выше — троих таких в тело группы уже не поместить.
+	-->
+
+	<!-- ── Группа ──────────────────────────────────────────────────────── -->
+
+	<Style Selector="Border.RibbonGroup">
+		<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius"    Value="4"/>
+		<Setter Property="Padding"         Value="6 4 6 0"/>
+		<Setter Property="Margin"          Value="2 3"/>
+	</Style>
+
+	<!-- Группа, ужатая до одной кнопки с флайаутом: место кончилось. -->
+	<Style Selector="Border.RibbonGroupCollapsed">
+		<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius"    Value="4"/>
+		<Setter Property="Padding"         Value="2 4 2 0"/>
+		<Setter Property="Margin"          Value="2 3"/>
+	</Style>
+
+	<Style Selector="Grid.RibbonGroupLabelGrid">
+		<Setter Property="Margin" Value="0 3 0 2"/>
+	</Style>
+
+	<Style Selector="TextBlock.RibbonGroupLabel">
+		<Setter Property="FontSize"            Value="10"/>
+		<Setter Property="Foreground"          Value="{DynamicResource TextMutedBrush}"/>
+		<Setter Property="TextAlignment"       Value="Center"/>
+		<Setter Property="HorizontalAlignment" Value="Stretch"/>
+		<Setter Property="VerticalAlignment"   Value="Center"/>
+		<Setter Property="Margin"              Value="0 3 0 2"/>
+	</Style>
+
+	<!-- ── Кнопки ──────────────────────────────────────────────────────── -->
+
+	<Style Selector="Button.RibbonBtn">
+		<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+		<Setter Property="BorderThickness"            Value="1"/>
+		<Setter Property="CornerRadius"               Value="3"/>
+		<Setter Property="Padding"                    Value="4"/>
+		<Setter Property="MinWidth"                   Value="26"/>
+		<Setter Property="MinHeight"                  Value="26"/>
+		<Setter Property="VerticalAlignment"          Value="Center"/>
+		<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="Cursor"                     Value="Hand"/>
+	</Style>
+	<Style Selector="Button.RibbonBtn /template/ ContentPresenter">
+		<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius"    Value="3"/>
+	</Style>
+	<Style Selector="Button.RibbonBtn:pointerover /template/ ContentPresenter">
+		<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="Button.RibbonBtn:pressed /template/ ContentPresenter">
+		<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="Button.RibbonBtn:disabled /template/ ContentPresenter">
+		<Setter Property="TextElement.Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+	</Style>
+
+	<!-- Большая кнопка: значок и подпись столбиком, высота в два ряда малых. -->
+	<Style Selector="Button.RibbonBtnLarge">
+		<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+		<Setter Property="BorderThickness"            Value="1"/>
+		<Setter Property="CornerRadius"               Value="3"/>
+		<Setter Property="Padding"                    Value="4 2"/>
+		<Setter Property="MinWidth"                   Value="44"/>
+		<Setter Property="MinHeight"                  Value="56"/>
+		<Setter Property="VerticalAlignment"          Value="Top"/>
+		<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="Cursor"                     Value="Hand"/>
+	</Style>
+	<Style Selector="Button.RibbonBtnLarge /template/ ContentPresenter">
+		<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius"    Value="3"/>
+	</Style>
+	<Style Selector="Button.RibbonBtnLarge:pointerover /template/ ContentPresenter">
+		<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="Button.RibbonBtnLarge:pressed /template/ ContentPresenter">
+		<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<!-- ── Тумблеры ────────────────────────────────────────────────────── -->
+
+	<Style Selector="ToggleButton.RibbonToggle">
+		<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+		<Setter Property="BorderThickness"            Value="1"/>
+		<Setter Property="CornerRadius"               Value="3"/>
+		<Setter Property="Padding"                    Value="4"/>
+		<Setter Property="MinWidth"                   Value="26"/>
+		<Setter Property="MinHeight"                  Value="26"/>
+		<Setter Property="VerticalAlignment"          Value="Center"/>
+		<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="Cursor"                     Value="Hand"/>
+	</Style>
+	<Style Selector="ToggleButton.RibbonToggle /template/ ContentPresenter">
+		<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius"    Value="3"/>
+	</Style>
+	<Style Selector="ToggleButton.RibbonToggle:pointerover /template/ ContentPresenter">
+		<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="ToggleButton.RibbonToggle:pressed /template/ ContentPresenter">
+		<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="ToggleButton.RibbonToggle:checked /template/ ContentPresenter">
+		<Setter Property="Background"             Value="{DynamicResource AccentSubtleBrush}"/>
+		<Setter Property="BorderBrush"            Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="ToggleButton.RibbonToggle:checked:pointerover /template/ ContentPresenter">
+		<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<!-- Тумблер ростом с большую кнопку: значок и подпись столбиком. -->
+	<Style Selector="ToggleButton.RibbonToggleLarge">
+		<Setter Property="Padding"            Value="4 2"/>
+		<Setter Property="MinWidth"           Value="44"/>
+		<Setter Property="MinHeight"          Value="56"/>
+		<Setter Property="VerticalAlignment"  Value="Top"/>
+	</Style>
+
+	<!-- ── Кнопка со стрелкой ──────────────────────────────────────────── -->
+
+	<Style Selector="SplitButton.RibbonSplit">
+		<Setter Property="Background"        Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush"       Value="{DynamicResource BorderSubtleBrush}"/>
+		<Setter Property="BorderThickness"   Value="1"/>
+		<Setter Property="CornerRadius"      Value="3"/>
+		<Setter Property="Padding"           Value="4 4 2 4"/>
+		<Setter Property="MinWidth"          Value="26"/>
+		<Setter Property="MinHeight"         Value="26"/>
+		<Setter Property="VerticalAlignment" Value="Center"/>
+		<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="Cursor"            Value="Hand"/>
+	</Style>
+	<Style Selector="SplitButton.RibbonSplit:pointerover">
+		<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="SplitButton.RibbonSplit:pressed">
+		<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<!-- ── Поля ────────────────────────────────────────────────────────── -->
+
+	<!-- Подпись слева от поля или ползунка. -->
+	<Style Selector="TextBlock.RibbonParamLabel">
+		<Setter Property="FontSize"          Value="10"/>
+		<Setter Property="Foreground"        Value="{DynamicResource TextMutedBrush}"/>
+		<Setter Property="VerticalAlignment" Value="Center"/>
+		<Setter Property="Width"             Value="52"/>
+	</Style>
+
+	<!-- Значение справа от ползунка: проценты, шаги. -->
+	<Style Selector="TextBlock.RibbonParamValue">
+		<Setter Property="FontSize"          Value="10"/>
+		<Setter Property="Foreground"        Value="{DynamicResource TextSecondaryBrush}"/>
+		<Setter Property="VerticalAlignment" Value="Center"/>
+		<Setter Property="Width"             Value="32"/>
+		<Setter Property="TextAlignment"     Value="Right"/>
+	</Style>
+
+	<Style Selector="ComboBox.RibbonCombo">
+		<Setter Property="MinHeight"                Value="0"/>
+		<Setter Property="Height"                   Value="24"/>
+		<Setter Property="FontSize"                 Value="11"/>
+		<Setter Property="Padding"                  Value="6 0"/>
+		<Setter Property="VerticalAlignment"        Value="Center"/>
+		<Setter Property="VerticalContentAlignment" Value="Center"/>
+	</Style>
+
+	<!-- Флажок ленты.
+	     Шаблон задан целиком, а не ужат сеттерами поверх штатного. Штатный
+	     ростом в тридцать две точки и держит свою высоту сеткой внутри
+	     шаблона: заданная снаружи высота в восемнадцать его не сжимает, а
+	     обрезает — квадратик уезжает из строки и вылезает за рамку группы.
+	     Здесь коробочка и подпись стоят в одной сетке и занимают ровно
+	     столько, сколько отведено. -->
+	<Style Selector="CheckBox.RibbonCheck">
+		<Setter Property="MinHeight"           Value="0"/>
+		<!-- Штатный флажок Fluent требует себе 120 точек ширины. В ленте это
+		     полполосы под слово из двух слогов, поэтому ширину задаёт подпись. -->
+		<Setter Property="MinWidth"            Value="0"/>
+		<Setter Property="Height"              Value="18"/>
+		<Setter Property="Padding"             Value="0"/>
+		<Setter Property="Margin"              Value="0"/>
+		<Setter Property="FontSize"            Value="10"/>
+		<Setter Property="Foreground"          Value="{DynamicResource TextSecondaryBrush}"/>
+		<Setter Property="VerticalAlignment"   Value="Center"/>
+		<Setter Property="HorizontalAlignment" Value="Left"/>
+		<Setter Property="Cursor"              Value="Hand"/>
+		<Setter Property="Template">
+			<ControlTemplate>
+				<Grid ColumnDefinitions="Auto,*" Background="Transparent">
+					<Border Name="Box"
+					        Grid.Column="0"
+					        Width="13" Height="13"
+					        CornerRadius="3"
+					        BorderThickness="1"
+					        BorderBrush="{DynamicResource BorderDefaultBrush}"
+					        Background="{DynamicResource BgPanelBrush}"
+					        VerticalAlignment="Center">
+						<Path Name="Tick"
+						      Data="M 3,6.5 L 5.5,9 L 10,3"
+						      Stroke="White"
+						      StrokeThickness="1.6"
+						      StrokeLineCap="Round"
+						      StrokeJoin="Round"
+						      IsVisible="False"/>
+					</Border>
+					<ContentPresenter Grid.Column="1"
+					                  Margin="5 0 0 0"
+					                  Content="{TemplateBinding Content}"
+					                  Foreground="{TemplateBinding Foreground}"
+					                  FontSize="{TemplateBinding FontSize}"
+					                  VerticalAlignment="Center"/>
+				</Grid>
+			</ControlTemplate>
+		</Setter>
+	</Style>
+	<Style Selector="CheckBox.RibbonCheck:checked /template/ Border#Box">
+		<Setter Property="Background"  Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="CheckBox.RibbonCheck:checked /template/ Path#Tick">
+		<Setter Property="IsVisible" Value="True"/>
+	</Style>
+	<Style Selector="CheckBox.RibbonCheck:pointerover /template/ Border#Box">
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="CheckBox.RibbonCheck:disabled">
+		<Setter Property="Opacity" Value="0.45"/>
+	</Style>
+
+	<!-- Цветной образец бумаги: квадратик с буквами в списке видов. -->
+	<Style Selector="Border.RibbonSwatch">
+		<Setter Property="Width"             Value="24"/>
+		<Setter Property="Height"            Value="14"/>
+		<Setter Property="CornerRadius"      Value="2"/>
+		<Setter Property="BorderThickness"   Value="1"/>
+		<Setter Property="BorderBrush"       Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="VerticalAlignment" Value="Center"/>
+	</Style>
+
+	<!-- Ползунок ленты. Шаблон задан целиком, а не правками поверх штатного:
+	     части фирменного шаблона называются по-своему от версии к версии, и
+	     подгонка селекторами давала то съехавшую дорожку, то бегунок мимо неё.
+	     Здесь дорожка, заполнение и бегунок описаны явно и стоят ровно. -->
+	<Style Selector="Slider.RibbonSlider">
+		<Setter Property="MinHeight"         Value="0"/>
+		<Setter Property="Height"            Value="18"/>
+		<Setter Property="Width"             Value="96"/>
+		<Setter Property="Padding"           Value="0"/>
+		<Setter Property="Margin"            Value="0"/>
+		<Setter Property="VerticalAlignment" Value="Center"/>
+		<Setter Property="Focusable"         Value="False"/>
+		<Setter Property="Template">
+			<ControlTemplate>
+				<Grid Margin="7 0">
+					<Border Height="4"
+					        CornerRadius="2"
+					        VerticalAlignment="Center"
+					        Background="{DynamicResource BorderDefaultBrush}"/>
+
+					<Track Name="PART_Track"
+					       Orientation="Horizontal"
+					       Minimum="{TemplateBinding Minimum}"
+					       Maximum="{TemplateBinding Maximum}"
+					       Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+						<Track.DecreaseButton>
+							<RepeatButton Name="PART_DecreaseButton"
+							              Focusable="False"
+							              Height="4"
+							              VerticalAlignment="Center">
+								<RepeatButton.Template>
+									<ControlTemplate>
+										<Border Height="4"
+										        CornerRadius="2"
+										        VerticalAlignment="Center"
+										        Background="{DynamicResource AccentDefaultBrush}"/>
+									</ControlTemplate>
+								</RepeatButton.Template>
+							</RepeatButton>
+						</Track.DecreaseButton>
+						<Track.IncreaseButton>
+							<RepeatButton Name="PART_IncreaseButton"
+							              Focusable="False"
+							              Height="4"
+							              VerticalAlignment="Center">
+								<RepeatButton.Template>
+									<ControlTemplate>
+										<Border Background="Transparent"/>
+									</ControlTemplate>
+								</RepeatButton.Template>
+							</RepeatButton>
+						</Track.IncreaseButton>
+						<Thumb Name="thumb" Width="14" Height="14">
+							<Thumb.Template>
+								<ControlTemplate>
+									<Border Width="14" Height="14"
+									        CornerRadius="7"
+									        Background="{DynamicResource AccentDefaultBrush}"
+									        BorderBrush="{DynamicResource BgPanelBrush}"
+									        BorderThickness="2"/>
+								</ControlTemplate>
+							</Thumb.Template>
+						</Thumb>
+					</Track>
+				</Grid>
+			</ControlTemplate>
+		</Setter>
+	</Style>
+
+	<!-- Выключенный ползунок: дорожка и бегунок гаснут вместе с подписью,
+	     иначе яркий синий бегунок зовёт тянуть то, что не тянется. -->
+	<Style Selector="Slider.RibbonSlider:disabled">
+		<Setter Property="Opacity" Value="0.45"/>
+	</Style>
+
+</Styles>

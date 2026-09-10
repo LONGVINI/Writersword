@@ -65,6 +65,30 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// текста. Для обычного абзаца — левое поле страницы.
         /// </summary>
         public double LeftOverhangMm { get; init; }
+
+        /// <summary>
+        /// Позиции табуляции абзаца как они записаны в нём — в пунктах от левого края зоны.
+        /// Приходят вместе с остальной геометрией, чтобы линейка не лазила в модель сама.
+        /// </summary>
+        public IReadOnlyList<Models.Styles.TabStop>? TabStops { get; init; }
+
+        /// <summary>Шаг табуляции по умолчанию, мм: им размечены места между своими позициями.</summary>
+        public double DefaultTabStopMm { get; init; }
+    }
+
+    /// <summary>
+    /// Позиция табуляции на линейке. От <see cref="Models.Styles.TabStop"/> отличается
+    /// единицами: там пункты, здесь единицы линейки — сантиметры или дюймы, — в которых
+    /// живут все её маркеры. Перевод идёт в одном месте, при обмене с абзацем.
+    /// </summary>
+    public sealed class RulerTabMarker
+    {
+        /// <summary>Расстояние от левого края зоны абзаца в единицах линейки.</summary>
+        public double Position { get; set; }
+
+        public Models.Styles.TabAlignment Alignment { get; set; }
+
+        public Models.Styles.TabLeaderStyle Leader { get; set; }
     }
 
     public sealed class RulerColumnMarker
@@ -111,6 +135,66 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         private RulerIndentMarkerType? _draggingIndentMarker;
         private int _draggingColumnIndex = -1;
 
+        private int _draggingTabIndex = -1;
+        private bool _isTabDragDiscarding;
+        private Models.Styles.TabAlignment _nextTabAlignment = Models.Styles.TabAlignment.Left;
+        private Models.Styles.TabLeaderStyle _nextTabLeader = Models.Styles.TabLeaderStyle.None;
+        private double _defaultTabStopMm = 12.5;
+
+        private bool _themeActive;
+        private string? _themeSheetHex;
+        private string? _themeInkHex;
+        private string? _themeFieldHex;
+
+        // ── Вид рабочей области ───────────────────────────────────────────
+        // Линейка стоит вплотную к листу и обязана меняться вместе с ним: светлая
+        // полоса над ночной страницей бьёт по глазам ровно тем, ради чего лист и
+        // перекрашивали. Цвета приходят готовыми — считать их линейке негде, вид
+        // живёт в настройках документа.
+
+        /// <summary>Листу назначен вид: линейку красить по нему, а не серым.</summary>
+        public bool ThemeActive
+        {
+            get => _themeActive;
+            private set => this.RaiseAndSetIfChanged(ref _themeActive, value);
+        }
+
+        /// <summary>Цвет бумаги (HEX).</summary>
+        public string? ThemeSheetHex
+        {
+            get => _themeSheetHex;
+            private set => this.RaiseAndSetIfChanged(ref _themeSheetHex, value);
+        }
+
+        /// <summary>Цвет чернил (HEX): им идут деления и цифры.</summary>
+        public string? ThemeInkHex
+        {
+            get => _themeInkHex;
+            private set => this.RaiseAndSetIfChanged(ref _themeInkHex, value);
+        }
+
+        /// <summary>Цвет поля вокруг листа (HEX).</summary>
+        public string? ThemeFieldHex
+        {
+            get => _themeFieldHex;
+            private set => this.RaiseAndSetIfChanged(ref _themeFieldHex, value);
+        }
+
+        /// <summary>
+        /// Ставит линейке цвета листа. Пустой вызов (active = false) возвращает
+        /// прежние серые тона.
+        /// </summary>
+        public void ApplyTheme(bool active, string? sheetHex, string? inkHex, string? fieldHex)
+        {
+            ThemeSheetHex = sheetHex;
+            ThemeInkHex = inkHex;
+            ThemeFieldHex = fieldHex;
+
+            // Признак ставится последним: по нему линейка решает, брать ли цвета, и
+            // выставленный раньше них он вызвал бы перерисовку старыми.
+            ThemeActive = active;
+        }
+
         // ── Свойства ──────────────────────────────────────────────────────
 
         public RulerUnits Units
@@ -125,6 +209,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             set => this.RaiseAndSetIfChanged(ref _mode, value);
         }
 
+        /// <summary>
+        /// Привязка к делениям линейки включена прямо сейчас.
+        ///
+        /// Включена всегда: маркеры встают на круглые значения сами, и это то, чего от них
+        /// ждут — отступы в рукописи почти всегда круглые. Точная подгонка нужна изредка,
+        /// и под неё отдана правая кнопка: пока она зажата во время перетаскивания, маркер
+        /// идёт плавно, а отпускание возвращает привязку.
+        ///
+        /// Это состояние жеста, а не настройка. Постоянного выключателя у привязки нет —
+        /// кнопка в углу занимала место ради решения, которое принимается на секунду и
+        /// внутри одного движения руки.
+        /// </summary>
         public bool IsSnapEnabled
         {
             get => _isSnapEnabled;
@@ -294,6 +390,247 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         {
             get => _draggingColumnIndex;
             set => this.RaiseAndSetIfChanged(ref _draggingColumnIndex, value);
+        }
+
+        // ── Позиции табуляции ─────────────────────────────────────────────
+        // Табуляция живёт на линейке по той же причине, по какой там живут отступы:
+        // её значение — это место на строке, и назначать его удобнее прицелившись,
+        // а не вводя число. Числа тоже нужны — для них есть окно, — но повседневная
+        // работа идёт мышью по линейке, как в Word.
+
+        /// <summary>
+        /// Позиции табуляции абзаца под кареткой, отсортированные слева направо.
+        /// Заполняются из раскладки и меняются жестами на линейке.
+        /// </summary>
+        public List<RulerTabMarker> TabMarkers { get; } = new();
+
+        /// <summary>Индекс позиции, которую сейчас тянут. -1 — жеста нет.</summary>
+        public int DraggingTabIndex
+        {
+            get => _draggingTabIndex;
+            private set => this.RaiseAndSetIfChanged(ref _draggingTabIndex, value);
+        }
+
+        /// <summary>
+        /// Маркер уведён с линейки вниз: отпускание кнопки уберёт позицию. Пока жест идёт,
+        /// линейка рисует маркер приглушённым — человек должен видеть, что произойдёт,
+        /// до того как отпустит кнопку, а не после.
+        /// </summary>
+        public bool IsTabDragDiscarding
+        {
+            get => _isTabDragDiscarding;
+            private set => this.RaiseAndSetIfChanged(ref _isTabDragDiscarding, value);
+        }
+
+        /// <summary>Каким будет выравнивание у позиции, поставленной следующим щелчком.</summary>
+        public Models.Styles.TabAlignment NextTabAlignment
+        {
+            get => _nextTabAlignment;
+            set => this.RaiseAndSetIfChanged(ref _nextTabAlignment, value);
+        }
+
+        /// <summary>Каким будет заполнитель у позиции, поставленной следующим щелчком.</summary>
+        public Models.Styles.TabLeaderStyle NextTabLeader
+        {
+            get => _nextTabLeader;
+            set => this.RaiseAndSetIfChanged(ref _nextTabLeader, value);
+        }
+
+        /// <summary>
+        /// Шаг табуляции по умолчанию, мм. Линейка рисует эти места мелкими засечками —
+        /// без них непонятно, куда уедет текст там, где своих позиций у абзаца нет.
+        /// </summary>
+        public double DefaultTabStopMm
+        {
+            get => _defaultTabStopMm;
+            set => this.RaiseAndSetIfChanged(ref _defaultTabStopMm, Math.Max(1.0, value));
+        }
+
+        /// <summary>Новый набор позиций табуляции абзаца. Отдаётся в пунктах, как хранит модель.</summary>
+        public event Action<List<Models.Styles.TabStop>>? TabStopsChanged;
+
+        /// <summary>Человек просит окно точной настройки табуляции.</summary>
+        public event Action? TabSettingsRequested;
+
+        public void RequestTabSettings() => TabSettingsRequested?.Invoke();
+
+        /// <summary>
+        /// Ставит на линейку позиции абзаца под кареткой. Во время жеста вызов пропускается
+        /// по той же причине, что и в <see cref="ApplyParagraphGeometry"/>: пока маркер ведёт
+        /// мышь, раскладка отдаёт ещё не применённое состояние.
+        /// </summary>
+        public void SetTabStops(IReadOnlyList<Models.Styles.TabStop>? stops)
+        {
+            if (DraggingTabIndex >= 0) return;
+
+            TabMarkers.Clear();
+
+            if (stops is not null)
+            {
+                foreach (var stop in stops)
+                {
+                    TabMarkers.Add(new RulerTabMarker
+                    {
+                        Position = MmToUnits(stop.PositionPt * 25.4 / 72.0),
+                        Alignment = stop.Alignment,
+                        Leader = stop.Leader
+                    });
+                }
+                TabMarkers.Sort(static (a, b) => a.Position.CompareTo(b.Position));
+            }
+
+            this.RaisePropertyChanged(nameof(TabMarkers));
+        }
+
+        /// <summary>Ставит позицию щелчком по линейке. Тип и заполнитель берутся текущие.</summary>
+        public void AddTabStopAt(double positionUnits)
+        {
+            if (IsReadOnly) return;
+
+            double pos = SnapUnits(positionUnits);
+            if (pos < 0) return;
+
+            // Щелчок вплотную к уже стоящей позиции ничего не добавляет: два маркера
+            // в одной точке различить нельзя, а промахнуться на полмиллиметра легко.
+            double near = MmToUnits(1.0);
+            foreach (var m in TabMarkers)
+                if (Math.Abs(m.Position - pos) < near) return;
+
+            TabMarkers.Add(new RulerTabMarker
+            {
+                Position = pos,
+                Alignment = NextTabAlignment,
+                Leader = NextTabLeader
+            });
+            TabMarkers.Sort(static (a, b) => a.Position.CompareTo(b.Position));
+
+            this.RaisePropertyChanged(nameof(TabMarkers));
+            PublishTabStops();
+        }
+
+        public void BeginTabDrag(int index)
+        {
+            if (IsReadOnly) return;
+            if (index < 0 || index >= TabMarkers.Count) return;
+            DraggingTabIndex = index;
+            IsTabDragDiscarding = false;
+        }
+
+        /// <summary>
+        /// Ведёт маркер за указателем. discarding — указатель ушёл с линейки вниз, к листу:
+        /// так в Word позицию и снимают, и жест этот стоит сохранить, потому что он
+        /// единственный не требует ни меню, ни попадания в мелкую кнопку.
+        /// </summary>
+        public void UpdateTabDrag(double positionUnits, bool discarding)
+        {
+            if (DraggingTabIndex < 0 || DraggingTabIndex >= TabMarkers.Count) return;
+
+            IsTabDragDiscarding = discarding;
+
+            double pos = SnapUnits(positionUnits);
+            if (pos < 0) pos = 0;
+
+            TabMarkers[DraggingTabIndex].Position = pos;
+            this.RaisePropertyChanged(nameof(TabMarkers));
+        }
+
+        /// <summary>Заканчивает жест: маркер либо встаёт на новое место, либо снимается.</summary>
+        public void EndTabDrag()
+        {
+            if (DraggingTabIndex < 0)
+            {
+                IsTabDragDiscarding = false;
+                return;
+            }
+
+            if (IsTabDragDiscarding && DraggingTabIndex < TabMarkers.Count)
+                TabMarkers.RemoveAt(DraggingTabIndex);
+            else
+                TabMarkers.Sort(static (a, b) => a.Position.CompareTo(b.Position));
+
+            DraggingTabIndex = -1;
+            IsTabDragDiscarding = false;
+
+            this.RaisePropertyChanged(nameof(TabMarkers));
+            PublishTabStops();
+        }
+
+        /// <summary>Убирает одну позицию — из меню на линейке или из окна настройки.</summary>
+        public void RemoveTabStopAt(int index)
+        {
+            if (IsReadOnly) return;
+            if (index < 0 || index >= TabMarkers.Count) return;
+
+            TabMarkers.RemoveAt(index);
+            this.RaisePropertyChanged(nameof(TabMarkers));
+            PublishTabStops();
+        }
+
+        /// <summary>Меняет выравнивание уже стоящей позиции, не сдвигая её.</summary>
+        public void SetTabAlignmentAt(int index, Models.Styles.TabAlignment alignment)
+        {
+            if (IsReadOnly) return;
+            if (index < 0 || index >= TabMarkers.Count) return;
+
+            TabMarkers[index].Alignment = alignment;
+            this.RaisePropertyChanged(nameof(TabMarkers));
+            PublishTabStops();
+        }
+
+        /// <summary>Меняет заполнитель уже стоящей позиции.</summary>
+        public void SetTabLeaderAt(int index, Models.Styles.TabLeaderStyle leader)
+        {
+            if (IsReadOnly) return;
+            if (index < 0 || index >= TabMarkers.Count) return;
+
+            TabMarkers[index].Leader = leader;
+            this.RaisePropertyChanged(nameof(TabMarkers));
+            PublishTabStops();
+        }
+
+        /// <summary>Снимает с абзаца все позиции разом.</summary>
+        public void ClearTabStops()
+        {
+            if (IsReadOnly) return;
+            if (TabMarkers.Count == 0) return;
+
+            TabMarkers.Clear();
+            this.RaisePropertyChanged(nameof(TabMarkers));
+            PublishTabStops();
+        }
+
+        /// <summary>Перебирает типы выравнивания по кругу — щелчок по указателю типа.</summary>
+        public void CycleNextTabAlignment()
+            => NextTabAlignment = NextTabAlignment switch
+            {
+                Models.Styles.TabAlignment.Left => Models.Styles.TabAlignment.Center,
+                Models.Styles.TabAlignment.Center => Models.Styles.TabAlignment.Right,
+                Models.Styles.TabAlignment.Right => Models.Styles.TabAlignment.Decimal,
+                _ => Models.Styles.TabAlignment.Left
+            };
+
+        /// <summary>Позиция маркера в пунктах — в них её хранит абзац.</summary>
+        public double TabMarkerPositionPt(int index)
+            => index >= 0 && index < TabMarkers.Count
+                ? UnitsToMm(TabMarkers[index].Position) * 72.0 / 25.4
+                : 0.0;
+
+        private double SnapUnits(double units)
+            => IsSnapEnabled ? Math.Round(units / SnapStep) * SnapStep : units;
+
+        private void PublishTabStops()
+        {
+            var stops = new List<Models.Styles.TabStop>(TabMarkers.Count);
+            foreach (var m in TabMarkers)
+            {
+                stops.Add(new Models.Styles.TabStop
+                {
+                    PositionPt = UnitsToMm(m.Position) * 72.0 / 25.4,
+                    Alignment = m.Alignment,
+                    Leader = m.Leader
+                });
+            }
+            TabStopsChanged?.Invoke(stops);
         }
 
         // ── События ───────────────────────────────────────────────────────
@@ -476,6 +813,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
 
             UpdateIndentMarkers();
             ShowListMarker = geometry.HasMarker;
+
+            if (geometry.DefaultTabStopMm > 0) DefaultTabStopMm = geometry.DefaultTabStopMm;
+            SetTabStops(geometry.TabStops);
 
             this.RaisePropertyChanged(nameof(ActiveCellLeftUnits));
             this.RaisePropertyChanged(nameof(ActiveCellRightUnits));

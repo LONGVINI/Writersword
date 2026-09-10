@@ -1153,4 +1153,392 @@
     <value>Cont. label</value>
     <comment>Button — toggle top continuation text on next page</comment>
   </data>
+  <data name="Nav_Title" xml:space="preserve">
+    <value>Navigator</value>
+    <comment>Heading navigator panel — title and ribbon button</comment>
+  </data>
+  <data name="Nav_Tip" xml:space="preserve">
+    <value>Show or hide the heading navigator</value>
+    <comment>Ribbon button tooltip</comment>
+  </data>
+  <data name="Nav_SearchPlaceholder" xml:space="preserve">
+    <value>Search headings</value>
+    <comment>Navigator search box watermark</comment>
+  </data>
+  <data name="Nav_Empty" xml:space="preserve">
+    <value>No headings yet. A paragraph becomes a heading when it carries a Heading 1…6 style, an outline level, or is marked for the table of contents.</value>
+    <comment>Navigator empty state</comment>
+  </data>
+  <data name="Nav_Levels" xml:space="preserve">
+    <value>Heading depth shown</value>
+    <comment>Navigator depth button tooltip</comment>
+  </data>
+  <data name="Nav_CollapseAll" xml:space="preserve">
+    <value>Collapse or expand all</value>
+    <comment>Navigator button tooltip</comment>
+  </data>
+  <data name="Nav_Close" xml:space="preserve">
+    <value>Close the navigator</value>
+    <comment>Navigator close button tooltip</comment>
+  </data>
+  <data name="Tab_MenuAlignment" xml:space="preserve">
+    <value>Tab stop alignment</value>
+    <comment>Ruler tab context menu</comment>
+  </data>
+  <data name="Tab_MenuLeader" xml:space="preserve">
+    <value>Tab stop leader</value>
+    <comment>Ruler tab context menu</comment>
+  </data>
+  <data name="Tab_MenuRemove" xml:space="preserve">
+    <value>Remove this tab stop</value>
+    <comment>Ruler tab context menu</comment>
+  </data>
+  <data name="Tab_MenuNewAlignment" xml:space="preserve">
+    <value>Set tab stops as</value>
+    <comment>Ruler tab context menu</comment>
+  </data>
+  <data name="Tab_MenuNewLeader" xml:space="preserve">
+    <value>Leader for new tab stops</value>
+    <comment>Ruler tab context menu</comment>
+  </data>
+  <data name="Tab_MenuClear" xml:space="preserve">
+    <value>Remove all tab stops</value>
+    <comment>Ruler tab context menu</comment>
+  </data>
+  <data name="Tab_MenuSettings" xml:space="preserve">
+    <value>Tabs…</value>
+    <comment>Ruler tab context menu</comment>
+  </data>
+  <data name="Tab_AlignLeft" xml:space="preserve">
+    <value>Left</value>
+    <comment>Tab alignment</comment>
+  </data>
+  <data name="Tab_AlignCenter" xml:space="preserve">
+    <value>Center</value>
+    <comment>Tab alignment</comment>
+  </data>
+  <data name="Tab_AlignRight" xml:space="preserve">
+    <value>Right</value>
+    <comment>Tab alignment</comment>
+  </data>
+  <data name="Tab_AlignDecimal" xml:space="preserve">
+    <value>Decimal</value>
+    <comment>Tab alignment</comment>
+  </data>
+  <data name="Tab_LeaderNone" xml:space="preserve">
+    <value>None</value>
+    <comment>Tab leader</comment>
+  </data>
+  <data name="Tab_LeaderDots" xml:space="preserve">
+    <value>Dots</value>
+    <comment>Tab leader</comment>
+  </data>
+  <data name="Tab_LeaderDashes" xml:space="preserve">
+    <value>Dashes</value>
+    <comment>Tab leader</comment>
+  </data>
+  <data name="Tab_LeaderLine" xml:space="preserve">
+    <value>Solid line</value>
+    <comment>Tab leader</comment>
+  </data>
+  <data name="Tab_Title" xml:space="preserve">
+    <value>Tabs</value>
+    <comment>Tabs dialog title</comment>
+  </data>
+  <data name="Tab_Position" xml:space="preserve">
+    <value>Tab stop position</value>
+    <comment>Tabs dialog field</comment>
+  </data>
+  <data name="Tab_DefaultStep" xml:space="preserve">
+    <value>Default tab stops</value>
+    <comment>Tabs dialog field</comment>
+  </data>
+  <data name="Tab_Existing" xml:space="preserve">
+    <value>Tab stops to be set</value>
+    <comment>Tabs dialog list header</comment>
+  </data>
+  <data name="Tab_Alignment" xml:space="preserve">
+    <value>Alignment</value>
+    <comment>Tabs dialog group</comment>
+  </data>
+  <data name="Tab_Leader" xml:space="preserve">
+    <value>Leader</value>
+    <comment>Tabs dialog group</comment>
+  </data>
+  <data name="Tab_Set" xml:space="preserve">
+    <value>Set</value>
+    <comment>Tabs dialog button</comment>
+  </data>
+  <data name="Tab_Remove" xml:space="preserve">
+    <value>Remove</value>
+    <comment>Tabs dialog button</comment>
+  </data>
+  <data name="Tab_ClearAll" xml:space="preserve">
+    <value>Remove all</value>
+    <comment>Tabs dialog button</comment>
+  </data>
+  <data name="Tab_Ok" xml:space="preserve">
+    <value>OK</value>
+    <comment>Tabs dialog button</comment>
+  </data>
+  <data name="Tab_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+    <comment>Tabs dialog button</comment>
+  </data>
+  <data name="Tab_Empty" xml:space="preserve">
+    <value>No tab stops set</value>
+    <comment>Tabs dialog empty list</comment>
+  </data>
+  <data name="Tab_RulerHint" xml:space="preserve">
+    <value>Click the ruler to set a tab stop, drag it down off the ruler to remove it.</value>
+    <comment>Tabs dialog hint</comment>
+  </data>
+  <data name="Tab_Unit_Cm" xml:space="preserve">
+    <value>cm</value>
+    <comment>Centimetre suffix in ruler hints</comment>
+  </data>
+  <data name="Tab_Hint_TypeTitle" xml:space="preserve">
+    <value>Tab stop type</value>
+    <comment>Ruler tab hint</comment>
+  </data>
+  <data name="Tab_Hint_TypeBody" xml:space="preserve">
+    <value>Now: *{0}*&#10;&#10;{1}&#10;&#10;Click cycles the type. The next tab stop you set on the ruler will be of this type.</value>
+    <comment>Ruler tab hint, {0} type name, {1} what it does</comment>
+  </data>
+  <data name="Tab_Hint_WhatLeft" xml:space="preserve">
+    <value>Text starts at the mark and runs right.</value>
+    <comment>Ruler tab hint</comment>
+  </data>
+  <data name="Tab_Hint_WhatCenter" xml:space="preserve">
+    <value>Text sits centred on the mark.</value>
+    <comment>Ruler tab hint</comment>
+  </data>
+  <data name="Tab_Hint_WhatRight" xml:space="preserve">
+    <value>Text ends at the mark. Page numbers are held by it.</value>
+    <comment>Ruler tab hint</comment>
+  </data>
+  <data name="Tab_Hint_WhatDecimal" xml:space="preserve">
+    <value>Numbers line up by their separator, comma under comma.</value>
+    <comment>Ruler tab hint</comment>
+  </data>
+  <data name="Tab_Hint_MarkerTitle" xml:space="preserve">
+    <value>Tab stop at {0}</value>
+    <comment>Ruler tab hint, {0} position</comment>
+  </data>
+  <data name="Tab_Hint_MarkerBody" xml:space="preserve">
+    <value>{0}&#10;Leader: *{1}*.&#10;&#10;Drag to move it along the ruler marks; hold the *right button* to move it freely. Drag it down off the ruler to remove it. Right-click for settings.</value>
+    <comment>Ruler tab hint, {0} what the type does, {1} leader name</comment>
+  </data>
+  <data name="Tab_Hint_StripTitle" xml:space="preserve">
+    <value>Tab stops</value>
+    <comment>Ruler tab hint</comment>
+  </data>
+  <data name="Tab_Hint_StripBody" xml:space="preserve">
+    <value>A click sets a tab stop here, of the type shown in the corner of the ruler.&#10;&#10;In the text the *Tab* key jumps to it: the line goes on from exactly this place, however many letters stand before it.</value>
+    <comment>Ruler tab hint</comment>
+  </data>
+  <data name="Tab_Hint_IndentFirstTitle" xml:space="preserve">
+    <value>First line indent</value>
+    <comment>Ruler indent hint</comment>
+  </data>
+  <data name="Tab_Hint_IndentLeftTitle" xml:space="preserve">
+    <value>Left indent</value>
+    <comment>Ruler indent hint</comment>
+  </data>
+  <data name="Tab_Hint_IndentRightTitle" xml:space="preserve">
+    <value>Right indent</value>
+    <comment>Ruler indent hint</comment>
+  </data>
+  <data name="Tab_Hint_IndentListTitle" xml:space="preserve">
+    <value>List marker</value>
+    <comment>Ruler indent hint</comment>
+  </data>
+  <data name="Tab_Hint_IndentBody" xml:space="preserve">
+    <value>{0}&#10;&#10;Drag to move it along the ruler marks; hold the *right button* to move it freely.</value>
+    <comment>Ruler indent hint, {0} what the marker does</comment>
+  </data>
+  <data name="Tab_Hint_IndentFirstWhat" xml:space="preserve">
+    <value>Where the first line of the paragraph starts.</value>
+    <comment>Ruler indent hint</comment>
+  </data>
+  <data name="Tab_Hint_IndentLeftWhat" xml:space="preserve">
+    <value>Where the second and further lines start.</value>
+    <comment>Ruler indent hint</comment>
+  </data>
+  <data name="Tab_Hint_IndentRightWhat" xml:space="preserve">
+    <value>Where the lines end.</value>
+    <comment>Ruler indent hint</comment>
+  </data>
+  <data name="Tab_Hint_IndentListWhat" xml:space="preserve">
+    <value>Where the bullet or number of the list stands.</value>
+    <comment>Ruler indent hint</comment>
+  </data>
+  <data name="Tab_Hint_TypeLine" xml:space="preserve">
+    <value>{0} — {1}</value>
+    <comment>One line of the tab type list, {0} name, {1} meaning</comment>
+  </data>
+  <data name="Toc_DefaultTitle" xml:space="preserve">
+    <value>Contents</value>
+    <comment>Default title above the list</comment>
+  </data>
+  <data name="Toc_Group_Main" xml:space="preserve">
+    <value>Table of contents</value>
+    <comment>Ribbon group</comment>
+  </data>
+  <data name="Toc_Group_Levels" xml:space="preserve">
+    <value>Levels</value>
+    <comment>Ribbon group</comment>
+  </data>
+  <data name="Toc_Group_Line" xml:space="preserve">
+    <value>Line</value>
+    <comment>Ribbon group</comment>
+  </data>
+  <data name="Toc_Group_Source" xml:space="preserve">
+    <value>Content</value>
+    <comment>Ribbon group</comment>
+  </data>
+  <data name="Toc_Group_Style" xml:space="preserve">
+    <value>Appearance</value>
+    <comment>Ribbon group</comment>
+  </data>
+  <data name="Toc_Update" xml:space="preserve">
+    <value>Update</value>
+    <comment>Ribbon button</comment>
+  </data>
+  <data name="Toc_Update_Tip" xml:space="preserve">
+    <value>Rebuild the list from the current headings and page numbers.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Insert" xml:space="preserve">
+    <value>Insert</value>
+    <comment>Ribbon button</comment>
+  </data>
+  <data name="Toc_Insert_Tip" xml:space="preserve">
+    <value>Insert one more table of contents at the caret.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_GoTo" xml:space="preserve">
+    <value>Go to</value>
+    <comment>Ribbon button</comment>
+  </data>
+  <data name="Toc_GoTo_Tip" xml:space="preserve">
+    <value>Go to the chapter this line points to.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Remove" xml:space="preserve">
+    <value>Remove</value>
+    <comment>Ribbon button</comment>
+  </data>
+  <data name="Toc_Remove_Tip" xml:space="preserve">
+    <value>Remove this table of contents from the manuscript.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_LevelsAll" xml:space="preserve">
+    <value>All</value>
+    <comment>Ribbon button caption</comment>
+  </data>
+  <data name="Toc_Levels1_Tip" xml:space="preserve">
+    <value>Only chapters.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Levels3_Tip" xml:space="preserve">
+    <value>Chapters and two levels below them.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Levels5_Tip" xml:space="preserve">
+    <value>Down to the fifth level.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Levels9_Tip" xml:space="preserve">
+    <value>All nine levels.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_MinLevel" xml:space="preserve">
+    <value>From</value>
+    <comment>Ribbon field label</comment>
+  </data>
+  <data name="Toc_MinLevel_Tip" xml:space="preserve">
+    <value>Topmost heading level taken into the list.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_LevelIndent" xml:space="preserve">
+    <value>Indent</value>
+    <comment>Ribbon field label</comment>
+  </data>
+  <data name="Toc_LevelIndent_Tip" xml:space="preserve">
+    <value>Step of the shift per level, in points.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Leader_Dots" xml:space="preserve">
+    <value>Dots</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Leader_Dashes" xml:space="preserve">
+    <value>Dashes</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Leader_Line" xml:space="preserve">
+    <value>Line</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Leader_None" xml:space="preserve">
+    <value>Nothing</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_ShowPages" xml:space="preserve">
+    <value>Page numbers</value>
+    <comment>Ribbon checkbox</comment>
+  </data>
+  <data name="Toc_IndentByLevel" xml:space="preserve">
+    <value>Indent by level</value>
+    <comment>Ribbon checkbox</comment>
+  </data>
+  <data name="Toc_ShowTitle" xml:space="preserve">
+    <value>Title</value>
+    <comment>Ribbon checkbox</comment>
+  </data>
+  <data name="Toc_IncludeManual" xml:space="preserve">
+    <value>Marked paragraphs</value>
+    <comment>Ribbon checkbox</comment>
+  </data>
+  <data name="Toc_AutoUpdate" xml:space="preserve">
+    <value>Auto update</value>
+    <comment>Ribbon checkbox</comment>
+  </data>
+  <data name="Toc_AutoUpdate_Tip" xml:space="preserve">
+    <value>Refresh the page numbers when the book is repaginated.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Title_Tip" xml:space="preserve">
+    <value>Title above the list. Empty — the default name.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Title_Placeholder" xml:space="preserve">
+    <value>Contents</value>
+    <comment>Ribbon text box placeholder</comment>
+  </data>
+  <data name="Toc_Style_Level_Tip" xml:space="preserve">
+    <value>Which level's lines are being formatted.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Style_Size_Tip" xml:space="preserve">
+    <value>Font size of the lines of this level.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Style_Bold" xml:space="preserve">
+    <value>Bold</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Style_Italic" xml:space="preserve">
+    <value>Italic</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_Style_Reset" xml:space="preserve">
+    <value>Reset</value>
+    <comment>Ribbon button</comment>
+  </data>
+  <data name="Toc_Style_Reset_Tip" xml:space="preserve">
+    <value>Return the table of contents styles to their built-in look.</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
 </root>

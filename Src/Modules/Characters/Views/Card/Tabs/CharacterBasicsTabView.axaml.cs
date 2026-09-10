@@ -624,25 +624,42 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
             if (sender is not Control c || c.DataContext is not Writersword.Modules.Characters.Models.CharacterLabel label) return;
             if (DataContext is not CharacterBasicsTabViewModel vm) return;
 
-            FindLabelEditor()?.ShowFor(label, (updated, applyToAll) =>
+            // Вид метки общий: правка уходит и в реестр проекта, и всем, у
+            // кого эта метка стоит, — поэтому карточки списка перерисовываются
+            // всегда, а не по галке, которой больше нет.
+            FindLabelEditor()?.ShowFor(label, updated =>
             {
-                vm.UpsertLabel(updated, applyToAll);
-                if (applyToAll) RefreshListLabels();
+                vm.UpsertLabel(updated, asGlobal: true);
+                RefreshListLabels();
             });
             e.Handled = true;
         }
 
-        // Кнопка «Добавить метку» — создание через полный редактор.
+        // Кнопка «Добавить метку» ведёт не в редактор, а в список меток
+        // проекта: поставить уже заведённую — один щелчок. Редактор
+        // открывается оттуда последней строкой, когда нужной метки ещё нет.
         private void OnAddLabelClick(object? sender, RoutedEventArgs e)
         {
-            if (DataContext is not CharacterBasicsTabViewModel vm) return;
-
-            FindLabelEditor()?.ShowFor(null, (created, applyToAll) =>
-            {
-                vm.UpsertLabel(created, applyToAll);
-                if (applyToAll) RefreshListLabels();
-            });
             e.Handled = true;
+            if (DataContext is not CharacterBasicsTabViewModel vm) return;
+            if (sender is not Control anchor) return;
+
+            LabelPicker.ShowAt(
+                anchor,
+                vm.PickableLabels(),
+                pick: label =>
+                {
+                    vm.AddKnownLabel(label);
+                    RefreshListLabels();
+                },
+                create: () => FindLabelEditor()?.ShowFor(
+                    null,
+                    created =>
+                    {
+                        vm.UpsertLabel(created, asGlobal: true);
+                        RefreshListLabels();
+                    },
+                    LabelPicker.PendingName));
         }
 
         // Стрелки порядка в чипе: влево/вправо на одну позицию.

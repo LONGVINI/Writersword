@@ -17,6 +17,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private int _selectedTabIndex;
         private bool _isTableTabVisible;
         private bool _isImageTabVisible;
+        private bool _isTocTabVisible;
         private bool _isEditingEnabled = true;
 
         public int SelectedTabIndex
@@ -46,6 +47,16 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         }
 
         /// <summary>
+        /// Управляет видимостью контекстной вкладки «Оглавление».
+        /// true — каретка стоит внутри оглавления.
+        /// </summary>
+        public bool IsTocTabVisible
+        {
+            get => _isTocTabVisible;
+            set => this.RaiseAndSetIfChanged(ref _isTocTabVisible, value);
+        }
+
+        /// <summary>
         /// false — режим сравнения версий: содержимое вкладок риббона не принимает
         /// клики и ввод (IsHitTestVisible), но выглядит почти обычно и продолжает
         /// отражать состояние под кареткой. Переключение вкладок остаётся доступным.
@@ -71,20 +82,36 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public RibbonLayoutTabViewModel Layout { get; }
         public RibbonReferencesTabViewModel References { get; }
 
+        /// <summary>
+        /// Вкладка «Вид»: чем залит лист при правке, каким светом, что с картинками
+        /// и что остаётся на экране в режиме фокуса.
+        ///
+        /// Она одна получает не исполнителя команд документа, а модуль: речь идёт о
+        /// показе рукописи, а не о её правке, и модель документа про цвет листа на
+        /// экране ничего не знает.
+        /// </summary>
+        public RibbonAppearanceTabViewModel Appearance { get; }
+
         /// <summary>Контекстная вкладка для работы с таблицей.</summary>
         public RibbonTableTabViewModel Table { get; }
 
         /// <summary>Контекстная вкладка для работы с картинкой и фигурой.</summary>
         public RibbonImageTabViewModel Image { get; }
 
-        public RibbonViewModel(ITextEditorCommandTarget target)
+        /// <summary>Контекстная вкладка для работы с оглавлением.</summary>
+        public RibbonTocTabViewModel Toc { get; }
+
+        public RibbonViewModel(
+            ITextEditorCommandTarget target, IEditorViewHost viewHost, ITocHost tocHost)
         {
             Home = new RibbonHomeTabViewModel(target);
             Insert = new RibbonInsertTabViewModel(target);
             Layout = new RibbonLayoutTabViewModel(target);
             References = new RibbonReferencesTabViewModel(target);
+            Appearance = new RibbonAppearanceTabViewModel(viewHost);
             Table = new RibbonTableTabViewModel(target);
             Image = new RibbonImageTabViewModel(target);
+            Toc = new RibbonTocTabViewModel(tocHost);
         }
     }
 }

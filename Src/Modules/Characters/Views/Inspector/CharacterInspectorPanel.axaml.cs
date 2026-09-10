@@ -178,6 +178,47 @@ namespace Writersword.Modules.Characters.Views.Inspector
             trigger?.Flyout?.Hide();
         }
 
+        /// <summary>
+        /// Поймать Ctrl+Z внутри ленты — вернуть недавнюю, убранную крестиком.
+        ///
+        /// Обработчик вешается на корень окна-попапа, а не на саму панель:
+        /// содержимое флаута живёт в отдельном окне, и клавиши из него до
+        /// панели не всплывают — до панели вообще ничего оттуда не доходит.
+        /// Строится это окно при каждом открытии заново, поэтому подписка
+        /// сначала снимается: иначе после десятого открытия один Ctrl+Z
+        /// вернул бы десять записей.
+        ///
+        /// Ловится и в туннеле, и на всплытии, и вместе с уже обработанными:
+        /// внутри ленты есть поля и списки, которые Ctrl+Z считают своим, и
+        /// пока в стопке есть что вернуть, первым его получает лента.
+        /// </summary>
+        private void OnQuickAvatarsFlyoutLoaded(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not Control root) return;
+
+            var popup = TopLevel.GetTopLevel(root);
+            if (popup is null) return;
+
+            popup.RemoveHandler(KeyDownEvent, OnQuickAvatarsKeyDown);
+            popup.AddHandler(
+                KeyDownEvent,
+                OnQuickAvatarsKeyDown,
+                RoutingStrategies.Tunnel | RoutingStrategies.Bubble,
+                handledEventsToo: true);
+        }
+
+        private void OnQuickAvatarsKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Z) return;
+            if ((e.KeyModifiers & KeyModifiers.Control) == 0) return;
+
+            var quick = (DataContext as CharacterInspectorViewModel)?.QuickAvatars;
+            if (quick is null) return;
+
+            // Отменять нечего — событие уходит дальше нетронутым.
+            if (quick.UndoRemoveRecent()) e.Handled = true;
+        }
+
         // ── Приём брошенной картинки ──────────────────────────────────────
         //
         // Панель принимает файл так же, как карточка: тянуть его к маленькому
@@ -417,21 +458,35 @@ namespace Writersword.Modules.Characters.Views.Inspector
             return host?.FindControl<LabelEditorOverlay>("LabelEditorOverlayControl");
         }
 
+        // Кнопка ведёт не в редактор, а в список меток проекта: поставить
+        // «Ранен», которая заведена с первой главы, — это один щелчок, а не
+        // повторный подбор значка и цвета. Редактор открывается оттуда же
+        // последней строкой, когда метки нужного вида ещё нет.
         private void OnAddLabelClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
             if (DataContext is not CharacterInspectorViewModel vm || !vm.CanEditLabels) return;
+            if (sender is not Control anchor) return;
 
-            FindLabelEditor()?.ShowFor(null, (created, applyToAll) => vm.UpsertLabel(created, applyToAll));
+            LabelPicker.ShowAt(
+                anchor,
+                vm.PickableLabels(),
+                pick: label => vm.AddKnownLabel(label),
+                create: () => FindLabelEditor()?.ShowFor(
+                    null,
+                    created => vm.UpsertLabel(created, applyToAll: true),
+                    LabelPicker.PendingName));
         }
 
+        // Правка метки: вид метки общий, поэтому правка уходит и в реестр
+        // проекта, и всем, у кого эта метка стоит.
         private void OnLabelChipClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
             if (sender is not Control c || c.DataContext is not CharacterLabel label) return;
             if (DataContext is not CharacterInspectorViewModel vm || !vm.CanEditLabels) return;
 
-            FindLabelEditor()?.ShowFor(label, (updated, applyToAll) => vm.UpsertLabel(updated, applyToAll));
+            FindLabelEditor()?.ShowFor(label, updated => vm.UpsertLabel(updated, applyToAll: true));
         }
 
         private void OnLabelRemoveClick(object? sender, RoutedEventArgs e)

@@ -109,14 +109,26 @@ namespace Writersword.Modules.TextEditor.Document
             float marginLeftPt, float marginTopPt,
             List<PageRect> pages, int flowPageIdx)
         {
-            float wPt = (float)Math.Max(shape.WidthPt, ShapeMinSidePt);
-            float hPt = (float)Math.Max(shape.HeightPt, ShapeMinSidePt);
-            float xPt = pageXPt + marginLeftPt + (float)shape.OffsetXPt;
-            float yPt = pageYPt + marginTopPt + (float)shape.OffsetYPt;
+            // Габарит и смещение приводятся к листу чтения одним и тем же множителем
+            // (в правке он равен единице): лист книги меньше печатного, и фигура,
+            // посчитанная в печатных пунктах, вылезала за его край.
+            var (wPt, hPt) = ReadingShapeSize(shape);
+            float xPt = pageXPt + marginLeftPt + ReadingOffsetXPt(shape.OffsetXPt);
+            float yPt = pageYPt + marginTopPt + ReadingOffsetYPt(shape.OffsetYPt);
 
-            return new ShapeEntry(
-                shape, yPt, xPt, wPt, hPt,
-                ResolveFloatingObjectPage(xPt, yPt, wPt, hPt, pages, flowPageIdx));
+            int shapePageIdx = ResolveFloatingObjectPage(xPt, yPt, wPt, hPt, pages, flowPageIdx);
+
+            // В книге фигура загоняется в лист — по той же причине, что и картинка:
+            // лист меньше печатного, и фигура у края бумаги уходит за обрез.
+            if (pages.Count > 0)
+            {
+                var sheet = pages[Math.Clamp(shapePageIdx, 0, pages.Count - 1)];
+                (xPt, yPt, wPt, hPt) = FitFloatingToSheet(
+                    xPt, yPt, wPt, hPt, shape.RotationDeg,
+                    sheet.PadLeftPt, sheet.Ypt, sheet.WidthPt, sheet.HeightPt);
+            }
+
+            return new ShapeEntry(shape, yPt, xPt, wPt, hPt, shapePageIdx);
         }
 
         /// <summary>
@@ -231,7 +243,8 @@ namespace Writersword.Modules.TextEditor.Document
                 // зазоре не рисуется — по обрезу сразу видно, какому листу она
                 // принадлежит. Фигура, целиком промахнувшаяся мимо своего листа,
                 // не клипуется: иначе объект в документе есть, а на экране его нет.
-                bool offPage = se.PageIndex >= 0 && se.PageIndex < pages.Count
+                bool offPage = OffPageMarkersVisible
+                    && se.PageIndex >= 0 && se.PageIndex < pages.Count
                     && IsShapeOffItsPage(se, pages[se.PageIndex]);
 
                 bool clip = se.PageIndex >= 0 && se.PageIndex < pages.Count && !offPage;
@@ -299,6 +312,9 @@ namespace Writersword.Modules.TextEditor.Document
         private void RenderShapeSelection(SKCanvas canvas, int firstPage, int lastPage)
         {
             if (_selectedShape is null) return;
+
+            // В чтении рамок и маркеров нет: книга показывает рукопись, а не правит её.
+            if (!SelectionDrawable) return;
 
             var se = FindShapeEntry(_selectedShape);
             if (se is null) return;

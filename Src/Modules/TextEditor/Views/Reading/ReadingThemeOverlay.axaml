@@ -70,6 +70,36 @@
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
+		<!-- Иконочное действие над видом: дублировать, удалить. Стоят в шапке
+		     карточки имени, где человек и правит вид, а не в конце длинной
+		     прокрутки, куда ещё нужно доехать. -->
+		<Style Selector="Button.iconAction">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Width"           Value="26"/>
+			<Setter Property="Height"          Value="26"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Button.iconAction:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.iconAction.danger:pointerover">
+			<Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.iconAction.danger:pointerover /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.iconAction:disabled">
+			<Setter Property="Opacity" Value="0.4"/>
+		</Style>
+
 		<Style Selector="Button.IconClose">
 			<Setter Property="Background"      Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="0"/>
@@ -179,6 +209,13 @@
 			<Setter Property="VerticalAlignment" Value="Center"/>
 		</Style>
 
+		<!-- Щелчок в любую точку дорожки переносит бегунок туда же — как у полосок
+		     R, G, B в палитре. Половинки трека — RepeatButton'ы — иначе перехватывают
+		     нажатие раньше ползунка и отрабатывают свой шаг. -->
+		<Style Selector="Slider.Neat /template/ RepeatButton">
+			<Setter Property="IsHitTestVisible" Value="False"/>
+		</Style>
+
 		<Style Selector="Slider.Neat">
 			<Setter Property="MinHeight"         Value="0"/>
 			<Setter Property="Height"            Value="18"/>
@@ -251,10 +288,6 @@
 					           FontSize="16" FontWeight="SemiBold"
 					           VerticalAlignment="Center"
 					           Foreground="{DynamicResource TextPrimaryBrush}"/>
-					<infra:HintMark Grid.Column="1" Margin="8 0 0 0"
-					                VerticalAlignment="Center"
-					                behaviours:TooltipBehavior.Tip="Что такое вид чтения"
-					                behaviours:TooltipBehavior.Description="Собственное оформление книги под своим именем: цвет листа и текста, картинка бумаги, шрифт и свет. На печать, экспорт и содержание рукописи вид не влияет никогда."/>
 					<Button Grid.Column="3" x:Name="CloseBtn" Classes="IconClose">
 						<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
 						          Width="14" Height="14"/>
@@ -289,7 +322,7 @@
 
 							<ScrollViewer VerticalScrollBarVisibility="Auto"
 							              HorizontalScrollBarVisibility="Disabled">
-								<ItemsControl x:Name="ThemeList">
+								<ItemsControl x:Name="ThemeList" Margin="0 0 8 0">
 									<ItemsControl.ItemTemplate>
 										<DataTemplate>
 											<Border Classes="themeRow"
@@ -334,228 +367,253 @@
 					</Border>
 
 					<!-- ── Правка выбранного вида ───────────────────────── -->
-					<ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto"
-					              HorizontalScrollBarVisibility="Disabled">
-						<StackPanel Spacing="10">
+					<DockPanel Grid.Column="2">
 
-							<!-- Имя и область -->
-							<Border Classes="card">
-								<StackPanel Spacing="10">
-									<Grid ColumnDefinitions="Auto Auto *" ColumnSpacing="6">
-										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Название"/>
-										<infra:HintMark Grid.Column="1" VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Название вида"
-										                behaviours:TooltipBehavior.Description="Своё имя — по нему вид находится в ленте. Встроенные виды переименовать нельзя, но их можно скопировать кнопкой «Создать»."/>
+						<!-- Пример вида.
+
+						     Стоит внизу и с прокруткой не уезжает: настраивая цвет листа,
+						     шрифт и свет, смотреть нужно на бумагу, а не искать её где-то
+						     выше по списку полей. Порядок слоёв тот же, что и на странице:
+						     цвет листа, картинка бумаги, буквы, свет поверх всего. -->
+						<Border DockPanel.Dock="Bottom" Classes="card" Margin="0 10 0 0">
+							<StackPanel Spacing="8">
+								<StackPanel Orientation="Horizontal" Spacing="6">
+									<TextBlock Classes="cardTitle" Text="Пример"/>
+								</StackPanel>
+
+								<Border x:Name="PreviewFrame" Height="118" CornerRadius="8"
+								        ClipToBounds="True"
+								        BorderBrush="{DynamicResource BorderSubtleBrush}"
+								        BorderThickness="1">
+									<Grid>
+										<!-- Поле вокруг книги. На настоящем экране его больше, чем
+										     самой бумаги, и пример без него показывал вид наполовину:
+										     заливка и картинка фона настраивались вслепую. -->
+										<Border x:Name="PreviewBackdrop"/>
+										<Border x:Name="PreviewBackdropImage" IsVisible="False"/>
+
+										<!-- Лист лежит НА поле, с полями по бокам и тенью под ним —
+										     как в книге. -->
+										<Border x:Name="PreviewSheet"
+										        Margin="30 9"
+										        CornerRadius="2"
+										        ClipToBounds="True"
+										        BoxShadow="0 2 9 0 #40000000">
+											<Grid>
+												<Border x:Name="PreviewPaper"/>
+												<Border x:Name="PreviewPaperImage" IsVisible="False"/>
+
+												<StackPanel Margin="13 9" Spacing="3">
+													<TextBlock x:Name="PreviewHead" Text="Глава первая"
+													           FontSize="12" FontWeight="SemiBold"/>
+													<TextBlock x:Name="PreviewBody" TextWrapping="Wrap"
+													           FontSize="11" LineHeight="16"
+													           Text="Он читал до рассвета, и строки ложились ровно так, как ложится свет от лампы: без резкости, без крика, ровным тёплым полем."/>
+												</StackPanel>
+											</Grid>
+										</Border>
+
+										<!-- Свет ложится поверх всего — и поверх букв, и поверх поля,
+										     ровно как в книге: сперва тёплая плёнка, затем приглушение. -->
+										<Border x:Name="PreviewWarm" IsHitTestVisible="False"/>
+										<Border x:Name="PreviewDim" IsHitTestVisible="False"/>
 									</Grid>
-									<TextBox x:Name="NameBox" Classes="Field" PlaceholderText="Например: Ночная тёплая"/>
+								</Border>
+							</StackPanel>
+						</Border>
 
-									<Border Height="1" Background="{DynamicResource BorderSubtleBrush}"/>
+						<ScrollViewer VerticalScrollBarVisibility="Auto"
+						              HorizontalScrollBarVisibility="Disabled">
+							<StackPanel Spacing="10" Margin="0 0 14 0">
 
-									<Grid ColumnDefinitions="Auto Auto *" ColumnSpacing="6">
-										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Где хранить"/>
-										<infra:HintMark Grid.Column="1" VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Где хранить вид"
-										                behaviours:TooltipBehavior.Description="«В документе» — вид уезжает вместе с рукописью: открывший её увидит книгу такой же. «Везде» — вид лежит в настройках программы и доступен во всех проектах. Можно включить обе области сразу."/>
-									</Grid>
-									<Border Classes="scopeTrack" HorizontalAlignment="Left">
-										<StackPanel Orientation="Horizontal" Spacing="2">
-											<ToggleButton x:Name="ScopeDocBtn" Classes="scope local" Content="В документе"/>
-											<ToggleButton x:Name="ScopeGlobalBtn" Classes="scope global" Content="Везде"/>
+								<!-- Имя и область -->
+								<Border Classes="card">
+									<StackPanel Spacing="10">
+										<Grid ColumnDefinitions="Auto Auto * Auto Auto" ColumnSpacing="6">
+											<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Название"/>
+											<Button Grid.Column="3" x:Name="DuplicateBtn" Classes="iconAction"
+											        behaviours:TooltipBehavior.Tip="Дублировать вид"
+											        behaviours:TooltipBehavior.Description="Копия под новым именем. Встроенный вид иначе не изменить — его копию править можно.">
+												<PathIcon Width="13" Height="13"
+												          Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+											</Button>
+											<Button Grid.Column="4" x:Name="DeleteBtn" Classes="iconAction danger"
+											        behaviours:TooltipBehavior.Tip="Удалить вид"
+											        behaviours:TooltipBehavior.Description="Убирает вид из обеих областей. Встроенные виды удалить нельзя.">
+												<PathIcon Width="13" Height="13"
+												          Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+											</Button>
+										</Grid>
+										<TextBox x:Name="NameBox" Classes="Field" PlaceholderText="Например: Ночная тёплая"/>
+
+										<Border Height="1" Background="{DynamicResource BorderSubtleBrush}"/>
+
+										<Grid ColumnDefinitions="Auto Auto *" ColumnSpacing="6">
+											<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Где хранить"/>
+										</Grid>
+										<!-- Область одна из двух, а не две галочки. Вид, лежащий сразу
+										     в документе и в общих настройках, — это две его копии, которые
+										     разойдутся при первой же правке одной из них. Кому нужен вид и
+										     здесь, и всюду, делает дубль кнопкой рядом с названием: тогда
+										     видно, что копий две, и какая из них какая. -->
+										<Border Classes="scopeTrack" HorizontalAlignment="Left">
+											<Panel>
+												<Border x:Name="ScopeThumb" Classes="scopeThumb"/>
+												<StackPanel Orientation="Horizontal">
+													<Button x:Name="ScopeDocBtn" Classes="scope local" Content="Локально"/>
+													<Button x:Name="ScopeGlobalBtn" Classes="scope global" Content="Глобально"/>
+												</StackPanel>
+											</Panel>
+										</Border>
+										<TextBlock x:Name="ScopeHint" Classes="Hint"
+										           Text="Вид нигде не сохранён — включите хотя бы одну область."/>
+									</StackPanel>
+								</Border>
+
+								<!-- Цвета -->
+								<Border Classes="card">
+									<StackPanel Spacing="10">
+										<StackPanel Orientation="Horizontal" Spacing="6">
+											<TextBlock Classes="cardTitle" Text="Цвета"/>
 										</StackPanel>
-									</Border>
-									<TextBlock x:Name="ScopeHint" Classes="Hint"
-									           Text="Вид нигде не сохранён — включите хотя бы одну область."/>
-								</StackPanel>
-							</Border>
 
-							<!-- Цвета -->
-							<Border Classes="card">
-								<StackPanel Spacing="10">
-									<StackPanel Orientation="Horizontal" Spacing="6">
-										<TextBlock Classes="cardTitle" Text="Цвета"/>
-										<infra:HintMark VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Цвета вида"
-										                behaviours:TooltipBehavior.Description="Лист — чем заливается страница. Текст — цвет для тех слов, которым цвет не задан в самом документе: авторский цвет остаётся авторским."/>
+										<Grid ColumnDefinitions="Auto Auto Auto * Auto Auto Auto"
+										      RowDefinitions="Auto"
+										      ColumnSpacing="8" RowSpacing="10">
+											<TextBlock Grid.Row="0" Grid.Column="0" Classes="FieldLabel" Text="Лист"/>
+											<ui:ColorPickerButton Grid.Row="0" Grid.Column="1" x:Name="SheetColorBtn"
+											                      Width="26" Height="26"
+											                      VerticalAlignment="Center"/>
+											<TextBlock Grid.Row="0" Grid.Column="4" Classes="FieldLabel" Text="Текст"/>
+											<ui:ColorPickerButton Grid.Row="0" Grid.Column="5" x:Name="InkColorBtn"
+											                      Width="26" Height="26"
+											                      VerticalAlignment="Center"/>
+										</Grid>
 									</StackPanel>
+								</Border>
 
-									<Grid ColumnDefinitions="Auto Auto Auto * Auto Auto Auto"
-									      RowDefinitions="Auto"
-									      ColumnSpacing="8" RowSpacing="10">
-										<TextBlock Grid.Row="0" Grid.Column="0" Classes="FieldLabel" Text="Лист"/>
-										<ui:ColorPickerButton Grid.Row="0" Grid.Column="1" x:Name="SheetColorBtn"
-										                      Width="26" Height="26"
-										                      VerticalAlignment="Center"/>
-										<infra:HintMark Grid.Row="0" Grid.Column="2" VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Цвет листа"
-										                behaviours:TooltipBehavior.Description="Тёмный лист сам по себе включает чтение в темноте — тогда цвет текста подберите светлым."/>
+								<!-- Шрифт и свет -->
+								<Border Classes="card">
+									<StackPanel Spacing="10">
+										<StackPanel Orientation="Horizontal" Spacing="6">
+											<TextBlock Classes="cardTitle" Text="Шрифт и свет"/>
+										</StackPanel>
 
-										<TextBlock Grid.Row="0" Grid.Column="4" Classes="FieldLabel" Text="Текст"/>
-										<ui:ColorPickerButton Grid.Row="0" Grid.Column="5" x:Name="InkColorBtn"
-										                      Width="26" Height="26"
-										                      VerticalAlignment="Center"/>
-										<infra:HintMark Grid.Row="0" Grid.Column="6" VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Цвет текста"
-										                behaviours:TooltipBehavior.Description="Действует на текст без собственного цвета. Чёрный и серый в документе — это цвет по умолчанию, и вид вправе заменить его своим; цветной текст остаётся авторским. Контрастность разводит текст с бумагой сильнее или слабее."/>
+										<Grid ColumnDefinitions="Auto *" ColumnSpacing="8">
+											<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Шрифт"/>
+											<ComboBox Grid.Column="1" x:Name="FontCombo" Classes="Field"/>
+										</Grid>
 
-									</Grid>
-								</StackPanel>
-							</Border>
+										<Grid ColumnDefinitions="Auto Auto * Auto" ColumnSpacing="8" RowDefinitions="Auto Auto Auto" RowSpacing="6">
+											<TextBlock Grid.Row="0" Grid.Column="0" Classes="FieldLabel" Text="Яркость"/>
+											<Slider Grid.Row="0" Grid.Column="2" x:Name="BrightnessSlider" Classes="Neat"
+											        Minimum="35" Maximum="100"/>
+											<TextBlock Grid.Row="0" Grid.Column="3" x:Name="BrightnessValue"
+											           Classes="FieldLabel" Width="42" TextAlignment="Right"/>
 
-							<!-- Шрифт и свет -->
-							<Border Classes="card">
-								<StackPanel Spacing="10">
-									<StackPanel Orientation="Horizontal" Spacing="6">
-										<TextBlock Classes="cardTitle" Text="Шрифт и свет"/>
-										<infra:HintMark VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Шрифт и свет"
-										                behaviours:TooltipBehavior.Description="Шрифт задавать не обязательно: вид может менять только цвета, а начертание оставлять авторским. Свет — то же, что ползунки в ленте, но запомненное в самом виде."/>
+											<TextBlock Grid.Row="1" Grid.Column="0" Classes="FieldLabel" Text="Контраст"/>
+											<Slider Grid.Row="1" Grid.Column="2" x:Name="ContrastSlider" Classes="Neat"
+											        Minimum="60" Maximum="160"/>
+											<TextBlock Grid.Row="1" Grid.Column="3" x:Name="ContrastValue"
+											           Classes="FieldLabel" Width="42" TextAlignment="Right"/>
+
+											<TextBlock Grid.Row="2" Grid.Column="0" Classes="FieldLabel" Text="Теплота"/>
+											<Slider Grid.Row="2" Grid.Column="2" x:Name="WarmthSlider" Classes="Neat"
+											        Minimum="0" Maximum="100"/>
+											<TextBlock Grid.Row="2" Grid.Column="3" x:Name="WarmthValue"
+											           Classes="FieldLabel" Width="42" TextAlignment="Right"/>
+										</Grid>
 									</StackPanel>
+								</Border>
 
-									<Grid ColumnDefinitions="Auto *" ColumnSpacing="8">
-										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Шрифт"/>
-										<ComboBox Grid.Column="1" x:Name="FontCombo" Classes="Field"/>
-									</Grid>
+								<!-- Поле вокруг книги.
 
-									<Grid ColumnDefinitions="Auto Auto * Auto" ColumnSpacing="8" RowDefinitions="Auto Auto Auto" RowSpacing="6">
-										<TextBlock Grid.Row="0" Grid.Column="0" Classes="FieldLabel" Text="Яркость"/>
-										<infra:HintMark Grid.Row="0" Grid.Column="1" VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Яркость"
-										                behaviours:TooltipBehavior.Description="Приглушает свет над страницей, не трогая цвета документа."/>
-										<Slider Grid.Row="0" Grid.Column="2" x:Name="BrightnessSlider" Classes="Neat"
-										        Minimum="35" Maximum="100"/>
-										<TextBlock Grid.Row="0" Grid.Column="3" x:Name="BrightnessValue"
-										           Classes="FieldLabel" Width="42" TextAlignment="Right"/>
+								     Отдельной подсекцией: у поля своя заливка и своя картинка,
+								     и в карточке цветов это была бы строка из шести полей.
 
-										<TextBlock Grid.Row="1" Grid.Column="0" Classes="FieldLabel" Text="Контраст"/>
-										<infra:HintMark Grid.Row="1" Grid.Column="1" VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Контраст"
-										                behaviours:TooltipBehavior.Description="Разводит текст и бумагу. Меньше — буквы мягче, больше — резче. Работает и на тёмной бумаге."/>
-										<Slider Grid.Row="1" Grid.Column="2" x:Name="ContrastSlider" Classes="Neat"
-										        Minimum="60" Maximum="160"/>
-										<TextBlock Grid.Row="1" Grid.Column="3" x:Name="ContrastValue"
-										           Classes="FieldLabel" Width="42" TextAlignment="Right"/>
+								     Своих видов заливки нет намеренно: градиенты уже есть у
+								     цветов, и поле принимает выбранное значение как есть. -->
+								<Border Classes="card">
+									<StackPanel Spacing="10">
+										<StackPanel Orientation="Horizontal" Spacing="6">
+											<TextBlock Classes="cardTitle" Text="Фон вокруг книги"/>
+										</StackPanel>
 
-										<TextBlock Grid.Row="2" Grid.Column="0" Classes="FieldLabel" Text="Тёплота"/>
-										<infra:HintMark Grid.Row="2" Grid.Column="1" VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Тёплота"
-										                behaviours:TooltipBehavior.Description="Убирает синеву, как ночной режим экрана. Помогает читать перед сном."/>
-										<Slider Grid.Row="2" Grid.Column="2" x:Name="WarmthSlider" Classes="Neat"
-										        Minimum="0" Maximum="100"/>
-										<TextBlock Grid.Row="2" Grid.Column="3" x:Name="WarmthValue"
-										           Classes="FieldLabel" Width="42" TextAlignment="Right"/>
-									</Grid>
-								</StackPanel>
-							</Border>
+										<Grid ColumnDefinitions="Auto Auto Auto * Auto" ColumnSpacing="8">
+											<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Заливка"/>
+											<ui:ColorPickerButton Grid.Column="1" x:Name="BackColorBtn"
+											                      Width="26" Height="26"
+											                      VerticalAlignment="Center"/>
+											<Button Grid.Column="4" x:Name="BackResetBtn" Classes="mini"
+											        Content="От бумаги"/>
+										</Grid>
 
-							<!-- Поле вокруг книги.
+										<StackPanel Orientation="Horizontal" Spacing="6">
+											<CheckBox x:Name="BackUseImageCheck" FontSize="12"
+											          Content="Использовать картинку"/>
+										</StackPanel>
 
-							     Отдельной подсекцией: у поля своя заливка и своя картинка,
-							     и в карточке цветов это была бы строка из шести полей.
+										<Grid ColumnDefinitions="* Auto Auto" ColumnSpacing="6">
+											<TextBox Grid.Column="0" x:Name="BackImagePathBox" Classes="Field"
+											         PlaceholderText="картинка фона не выбрана"/>
+											<Button Grid.Column="1" x:Name="BackBrowseBtn" Classes="mini" Content="Выбрать…"/>
+											<Button Grid.Column="2" x:Name="BackClearImageBtn" Classes="mini" Content="Убрать"/>
+										</Grid>
 
-							     Своих видов заливки нет намеренно: градиенты уже есть у
-							     цветов, и поле принимает выбранное значение как есть. -->
-							<Border Classes="card">
-								<StackPanel Spacing="10">
-									<StackPanel Orientation="Horizontal" Spacing="6">
-										<TextBlock Classes="cardTitle" Text="Фон вокруг книги"/>
-										<infra:HintMark VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Поле вокруг книги"
-										                behaviours:TooltipBehavior.Description="То, на чём лежит лист. Занимает больше места на экране, чем сама книга, и от него зависит, устают ли глаза. Пока заливка не выбрана, поле выводится из бумаги: под светлой книгой темнее, под тёмной чуть светлее."/>
+										<Grid ColumnDefinitions="Auto Auto Auto * Auto" ColumnSpacing="8">
+											<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Как лечь"/>
+											<ComboBox Grid.Column="1" x:Name="BackFitCombo"
+											          MinWidth="130" FontSize="12"/>
+											<TextBlock Grid.Column="2" Classes="FieldLabel" Text="Плотность"/>
+											<Slider Grid.Column="3" x:Name="BackOpacitySlider" Classes="Neat"
+											        Minimum="0" Maximum="100"/>
+											<TextBlock Grid.Column="4" x:Name="BackOpacityValue" Classes="FieldLabel"
+											           Width="42" TextAlignment="Right"/>
+										</Grid>
 									</StackPanel>
+								</Border>
 
-									<Grid ColumnDefinitions="Auto Auto Auto * Auto" ColumnSpacing="8">
-										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Заливка"/>
-										<ui:ColorPickerButton Grid.Column="1" x:Name="BackColorBtn"
-										                      Width="26" Height="26"
-										                      VerticalAlignment="Center"/>
-										<infra:HintMark Grid.Column="2" VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Заливка поля"
-										                behaviours:TooltipBehavior.Description="Цвет или градиент — тот же выбор, что и у любого другого цвета в программе."/>
-										<Button Grid.Column="4" x:Name="BackResetBtn" Classes="mini"
-										        Content="От бумаги"/>
-									</Grid>
+								<!-- Картинка бумаги -->
+								<Border Classes="card">
+									<StackPanel Spacing="10">
+										<StackPanel Orientation="Horizontal" Spacing="6">
+											<TextBlock Classes="cardTitle" Text="Картинка бумаги"/>
+										</StackPanel>
 
-									<StackPanel Orientation="Horizontal" Spacing="6">
-										<CheckBox x:Name="BackUseImageCheck" FontSize="12"
-										          Content="Использовать картинку"/>
-										<infra:HintMark VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Картинка поля"
-										                behaviours:TooltipBehavior.Description="Картинка ложится поверх заливки. Там, где она прозрачна или не закрывает поле целиком, остаётся заливка."/>
+										<Grid ColumnDefinitions="* Auto Auto" ColumnSpacing="6">
+											<TextBox Grid.Column="0" x:Name="ImagePathBox" Classes="Field"
+											         PlaceholderText="файл не выбран"/>
+											<Button Grid.Column="1" x:Name="BrowseBtn" Classes="mini" Content="Выбрать…"/>
+											<Button Grid.Column="2" x:Name="ClearImageBtn" Classes="mini" Content="Убрать"/>
+										</Grid>
+
+										<TextBlock x:Name="ImageInfoText" Classes="Hint"
+										           Text="Размеры картинки появятся здесь после выбора файла."/>
+
+										<Grid ColumnDefinitions="Auto Auto * Auto" ColumnSpacing="8">
+											<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Плотность"/>
+											<infra:HintMark Grid.Column="1" VerticalAlignment="Center"
+											                behaviours:TooltipBehavior.Tip="Плотность картинки"
+											                behaviours:TooltipBehavior.Description="Насколько картинка перекрывает цвет листа. Для текстуры бумаги обычно хватает трети — иначе она спорит с текстом."/>
+											<Slider Grid.Column="2" x:Name="OpacitySlider" Classes="Neat"
+											        Minimum="0" Maximum="100"/>
+											<TextBlock Grid.Column="3" x:Name="OpacityValue" Classes="FieldLabel"
+											           Width="42" TextAlignment="Right"/>
+										</Grid>
+
+										<StackPanel Orientation="Horizontal" Spacing="6">
+											<CheckBox x:Name="TileCheck" FontSize="12"
+											          Content="Замостить вместо растягивания"/>
+											<infra:HintMark VerticalAlignment="Center"
+											                behaviours:TooltipBehavior.Tip="Замостить"
+											                behaviours:TooltipBehavior.Description="Картинка повторяется в своём размере вместо растягивания на весь лист. Для мелкой текстуры — единственный годный способ: растянутая мелкая картинка превращается в мыло."/>
+										</StackPanel>
 									</StackPanel>
+								</Border>
 
-									<Grid ColumnDefinitions="* Auto Auto" ColumnSpacing="6">
-										<TextBox Grid.Column="0" x:Name="BackImagePathBox" Classes="Field"
-										         PlaceholderText="картинка фона не выбрана"/>
-										<Button Grid.Column="1" x:Name="BackBrowseBtn" Classes="mini" Content="Выбрать…"/>
-										<Button Grid.Column="2" x:Name="BackClearImageBtn" Classes="mini" Content="Убрать"/>
-									</Grid>
-
-									<Grid ColumnDefinitions="Auto Auto Auto * Auto" ColumnSpacing="8">
-										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Как лечь"/>
-										<ComboBox Grid.Column="1" x:Name="BackFitCombo"
-										          MinWidth="130" FontSize="12"/>
-										<TextBlock Grid.Column="2" Classes="FieldLabel" Text="Плотность"/>
-										<Slider Grid.Column="3" x:Name="BackOpacitySlider" Classes="Neat"
-										        Minimum="0" Maximum="100"/>
-										<TextBlock Grid.Column="4" x:Name="BackOpacityValue" Classes="FieldLabel"
-										           Width="42" TextAlignment="Right"/>
-									</Grid>
-								</StackPanel>
-							</Border>
-
-							<!-- Картинка бумаги -->
-							<Border Classes="card">
-								<StackPanel Spacing="10">
-									<StackPanel Orientation="Horizontal" Spacing="6">
-										<TextBlock Classes="cardTitle" Text="Картинка бумаги"/>
-										<infra:HintMark VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Картинка бумаги"
-										                behaviours:TooltipBehavior.Description="Своя текстура поверх цвета листа. Мелкую лучше замостить, крупную — растянуть. Размеры выбранного файла показаны ниже."/>
-									</StackPanel>
-
-									<Grid ColumnDefinitions="* Auto Auto" ColumnSpacing="6">
-										<TextBox Grid.Column="0" x:Name="ImagePathBox" Classes="Field"
-										         PlaceholderText="файл не выбран"/>
-										<Button Grid.Column="1" x:Name="BrowseBtn" Classes="mini" Content="Выбрать…"/>
-										<Button Grid.Column="2" x:Name="ClearImageBtn" Classes="mini" Content="Убрать"/>
-									</Grid>
-
-									<TextBlock x:Name="ImageInfoText" Classes="Hint"
-									           Text="Размеры картинки появятся здесь после выбора файла."/>
-
-									<Grid ColumnDefinitions="Auto Auto * Auto" ColumnSpacing="8">
-										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Плотность"/>
-										<infra:HintMark Grid.Column="1" VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Плотность картинки"
-										                behaviours:TooltipBehavior.Description="Насколько картинка перекрывает цвет листа. Для текстуры бумаги обычно хватает трети — иначе она спорит с текстом."/>
-										<Slider Grid.Column="2" x:Name="OpacitySlider" Classes="Neat"
-										        Minimum="0" Maximum="100"/>
-										<TextBlock Grid.Column="3" x:Name="OpacityValue" Classes="FieldLabel"
-										           Width="42" TextAlignment="Right"/>
-									</Grid>
-
-									<StackPanel Orientation="Horizontal" Spacing="6">
-										<CheckBox x:Name="TileCheck" FontSize="12"
-										          Content="Замостить вместо растягивания"/>
-										<infra:HintMark VerticalAlignment="Center"
-										                behaviours:TooltipBehavior.Tip="Замостить"
-										                behaviours:TooltipBehavior.Description="Картинка повторяется в своём размере вместо растягивания на весь лист. Для мелкой текстуры — единственный годный способ: растянутая мелкая картинка превращается в мыло."/>
-									</StackPanel>
-								</StackPanel>
-							</Border>
-
-							<!-- Действия над видом -->
-							<Grid ColumnDefinitions="Auto Auto * Auto" ColumnSpacing="8">
-								<Button Grid.Column="0" x:Name="DuplicateBtn" Classes="mini" Content="Дублировать"
-								        behaviours:TooltipBehavior.Tip="Дублировать вид"
-								        behaviours:TooltipBehavior.Description="Копия под новым именем. Встроенный вид иначе не изменить — его копию править можно."/>
-								<Button Grid.Column="3" x:Name="DeleteBtn" Classes="mini" Content="Удалить"
-								        behaviours:TooltipBehavior.Tip="Удалить вид"
-								        behaviours:TooltipBehavior.Description="Убирает вид из обеих областей. Встроенные виды удалить нельзя."/>
-							</Grid>
-
-						</StackPanel>
-					</ScrollViewer>
+							</StackPanel>
+						</ScrollViewer>
+					</DockPanel>
 				</Grid>
 			</DockPanel>
 		</Border>

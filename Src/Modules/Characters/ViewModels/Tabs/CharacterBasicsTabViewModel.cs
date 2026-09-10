@@ -498,6 +498,52 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         /// одного «Ранен» может быть с каплей, у другого — с крестом, и это
         /// законно.
         /// </summary>
+        /// <summary>
+        /// Метки проекта, которые есть смысл предложить: те, что у персонажа
+        /// уже стоят, отсеиваются — предлагать поставить второй раз то, что и
+        /// так стоит, незачем. Совпадением считается и опознаватель, и имя:
+        /// проекты старше реестра меток собрали его из копий персонажей, и
+        /// одно имя там могло разойтись по нескольким опознавателям.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<CharacterLabel> PickableLabels()
+        {
+            var mine = Labels.ToList();
+
+            return _characterService.GetAllLabels()
+                .Where(known => !mine.Any(l =>
+                    l.Id == known.Id ||
+                    string.Equals(l.Name, known.Name, StringComparison.CurrentCultureIgnoreCase)))
+                .ToList();
+        }
+
+        /// <summary>
+        /// Поставить персонажу метку, уже заведённую в проекте: вид берётся
+        /// целиком, порядок — свой, в конец. Вид метки при этом никуда не
+        /// пишется: её просто ставят, а не правят.
+        /// </summary>
+        public void AddKnownLabel(CharacterLabel known)
+        {
+            if (known == null) return;
+            if (Labels.Any(l => l.Id == known.Id)) return;
+
+            UpsertLabel(new CharacterLabel
+            {
+                Id = known.Id,
+                Name = known.Name,
+                Icon = known.Icon,
+                IconImage = known.IconImage,
+                Color = known.Color,
+                IconColor = known.IconColor,
+                ShowBackdrop = known.ShowBackdrop,
+                Effect = known.Effect,
+                ShowOnCard = known.ShowOnCard,
+                Description = known.Description,
+                Order = Labels.Count
+            });
+
+            ReloadKnownLabels();
+        }
+
         public void UpsertLabel(CharacterLabel label, bool asGlobal = false)
         {
             var index = -1;

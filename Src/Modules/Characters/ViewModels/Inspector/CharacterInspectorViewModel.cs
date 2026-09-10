@@ -78,6 +78,30 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
                 if (!string.IsNullOrEmpty(combined)) PickQuickAvatar(combined!);
             });
 
+            // Убрать аватарку. Переспроса нет: Ctrl+Z возвращает её на место
+            // вместе с кадром — тем же шагом, каким она ставилась. Файл при
+            // этом не трогается: он лежит в папке и остаётся доступен всем
+            // остальным персонажам.
+            ClearAvatarCommand = ReactiveCommand.Create(() =>
+            {
+                var targets = Targets
+                    .Where(c => !string.IsNullOrEmpty(c.AvatarPath))
+                    .ToList();
+                if (targets.Count == 0) return;
+
+                // Выбранных может быть несколько, а шаг отмены нужен один:
+                // снял разом — вернул разом.
+                using (_owner.BeginUndoBatch("аватарка выбранных карточек"))
+                {
+                    foreach (var card in targets)
+                        _owner.PushAvatarChange(card.Id, card.AvatarPath, null);
+                }
+
+                this.RaisePropertyChanged(nameof(AvatarBitmap));
+                this.RaisePropertyChanged(nameof(CanCropAvatar));
+                this.RaisePropertyChanged(nameof(CanClearAvatar));
+            });
+
             // Кольцо разом по всему проекту. Подтверждение не модальным окном, а
             // раскрытием самой строки в две кнопки — тот же приём, что у
             // удаления в менеджере наборов аватарок: действие задевает все
@@ -204,6 +228,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             this.RaisePropertyChanged(nameof(ImportanceLevel));
             this.RaisePropertyChanged(nameof(CanChooseAvatar));
             this.RaisePropertyChanged(nameof(CanCropAvatar));
+            this.RaisePropertyChanged(nameof(CanClearAvatar));
             this.RaisePropertyChanged(nameof(DropTarget));
             this.RaisePropertyChanged(nameof(QuickAvatars));
 
@@ -402,6 +427,15 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
         /// </summary>
         public bool CanCropAvatar => IsSingle && !string.IsNullOrEmpty(Primary?.AvatarPath);
 
+        public ReactiveCommand<Unit, Unit> ClearAvatarCommand { get; }
+
+        /// <summary>
+        /// Убирать есть что: хотя бы у одной выбранной карточки стоит
+        /// картинка. В отличие от кадрирования, снять её можно и у нескольких
+        /// разом — что снимать, тут одинаково понятно.
+        /// </summary>
+        public bool CanClearAvatar => Targets.Any(c => !string.IsNullOrEmpty(c.AvatarPath));
+
         // ── Аватарка ───────────────────────────────────────────────────────
         //
         // Кнопка на карточке больше аватарку не меняет: щелчок по карточке
@@ -435,6 +469,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
 
             this.RaisePropertyChanged(nameof(AvatarBitmap));
             this.RaisePropertyChanged(nameof(CanCropAvatar));
+            this.RaisePropertyChanged(nameof(CanClearAvatar));
 
             // Список недавних только что пополнился — лента обязана это
             // показать, иначе только что поставленной картинки в ней не будет.
@@ -571,6 +606,52 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
         /// быстрого ввода со списком подсказок (см. AddLabelCommand в
         /// конструкторе).</summary>
         public ReactiveCommand<string, Unit> AddLabelCommand { get; }
+
+        /// <summary>
+        /// Метки проекта, которые есть смысл предложить: те, что у персонажа
+        /// уже стоят, отсеиваются — предлагать поставить второй раз то, что и
+        /// так стоит, незачем. Совпадением считается и опознаватель, и имя:
+        /// проекты старше реестра меток собрали его из копий персонажей, и
+        /// одно имя там могло разойтись по нескольким опознавателям.
+        /// </summary>
+        public IReadOnlyList<CharacterLabel> PickableLabels()
+        {
+            var mine = Labels;
+
+            return _owner.CharacterService.GetAllLabels()
+                .Where(known => !mine.Any(l =>
+                    l.Id == known.Id ||
+                    string.Equals(l.Name, known.Name, StringComparison.CurrentCultureIgnoreCase)))
+                .ToList();
+        }
+
+        /// <summary>
+        /// Поставить персонажу метку, уже заведённую в проекте: вид берётся
+        /// целиком, порядок — свой, в конец. Тем же путём идёт и быстрый ввод
+        /// по имени, и выбор из списка у кнопки.
+        /// </summary>
+        public void AddKnownLabel(CharacterLabel known)
+        {
+            if (!CanEditLabels || known == null) return;
+            if (Labels.Any(l => l.Id == known.Id)) return;
+
+            UpsertLabel(new CharacterLabel
+            {
+                Id = known.Id,
+                Name = known.Name,
+                Icon = known.Icon,
+                IconImage = known.IconImage,
+                Color = known.Color,
+                IconColor = known.IconColor,
+                ShowBackdrop = known.ShowBackdrop,
+                Effect = known.Effect,
+                ShowOnCard = known.ShowOnCard,
+                Description = known.Description,
+                Order = Labels.Count
+            }, applyToAll: false);
+
+            ReloadKnownLabels();
+        }
 
         /// <summary>
         /// Применить метку из редактора: правка существующей (Id сохраняется,

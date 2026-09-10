@@ -39,6 +39,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         public ICommand InsertTOCCommand { get; }
         public ICommand UpdateTOCCommand { get; }
+
+        /// <summary>
+        /// Навигатор по заголовкам. Стоит рядом с оглавлением намеренно: это две подачи
+        /// одной и той же структуры книги, и искать их в разных концах ленты незачем.
+        /// </summary>
+        public ICommand ToggleNavigatorCommand { get; }
         public ICommand InsertFootnoteCommand { get; }
         public ICommand InsertEndnoteCommand { get; }
         public ICommand RunSpellCheckCommand { get; }
@@ -54,7 +60,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             _target = target;
 
             InsertTOCCommand = ReactiveCommand.Create(() => _target.InsertTOC());
-            UpdateTOCCommand = ReactiveCommand.Create(() => { });
+            ToggleNavigatorCommand = ReactiveCommand.Create(() => _target.ToggleNavigator());
+            UpdateTOCCommand = ReactiveCommand.Create(() => _target.UpdateTOC());
             InsertFootnoteCommand = ReactiveCommand.Create(() => _target.InsertFootnote());
             InsertEndnoteCommand = ReactiveCommand.Create(() => _target.InsertEndnote());
             RunSpellCheckCommand = ReactiveCommand.Create(() => _target.RunSpellCheck());

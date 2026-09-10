@@ -1286,26 +1286,7 @@ namespace Writersword.Modules.Characters.ViewModels
             SelectedCharacterCard.BasicsTab.PushUndoableAvatarChange = (oldRef, newRef) =>
             {
                 var id = character.Id;
-
-                PushCommand(new Actions.SetAvatarCommand(id, oldRef, newRef, (cid, value) =>
-                {
-                    var card = SelectedCharacterCard;
-                    if (card != null && card.CharacterId == cid)
-                    {
-                        card.BasicsTab.ApplyAvatarSilently(value);
-                        return;
-                    }
-
-                    // Карточка закрыта — правим модель напрямую, чтобы отмена
-                    // работала и после ухода с персонажа.
-                    var target = _characterService.GetById(cid);
-                    if (target == null) return;
-
-                    target.AvatarPath = value;
-                    _characterService.Update(target);
-
-                    FindListItem(cid)?.ApplyAvatarRef(value);
-                }));
+                PushCommand(new Actions.SetAvatarCommand(id, oldRef, newRef, ApplyAvatarValue));
             };
             // Автосейв карточки кладёт правки в сервис, но строки бокового
             // списка — снимки и сами об этом не узнают. По событию Saved
@@ -1316,6 +1297,50 @@ namespace Writersword.Modules.Characters.ViewModels
             SelectedCharacterCard.BasicsTab.OnApplyRingToAll = ApplyRingToAllCharacters;
             IsCardOpen = true;
             MainTabIndex = 1;
+        }
+
+        /// <summary>
+        /// Поставить или снять аватарку так, чтобы это вернул Ctrl+Z.
+        ///
+        /// Раньше отменяемой была только смена аватарки из открытой карточки:
+        /// боковая панель правила строку списка напрямую, мимо истории. Теперь
+        /// путь один и тот же — и для карточки, и для панели.
+        /// </summary>
+        public void PushAvatarChange(string characterId, string? oldRef, string? newRef)
+        {
+            if (string.IsNullOrEmpty(characterId)) return;
+            if (string.Equals(oldRef, newRef, StringComparison.Ordinal)) return;
+
+            PushCommand(new Actions.SetAvatarCommand(characterId, oldRef, newRef, ApplyAvatarValue));
+
+            // Команда только записывает шаг — сделать его нужно самому: стек
+            // выполняет Execute лишь при повторе (Ctrl+Y).
+            ApplyAvatarValue(characterId, newRef);
+        }
+
+        /// <summary>
+        /// Записать значение аватарки туда, где персонаж сейчас живёт:
+        /// в открытую карточку, а если она закрыта — прямо в модель и в строку
+        /// списка. Один путь на постановку, снятие и отмену того и другого.
+        /// </summary>
+        private void ApplyAvatarValue(string characterId, string? value)
+        {
+            var card = SelectedCharacterCard;
+            if (card != null && card.CharacterId == characterId)
+            {
+                card.BasicsTab.ApplyAvatarSilently(value);
+                return;
+            }
+
+            // Карточка закрыта — правим модель напрямую, чтобы отмена
+            // работала и после ухода с персонажа.
+            var target = _characterService.GetById(characterId);
+            if (target == null) return;
+
+            target.AvatarPath = value;
+            _characterService.Update(target);
+
+            FindListItem(characterId)?.ApplyAvatarRef(value);
         }
 
         private void OnCardSaved(string characterId)

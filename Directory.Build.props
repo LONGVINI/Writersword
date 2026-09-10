@@ -1,7 +1,18 @@
 ﻿<Project>
 	<PropertyGroup>
 		<BaseIntermediateOutputPath>obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
-		<DefaultItemExcludes>$(DefaultItemExcludes);obj\**\*</DefaultItemExcludes>
+
+		<!-- «Claude outputs» — папка для присланных файлов, а не часть исходников.
+		     Она лежит в корне решения, а корень решения — это ещё и корень двух
+		     проектов (Writersword и Writersword.UI.Shared), поэтому их неявные
+		     шаблоны забирали её содержимое в сборку: копия класса конфликтовала
+		     с настоящей (CS0436), а копия разметки поднимала генератор имён на
+		     класс, которого в этой сборке нет (CS1929).
+
+		     Исключение задано свойством, а не через Remove: неявные шаблоны
+		     Compile, AvaloniaXaml и прочих вычисляются уже после этого файла, и
+		     Remove отсюда до них не дотянулся бы. -->
+		<DefaultItemExcludes>$(DefaultItemExcludes);obj\**\*;Claude outputs\**\*</DefaultItemExcludes>
 	</PropertyGroup>
 	<ItemGroup Condition="'$(MSBuildProjectName)' != 'Writersword.Core' and '$(MSBuildProjectName)' != 'Tests'">
 		<!-- Горячая перезагрузка XAML в Debug-сборках. При мультипроектной

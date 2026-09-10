@@ -1,0 +1,318 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             x:Class="Writersword.Modules.TextEditor.Views.Backdrops.BackdropPickerOverlay"
+             IsVisible="False">
+
+	<!--
+	    Выбор картинки, которая ляжет позади страниц.
+
+	    Слева папки, справа плитки. Папка живёт в одном из двух мест, и это видно
+	    значком: локальная лежит в архиве проекта и уезжает с рукописью — её увидит
+	    тот, кому проект передали; глобальная лежит в данных программы и одинакова
+	    во всех проектах.
+
+	    Картинка, выбранная файловым окном мимо папок, всегда ложится в «Недавние» —
+	    папку проекта, которая заводится сама.
+	-->
+
+	<UserControl.Styles>
+
+		<Style Selector="Border.card">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="CornerRadius"    Value="10"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+		</Style>
+
+		<Style Selector="TextBlock.title">
+			<Setter Property="FontSize"   Value="14"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+
+		<Style Selector="TextBlock.hint">
+			<Setter Property="FontSize"     Value="11"/>
+			<Setter Property="Foreground"   Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="TextWrapping" Value="Wrap"/>
+		</Style>
+
+		<Style Selector="Button.flat">
+			<Setter Property="Background"      Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="Padding"         Value="10 5"/>
+			<Setter Property="FontSize"        Value="12"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Button.flat:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="Button.accent">
+			<Setter Property="Background"   Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="BorderBrush"  Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground"   Value="White"/>
+		</Style>
+		<Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}"/>
+		</Style>
+
+		<!-- Строка папки в списке слева -->
+		<Style Selector="Border.folderRow">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush"     Value="Transparent"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="Padding"         Value="8 6"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Border.folderRow:pointerover">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Border.folderRow.selected">
+			<Setter Property="Background"  Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Плитка картинки -->
+		<Style Selector="Border.tile">
+			<Setter Property="Width"           Value="148"/>
+			<Setter Property="CornerRadius"    Value="8"/>
+			<Setter Property="BorderThickness" Value="2"/>
+			<Setter Property="BorderBrush"     Value="Transparent"/>
+			<Setter Property="Background"      Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="Margin"          Value="0 0 10 10"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Border.tile:pointerover">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="Border.tile.selected">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Крестик на плитке: виден только под указателем -->
+		<Style Selector="Border.tile Button.tileDelete">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<Style Selector="Border.tile:pointerover Button.tileDelete">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Button.tileDelete">
+			<Setter Property="Width"            Value="22"/>
+			<Setter Property="Height"           Value="22"/>
+			<Setter Property="Padding"          Value="0"/>
+			<Setter Property="CornerRadius"     Value="11"/>
+			<Setter Property="Background"       Value="#CC1E1E1E"/>
+			<Setter Property="BorderBrush"      Value="#44FFFFFF"/>
+			<Setter Property="BorderThickness"  Value="1"/>
+			<Setter Property="Foreground"       Value="#EEEEEE"/>
+			<Setter Property="Cursor"           Value="Hand"/>
+			<Setter Property="HorizontalAlignment" Value="Right"/>
+			<Setter Property="VerticalAlignment"   Value="Top"/>
+			<Setter Property="Margin"           Value="0 6 6 0"/>
+		</Style>
+		<Style Selector="Button.tileDelete:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#CCB4443C"/>
+		</Style>
+
+		<Style Selector="TextBox.field">
+			<Setter Property="Background"      Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="MinHeight"       Value="28"/>
+			<Setter Property="Padding"         Value="10 3"/>
+			<Setter Property="FontSize"        Value="12"/>
+		</Style>
+
+	</UserControl.Styles>
+
+	<!-- Затемнение позади окна: щелчок мимо закрывает выбор. -->
+	<Border Background="#99000000" PointerPressed="OnBackdropPressed">
+		<Border Classes="card"
+		        Width="880" Height="560"
+		        HorizontalAlignment="Center"
+		        VerticalAlignment="Center"
+		        PointerPressed="OnCardPressed">
+
+			<DockPanel Margin="16">
+
+				<!-- Заголовок -->
+				<Grid DockPanel.Dock="Top" ColumnDefinitions="* Auto" Margin="0 0 0 12">
+					<StackPanel Spacing="2">
+						<TextBlock Classes="title" Text="Фон позади страниц"/>
+						<TextBlock Classes="hint"
+						           Text="Картинка лежит на поле вокруг листа и в рукопись не попадает — ни в печать, ни в экспорт."/>
+					</StackPanel>
+					<Button Grid.Column="1"
+					        Classes="flat"
+					        Content="Закрыть"
+					        Click="OnCancel"/>
+				</Grid>
+
+				<!-- Низ: действия -->
+				<Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto * Auto Auto" Margin="0 12 0 0">
+					<Button Classes="flat"
+					        Content="Добавить картинки…"
+					        Click="OnAddImages"
+					        behaviours:TooltipBehavior.Tip="Положить файлы в выбранную папку"/>
+					<TextBlock Grid.Column="1"
+					           x:Name="StatusText"
+					           Classes="hint"
+					           VerticalAlignment="Center"
+					           Margin="12 0"/>
+					<Button Grid.Column="2"
+					        Classes="flat"
+					        Content="Убрать фон"
+					        Margin="0 0 8 0"
+					        Click="OnClearBackdrop"/>
+					<Button Grid.Column="3"
+					        Classes="flat accent"
+					        Content="Поставить фоном"
+					        x:Name="ApplyButton"
+					        IsEnabled="False"
+					        Click="OnApply"/>
+				</Grid>
+
+				<!-- Тело: папки и плитки -->
+				<Grid ColumnDefinitions="220 * ">
+
+					<!-- Папки -->
+					<DockPanel Grid.Column="0" Margin="0 0 14 0">
+						<StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0 10 0 0">
+							<StackPanel Orientation="Horizontal" Spacing="6">
+								<TextBox x:Name="NewFolderName"
+								         Classes="field"
+								         Width="132"
+								         PlaceholderText="Имя папки"/>
+								<ComboBox x:Name="NewFolderScope"
+								          Width="76"
+								          SelectedIndex="0"
+								          FontSize="11">
+									<ComboBoxItem Content="В проекте"/>
+									<ComboBoxItem Content="Общая"/>
+								</ComboBox>
+							</StackPanel>
+							<Button Classes="flat"
+							        HorizontalAlignment="Stretch"
+							        HorizontalContentAlignment="Center"
+							        Content="Новая папка"
+							        Click="OnCreateFolder"/>
+						</StackPanel>
+
+						<ScrollViewer VerticalScrollBarVisibility="Auto">
+							<ItemsControl x:Name="FolderList">
+								<ItemsControl.ItemTemplate>
+									<DataTemplate>
+										<Border Classes="folderRow"
+										        Classes.selected="{Binding IsSelected}"
+										        PointerPressed="OnFolderPressed"
+										        Tag="{Binding}">
+											<Grid ColumnDefinitions="Auto * Auto">
+												<!-- Значок области: замок для папки проекта,
+												     шар для общей. Метка стоит на папке, а не
+												     на плитке: место хранения — свойство папки,
+												     и повторять его на каждой картинке значит
+												     засорять сетку. -->
+												<PathIcon Grid.Column="0"
+												          Width="13" Height="13"
+												          Margin="0 0 8 0"
+												          Foreground="{DynamicResource TextMutedBrush}"
+												          Data="{Binding ScopeIcon}"/>
+												<StackPanel Grid.Column="1" Spacing="1">
+													<TextBlock Text="{Binding Name}"
+													           FontSize="12"
+													           TextTrimming="CharacterEllipsis"
+													           Foreground="{DynamicResource TextPrimaryBrush}"/>
+													<TextBlock Text="{Binding Subtitle}"
+													           FontSize="10"
+													           Foreground="{DynamicResource TextMutedBrush}"/>
+												</StackPanel>
+												<Button Grid.Column="2"
+												        Classes="flat"
+												        Padding="5 1"
+												        FontSize="10"
+												        Content="✕"
+												        IsVisible="{Binding CanDelete}"
+												        Tag="{Binding}"
+												        Click="OnDeleteFolder"
+												        behaviours:TooltipBehavior.Tip="Удалить папку вместе с картинками"/>
+											</Grid>
+										</Border>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+						</ScrollViewer>
+					</DockPanel>
+
+					<!-- Плитки -->
+					<Border Grid.Column="1"
+					        Background="{DynamicResource BgBaseBrush}"
+					        CornerRadius="8"
+					        BorderBrush="{DynamicResource BorderSubtleBrush}"
+					        BorderThickness="1"
+					        Padding="10">
+						<Panel>
+							<ScrollViewer VerticalScrollBarVisibility="Auto">
+								<ItemsControl x:Name="TileList">
+									<ItemsControl.ItemsPanel>
+										<ItemsPanelTemplate>
+											<WrapPanel Orientation="Horizontal"/>
+										</ItemsPanelTemplate>
+									</ItemsControl.ItemsPanel>
+									<ItemsControl.ItemTemplate>
+										<DataTemplate>
+											<Border Classes="tile"
+											        Classes.selected="{Binding IsSelected}"
+											        Tag="{Binding}"
+											        PointerPressed="OnTilePressed"
+											        DoubleTapped="OnTileDoubleTapped">
+												<StackPanel>
+													<Panel>
+														<Border Height="86"
+														        CornerRadius="6 6 0 0"
+														        ClipToBounds="True">
+															<Image Source="{Binding Preview}"
+															       Stretch="UniformToFill"/>
+														</Border>
+														<Button Classes="tileDelete"
+														        Content="✕"
+														        Tag="{Binding}"
+														        Click="OnDeleteTile"
+														        behaviours:TooltipBehavior.Tip="Убрать картинку из папки"/>
+													</Panel>
+													<TextBlock Text="{Binding FileName}"
+													           FontSize="10"
+													           Margin="8 5 8 7"
+													           TextTrimming="CharacterEllipsis"
+													           Foreground="{DynamicResource TextSecondaryBrush}"/>
+												</StackPanel>
+											</Border>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+							</ScrollViewer>
+
+							<TextBlock x:Name="EmptyHint"
+							           Classes="hint"
+							           IsVisible="False"
+							           HorizontalAlignment="Center"
+							           VerticalAlignment="Center"
+							           TextAlignment="Center"
+							           MaxWidth="280"
+							           Text="В папке пусто. Нажмите «Добавить картинки…» — файлы лягут сюда копиями, и фон не потеряется, если оригиналы переложат."/>
+						</Panel>
+					</Border>
+				</Grid>
+			</DockPanel>
+		</Border>
+	</Border>
+
+</UserControl>

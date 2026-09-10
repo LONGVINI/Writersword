@@ -214,6 +214,55 @@
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
+		<!-- Крестик у недавней: убирает запись из списка, не трогая картинку.
+		     Стоит в правом верхнем углу, кадр — в левом; обе кнопки сидят
+		     серединой на ободке кружка под 45 градусов, как в полном окне
+		     выбора аватарки (AvatarTileTemplate). Кружок радиусом 26: точка
+		     ободка под 45 градусов отстоит от центра на 26/√2 ≈ 18.4, то есть
+		     лежит в 26 − 18.4 ≈ 7.6 от края. Кнопка 18, половина 9 — она чуть
+		     вылезает за плитку, и это правильно: иначе она наезжала бы на
+		     картинку.
+
+		     Появляется при наведении на плитку — как и кадр, чтобы лента из
+		     сотни аватарок не рябила крестиками. -->
+		<Style Selector="Button.qTileDel">
+			<Setter Property="Width" Value="18"/>
+			<Setter Property="Height" Value="18"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="9"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Panel.qTile:pointerover Button.qTileDel">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Button.qTileDel /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="9"/>
+		</Style>
+		<!-- Под курсором крестик краснеет: в теме нет отдельной кисти
+		     «опасно», критический красный один на всё приложение и лежит под
+		     именем конфликта горячих клавиш — берём его, чтобы не заводить
+		     четвёртый оттенок красного. -->
+		<Style Selector="Button.qTileDel:pointerover">
+			<Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.qTileDel:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+
 		<!-- Кнопка кадра в углу аватарки. Тот же приём, что и на плитках
 		     быстрой ленты (qTileCrop): появляется при наведении на аватарку и
 		     не мешает, пока не нужна. Размер 20 в коробке 56 — оба чётные,
@@ -257,6 +306,17 @@
 		<Style Selector="Button.avatarCrop:disabled /template/ ContentPresenter">
 			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+		</Style>
+
+		<!-- Разрушающее действие. В теме нет отдельной кисти «опасно»;
+		     критический красный один на всё приложение и лежит под именем
+		     конфликта горячих клавиш — берём его, чтобы не заводить четвёртый
+		     оттенок красного. -->
+		<Style Selector="Button.avatarCrop.danger:pointerover">
+			<Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.avatarCrop.danger:pointerover /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
 		</Style>
 
 		<!-- Обёртка для подсказки над выключенной кнопкой: выключенный контрол
@@ -618,7 +678,7 @@
 									        Classes="ghost roundGhost"
 									        Width="56" Height="56"
 									        behaviours:TooltipBehavior.Tip="Быстрый выбор аватарки"
-									        behaviours:TooltipBehavior.Description="Недавние, аватарки проекта и папки — щелчком, тут же. Загрузка файла и обрезка остаются в окне «Выбрать аватарку»">
+									        behaviours:TooltipBehavior.Description="Недавние и папки — щелчком, тут же. Загрузка файла, поиск и все аватарки проекта остаются в окне «Выбрать аватарку»">
 										<Panel>
 											<!-- Фон кружка — цвет персонажа (тот же, что и «Цвет
 											     карточки» ниже), а не нейтральный серый: так уже
@@ -666,7 +726,13 @@
 												     DataContext хозяина через ElementName (см. ColorPickerButton.
 												     axaml) — так это гарантированно работает, а не просто
 												     обычно работает. -->
-												<Border Background="{DynamicResource BgPanelBrush}"
+												<!-- Loaded нужен, чтобы поймать Ctrl+Z: содержимое флаута живёт
+												     в своём окне-попапе, и клавиши до панели не всплывают.
+												     Обработчик вешается на корень этого окна, когда оно
+												     построено — см. OnQuickAvatarsFlyoutLoaded. -->
+												<Border x:Name="QuickAvatarsFlyoutRoot"
+												        Loaded="OnQuickAvatarsFlyoutLoaded"
+												        Background="{DynamicResource BgPanelBrush}"
 												        BorderBrush="{DynamicResource BorderDefaultBrush}"
 												        BorderThickness="1" CornerRadius="8" Padding="10">
 													<Border.Resources>
@@ -736,7 +802,7 @@
 																										<PathIcon Width="18" Height="18"
 																											HorizontalAlignment="Center"
 																											VerticalAlignment="Center"
-																											IsVisible="{Binding !HasThumbnail}"
+																											IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNull}}"
 																											Foreground="{DynamicResource TextDisabledBrush}"
 																											Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
 																										<Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
@@ -756,9 +822,22 @@
 																								HorizontalAlignment="Left" VerticalAlignment="Top"
 																								Command="{Binding CropCommand}"
 																								behaviours:TooltipBehavior.Tip="Кадрировать"
-																								behaviours:TooltipBehavior.Description="Выбрать свой кадр этой картинки для этого персонажа"
-																								behaviours:TooltipBehavior.ShowDelay="300">
+																								behaviours:TooltipBehavior.Description="Выбрать свой кадр этой картинки для этого персонажа">
 																								<PathIcon Width="9" Height="9" Data="M1 1H9V5H5V9H1Z M19 19H11V15H15V11H19Z"/>
+																							</Button>
+
+																							<!-- Крестик только у недавних (CanRemove). Окошко
+																							     при этом не закрывается: обработчика Click тут
+																							     нет, а закрытие висит именно на нём у самой
+																							     картинки — убрал одну лишнюю, убираешь
+																							     следующую, не открывая ленту заново. -->
+																							<Button Classes="qTileDel"
+																								HorizontalAlignment="Right" VerticalAlignment="Top"
+																								IsVisible="{Binding CanRemove}"
+																								Command="{Binding RemoveCommand}"
+																								behaviours:TooltipBehavior.Tip="Убрать из недавних"
+																								behaviours:TooltipBehavior.Description="Из списка уйдёт только запись. Картинка останется на месте, и персонажи с этой аватаркой её не потеряют. Ctrl+Z вернёт её обратно">
+																								<PathIcon Width="9" Height="9" Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
 																							</Button>
 																						</Panel>
 																					</DataTemplate>
@@ -771,7 +850,7 @@
 														</ScrollViewer>
 
 														<TextBlock Grid.Row="0"
-															Text="В папках проекта пока нет аватарок — заведите их через «Управление папками» ниже."
+															Text="Пока пусто: поставьте аватарку через «Выбрать аватарку…» — она появится в недавних. Свои папки заводятся в «Управление папками» ниже."
 															FontSize="11.5"
 															TextWrapping="Wrap"
 															IsVisible="{ReflectionBinding #PanelRoot.DataContext.QuickAvatars.HasNoFolders}"
@@ -865,6 +944,24 @@
 											        IsEnabled="{Binding CanCropAvatar}">
 												<PathIcon Width="10" Height="10"
 												          Data="M1 1H9V5H5V9H1Z M19 19H11V15H15V11H19Z"/>
+											</Button>
+										</Border>
+										<!-- Крестик: убрать аватарку. Стоит в правом верхнем углу,
+										     кадр — в левом: два действия в одном углу на кружке в
+										     56 точек означали бы промах мимо кадра прямо в снятие.
+										     Проявляется по наведению на аватарку, как и кадр.
+
+										     Переспроса нет: Ctrl+Z возвращает картинку вместе с
+										     кадром, а сам файл никуда не девается — он лежит в
+										     папке и остаётся доступен другим персонажам. -->
+										<Border Classes="cropTipHost" HorizontalAlignment="Right"
+										        behaviours:TooltipBehavior.Tip="Убрать аватарку"
+										        behaviours:TooltipBehavior.Description="Персонаж вернётся к буквенной заглушке. Картинка остаётся в папке — её можно поставить снова. Ctrl+Z возвращает вместе с кадром">
+											<Button Classes="avatarCrop danger"
+											        Command="{Binding ClearAvatarCommand}"
+											        IsEnabled="{Binding CanClearAvatar}">
+												<PathIcon Width="10" Height="10"
+												          Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
 											</Button>
 										</Border>
 									</Panel>

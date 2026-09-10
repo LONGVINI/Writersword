@@ -1214,6 +1214,15 @@ namespace Writersword.Modules.TextEditor
                 if (p.LocalSettings is not null)
                 {
                     _localSettings = p.LocalSettings;
+
+                    // Настройки чтения — личное дело читателя, а не свойство рукописи:
+                    // подача, формат листа, вид и ступень размера должны быть теми же,
+                    // какими человек оставил их в прошлый раз, в любом проекте. В файле
+                    // проекта лежит их копия на момент сохранения, и без этого переноса
+                    // она перекрывала выбор человека при каждом открытии — вид и подача
+                    // «не сохранялись». Виды переносятся тем же порядком: заведённый
+                    // «везде» обязан быть под рукой и в чужой рукописи.
+                    CarryOverReadingPreferences(_globalSettings, _localSettings);
                     _logger.Debug("Local settings restored: MonitorSizeInches={V}",
                         _localSettings.MonitorSizeInches);
                 }
@@ -2027,6 +2036,22 @@ namespace Writersword.Modules.TextEditor
             vm.GlobalSettingsChanged = SaveGlobalSettings;
             vm.LoadNewDocument(_localSettings);
             return vm;
+        }
+
+        /// <summary>
+        /// Переносит предпочтения чтения из общих настроек в набор, восстановленный из
+        /// файла проекта. Всё остальное в этом наборе — свойства самой рукописи и
+        /// остаётся как есть.
+        /// </summary>
+        private static void CarryOverReadingPreferences(TextEditorSettings from, TextEditorSettings to)
+        {
+            to.ReadingFlow = from.ReadingFlow;
+            to.ReadingSheetFormat = from.ReadingSheetFormat;
+            to.ReadingThemeId = from.ReadingThemeId;
+            to.ReadingShowPageNumbers = from.ReadingShowPageNumbers;
+            to.ReadingScaleContent = from.ReadingScaleContent;
+            to.ReadingFontStep = from.ReadingFontStep;
+            to.ReadingThemes = from.ReadingThemes;
         }
 
         /// <summary>

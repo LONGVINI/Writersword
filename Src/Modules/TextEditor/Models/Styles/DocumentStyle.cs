@@ -197,6 +197,116 @@ namespace Writersword.Modules.TextEditor.Models.Styles
                     },
                     RunProperties = new RunProperties { FontFamily = "Consolas", FontSize = 12 }
                 },
+                // ── Оглавление ────────────────────────────────────────────
+                //
+                // Строки оглавления носят свои стили, а не «Обычный». Иначе оглавление
+                // ничем не отличается от текста книги, и человек не видит, где оно
+                // кончается. Со своими стилями его вид правится один раз на весь
+                // документ — как в Word.
+                //
+                // Крупнее и заметнее верхний уровень, глубокие идут мельче и спокойнее:
+                // так столбик названий читается как структура, а не как список.
+                new DocumentStyle
+                {
+                    Name = "TocTitle",
+                    DisplayName = "Оглавление — название",
+                    IsBuiltIn = true,
+                    BasedOn = "Normal",
+                    SortOrder = 20,
+                    ParagraphProperties = new ParagraphProperties
+                    {
+                        Alignment = TextAlignment.Center,
+                        SpaceBefore = 0,
+                        SpaceAfter = 14,
+                        KeepWithNext = true
+                    },
+                    RunProperties = new RunProperties { FontSize = 20, IsBold = true }
+                },
+                new DocumentStyle
+                {
+                    Name = "Toc1",
+                    DisplayName = "Оглавление 1",
+                    IsBuiltIn = true,
+                    BasedOn = "Normal",
+                    SortOrder = 21,
+                    ParagraphProperties = new ParagraphProperties
+                    {
+                        SpaceBefore = 4,
+                        SpaceAfter = 2,
+                        FirstLineIndent = 0,
+                        LineSpacingRule = Styles.LineSpacingRule.Auto,
+                        LineSpacingValue = 1.0
+                    },
+                    RunProperties = new RunProperties { FontSize = 13, IsBold = true }
+                },
+                new DocumentStyle
+                {
+                    Name = "Toc2",
+                    DisplayName = "Оглавление 2",
+                    IsBuiltIn = true,
+                    BasedOn = "Toc1",
+                    SortOrder = 22,
+                    ParagraphProperties = new ParagraphProperties { SpaceBefore = 0, SpaceAfter = 2 },
+                    RunProperties = new RunProperties { FontSize = 12, IsBold = false }
+                },
+                new DocumentStyle
+                {
+                    Name = "Toc3",
+                    DisplayName = "Оглавление 3",
+                    IsBuiltIn = true,
+                    BasedOn = "Toc2",
+                    SortOrder = 23,
+                    RunProperties = new RunProperties { FontSize = 12, IsItalic = true }
+                },
+                new DocumentStyle
+                {
+                    Name = "Toc4",
+                    DisplayName = "Оглавление 4",
+                    IsBuiltIn = true,
+                    BasedOn = "Toc3",
+                    SortOrder = 24,
+                    RunProperties = new RunProperties { FontSize = 11 }
+                },
+                new DocumentStyle
+                {
+                    Name = "Toc5",
+                    DisplayName = "Оглавление 5",
+                    IsBuiltIn = true,
+                    BasedOn = "Toc4",
+                    SortOrder = 25
+                },
+                new DocumentStyle
+                {
+                    Name = "Toc6",
+                    DisplayName = "Оглавление 6",
+                    IsBuiltIn = true,
+                    BasedOn = "Toc5",
+                    SortOrder = 26
+                },
+                new DocumentStyle
+                {
+                    Name = "Toc7",
+                    DisplayName = "Оглавление 7",
+                    IsBuiltIn = true,
+                    BasedOn = "Toc6",
+                    SortOrder = 27
+                },
+                new DocumentStyle
+                {
+                    Name = "Toc8",
+                    DisplayName = "Оглавление 8",
+                    IsBuiltIn = true,
+                    BasedOn = "Toc7",
+                    SortOrder = 28
+                },
+                new DocumentStyle
+                {
+                    Name = "Toc9",
+                    DisplayName = "Оглавление 9",
+                    IsBuiltIn = true,
+                    BasedOn = "Toc8",
+                    SortOrder = 29
+                },
                 new DocumentStyle
                 {
                     Name = "NoSpacing",

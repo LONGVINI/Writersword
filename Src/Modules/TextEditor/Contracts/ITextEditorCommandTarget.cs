@@ -104,7 +104,18 @@ namespace Writersword.Modules.TextEditor.Contracts
         void InsertBookmark(string name);
         void InsertHyperlink(string url, string? displayText);
         void InsertTOC();
+
+        /// <summary>
+        /// Пересобирает оглавления рукописи: заголовки и номера страниц могли смениться.
+        /// </summary>
+        void UpdateTOC();
+
         void InsertComment(string text);
+
+        /// <summary>
+        /// Показать или убрать навигатор по заголовкам — дерево глав сбоку от рукописи.
+        /// </summary>
+        void ToggleNavigator();
 
         // ── Работа с выделенной фигурой ───────────────────────────────────
 

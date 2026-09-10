@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using Newtonsoft.Json;
 using Writersword.Modules.TextEditor.Models.Document;
+using Writersword.Modules.TextEditor.Models.Page;
 
 namespace Writersword.Modules.TextEditor.Models.Settings
 {
@@ -119,8 +120,45 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// <summary>Ступень размера текста при чтении.</summary>
         public int ReadingFontStep { get; set; }
 
+        // ── Вид рабочей области при правке ────────────────────────────────
+        // Живут здесь, а не в документе: цвет листа за письмом — про глаза
+        // пишущего, а не про рукопись. Привыкший писать по кремовому ждёт
+        // кремовый лист в любом документе и в любом проекте, а тот, кому
+        // рукопись прислали, должен увидеть её своим светом, а не чужим.
+
+        /// <summary>Применять вид к правке. Выключено — белый лист, как было всегда.</summary>
+        public bool EditorThemeEnabled { get; set; }
+
+        /// <summary>Опознаватель вида, выбранного для правки.</summary>
+        public string EditorThemeId { get; set; } = ReadingTheme.WhiteId;
+
+        /// <summary>
+        /// Рабочая копия вида правки: её правят лента и выбор фона, сохранённый вид
+        /// при этом остаётся нетронутым. Пусто — вид берётся по опознавателю.
+        /// </summary>
+        public ReadingTheme? EditorTheme { get; set; }
+
+        /// <summary>Убирать линейки в режиме фокуса.</summary>
+        public bool FocusHidesRuler { get; set; } = true;
+
+        /// <summary>Убирать строку состояния в режиме фокуса.</summary>
+        public bool FocusHidesStatusBar { get; set; } = true;
+
+        /// <summary>Возвращать ленту в фокусе наведением к верхнему краю.</summary>
+        public bool FocusRibbonOnHover { get; set; } = true;
+
         /// <summary>Показывать линейку.</summary>
         public bool ShowRuler { get; set; } = true;
+
+        /// <summary>Показывать строку состояния.</summary>
+        public bool ShowStatusBar { get; set; } = true;
+
+        /// <summary>
+        /// Лента свёрнута язычком. Хранится, в отличие от полного экрана: свернувший
+        /// ленту ждёт её свёрнутой и завтра, а вот окно, само собой раскрывшееся на
+        /// весь экран при запуске, пугает.
+        /// </summary>
+        public bool RibbonCollapsed { get; set; }
 
         /// <summary>
         /// Единицы измерения линейки.
@@ -132,11 +170,36 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// <summary>Показывать непечатаемые символы (пробелы, переносы строк).</summary>
         public bool ShowFormattingMarks { get; set; }
 
-        /// <summary>Режим отображения по умолчанию для новых документов.</summary>
+        /// <summary>
+        /// Режим отображения. Записывается при каждом переключении и применяется ко всем
+        /// документам: как человек смотрит на текст — его предпочтение, а не свойство
+        /// рукописи.
+        /// </summary>
         public EditorViewMode DefaultViewMode { get; set; } = EditorViewMode.Page;
 
-        /// <summary>Масштаб по умолчанию (1.0 = 100%).</summary>
+        /// <summary>Масштаб (1.0 = 100%). Тоже общий для всех документов.</summary>
         public double DefaultZoom { get; set; } = 1.0;
+
+        /// <summary>
+        /// Сколько листов ставить в ряд. 0 — сколько влезает по ширине при текущем
+        /// масштабе.
+        /// </summary>
+        public int PagesPerRow { get; set; }
+
+        /// <summary>Пресет цвета листа в редакторе.</summary>
+        public CanvasThemePreset CanvasPreset { get; set; } = CanvasThemePreset.Default;
+
+        /// <summary>Цвет листа в редакторе (HEX). Значим при CanvasPreset = Custom.</summary>
+        public string CanvasPageBackground { get; set; } = "#FFFFFF";
+
+        /// <summary>Цвет текста по умолчанию в редакторе (HEX). Значим при Custom.</summary>
+        public string CanvasTextColor { get; set; } = "#1A1A1A";
+
+        /// <summary>
+        /// Свой цвет каретки (HEX) — общий для всех документов. Пусто: каретка берёт
+        /// цвет у текста, который пишет.
+        /// </summary>
+        public string? CaretColor { get; set; }
 
         // ── Автосохранение ────────────────────────────────────────────────
 

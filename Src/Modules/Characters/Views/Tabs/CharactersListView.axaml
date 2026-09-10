@@ -74,21 +74,31 @@
              Окантовка белая, а не цветом персонажа: у карточки с бледным
              цветом выбор был бы не виден вовсе.
 
-             BoxShadow идёт списком: первая тень с нулевым размытием и
-             разбуханием 3 рисует окантовку, вторая — падающую тень. Тронуть
-             RenderTransform ради настоящего подъёма нельзя: на нём висит FLIP
-             перетаскивания карточек, и два хозяина у одного преобразования
-             подрались бы.
+             BoxShadow идёт списком, и теней три. Первая — тёмный поясок в две
+             точки вплотную к карточке; он и держит выделение читаемым при
+             толстой рамке. Белая окантовка встык к яркой рамке в пять-шесть
+             точек перестаёт быть окантовкой: два светлых кольца подряд глаз
+             читает как одно широкое, и разницы между выбранной карточкой и
+             невыбранной не остаётся. Тёмный поясок разрывает их, и белое
+             кольцо снова видно на любой толщине и любом цвете рамки.
+             Вторая тень — сама белая окантовка, третья — падающая тень.
+
+             Пять точек разбухания умещаются в поле карточки (шесть), поэтому
+             окантовка не залезает на соседей и раскладку не двигает.
+
+             Тронуть RenderTransform ради настоящего подъёма нельзя: на нём
+             висит FLIP перетаскивания карточек, и два хозяина у одного
+             преобразования подрались бы.
 
              Объявлено ПОСЛЕ наведения: в Avalonia при равной силе селекторов
              побеждает объявленный позже, иначе наведение на выбранную карточку
              затирало бы её вид своим свечением. -->
         <Style Selector="Border.card-root.selected">
-            <Setter Property="BoxShadow" Value="0 0 0 3 #FFFFFFFF, 0 7 20 2 #C0000000"/>
+            <Setter Property="BoxShadow" Value="0 0 0 2 #FF12151A, 0 0 0 5 #FFFFFFFF, 0 7 20 2 #C0000000"/>
             <Setter Property="ZIndex" Value="15"/>
         </Style>
         <Style Selector="Border.card-root.selected:pointerover">
-            <Setter Property="BoxShadow" Value="0 0 0 3 #FFFFFFFF, 0 9 24 3 #CC000000"/>
+            <Setter Property="BoxShadow" Value="0 0 0 2 #FF12151A, 0 0 0 5 #FFFFFFFF, 0 9 24 3 #CC000000"/>
             <Setter Property="ZIndex" Value="16"/>
         </Style>
         <!-- Кнопки edit/delete появляются только при наведении. Это освобождает
@@ -345,7 +355,7 @@
                                                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                                                        TextTrimming="CharacterEllipsis"
                                                                        ToolTip.Tip="{Binding Name}"
-                                                                       ToolTip.ShowDelay="500"/>
+                                                                       ToolTip.ShowDelay="900"/>
                                                         </Button>
                                                         <TextBox Name="FolderRenameBox"
                                                                  Text="{ReflectionBinding Name}"
@@ -381,7 +391,7 @@
                                                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                                                        TextTrimming="CharacterEllipsis"
                                                                        ToolTip.Tip="{Binding Comment}"
-                                                                       ToolTip.ShowDelay="500"/>
+                                                                       ToolTip.ShowDelay="900"/>
                                                         </Button>
                                                         <infra:ItalicCaretTextBox Name="FolderCommentBox"
                                                              Classes="italic"
@@ -808,7 +818,7 @@
                                                                                VerticalAlignment="Center"
                                                                                Foreground="{DynamicResource TextPrimaryBrush}"
                                                                                ToolTip.Tip="{Binding Name}"
-                                                                               ToolTip.ShowDelay="600"/>
+                                                                               ToolTip.ShowDelay="900"/>
                                                                 </Button>
                                                             </Panel>
 

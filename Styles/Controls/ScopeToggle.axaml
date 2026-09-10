@@ -99,23 +99,38 @@
 		<Setter Property="BorderThickness" Value="0"/>
 		<Setter Property="CornerRadius" Value="999"/>
 	</Style>
+	<!-- ── Цвет подписи ───────────────────────────────────────────────────
+	     Выбранная сторона — самое яркое, что есть в переключателе: белым по
+	     цветной плашке. Невыбранная приглушена. Раньше было наоборот: выбранная
+	     красилась цветом области (бледно-синим или янтарным) и на своей же
+	     плашке читалась хуже, чем соседняя невыбранная белым по тёмному.
+	     Область теперь несёт плашка — она и цветная.
+
+	     Выключенная сторона правится через ContentPresenter, а не через саму
+	     кнопку. Тема Fluent красит содержимое выключенной кнопки собственным
+	     серым прямо на презентере, и любой цвет, поставленный кнопке, до текста
+	     не доходил. Именно поэтому выбранная сторона выглядела серой: нажимать
+	     её и правда некуда — папка уже там, где написано, — а тема считала это
+	     поводом погасить подпись. -->
 	<Style Selector="Button.scope:not(.active):pointerover">
 		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 	</Style>
-	<Style Selector="Button.scope.local.active">
-		<Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
-		<Setter Property="FontWeight" Value="SemiBold"/>
-	</Style>
-	<Style Selector="Button.scope.global.active">
-		<Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+	<Style Selector="Button.scope.active">
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 		<Setter Property="FontWeight" Value="SemiBold"/>
 	</Style>
 
-	<!-- Недоступная сторона гасится, но остаётся читаемой: по ней должно быть
-	     понятно, что там вообще есть. Подсказку у выключенной кнопки перехватить
-	     нечем — она не получает событий мыши, поэтому подсказка вешается на
-	     обёртку вокруг неё. -->
-	<Style Selector="Button.scope:disabled">
+	<!-- Выбранная сторона остаётся читаемой и выключенной: почти всегда она
+	     именно такая — переносить папку туда, где она уже лежит, нечего. -->
+	<Style Selector="Button.scope.active:disabled /template/ ContentPresenter">
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+	</Style>
+
+	<!-- Невыбранная и недоступная — гасится, но остаётся читаемой: по ней
+	     должно быть понятно, что там вообще есть. Подсказку у выключенной
+	     кнопки перехватить нечем — она не получает событий мыши, поэтому
+	     подсказка вешается на обёртку вокруг неё. -->
+	<Style Selector="Button.scope:not(.active):disabled /template/ ContentPresenter">
 		<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
 	</Style>
 
@@ -134,6 +149,74 @@
 	</Style>
 	<Style Selector="Border.scopeTrack.wide Button.scope">
 		<Setter Property="Width" Value="132"/>
+	</Style>
+
+	<!-- ── Вариант без плашки: обе стороны включаются независимо ──────────
+	     Там, где вид или палитра могут лежать сразу и в проекте, и в общих
+	     настройках, стороны — не выбор одного из двух, а два самостоятельных
+	     тумблера. Едущая плашка тут неверна по смыслу: ей негде стоять, когда
+	     включены обе, — поэтому заливку берёт на себя сама кнопка.
+
+	     Цвета те же, что у плашки и у чипов области в списках: жёлтая сторона
+	     живёт в проекте, синяя — общая для всех. Переход по времени и кривой
+	     совпадает с ходом плашки, чтобы оба варианта переключателя ощущались
+	     одним и тем же элементом.
+
+	     Блок идёт после широкого варианта и в самом конце файла: при равной
+	     силе селектора выигрывает объявленный последним, и выше по файлу эти
+	     правила проигрывали бы прозрачному фону обычной стороны. -->
+	<Style Selector="ToggleButton.scope">
+		<Setter Property="Transitions">
+			<Transitions>
+				<BrushTransition Property="Foreground" Duration="0:0:0.22"/>
+			</Transitions>
+		</Setter>
+	</Style>
+
+	<Style Selector="ToggleButton.scope /template/ ContentPresenter">
+		<Setter Property="Transitions">
+			<Transitions>
+				<BrushTransition Property="Background" Duration="0:0:0.22"/>
+			</Transitions>
+		</Setter>
+	</Style>
+
+	<Style Selector="ToggleButton.scope.local:checked /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
+	</Style>
+	<Style Selector="ToggleButton.scope.local:checked:pointerover /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
+	</Style>
+	<Style Selector="ToggleButton.scope.local:checked:pressed /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
+	</Style>
+	<Style Selector="ToggleButton.scope.local:checked">
+		<Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
+		<Setter Property="FontWeight" Value="SemiBold"/>
+	</Style>
+
+	<Style Selector="ToggleButton.scope.global:checked /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+	</Style>
+	<Style Selector="ToggleButton.scope.global:checked:pointerover /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+	</Style>
+	<Style Selector="ToggleButton.scope.global:checked:pressed /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+	</Style>
+	<Style Selector="ToggleButton.scope.global:checked">
+		<Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+		<Setter Property="FontWeight" Value="SemiBold"/>
+	</Style>
+
+	<!-- Выключенная сторона под курсором только светлеет текстом: заливка
+	     осталась бы висеть рядом с включённой и читалась бы как вторая
+	     включённая. -->
+	<Style Selector="ToggleButton.scope:not(:checked):pointerover /template/ ContentPresenter">
+		<Setter Property="Background" Value="Transparent"/>
+	</Style>
+	<Style Selector="ToggleButton.scope:not(:checked):pointerover">
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 	</Style>
 
 </Styles>

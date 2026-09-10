@@ -83,4 +83,41 @@
 	<Style Selector="TextBox.italic /template/ TextPresenter#PART_TextPresenter">
 		<Setter Property="Margin" Value="0,0,6,0"/>
 	</Style>
+
+	<!-- ── Обязательное поле, оставленное пустым ──────────────────────────
+	     Classes="invalid" вешается кодом в тот момент, когда без этого поля
+	     дальше не пройти: нажали «ОК», а имя не вписано. Заранее краснеть
+	     полю незачем — пустым оно и так будет всю первую секунду.
+
+	     Красный тот же, что у конфликта горячих клавиш: у каждой темы свой
+	     оттенок (в тёмной он светлее, иначе тонет в фоне), а четвёртого
+	     красного в программе не заводится.
+
+	     Правится рамка в шаблоне, а не свойство самого поля: наведение и
+	     фокус уже красят Border#PART_BorderElement, и цвет, поставленный
+	     полю, под курсором и в фокусе до рамки бы не дошёл — а поле в этот
+	     момент как раз в фокусе, курсор туда и поставили. По той же причине
+	     правило стоит в конце файла: при равной силе селектора выигрывает
+	     объявленное последним.
+
+	     Стиль общий, а не в окне метки: поле, без которого не нажимается
+	     кнопка, встречается не только там, и краснеть везде должно
+	     одинаково. -->
+	<Style Selector="TextBox.invalid /template/ Border#PART_BorderElement">
+		<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		<Setter Property="BorderThickness" Value="1.5"/>
+	</Style>
+	<Style Selector="TextBox.invalid:pointerover /template/ Border#PART_BorderElement">
+		<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		<Setter Property="BorderThickness" Value="1.5"/>
+	</Style>
+	<Style Selector="TextBox.invalid:focus /template/ Border#PART_BorderElement">
+		<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		<Setter Property="BorderThickness" Value="1.5"/>
+	</Style>
+	<!-- Каретка тоже красная: поле в фокусе, и янтарная каретка в красной
+	     рамке читается как «тут всё в порядке, просто рамка такая». -->
+	<Style Selector="TextBox.invalid">
+		<Setter Property="CaretBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+	</Style>
 </Styles>

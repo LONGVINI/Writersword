@@ -1,0 +1,494 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
+             xmlns:controls="using:Writersword.Styles.UserControls"
+             x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonTocTab"
+             x:DataType="vm:RibbonTocTabViewModel">
+
+	<UserControl.Styles>
+
+		<Style Selector="Button.RibbonBtn">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4"/>
+			<Setter Property="MinWidth"                   Value="26"/>
+			<Setter Property="MinHeight"                  Value="26"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="Button.RibbonBtnLarge">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4 2"/>
+			<Setter Property="MinWidth"                   Value="40"/>
+			<!-- 56 — общая для всех вкладок высота тела группы: столько занимают
+			     два ряда кнопок по 26 в группах «Шрифт» и «Абзац» на «Главной». -->
+			<Setter Property="MinHeight"                  Value="56"/>
+			<Setter Property="VerticalAlignment"          Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="ToggleButton.RibbonToggle">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4"/>
+			<Setter Property="MinWidth"                   Value="26"/>
+			<Setter Property="MinHeight"                  Value="26"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggle /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggle:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggle:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggle:checked /template/ ContentPresenter">
+			<Setter Property="Background"             Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush"            Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggle:checked:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="Border.RibbonGroup">
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Padding"         Value="6 4 6 0"/>
+			<Setter Property="Margin"          Value="2 3"/>
+		</Style>
+
+		<Style Selector="Border.RibbonGroupCollapsed">
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Padding"         Value="2 4 2 0"/>
+			<Setter Property="Margin"          Value="2 3"/>
+		</Style>
+
+		<Style Selector="Grid.RibbonGroupLabelGrid">
+			<Setter Property="Margin" Value="0 3 0 2"/>
+		</Style>
+
+		<Style Selector="TextBlock.RibbonGroupLabel">
+			<Setter Property="FontSize"            Value="10"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="TextAlignment"       Value="Center"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
+		</Style>
+
+		<!-- Подпись слева от числового поля: та же роль, что у подписи группы,
+		     но в строку с полем и без растяжки на всю ширину. -->
+		<Style Selector="TextBlock.RibbonFieldLabel">
+			<Setter Property="FontSize"          Value="11"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+		<!-- Поле названия оглавления. Рамка тонкая, как у числовых полей ленты:
+		     это поле ввода, а не кнопка, и подавать его кнопкой значит обещать
+		     нажатие. -->
+		<Style Selector="TextBox.RibbonInput">
+			<Setter Property="Background"               Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="Foreground"               Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="BorderBrush"              Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"          Value="1"/>
+			<Setter Property="CornerRadius"             Value="3"/>
+			<Setter Property="FontSize"                 Value="11"/>
+			<Setter Property="Padding"                  Value="4 0"/>
+			<Setter Property="MinHeight"                Value="24"/>
+			<Setter Property="Height"                   Value="24"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="CaretBrush"               Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="SelectionBrush"           Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="SelectionForegroundBrush" Value="White"/>
+		</Style>
+		<Style Selector="TextBox.RibbonInput:focus /template/ Border#PART_BorderElement">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+	</UserControl.Styles>
+	<controls:RibbonScrollContainer x:Name="ScrollContainer">
+		<controls:RibbonScrollContainer.RibbonContent>
+			<StackPanel Orientation="Horizontal">
+
+				<!-- ═══════════════════════════════════════════════════════
+				     ОГЛАВЛЕНИЕ — обновить, вставить, перейти, убрать
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup" IsVisible="{Binding IsMainGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+							           Text="{x:Static loc:TextEditorStrings.Toc_Group_Main}"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+
+							<Button Command="{Binding UpdateCommand}" Classes="RibbonBtnLarge"
+							        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Update_Tip}">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+									          Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Toc_Update}"
+									           FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<Button Command="{Binding InsertCommand}" Classes="RibbonBtnLarge"
+							        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Insert_Tip}">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M3 5h13v2H3V5zm0 4h9v2H3V9zm0 4h9v2H3v-2zm0 4h13v2H3v-2zm15-8h2v3h3v2h-3v3h-2v-3h-3v-2h3V9z"
+									          Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Toc_Insert}"
+									           FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<Button Command="{Binding GoToTargetCommand}" Classes="RibbonBtnLarge"
+							        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_GoTo_Tip}">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"
+									          Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Toc_GoTo}"
+									           FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<Button Command="{Binding ToggleNavigatorCommand}" Classes="RibbonBtnLarge"
+							        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Nav_Tip}">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M3 5h18v2H3V5zm4 4h14v2H7V9zm4 4h10v2H11v-2zM3 17h18v2H3v-2z"
+									          Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Nav_Title}"
+									           FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<Button Command="{Binding RemoveCommand}" Classes="RibbonBtnLarge"
+							        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Remove_Tip}">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+									          Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Toc_Remove}"
+									           FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+				     УРОВНИ — с какого по какой брать заголовки и как их сдвигать
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup" IsVisible="{Binding IsLevelsGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+							           Text="{x:Static loc:TextEditorStrings.Toc_Group_Levels}"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+
+							<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+
+								<Button Command="{Binding SetLevels1Command}" Classes="RibbonBtnLarge"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Levels1_Tip}">
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<TextBlock Text="1" FontSize="15" FontWeight="SemiBold" TextAlignment="Center"/>
+										<Border Height="2" CornerRadius="1" Width="16"
+										        IsVisible="{Binding IsLevels1}"
+										        Background="{DynamicResource AccentDefaultBrush}"/>
+									</StackPanel>
+								</Button>
+
+								<Button Command="{Binding SetLevels3Command}" Classes="RibbonBtnLarge"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Levels3_Tip}">
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<TextBlock Text="1-3" FontSize="13" FontWeight="SemiBold" TextAlignment="Center"/>
+										<Border Height="2" CornerRadius="1" Width="16"
+										        IsVisible="{Binding IsLevels3}"
+										        Background="{DynamicResource AccentDefaultBrush}"/>
+									</StackPanel>
+								</Button>
+
+								<Button Command="{Binding SetLevels5Command}" Classes="RibbonBtnLarge"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Levels5_Tip}">
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<TextBlock Text="1-5" FontSize="13" FontWeight="SemiBold" TextAlignment="Center"/>
+										<Border Height="2" CornerRadius="1" Width="16"
+										        IsVisible="{Binding IsLevels5}"
+										        Background="{DynamicResource AccentDefaultBrush}"/>
+									</StackPanel>
+								</Button>
+
+								<Button Command="{Binding SetLevels9Command}" Classes="RibbonBtnLarge"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Levels9_Tip}">
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<TextBlock Text="{x:Static loc:TextEditorStrings.Toc_LevelsAll}"
+										           FontSize="11" FontWeight="SemiBold" TextAlignment="Center"/>
+										<Border Height="2" CornerRadius="1" Width="16"
+										        IsVisible="{Binding IsLevels9}"
+										        Background="{DynamicResource AccentDefaultBrush}"/>
+									</StackPanel>
+								</Button>
+
+							</StackPanel>
+
+							<!-- Верхняя граница и шаг сдвига. Кнопки рядом ставят диапазон
+							     от первого уровня — это то, чего хотят почти всегда; поля
+							     нужны частному оглавлению части, которое начинается со
+							     второго уровня и своей глубины отступа. -->
+							<StackPanel Spacing="4" VerticalAlignment="Center">
+
+								<StackPanel Orientation="Horizontal" Spacing="4">
+									<TextBlock Classes="RibbonFieldLabel"
+									           Text="{x:Static loc:TextEditorStrings.Toc_MinLevel}"/>
+									<NumericUpDown Classes="Ribbon" Width="72"
+									               Value="{Binding MinLevelValue, Mode=TwoWay}"
+									               Minimum="1" Maximum="9"
+									               Increment="1"
+									               FormatString="0"
+									               ClipValueToMinMax="True"
+									               behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_MinLevel_Tip}"/>
+								</StackPanel>
+
+								<StackPanel Orientation="Horizontal" Spacing="4">
+									<TextBlock Classes="RibbonFieldLabel"
+									           Text="{x:Static loc:TextEditorStrings.Toc_LevelIndent}"/>
+									<NumericUpDown Classes="Ribbon" Width="78"
+									               Value="{Binding LevelIndentPt, Mode=TwoWay}"
+									               Minimum="0" Maximum="144"
+									               Increment="1"
+									               FormatString="0.#"
+									               ClipValueToMinMax="True"
+									               behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_LevelIndent_Tip}"/>
+								</StackPanel>
+
+							</StackPanel>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+				     СТРОКА — заполнитель, номера, отступ
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup" IsVisible="{Binding IsLineGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+							           Text="{x:Static loc:TextEditorStrings.Toc_Group_Line}"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+
+							<!-- Заполнитель: то, чем засыпан промежуток до номера -->
+							<StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+								<Button Command="{Binding LeaderDotsCommand}" Classes="RibbonBtn"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Leader_Dots}">
+									<StackPanel Spacing="1" HorizontalAlignment="Center">
+										<TextBlock Text="····" FontSize="13" TextAlignment="Center"/>
+										<Border Height="2" CornerRadius="1"
+										        IsVisible="{Binding IsLeaderDots}"
+										        Background="{DynamicResource AccentDefaultBrush}"/>
+									</StackPanel>
+								</Button>
+								<Button Command="{Binding LeaderDashesCommand}" Classes="RibbonBtn"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Leader_Dashes}">
+									<StackPanel Spacing="1" HorizontalAlignment="Center">
+										<TextBlock Text="- - -" FontSize="11" TextAlignment="Center"/>
+										<Border Height="2" CornerRadius="1"
+										        IsVisible="{Binding IsLeaderDashes}"
+										        Background="{DynamicResource AccentDefaultBrush}"/>
+									</StackPanel>
+								</Button>
+								<Button Command="{Binding LeaderLineCommand}" Classes="RibbonBtn"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Leader_Line}">
+									<StackPanel Spacing="1" HorizontalAlignment="Center">
+										<TextBlock Text="——" FontSize="11" TextAlignment="Center"/>
+										<Border Height="2" CornerRadius="1"
+										        IsVisible="{Binding IsLeaderLine}"
+										        Background="{DynamicResource AccentDefaultBrush}"/>
+									</StackPanel>
+								</Button>
+								<Button Command="{Binding LeaderNoneCommand}" Classes="RibbonBtn"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Leader_None}">
+									<StackPanel Spacing="1" HorizontalAlignment="Center">
+										<TextBlock Text="—" FontSize="11" Opacity="0.35" TextAlignment="Center"/>
+										<Border Height="2" CornerRadius="1"
+										        IsVisible="{Binding IsLeaderNone}"
+										        Background="{DynamicResource AccentDefaultBrush}"/>
+									</StackPanel>
+								</Button>
+							</StackPanel>
+
+							<!-- Галочки: номера страниц и отступ по уровням -->
+							<StackPanel Spacing="4" VerticalAlignment="Center">
+								<CheckBox IsChecked="{Binding ShowPageNumbers, Mode=TwoWay}"
+								          FontSize="11"
+								          Content="{x:Static loc:TextEditorStrings.Toc_ShowPages}"/>
+								<CheckBox IsChecked="{Binding IndentByLevel, Mode=TwoWay}"
+								          FontSize="11"
+								          Content="{x:Static loc:TextEditorStrings.Toc_IndentByLevel}"/>
+							</StackPanel>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+				     СОДЕРЖИМОЕ — что попадает в список и как он назван
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup" IsVisible="{Binding IsSourceGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+							           Text="{x:Static loc:TextEditorStrings.Toc_Group_Source}"/>
+						</Grid>
+						<StackPanel Spacing="4" VerticalAlignment="Center">
+
+							<!-- Название и поле для него в одной строке: галочка решает,
+							     показывать ли, поле — каким словом. Пустое поле означает
+							     название по умолчанию, и оно же стоит в поле подсказкой:
+							     человек видит, что получит, ничего не набирая.
+							     Значение уходит в рукопись по потере фокуса — иначе
+							     оглавление пересобиралось бы на каждую букву. -->
+							<StackPanel Orientation="Horizontal" Spacing="4">
+								<CheckBox IsChecked="{Binding ShowTitle, Mode=TwoWay}"
+								          FontSize="11"
+								          VerticalAlignment="Center"
+								          Content="{x:Static loc:TextEditorStrings.Toc_ShowTitle}"/>
+								<TextBox Classes="RibbonInput" Width="150"
+								         IsEnabled="{Binding ShowTitle}"
+								         PlaceholderText="{Binding TitlePlaceholder}"
+								         Text="{Binding Title, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+								         behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Title_Tip}"/>
+							</StackPanel>
+
+							<StackPanel Orientation="Horizontal" Spacing="10">
+								<CheckBox IsChecked="{Binding IncludeManualEntries, Mode=TwoWay}"
+								          FontSize="11"
+								          Content="{x:Static loc:TextEditorStrings.Toc_IncludeManual}"/>
+								<CheckBox IsChecked="{Binding AutoUpdate, Mode=TwoWay}"
+								          FontSize="11"
+								          Content="{x:Static loc:TextEditorStrings.Toc_AutoUpdate}"
+								          behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_AutoUpdate_Tip}"/>
+							</StackPanel>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+				     ОФОРМЛЕНИЕ — вид строк выбранного уровня
+				     ═══════════════════════════════════════════════════════
+				     Правится стиль Toc1…Toc9, а не абзацы: строк в книге сотни,
+				     они пересобираются при каждом обновлении, и форматирование,
+				     положенное на абзац, ушло бы вместе с ними.
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup" IsVisible="{Binding IsStyleGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+							           Text="{x:Static loc:TextEditorStrings.Toc_Group_Style}"/>
+						</Grid>
+						<StackPanel Spacing="4" VerticalAlignment="Center">
+
+							<StackPanel Orientation="Horizontal" Spacing="4">
+								<NumericUpDown Classes="Ribbon" Width="72"
+								               Value="{Binding StyleLevelValue, Mode=TwoWay}"
+								               Minimum="1" Maximum="9"
+								               Increment="1"
+								               FormatString="0"
+								               ClipValueToMinMax="True"
+								               behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Style_Level_Tip}"/>
+								<NumericUpDown Classes="Ribbon" Width="78"
+								               Value="{Binding StyleFontSize, Mode=TwoWay}"
+								               Minimum="1" Maximum="400"
+								               Increment="1"
+								               FormatString="0.#"
+								               ClipValueToMinMax="True"
+								               behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Style_Size_Tip}"/>
+							</StackPanel>
+
+							<StackPanel Orientation="Horizontal" Spacing="4">
+								<ToggleButton IsChecked="{Binding StyleBold, Mode=TwoWay}" Classes="RibbonToggle"
+								              behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Style_Bold}">
+									<TextBlock Text="Ж" FontSize="12" FontWeight="Bold"/>
+								</ToggleButton>
+								<ToggleButton IsChecked="{Binding StyleItalic, Mode=TwoWay}" Classes="RibbonToggle"
+								              behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Style_Italic}">
+									<TextBlock Text="К" FontSize="12" FontStyle="Italic"/>
+								</ToggleButton>
+								<Button Command="{Binding ResetStylesCommand}" Classes="RibbonBtn"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Style_Reset_Tip}">
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Toc_Style_Reset}"
+									           FontSize="11"/>
+								</Button>
+							</StackPanel>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+			</StackPanel>
+		</controls:RibbonScrollContainer.RibbonContent>
+	</controls:RibbonScrollContainer>
+
+</UserControl>

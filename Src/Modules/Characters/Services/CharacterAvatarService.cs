@@ -38,6 +38,14 @@ namespace Writersword.Modules.Characters.Services
         private const string ZipPacksFolder = "Characters/assets/avatarpacks";
         private const string PackMetaFileName = "pack.json";
 
+        // Порядок папок в списках. Лежит одним файлом рядом с папками
+        // пользователя и покрывает все области сразу: проектные, общие и
+        // встроенные папки стоят в одном ряду, их двигают между собой, и
+        // держать порядок внутри pack.json каждой папки значило бы перечитывать
+        // их все ради одной перестановки. Встроенным папкам писать некуда
+        // вовсе — своей папки в данных приложения у них нет.
+        private const string PackOrderFileName = "packs-order.json";
+
         // Ключ глобальных настроек со списком «Недавних».
         private const string RecentsSettingsKey = "CharacterAvatarRecents";
 
@@ -56,6 +64,12 @@ namespace Writersword.Modules.Characters.Services
             "Writersword", "AvatarPacks");
 
         private DocumentContext? _context;
+
+        // Прочитанный порядок папок. Список папок собирается при каждой
+        // отрисовке ленты и при каждом поиске папки по опознавателю — читать
+        // ради него файл с диска по десятку раз на кадр незачем.
+        private List<string>? _packOrderCache;
+        private readonly object _packOrderLock = new object();
 
         // Все зарегистрированные директории с встроенными паками.
         // Каждый модуль регистрирует свою через RegisterPackDirectory().
@@ -1092,7 +1106,122 @@ namespace Writersword.Modules.Characters.Services
             // Локальные паки текущего проекта.
             result.AddRange(GetLocalPacks());
 
-            return result;
+            return SortPacks(result);
+        }
+
+        /// <summary>
+        /// Разложить папки по запомненному порядку. Папки, которых в порядке
+        /// нет, встают после перечисленных по умолчанию: сначала папки проекта,
+        /// затем общие, в конце встроенные — правят чаще всего то, что
+        /// относится к открытой книге, и оно должно быть под рукой.
+        ///
+        /// Порядок один на все списки: лента менеджера и разделы выбора аватарки
+        /// показывают папки одинаково, иначе перестановка в одном окне не
+        /// значила бы ничего в другом.
+        /// </summary>
+        private List<CharacterAvatarPackInfo> SortPacks(List<CharacterAvatarPackInfo> packs)
+        {
+            var order = ReadPackOrder();
+
+            var position = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (var i = 0; i < order.Count; i++)
+                if (!position.ContainsKey(order[i])) position[order[i]] = i;
+
+            return packs
+                .OrderBy(p => position.TryGetValue(p.Id, out var pos) ? pos : int.MaxValue)
+                .ThenBy(DefaultPackRank)
+                .ToList();
+        }
+
+        private static int DefaultPackRank(CharacterAvatarPackInfo pack) => pack.Source switch
+        {
+            CharacterAvatarPackSource.UserLocal => 0,
+            CharacterAvatarPackSource.UserGlobal => 1,
+            _ => 2
+        };
+
+        private static string PackOrderPath => Path.Combine(UserPacksPath, PackOrderFileName);
+
+        public IReadOnlyList<string> GetPackOrder() => ReadPackOrder();
+
+        private List<string> ReadPackOrder()
+        {
+            lock (_packOrderLock)
+            {
+                if (_packOrderCache != null) return _packOrderCache;
+
+                var order = new List<string>();
+                try
+                {
+                    if (File.Exists(PackOrderPath))
+                        order = JsonSerializer.Deserialize<List<string>>(
+                            File.ReadAllText(PackOrderPath)) ?? new List<string>();
+                }
+                catch (Exception ex) { _logger.Error(ex, "ReadPackOrder failed"); }
+
+                _packOrderCache = order;
+                return order;
+            }
+        }
+
+        public void SetPackOrder(IReadOnlyList<string> packIds)
+        {
+            // Повторы выкидываются здесь, а не при чтении: список приходит из
+            // окна, где папку могли перетащить туда и обратно, а разложение по
+            // порядку берёт первое вхождение и второе всё равно не увидит.
+            var order = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            if (packIds != null)
+                foreach (var id in packIds)
+                {
+                    if (string.IsNullOrEmpty(id)) continue;
+                    if (seen.Add(id)) order.Add(id);
+                }
+
+            lock (_packOrderLock)
+            {
+                _packOrderCache = order;
+                try
+                {
+                    Directory.CreateDirectory(UserPacksPath);
+                    File.WriteAllText(
+                        PackOrderPath,
+                        JsonSerializer.Serialize(order, new JsonSerializerOptions { WriteIndented = true }));
+                }
+                catch (Exception ex) { _logger.Error(ex, "SetPackOrder failed"); }
+            }
+        }
+
+        /// <summary>
+        /// Поставить новую папку первой. Заведённую только что папку ищут
+        /// глазами там, где смотрели последний раз, — в начале ленты, а не в
+        /// хвосте среди двух десятков старых.
+        /// </summary>
+        private void RememberNewPack(string packId)
+        {
+            if (string.IsNullOrEmpty(packId)) return;
+
+            var order = new List<string>(ReadPackOrder());
+            order.RemoveAll(id => string.Equals(id, packId, StringComparison.Ordinal));
+            order.Insert(0, packId);
+            SetPackOrder(order);
+        }
+
+        /// <summary>
+        /// Убрать папку из порядка. Зовётся при удалении: иначе список копил бы
+        /// опознаватели того, чего давно нет.
+        /// </summary>
+        private void ForgetPackOrder(string packId)
+        {
+            if (string.IsNullOrEmpty(packId)) return;
+
+            var order = ReadPackOrder();
+            if (!order.Any(id => string.Equals(id, packId, StringComparison.Ordinal))) return;
+
+            var next = new List<string>(order);
+            next.RemoveAll(id => string.Equals(id, packId, StringComparison.Ordinal));
+            SetPackOrder(next);
         }
 
         private List<CharacterAvatarItem> GetLibraryItems()
@@ -1287,6 +1416,7 @@ namespace Writersword.Modules.Characters.Services
                 FolderPath = dir
             };
             SavePackJson(pack);
+            RememberNewPack(id);
             return pack;
         }
 
@@ -1309,6 +1439,7 @@ namespace Writersword.Modules.Characters.Services
                 FolderPath = $"{ZipPacksFolder}/{id}"
             };
             WriteLocalPackMeta(pack);
+            RememberNewPack(id);
             return pack;
         }
 
@@ -1457,6 +1588,8 @@ namespace Writersword.Modules.Characters.Services
         {
             if (string.IsNullOrEmpty(packId) || packId == LibraryPackId) return;
 
+            ForgetPackOrder(packId);
+
             if (scope == CharacterAvatarPackScope.Global)
             {
                 DeleteUserPack(packId);
@@ -1533,6 +1666,7 @@ namespace Writersword.Modules.Characters.Services
                     FolderPath = $"{ZipPacksFolder}/{packId}"
                 };
                 WriteLocalPackMeta(local);
+                RememberNewPack(packId);
                 return local;
             }
 
@@ -1546,6 +1680,7 @@ namespace Writersword.Modules.Characters.Services
                 FolderPath = dir
             };
             SavePackJson(pack);
+            RememberNewPack(packId);
             return pack;
         }
 
@@ -1789,6 +1924,8 @@ namespace Writersword.Modules.Characters.Services
                         { Directory.Move(dir, namedDir); dir = namedDir; }
                     }
                 }
+
+                RememberNewPack(Path.GetFileName(dir));
                 return LoadUserPack(dir);
             }
             catch (Exception ex) { _logger.Error(ex, "ImportPackFromZipAsync failed"); return null; }
@@ -1903,6 +2040,52 @@ namespace Writersword.Modules.Characters.Services
             var removed = data.Entries.RemoveAll(e =>
                 CharacterAvatarRef.SameFile(e.AvatarRef, baseRef));
             if (removed > 0) SaveRecents(data);
+        }
+
+        /// <summary>
+        /// Вернуть убранную запись на её место. Место — перед записью
+        /// beforeRef; если её уже нет или её не передали, запись встаёт в
+        /// конец.
+        ///
+        /// Порядок списка задаёт сам порядок записей, а не время обращения
+        /// (см. GetRecentAvatars) — поэтому вернувшаяся запись остаётся там,
+        /// куда её поставили, и наверх сама не всплывает.
+        /// </summary>
+        public void RestoreRecentAvatar(string? avatarRef, string? beforeRef)
+        {
+            if (string.IsNullOrEmpty(avatarRef)) return;
+            var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
+            if (string.IsNullOrEmpty(baseRef)) return;
+
+            var data = LoadRecents();
+
+            // Второй такой же записи быть не должно: за время, пока действие
+            // ждало отмены, ту же картинку могли поставить снова.
+            data.Entries.RemoveAll(e =>
+                CharacterAvatarRef.SameFile(e.AvatarRef, baseRef));
+
+            var at = data.Entries.Count;
+            if (!string.IsNullOrEmpty(beforeRef))
+            {
+                var neighbour = CharacterAvatarRef.BaseOf(beforeRef);
+                if (!string.IsNullOrEmpty(neighbour))
+                {
+                    var found = data.Entries.FindIndex(e =>
+                        CharacterAvatarRef.SameFile(e.AvatarRef, neighbour));
+                    if (found >= 0) at = found;
+                }
+            }
+
+            data.Entries.Insert(at, new CharacterAvatarRecentEntry
+            {
+                AvatarRef = avatarRef,
+                UsedAt = DateTime.UtcNow
+            });
+
+            if (data.Entries.Count > RecentsMaxEntries)
+                data.Entries.RemoveRange(RecentsMaxEntries, data.Entries.Count - RecentsMaxEntries);
+
+            SaveRecents(data);
         }
 
         public void ClearRecentAvatars()

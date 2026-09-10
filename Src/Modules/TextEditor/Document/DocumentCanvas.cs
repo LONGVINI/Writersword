@@ -337,6 +337,11 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void UpdateEffectivePagesPerRow()
         {
+            // Чтение о страницах в ряду не знает: книга ставит листы сама, а лента —
+            // одна полоса. Настройка правки сюда не переносится, иначе выбранные в
+            // редакторе два листа в ряд разорвали бы ленту надвое.
+            if (ReadingActive) { _pagesPerRow = 1; return; }
+
             if (_pagesPerRowSetting > 0)
             {
                 _pagesPerRow = _pagesPerRowSetting;
@@ -362,6 +367,9 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private (float DxPt, float DyPt) PageVisualDelta(int pageIdx, List<PageRect> pages)
         {
+            if (ReadingRibbon && pages.Count > 0 && pageIdx >= 0 && pageIdx < pages.Count)
+                return (0f, RibbonPageDy(pageIdx, pages));
+
             if (SpreadMode && pages.Count > 0 && pageIdx >= 0 && pageIdx < pages.Count)
                 return SpreadVisualDelta(pageIdx, pages);
 
@@ -389,6 +397,180 @@ namespace Writersword.Modules.TextEditor.Document
             return (visX - pg.PadLeftPt, visY - pg.Ypt);
         }
 
+        // ── Лента ─────────────────────────────────────────────────────────
+        // Сдвиг каждой страницы к её месту в склейке. Считается один раз на пересборку
+        // (PublishPassResults) и лежит рядом с _pages: массив и список страниц меняются
+        // вместе, под одним замком, иначе отрисовка поймала бы сдвиги от прошлой
+        // раскладки и положила бы содержимое мимо своей полосы.
+        private float[] _ribbonPageDy = Array.Empty<float>();
+
+        // Высота полосы каждой страницы: не поле листа, а ровно столько, сколько на
+        // странице занято. Пагинация оставляет внизу листа неиспользованный остаток —
+        // строка или строка таблицы не влезла и ушла на следующий лист. На бумаге это
+        // нижнее поле, а в ленте это была бы дыра посреди сплошного текста: таблица,
+        // разорванная переносом, расходилась на два куска с пустотой между ними.
+        private float[] _ribbonBandHeights = Array.Empty<float>();
+        private float[] _passRibbonBandHeights = Array.Empty<float>();
+
+        /// <summary>
+        /// Высота содержимого страницы — сам лист без верхнего и нижнего полей.
+        /// Запасная величина: ею меряется полоса, пока занятая высота не посчитана.
+        /// </summary>
+        private static float RibbonContentHeightPt(PageRect page)
+            => Math.Max(page.HeightPt - page.PadTopPt - page.PadBottomPt, 1f);
+
+        /// <summary>Высота полосы страницы в ленте: занятая, если она известна.</summary>
+        private float RibbonBandHeightPt(int pageIdx, List<PageRect> pages)
+        {
+            var bands = _ribbonBandHeights;
+            return bands.Length == pages.Count
+                ? bands[pageIdx]
+                : RibbonContentHeightPt(pages[pageIdx]);
+        }
+
+        /// <summary>
+        /// Занятая высота каждой страницы: от верха её текстовой области до низа
+        /// самого нижнего, что на ней стоит, но не ниже нижнего поля листа.
+        ///
+        /// Ограничение низом листа — это и есть обрезка: картинка, вылезшая за обрез,
+        /// режется им, а не растягивает полосу на своё продолжение.
+        /// </summary>
+        private static float[] BuildRibbonBandHeights(
+            List<PageRect> pages,
+            List<ParaLayout> layouts,
+            List<TableEntry> tables,
+            List<ImageEntry> images,
+            List<ShapeEntry> shapes)
+        {
+            var bottoms = new float[pages.Count];
+            for (int i = 0; i < pages.Count; i++)
+                bottoms[i] = pages[i].Ypt + pages[i].PadTopPt;
+
+            void Mark(int pageIdx, float bottomPt)
+            {
+                if (pageIdx < 0 || pageIdx >= bottoms.Length) return;
+                if (bottomPt > bottoms[pageIdx]) bottoms[pageIdx] = bottomPt;
+            }
+
+            foreach (var pl in layouts)
+            {
+                // Абзацы ячеек в счёт не идут: их низ уже учтён высотой слайса таблицы,
+                // а собственная высота записи в ячейке меряется от текста, а не от рамки.
+                if (pl.Cell is not null) continue;
+                Mark(pl.PageIndex, pl.Ypt + pl.HeightPt);
+            }
+
+            foreach (var te in tables)
+                Mark(te.PageIndex, te.Ypt + TableSliceHeightPt(te));
+
+            foreach (var ie in images)
+            {
+                // Картинка в строке стоит внутри абзаца — его низ уже отмечен.
+                if (ie.InLine) continue;
+                Mark(ie.PageIndex, RotatedBottomPt(ie.Ypt, ie.WidthPt, ie.HeightPt, ie.Block.RotationDeg));
+            }
+
+            foreach (var se in shapes)
+                Mark(se.PageIndex, RotatedBottomPt(se.Ypt, se.WidthPt, se.HeightPt, se.Block.RotationDeg));
+
+            var bands = new float[pages.Count];
+            for (int i = 0; i < pages.Count; i++)
+            {
+                var page = pages[i];
+                float topPt = page.Ypt + page.PadTopPt;
+                float limitPt = page.Ypt + page.HeightPt - page.PadBottomPt;
+
+                bands[i] = Math.Clamp(bottoms[i], topPt, limitPt) - topPt;
+            }
+
+            return bands;
+        }
+
+        /// <summary>Низ габарита повёрнутого прямоугольника.</summary>
+        private static float RotatedBottomPt(float yPt, float wPt, float hPt, double rotationDeg)
+        {
+            if (Math.Abs(rotationDeg) < 0.01) return yPt + hPt;
+
+            double rad = rotationDeg * Math.PI / 180.0;
+            float boxH = wPt * (float)Math.Abs(Math.Sin(rad)) + hPt * (float)Math.Abs(Math.Cos(rad));
+            return yPt + hPt / 2f + boxH / 2f;
+        }
+
+        /// <summary>
+        /// Высота видимого слайса таблицы — от её верха до конца последней строки,
+        /// попавшей на эту страницу. Полная высота таблицы здесь не годится: у
+        /// разорванной переносом она считает и то, что стоит на следующем листе.
+        /// </summary>
+        private static float TableSliceHeightPt(TableEntry te)
+        {
+            var rows = te.Layout.Rows;
+            int rowTo = te.RowTo < 0 ? rows.Count : te.RowTo;
+
+            float slicePt = 0f;
+            for (int ri = te.RowFrom; ri < rowTo && ri < rows.Count; ri++)
+            {
+                float rowH = rows[ri].HeightPt;
+                if (ri == te.RowFrom) rowH -= te.FirstRowContentOffsetPt;
+                if (ri == rowTo - 1 && te.LastRowVisibleHeightPt >= 0f)
+                    rowH = te.LastRowVisibleHeightPt;
+                slicePt += rowH;
+            }
+
+            return Math.Max(slicePt, 0f);
+        }
+
+        /// <summary>
+        /// Сдвиги всех страниц ленты: содержимое каждой следующей ложится сразу за
+        /// содержимым предыдущей, первое — под верхним полем ленты.
+        /// </summary>
+        private static float[] BuildRibbonPageDeltas(List<PageRect> pages, float[] bands)
+        {
+            var deltas = new float[pages.Count];
+            float topPt = ReadingRibbonPadPt;
+
+            for (int i = 0; i < pages.Count; i++)
+            {
+                deltas[i] = topPt - pages[i].PadTopPt - pages[i].Ypt;
+                topPt += bands.Length == pages.Count ? bands[i] : RibbonContentHeightPt(pages[i]);
+            }
+
+            return deltas;
+        }
+
+        /// <summary>Высота всей ленты: поле сверху, все полосы содержимого, поле снизу.</summary>
+        private static float ReadingRibbonHeightPt(List<PageRect> pages, float[] bands)
+        {
+            float hPt = ReadingRibbonPadPt * 2f;
+
+            for (int i = 0; i < pages.Count; i++)
+                hPt += bands.Length == pages.Count ? bands[i] : RibbonContentHeightPt(pages[i]);
+
+            return hPt;
+        }
+
+        /// <summary>
+        /// Сдвиг страницы ленты. Обычно берётся из посчитанного массива; если он от
+        /// другой раскладки (отрисовка успела встать между пересборкой и публикацией),
+        /// считается на месте — кадр не должен ложиться по чужим сдвигам.
+        /// </summary>
+        private float RibbonPageDy(int pageIdx, List<PageRect> pages)
+        {
+            var deltas = _ribbonPageDy;
+            if (deltas.Length == pages.Count) return deltas[pageIdx];
+
+            float topPt = ReadingRibbonPadPt;
+            for (int i = 0; i < pageIdx; i++) topPt += RibbonBandHeightPt(i, pages);
+            return topPt - pages[pageIdx].PadTopPt - pages[pageIdx].Ypt;
+        }
+
+        /// <summary>Верх и низ полосы содержимого страницы в ленте.</summary>
+        private (float TopPt, float BottomPt) RibbonPageBand(int pageIdx, List<PageRect> pages)
+        {
+            var page = pages[pageIdx];
+            float topPt = page.Ypt + page.PadTopPt + RibbonPageDy(pageIdx, pages);
+            return (topPt, topPt + RibbonBandHeightPt(pageIdx, pages));
+        }
+
         /// <summary>
         /// Визуальная позиция страницы в книжном развороте. Две страницы разворота
         /// встают вплотную по центру вьюпорта, остальные уводятся далеко вниз — их
@@ -406,7 +588,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Половины под листом остаются за обычным проходом: они неподвижны, и
             // рисовать их снимком означало бы подменить векторный текст растровым —
             // на глаз это читается как рывок шрифта и утолщение линий в таблицах.
-            if (_spreadFlipDir != 0 && (pageIdx == _spreadFlyFront || pageIdx == _spreadFlyBack))
+            if (SpreadLeafLifted && (pageIdx == _spreadFlyFront || pageIdx == _spreadFlyBack))
                 return (0f, SpreadHiddenOffsetPt);
 
             // Какая страница в какой половине. В покое это пара разворота; во время
@@ -443,6 +625,17 @@ namespace Writersword.Modules.TextEditor.Document
                 float t = pages[i].Ypt + dy;
                 float r = l + pages[i].WidthPt;
                 float b = t + pages[i].HeightPt;
+
+                // В ленте страница занимает ровно свою полосу содержимого: полей у
+                // склейки нет, и прямоугольники соседей иначе накладывались бы друг
+                // на друга их высотой — точка попадала бы сразу в двух, и ближайшей
+                // оказывалась не та страница, на которую человек показал.
+                if (ReadingRibbon)
+                {
+                    var (bandTopPt, bandBotPt) = RibbonPageBand(i, pages);
+                    t = bandTopPt;
+                    b = bandBotPt;
+                }
                 float ddx = xPt < l ? l - xPt : xPt > r ? xPt - r : 0f;
                 float ddy = yPt < t ? t - yPt : yPt > b ? yPt - b : 0f;
                 float d = ddx * ddx + ddy * ddy;
@@ -463,7 +656,10 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private (float XPt, float YPt) VisualToLogicalPt(float xPt, float yPt)
         {
-            if (_pagesPerRow <= 1) return (xPt, yPt);
+            // Лента ставит листы не туда, где они лежат в раскладке, и обратный
+            // перевод ей нужен так же, как страницам в ряд: без него попадание по
+            // тексту считалось бы по логическим координатам склеенного документа.
+            if (_pagesPerRow <= 1 && !ReadingRibbon) return (xPt, yPt);
 
             List<PageRect> pages;
             lock (_renderLock) { pages = _pages; }
@@ -480,7 +676,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private (float XPt, float YPt) VisualToLogicalPt(float xPt, float yPt, int fixedPageIdx)
         {
-            if (_pagesPerRow <= 1) return (xPt, yPt);
+            if (_pagesPerRow <= 1 && !ReadingRibbon) return (xPt, yPt);
             if (fixedPageIdx < 0) return VisualToLogicalPt(xPt, yPt);
 
             List<PageRect> pages;
@@ -1004,7 +1200,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _scriptFontMap,
                 _substituteMissingGlyphs,
                 _substituteFontFamily,
-                _breakOnHyphen);
+                _breakOnHyphen,
+                (float)DocVm.Document.DefaultTabStopPt);
 
         // ── Логирование ───────────────────────────────────────────────────
         private static readonly ILogger _logger = Log.ForContext<DocumentCanvas>();
@@ -1069,7 +1266,22 @@ namespace Writersword.Modules.TextEditor.Document
         // Вместо 13+ аллокаций на каждый рендер-кадр — ноль.
         // Все паинты используются только на compositor-треде, поэтому thread-safe.
         private readonly SKPaint _paintCanvasBg = new() { Color = new SKColor(0xE8, 0xE8, 0xE8) };
-        private readonly SKPaint _paintPageShadow = new() { Color = new SKColor(0x00, 0x00, 0x00, 0x28) };
+        // Тень листа. Размытая, а не жёсткий прямоугольник со сдвигом: прямоугольник
+        // даёт в зазоре между листами ровную серую полосу с чёткой кромкой — на глаз
+        // это не тень, а вторая линия рядом с краем страницы, да ещё и обрывающаяся
+        // посреди пустого места.
+        //
+        // Размытие задано в пунктах, а не в точках экрана: канвас рисует в пунктах и
+        // масштабируется целиком, поэтому тень растёт вместе с листом при приближении,
+        // как ей и положено. Фильтр общий и неизменяемый — на всех канвасах один.
+        private static readonly SKMaskFilter PageShadowBlur =
+            SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 2.2f);
+
+        private readonly SKPaint _paintPageShadow = new()
+        {
+            Color = new SKColor(0x00, 0x00, 0x00, 0x30),
+            MaskFilter = PageShadowBlur
+        };
         private readonly SKPaint _paintPageWhite = new() { Color = SKColors.White };
         private readonly SKPaint _paintTransparent = new() { Color = SKColors.Transparent };
         // Обычное выделение — мягкое полупрозрачное голубое.
@@ -1077,7 +1289,13 @@ namespace Writersword.Modules.TextEditor.Document
         // Выделение поверх голубой/циановой заливки: голубое по голубому сливается, поэтому
         // для таких заливок берём мягкий тёплый (янтарный) полупрозрачный — он контрастен синему.
         private readonly SKPaint _paintSelectionAlt = new() { Color = new SKColor(0xFF, 0x8F, 0x00, 0x66) };
-        private readonly SKPaint _paintCaret = new() { Color = SKColors.Black, StrokeWidth = 1.1f, IsAntialias = false, IsStroke = true };
+        // Каретка рисуется заливкой, а не штрихом. Штрих толщиной в пунктах документа
+        // проходит через масштаб холста, и на экране его ширина оказывалась дробной: при
+        // выключенном сглаживании она округлялась то в один пиксель, то в два — в
+        // зависимости от зума и от того, на какой доле пикселя стоит сама каретка. Отсюда
+        // и было «то жирненькая, то тоненькая». Прямоугольник же ставится по пиксельной
+        // сетке и имеет ровно ту ширину, которую ему задали (DocumentCanvas.Render).
+        private readonly SKPaint _paintCaret = new() { Color = SKColors.Black, IsAntialias = false };
         private readonly SKPaint _paintHandleFill = new() { Color = new SKColor(0x22, 0x99, 0xFF, 0xCC), IsAntialias = true };
         private readonly SKPaint _paintHandleStroke = new() { Color = new SKColor(0xFF, 0xFF, 0xFF, 0xCC), StrokeWidth = 1f, IsStroke = true, IsAntialias = true };
         private readonly SKPaint _paintHandleArrow = new() { Color = SKColors.White, StrokeWidth = 1f, IsStroke = true, IsAntialias = true };
@@ -1253,6 +1471,18 @@ namespace Writersword.Modules.TextEditor.Document
         private float _spreadPageHeightPt;
         private float _spreadPadScale = 1f;
 
+        // Во сколько раз текстовая область листа чтения уже и ниже документной. По
+        // ним пересчитываются смещения плавающих и привязанных объектов — см.
+        // ReadingOffsetXPt/ReadingOffsetYPt.
+        private float _spreadOffsetScaleX = 1f;
+        private float _spreadOffsetScaleY = 1f;
+
+        // Шаг между листами: в бумаге документа и в книге. Вертикальное смещение
+        // объекта хранит в себе ещё и переход через страницы — по этим шагам оно
+        // разбирается на «сколько листов вниз» и «где на листе».
+        private float _spreadDocPageStepPt = 1f;
+        private float _spreadReadPageStepPt = 1f;
+
         // Левая страница текущего разворота. Развороты идут парами: (0,1), (2,3)…
         private int _spreadLeftPage;
 
@@ -1323,7 +1553,39 @@ namespace Writersword.Modules.TextEditor.Document
             float paperRefW = ps is null
                 ? MmToPt(210)
                 : (ps.Orientation == PageOrientation.Landscape ? MmToPt(ps.HeightMm) : MmToPt(ps.WidthMm));
-            _spreadPadScale = Math.Clamp(_spreadPageWidthPt / Math.Max(paperRefW, 1f), 0.25f, 1f);
+            float paperRefH = ps is null
+                ? MmToPt(297)
+                : (ps.Orientation == PageOrientation.Landscape ? MmToPt(ps.WidthMm) : MmToPt(ps.HeightMm));
+            if (paperRefW < 1f) paperRefW = MmToPt(210);
+            if (paperRefH < 1f) paperRefH = MmToPt(297);
+
+            _spreadPadScale = Math.Clamp(_spreadPageWidthPt / paperRefW, 0.25f, 1f);
+
+            // Смещения плавающих объектов приводятся к листу ПО КАЖДОЙ ОСИ ОТДЕЛЬНО и
+            // в долях текстовой области, а не общим множителем полей.
+            //
+            // Общий множитель здесь не годится: он выведен из ширины, а форматы книги
+            // сжимают лист по осям по-разному. «Широкий» лист почти той же ширины, что
+            // и бумага, но вдвое ниже — смещение, ужатое по ширине, уводило картинку
+            // далеко за нижний край, на чужую страницу. Доля же остаётся долей: объект,
+            // стоявший на трети текстовой области сверху, там и остаётся.
+            float docPadW = ps is null
+                ? MmToPt(40)
+                : MmToPt(ps.MarginLeftMm + ps.MarginGutterMm + ps.MarginRightMm);
+            float docPadH = ps is null
+                ? MmToPt(40)
+                : MmToPt(ps.MarginTopMm + ps.MarginBottomMm);
+
+            float docTextW = Math.Max(paperRefW - docPadW, 1f);
+            float docTextH = Math.Max(paperRefH - docPadH, 1f);
+            float readTextW = Math.Max(_spreadPageWidthPt - docPadW * _spreadPadScale, 1f);
+            float readTextH = Math.Max(_spreadPageHeightPt - docPadH * _spreadPadScale, 1f);
+
+            _spreadOffsetScaleX = Math.Clamp(readTextW / docTextW, 0.05f, 4f);
+            _spreadOffsetScaleY = Math.Clamp(readTextH / docTextH, 0.05f, 4f);
+
+            _spreadDocPageStepPt = Math.Max(paperRefH + PageGapPt, 1f);
+            _spreadReadPageStepPt = Math.Max(_spreadPageHeightPt + PageGapPt, 1f);
         }
 
         /// <summary>Читать по одному листу вместо разворота.</summary>
@@ -1465,6 +1727,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
                 _docVm.StructureChanged -= OnStructureChanged;
+                _docVm.StylesChanged -= OnStylesChanged;
+                _docVm.TocPageNumbersStale -= OnTocPageNumbersStale;
                 _docVm.BeginFontPreviewDelegate = null;
                 _docVm.PreviewFontFamilyDelegate = null;
                 _docVm.EndFontPreviewDelegate = null;
@@ -1706,6 +1970,47 @@ namespace Writersword.Modules.TextEditor.Document
             return page;
         }
 
+        /// <summary>
+        /// Горизонтальное смещение того листа, на котором стоит каретка, — в пикселях
+        /// относительно левого края видимой области. По нему линейка ставит свой ноль.
+        ///
+        /// Считается именно по листу каретки, а не по общему левому краю раскладки.
+        /// Когда листы стоят рядом, поток раскладки один, а на экране страницы разведены
+        /// по колонкам: <see cref="PageVisualDelta"/> и говорит, насколько уехал каждый.
+        /// Без этой добавки линейка показывала разметку первого листа независимо от того,
+        /// на каком из них работает человек, — на втором она оказывалась сдвинутой на
+        /// целую страницу, и отступы абзаца по ней было не выставить.
+        /// </summary>
+        private double CaretPageOffsetXPx()
+        {
+            List<PageRect> pages;
+            List<ParaLayout> layouts;
+            lock (_renderLock) { pages = _pages; layouts = _layouts; }
+
+            int pageIdx = 0;
+            if (_caretPara >= 0 && _caretPara < layouts.Count)
+                pageIdx = layouts[_caretPara].PageIndex;
+
+            var (dxPt, _) = PageVisualDelta(pageIdx, pages);
+
+            return (_layoutPageXPt + dxPt) * PtToPx * Zoom
+                   - (_parentScrollViewer?.Offset.X ?? 0);
+        }
+
+        /// <summary>
+        /// Сообщает линейке смещение листа под кареткой, если оно изменилось.
+        /// Зовётся на прокрутку, на пересборку раскладки и на переход каретки:
+        /// все три случая двигают лист относительно окна.
+        /// </summary>
+        private void NotifyPageOffsetX()
+        {
+            double pageOffsetXPx = CaretPageOffsetXPx();
+            if (Math.Abs(pageOffsetXPx - _lastPageOffsetXPx) <= 0.01) return;
+
+            _lastPageOffsetXPx = pageOffsetXPx;
+            PageOffsetXChanged?.Invoke(pageOffsetXPx);
+        }
+
         private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
         {
             if (sender is not ScrollViewer sv) return;
@@ -1715,14 +2020,12 @@ namespace Writersword.Modules.TextEditor.Document
             // Горизонтальная позиция листа для линейки зависит от Offset.X, но публикуется
             // в линейку только при пересборке раскладки (RebuildPageModePass). При скролле
             // раскладка не пересобирается, поэтому линейка держала старое значение и уезжала
-            // относительно страницы. Переотправляем позицию при каждом изменении прокрутки —
-            // расчёт совпадает с расчётом в RebuildPageModePass.
-            double pageOffsetXPx = _layoutPageXPt * PtToPx * Zoom - sv.Offset.X;
-            if (Math.Abs(pageOffsetXPx - _lastPageOffsetXPx) > 0.01)
-            {
-                _lastPageOffsetXPx = pageOffsetXPx;
-                PageOffsetXChanged?.Invoke(pageOffsetXPx);
-            }
+            // относительно страницы.
+            NotifyPageOffsetX();
+
+            // Лента меряет место долей длины: прокрутили — доля изменилась, и поле с
+            // ползунком в ленте чтения обязаны показать это сразу.
+            NotifyReadingPercent();
 
             // Контент не менялся — скролл лишь сдвигает окно по уже отрисованному
             // overscan-битмапу. Ветка _caretOnlyRedraw в RenderWithSKCanvas переиспользует
@@ -1750,6 +2053,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
                 _docVm.StructureChanged -= OnStructureChanged;
+                _docVm.StylesChanged -= OnStylesChanged;
+                _docVm.TocPageNumbersStale -= OnTocPageNumbersStale;
                 _docVm.BeginFontPreviewDelegate = null;
                 _docVm.PreviewFontFamilyDelegate = null;
                 _docVm.EndFontPreviewDelegate = null;
@@ -1778,6 +2083,10 @@ namespace Writersword.Modules.TextEditor.Document
             _cellVmCache.Clear();
             InvalidateCellLayoutCaches();
             ResetUndoOrder();
+
+            // Другая рукопись — другое число страниц: счётчик, по которому оглавления
+            // узнают о сдвиге, начинается заново (DocumentCanvas.Toc).
+            ResetTocPageCount();
 
             // Другой документ — другой архив: картинка, которой не было там,
             // здесь может лежать на месте. Список потерянных начинается заново.
@@ -1920,6 +2229,14 @@ namespace Writersword.Modules.TextEditor.Document
             // жест с маркерами на канвасе, и его перевод на фигуру идёт отдельно.
             DocVm.SetImageCropModeDelegate = SetSelectedImageCropMode;
             DocVm.GetImageCropModeDelegate = GetSelectedImageCropMode;
+            // Раскладка отвечает навигатору и оглавлению, на какой странице лежит абзац
+            // и как к нему уйти (DocumentCanvas.Toc).
+            WireTocDelegates();
+
+            // Шаг табуляции по умолчанию меняется на весь документ сразу, и одними
+            // затронутыми абзацами тут не обойтись (DocumentCanvas.Tabs).
+            WireTabDelegates();
+
             WireInlineImageSizeResolver();
             _pagesPerRowSetting = DocVm.PagesPerRow;
             UpdateEffectivePagesPerRow();
@@ -3077,6 +3394,28 @@ namespace Writersword.Modules.TextEditor.Document
             }, DispatcherPriority.Background);
         }
 
+        /// <summary>
+        /// Ширина холста в устройствах при данном вьюпорте и масштабе.
+        ///
+        /// Обычно это вьюпорт, делённый на масштаб. Лента — исключение: приближённая
+        /// полоса шире окна, и холст по вьюпорту оказывался уже листа. Лист в такой
+        /// холст не центрировался (центр считается по ширине холста и упирался в ноль)
+        /// и прижимался к левому краю, а приближение выглядело так, будто размер не
+        /// меняется вовсе — росло то, что не видно. Холст ленты поэтому не уже самой
+        /// полосы вместе с её полями.
+        ///
+        /// Считается в одном месте: measure и arrange обязаны получать одно и то же,
+        /// иначе они гоняют пересборку раскладки друг за другом на каждом проходе.
+        /// </summary>
+        private double CanvasWidthFor(double viewportW, double zoom)
+        {
+            double width = Math.Max(viewportW / Math.Max(zoom, 0.01), 1);
+            if (!ReadingRibbon) return width;
+
+            double stripW = (GetPageWidthPt() + ReadingRibbonSideMarginPt * 2f) * PtToPx;
+            return Math.Max(width, stripW);
+        }
+
         // ── Measure / Layout ──────────────────────────────────────────────
         protected override Size MeasureOverride(Size available)
         {
@@ -3089,7 +3428,7 @@ namespace Writersword.Modules.TextEditor.Document
             _readingViewportWidthPx = Math.Max(viewportW, 1);
 
             double zoom = Zoom;
-            _canvasWidth = Math.Max(viewportW / zoom, 1);
+            _canvasWidth = CanvasWidthFor(viewportW, zoom);
 
             // Авто-режим страниц в ряду зависит от ширины канваса и масштаба — обе
             // величины только что посчитаны, здесь и пересчитываем.
@@ -3119,6 +3458,24 @@ namespace Writersword.Modules.TextEditor.Document
                     RebuildLayouts();
             }
 
+            // Холст книги равен вьюпорту, и меряется он живым масштабом. Масштаб этот
+            // получается вписыванием листа в окно, а лист меняется вместе с форматом и
+            // подачей: высота, посчитанная под прежний масштаб, оставляет между низом
+            // холста и низом вьюпорта полосу, которую канвас уже не рисует, — в ней и
+            // застревает прежний кадр. Ширина пересчитывается тем же масштабом, иначе
+            // книга уезжает от центра.
+            //
+            // Лента под это правило не подпадает: страниц у неё нет, текст идёт одной
+            // полосой во всю длину рукописи, и она обязана прокручиваться. Холст,
+            // обрезанный до окна, прокручивать было нечего — режим показывал первый
+            // экран и упирался в него.
+            if (ReadingActive)
+            {
+                if (SpreadMode) FitCanvasToViewport();
+                zoom = Zoom;
+                _canvasWidth = CanvasWidthFor(viewportW, zoom);
+            }
+
             double visualH = Math.Max(_canvasHeight * zoom, 100);
             double visualW = availW;
 
@@ -3129,6 +3486,14 @@ namespace Writersword.Modules.TextEditor.Document
                     + PageGapPt * 2.0 * (_pagesPerRow - 1);
                 visualW = Math.Max(availW,
                     pagesWPt * PtToPx * zoom + PageGapPt * PtToPx * 4);
+            }
+            else if (ReadingRibbon)
+            {
+                // Полоса ленты вписана в окно по ширине, но читатель вправе приблизить
+                // её сверх этого — тогда холст растёт под лист, и полоса не обрезается
+                // краем окна, а прокручивается. Ширина берётся ровно та, по которой
+                // раскладка ставила лист: иначе полоса и её место разъезжаются.
+                visualW = Math.Max(availW, _canvasWidth * zoom);
             }
 
             return new Size(visualW, visualH);
@@ -3144,7 +3509,7 @@ namespace Writersword.Modules.TextEditor.Document
             _readingViewportWidthPx = Math.Max(viewportW, 1);
 
             double zoom = Zoom;
-            double logicalW = Math.Max(viewportW / zoom, 1);
+            double logicalW = CanvasWidthFor(viewportW, zoom);
 
             // При изменении ширины канваса обновляем _canvasWidth. В режиме страниц это влияет
             // только на центрирование страниц, в режиме потока — на ширину текста (см. ниже).
@@ -3168,7 +3533,11 @@ namespace Writersword.Modules.TextEditor.Document
                 // от зума) не зависит — кэш абзацев валиден, чистить его не нужно, иначе на зуме
                 // перелейаутился бы весь документ. RebuildLayouts только пере-центрирует страницы.
                 // В режиме потока ширина текста = logicalW, поэтому при её изменении нужен рефлоу.
-                if (DocVm?.ViewMode != EditorViewMode.Page)
+                //
+                // Лента считается страницами и по этому правилу идёт вместе с ними: её
+                // лист — лист документа, от ширины окна он не зависит, и чистка кеша
+                // означала бы полную пересборку абзацев на каждое движение рамки окна.
+                if (DocVm?.ViewMode != EditorViewMode.Page && !ReadingRibbon)
                 {
                     _layoutCache.Clear();
                     InvalidateCellLayoutCaches();
@@ -3423,6 +3792,11 @@ namespace Writersword.Modules.TextEditor.Document
             if (_styleResolver is null)
                 _styleResolver = CreateStyleResolver();
 
+            // Прогрев шейпит те же абзацы, что потом пойдут в раскладку, и обязан
+            // шейпить их тем же шрифтом: подмены чтения статические, и без явной
+            // установки прогрев зависел бы от того, чей проход отрисовки был последним.
+            PushReadingTextOverrides();
+
             float widthPt = GetCurrentTextWidthPt();
             var passStopwatch = System.Diagnostics.Stopwatch.StartNew();
             bool allShaped = true;
@@ -3487,6 +3861,14 @@ namespace Writersword.Modules.TextEditor.Document
             if (_styleResolver is null)
                 _styleResolver = CreateStyleResolver();
 
+            // Размер листа чтения и отпечаток вёрстки чтения освежаются ДО ворот
+            // прогрева. Отпечаток может обесценить кеш раскладок, и решение о том,
+            // греть его порциями или считать сразу, обязано приниматься уже после
+            // этого — иначе вход в чтение с обесцененным кешем уходил бы в полный
+            // синхронный проход по всем абзацам.
+            if (SpreadMode) ComputeSpreadPageSize();
+            SyncReadingShapeSignature();
+
             // Ворота холодного пересчёта для ПРЯМЫХ вызовов (смена зума, структуры,
             // подписок во время загрузки документа): при холодном кеше полный проход
             // зашейпил бы тысячи абзацев синхронно на UI-потоке (~секунда), в обход
@@ -3503,10 +3885,6 @@ namespace Writersword.Modules.TextEditor.Document
             // холодном кеше лейаутов это главный кандидат на заморозку интерфейса.
             // Замер пишется в лог только когда пересчёт превысил порог.
             var rebuildStopwatch = System.Diagnostics.Stopwatch.StartNew();
-
-            // Размер виртуального листа освежается до пересчёта: от него зависят и
-            // ширина текста, и поля, которые читает вся раскладка.
-            if (SpreadMode) ComputeSpreadPageSize();
 
             // Подмены чтения ставятся ДО пересчёта, а не только перед отрисовкой:
             // шрифт, ступень размера и ужатие таблиц участвуют в самой вёрстке, и
@@ -3525,24 +3903,18 @@ namespace Writersword.Modules.TextEditor.Document
                     break;
                 case EditorViewMode.Reading:
                     {
+                        // И книга, и лента верстаются той же пагинацией, что и режим
+                        // страниц: разрывы, таблицы, обтекание и места картинок
+                        // считаются одинаково. Отличие книги — размер листа, отличие
+                        // ленты — только склейка листов в отображении.
+                        RebuildPageMode();
+
                         if (SpreadMode)
                         {
-                            // Разворот верстается той же пагинацией, что и режим страниц:
-                            // разрывы, таблицы и обтекание считаются одинаково, отличается
-                            // только размер листа. Вся книжность живёт в отображении.
-                            RebuildPageMode();
                             ClampSpreadPage();
                             FitCanvasToViewport();
-                            break;
                         }
 
-                        // Первым аргументом идёт ПОЛНАЯ ширина канваса, а не ширина
-                        // колонки: внутри RebuildFlowMode отступ вычитается из неё
-                        // дважды. С урезанной шириной на широком окне вычитание
-                        // уводило колонку в минус, и текст вставал по букве в строку.
-                        float cw = (float)(_canvasWidth * PxToPt);
-                        float columnPt = ReadingColumnWidthPt(cw);
-                        RebuildFlowMode(cw, 18f, (cw - columnPt) / 2f);
                         break;
                     }
             }
@@ -3567,6 +3939,10 @@ namespace Writersword.Modules.TextEditor.Document
             _layoutsFingerprintWidth = _canvasWidth;
             _layoutsFingerprintViewMode = DocVm.ViewMode;
             _layoutsFingerprintSpread = DocVm.IsSpreadReading;
+
+            // Книга сменила число страниц — номера в оглавлениях устарели
+            // (DocumentCanvas.Toc).
+            NotifyTocPageCount(_pages.Count);
         }
 
 

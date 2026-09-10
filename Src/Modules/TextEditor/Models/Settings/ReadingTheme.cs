@@ -195,6 +195,78 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             return copy;
         }
 
+        /// <summary>
+        /// Цвет поля вокруг листа в виде HEX — тот же, каким его заливает канвас.
+        /// Нужен всему, что стоит вплотную к листу и обязано выглядеть его частью:
+        /// в первую очередь линейкам.
+        ///
+        /// Задана заливка — берётся она; задан градиент — из него берётся первый
+        /// цвет: сплошной нужен там, где градиент рисовать нечем. Не задано ничего —
+        /// поле выводится из бумаги: под светлой книгой темнее её, под почти чёрной
+        /// чуть светлее. Числа те же, что в DrawCanvasBackdrop, и менять их нужно
+        /// вместе — иначе линейка разойдётся с полем на пару тонов.
+        /// </summary>
+        public static string FieldColorHex(ReadingTheme? theme)
+        {
+            if (theme is null) return "#E8E8E8";
+
+            string? own = theme.BackdropColor;
+            if (!string.IsNullOrWhiteSpace(own))
+            {
+                string first = FirstHexOf(own!);
+                if (!string.IsNullOrEmpty(first)) return first;
+            }
+
+            if (!TryParseRgb(theme.SheetColor, out int r, out int g, out int b))
+                return "#E8E8E8";
+
+            double luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+            bool lighten = luma < 0.14;
+
+            double target = lighten ? 255.0 : 0.0;
+            double amount = lighten ? 0.10 : 0.16;
+
+            int nr = ShiftChannel(r, target, amount);
+            int ng = ShiftChannel(g, target, amount);
+            int nb = ShiftChannel(b, target, amount);
+
+            return $"#{nr:X2}{ng:X2}{nb:X2}";
+        }
+
+        private static int ShiftChannel(int v, double target, double amount)
+            => (int)Math.Clamp(v + (target - v) * amount, 0.0, 255.0);
+
+        /// <summary>Первый HEX-цвет, встреченный в строке. Пусто — цвета в ней нет.</summary>
+        private static string FirstHexOf(string value)
+        {
+            int hash = value.IndexOf('#');
+            if (hash < 0) return string.Empty;
+
+            int end = hash + 1;
+            while (end < value.Length && Uri.IsHexDigit(value[end])) end++;
+
+            int len = end - hash - 1;
+            if (len != 6 && len != 8) return string.Empty;
+
+            return value.Substring(hash, len + 1);
+        }
+
+        /// <summary>Разбирает HEX в каналы. Альфа, если она есть, отбрасывается.</summary>
+        private static bool TryParseRgb(string? hex, out int r, out int g, out int b)
+        {
+            r = g = b = 0;
+            if (string.IsNullOrWhiteSpace(hex)) return false;
+
+            string s = hex.TrimStart('#');
+            if (s.Length == 8) s = s.Substring(2);
+            if (s.Length != 6) return false;
+
+            const System.Globalization.NumberStyles Hex = System.Globalization.NumberStyles.HexNumber;
+            return int.TryParse(s.Substring(0, 2), Hex, null, out r)
+                && int.TryParse(s.Substring(2, 2), Hex, null, out g)
+                && int.TryParse(s.Substring(4, 2), Hex, null, out b);
+        }
+
         /// <summary>Тёмный ли цвет по HEX. Порог по воспринимаемой светлоте.</summary>
         public static bool IsDarkHex(string? hex)
         {

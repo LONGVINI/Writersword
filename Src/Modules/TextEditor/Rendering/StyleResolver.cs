@@ -58,12 +58,21 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public bool BreakOnHyphen { get; }
 
+        /// <summary>
+        /// Шаг табуляции по умолчанию в пунктах. К ближайшей его отметке уходит символ
+        /// табуляции в абзаце, которому своих позиций не задано. Свойство документа:
+        /// в рукописи шаг один на всю книгу, иначе одинаковые на вид абзацы
+        /// раскладывались бы по-разному.
+        /// </summary>
+        public float DefaultTabStopPt { get; }
+
         public StyleResolver(
             IEnumerable<DocumentStyle> styles,
             IReadOnlyDictionary<string, string>? scriptFontMap = null,
             bool substituteMissingGlyphs = false,
             string? substituteFontFamily = null,
-            bool breakOnHyphen = true)
+            bool breakOnHyphen = true,
+            float defaultTabStopPt = 35.4f)
         {
             _index = new Dictionary<string, DocumentStyle>(
                 System.StringComparer.OrdinalIgnoreCase);
@@ -78,6 +87,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             SubstituteMissingGlyphs = substituteMissingGlyphs;
             SubstituteFontFamily = substituteFontFamily;
             BreakOnHyphen = breakOnHyphen;
+            DefaultTabStopPt = defaultTabStopPt > 1f ? defaultTabStopPt : 35.4f;
         }
 
         // ── Резолверы шрифта ──────────────────────────────────────────────

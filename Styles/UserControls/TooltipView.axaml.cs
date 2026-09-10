@@ -4,7 +4,11 @@ using Avalonia.Controls.Documents;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace Writersword.Styles.UserControls
 {
@@ -186,13 +190,22 @@ namespace Writersword.Styles.UserControls
         /// <summary>
         /// Собирает описание из простой разметки.
         ///
-        /// Поддерживается два приёма:
-        ///   *текст*  — выделение акцентным цветом и полужирным;
-        ///   перенос строки — обычный \n в ресурсной строке.
+        /// Поддерживается три приёма:
+        ///   *текст*                     — выделение акцентным цветом и полужирным;
+        ///   [img:avares://.../file.png] — картинка прямо в строке, ростом со строку;
+        ///   перенос строки              — обычный \n в ресурсной строке.
         ///
         /// Раньше выделение приходилось писать вручную вложенными Run прямо
         /// в разметке окна, из-за чего текст не переводился и повторялся
         /// в каждом месте. Теперь оформление живёт в самой строке.
+        ///
+        /// Картинка в строке отличается от <see cref="PreviewPath"/> назначением: то —
+        /// один большой снимок над всем текстом, а это значок при своей строчке. Там,
+        /// где перечисляют варианты — типы табуляции, виды заливки, — большая картинка
+        /// не годится: показать один вариант из четырёх значит не показать ничего.
+        ///
+        /// Разбор идёт посимвольно, а не разбиением по звёздочкам, как было: картинки
+        /// рвут строку на куски, и парность выделений считалась бы в каждом куске заново.
         /// </summary>
         private void RebuildDescription(string? text)
         {
@@ -204,16 +217,16 @@ namespace Writersword.Styles.UserControls
             if (string.IsNullOrEmpty(text))
                 return;
 
-            // Разбиваем по звёздочкам: нечётные куски — выделенные.
-            var parts = text.Split('*');
+            bool accent = false;
+            var buffer = new StringBuilder();
 
-            for (int i = 0; i < parts.Length; i++)
+            void Flush()
             {
-                if (parts[i].Length == 0) continue;
+                if (buffer.Length == 0) return;
 
-                var run = new Run(parts[i]);
+                var run = new Run(buffer.ToString());
 
-                if (i % 2 == 1)
+                if (accent)
                 {
                     // Цвет берётся привязкой, а не разовым поиском ресурса:
                     // подсказка живёт в попапе и в момент сборки текста ещё
@@ -226,6 +239,113 @@ namespace Writersword.Styles.UserControls
                 }
 
                 target.Inlines?.Add(run);
+                buffer.Clear();
+            }
+
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (text[i] == '*')
+                {
+                    Flush();
+                    accent = !accent;
+                    continue;
+                }
+
+                if (text[i] == '[' && TryReadImageMarker(text, i, out string path, out int close))
+                {
+                    Flush();
+
+                    var image = BuildInlineImage(path);
+                    if (image is not null)
+                        target.Inlines?.Add(new InlineUIContainer(image));
+
+                    i = close;
+                    continue;
+                }
+
+                buffer.Append(text[i]);
+            }
+
+            Flush();
+        }
+
+        private const string ImageMarkerPrefix = "[img:";
+
+        /// <summary>Высота картинки в строке. Чуть больше кегля описания, чтобы значок читался.</summary>
+        private const double InlineImageHeight = 14.0;
+
+        /// <summary>
+        /// Разбирает метку картинки, начинающуюся в позиции start. Возвращает путь и место
+        /// закрывающей скобки. Незакрытая метка картинкой не считается и остаётся текстом:
+        /// квадратная скобка — обычный знак, и обрывать на ней описание нельзя.
+        /// </summary>
+        private static bool TryReadImageMarker(string text, int start, out string path, out int close)
+        {
+            path = string.Empty;
+            close = start;
+
+            if (start + ImageMarkerPrefix.Length >= text.Length) return false;
+
+            if (string.CompareOrdinal(text, start, ImageMarkerPrefix, 0, ImageMarkerPrefix.Length) != 0)
+                return false;
+
+            int end = text.IndexOf(']', start + ImageMarkerPrefix.Length);
+            if (end < 0) return false;
+
+            path = text.Substring(
+                start + ImageMarkerPrefix.Length,
+                end - start - ImageMarkerPrefix.Length);
+
+            close = end;
+            return path.Length > 0;
+        }
+
+        /// <summary>
+        /// Картинки строки. Читаются один раз на путь: подсказка пересобирается на каждое
+        /// наведение, и открывать ресурс заново значит лезть в сборку десятки раз за минуту
+        /// ради одного и того же значка. Промах тоже запоминается — иначе отсутствующая
+        /// картинка искалась бы вечно.
+        /// </summary>
+        private static readonly Dictionary<string, Bitmap?> _inlineImages = new();
+
+        private static Control? BuildInlineImage(string path)
+        {
+            Bitmap? bitmap;
+
+            lock (_inlineImages)
+            {
+                if (!_inlineImages.TryGetValue(path, out bitmap))
+                {
+                    bitmap = LoadInlineBitmap(path);
+                    _inlineImages[path] = bitmap;
+                }
+            }
+
+            if (bitmap is null) return null;
+
+            return new Image
+            {
+                Source = bitmap,
+                Height = InlineImageHeight,
+                Stretch = Stretch.Uniform,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 4, -3)
+            };
+        }
+
+        private static Bitmap? LoadInlineBitmap(string path)
+        {
+            try
+            {
+                var uri = new Uri(path);
+                if (!AssetLoader.Exists(uri)) return null;
+
+                using var stream = AssetLoader.Open(uri);
+                return new Bitmap(stream);
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
 

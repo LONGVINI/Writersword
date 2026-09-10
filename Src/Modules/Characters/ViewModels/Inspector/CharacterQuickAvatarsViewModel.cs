@@ -33,12 +33,23 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             CharacterAvatarItem item,
             ICharacterAvatarService service,
             Action<string> pick,
-            Func<string, Task>? onCrop = null)
+            Func<string, Task>? onCrop = null,
+            Action<string>? onRemove = null)
         {
             AvatarRef = item.AvatarRef;
             FileName = item.FileName;
             _service = service;
             _pick = pick;
+
+            // Крестик есть только там, где убирать безопасно — в «Недавних».
+            // Оттуда уходит одна запись списка: картинка остаётся на месте, и
+            // персонажи, которые её носят, остаются с ней. В папках крестика
+            // нет намеренно — там он удалял бы сам файл, а такое не делают
+            // мимоходом в маленьком окошке; для этого есть окно выбора
+            // аватарки с переспросом.
+            CanRemove = onRemove != null;
+
+            RemoveCommand = ReactiveCommand.Create(() => { onRemove?.Invoke(AvatarRef); });
 
             PickCommand = ReactiveCommand.Create(() => { _pick(AvatarRef); });
 
@@ -59,6 +70,11 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
         public ReactiveCommand<Unit, Unit> PickCommand { get; }
         public ReactiveCommand<Unit, Unit> CropCommand { get; }
 
+        /// <summary>У плитки есть крестик — она стоит в «Недавних».</summary>
+        public bool CanRemove { get; }
+
+        public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
+
         /// <summary>
         /// Миниатюра грузится при первом показе, а не заранее для всех папок
         /// разом — так лента остаётся лёгкой, даже когда список общий и
@@ -77,6 +93,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
                     // при каждой прокрутке туда-обратно.
                     _thumbnail = _service.TryGetThumbnail(AvatarRef, 96);
                     if (_thumbnail == null) RequestThumbnail();
+                    else NotifyThumbnailReady();
                 }
                 return _thumbnail;
             }
@@ -84,6 +101,25 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
 
         /// <summary>Миниатюра готова. Пока нет — плитка показывает заглушку.</summary>
         public bool HasThumbnail => _thumbnail != null;
+
+        /// <summary>
+        /// Сообщить показу, что миниатюра уже здесь.
+        ///
+        /// Готовую миниатюру отдаёт кеш службы — прямо в этом чтении свойства,
+        /// без всякого ожидания. Молча так делать нельзя: тот, кто смотрит на
+        /// признак «миниатюра готова», спросил его раньше и получил «нет», а
+        /// второго повода спросить у него уже не будет. Так под каждой готовой
+        /// картинкой оставалась лежать заглушка — на фотографии незаметная, а
+        /// сквозь PNG с прозрачным фоном видная насквозь.
+        ///
+        /// Через очередь, а не сразу: оповещать об изменении прямо посреди
+        /// чтения свойства значит дёргать привязку, которая это чтение и
+        /// затеяла.
+        /// </summary>
+        private void NotifyThumbnailReady() =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => this.RaisePropertyChanged(nameof(HasThumbnail)),
+                Avalonia.Threading.DispatcherPriority.Background);
 
         /// <summary>
         /// Построить миниатюру в стороне от UI-потока. Прокрутка реализует
@@ -116,11 +152,11 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
     /// </summary>
     /// <summary>
     /// Что за раздел стоит в ленте. Нужен полоске папок внизу: у папки есть
-    /// обложка, а у «Недавних» и «В проекте» её быть не может — это не папки, а
-    /// выборки, и показывать им чужую картинку нельзя. Разбор по названию
-    /// раздела сломался бы от первой же папки, названной «Недавние».
+    /// обложка, а у «Недавних» её быть не может — это не папка, а выборка, и
+    /// показывать ей чужую картинку нельзя. Разбор по названию раздела
+    /// сломался бы от первой же папки, названной «Недавние».
     /// </summary>
-    public enum CharacterQuickAvatarFolderKind { Recent, Project, Pack }
+    public enum CharacterQuickAvatarFolderKind { Recent, Pack }
 
     public class CharacterQuickAvatarFolder : ReactiveObject
     {
@@ -131,13 +167,14 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             ICharacterAvatarService service,
             Action<string> pick,
             Func<string, Task>? onCrop,
-            CharacterQuickAvatarFolderKind kind = CharacterQuickAvatarFolderKind.Pack)
+            CharacterQuickAvatarFolderKind kind = CharacterQuickAvatarFolderKind.Pack,
+            Action<string>? onRemove = null)
         {
             Title = title;
             Icon = icon;
             Kind = kind;
             Tiles = items
-                .Select(item => new CharacterQuickAvatarTile(item, service, pick, onCrop))
+                .Select(item => new CharacterQuickAvatarTile(item, service, pick, onCrop, onRemove))
                 .ToList();
         }
 
@@ -279,13 +316,19 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
                 if (recents.Count > 0)
                     Folders.Add(new CharacterQuickAvatarFolder(
                         "Недавние", null, recents, service, PickStored, CropStoredAsync,
-                        CharacterQuickAvatarFolderKind.Recent));
+                        CharacterQuickAvatarFolderKind.Recent,
+                        onRemove: RemoveRecent));
 
-                var project = service.GetProjectAvatars();
-                if (project.Count > 0)
-                    Folders.Add(new CharacterQuickAvatarFolder(
-                        "В проекте", null, project, service, PickStored, CropStoredAsync,
-                        CharacterQuickAvatarFolderKind.Project));
+                // Раздела «В проекте» здесь больше нет. Он показывал архив
+                // проекта — всё, что когда-либо в него уложили, — и почти
+                // целиком повторял «Недавние»: картинка попадает в архив ровно
+                // в тот момент, когда её ставят, то есть тогда же, когда она
+                // встаёт первой в недавних. Две одинаковые полки подряд наверху
+                // маленького окошка отодвигали папки вниз и ничего не давали.
+                //
+                // Аватарка нужна по разу, а список недавних длинный; когда
+                // всё-таки нужна старая — за ней идут в окно «Выбрать
+                // аватарку», где раздел проекта остался вместе с поиском.
 
                 foreach (var pack in service.GetAllPacks())
                 {
@@ -323,6 +366,83 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
         {
             this.RaisePropertyChanged(nameof(HasFolders));
             this.RaisePropertyChanged(nameof(HasNoFolders));
+        }
+
+        // ── Крестик у недавней и его отмена ───────────────────────────────
+        //
+        // Убранная запись не пропадает совсем: она ложится в стопку отмен, и
+        // Ctrl+Z, пока окошко открыто, возвращает её на прежнее место. Без
+        // этого крестик рядом с картинкой — ловушка: он стоит в углу плитки,
+        // по которой щёлкают, промахнуться легко, а восстановить список
+        // нечем, кроме как поставить ту же аватарку заново.
+        //
+        // Стопка живёт у ленты и умирает вместе с ней: отменять убранное
+        // через день после закрытия панели никто не пойдёт, а хранить это на
+        // диске — заводить историю там, где её никто не спрашивал.
+
+        private readonly Stack<(string AvatarRef, string? BeforeRef)> _removedRecents = new();
+
+        /// <summary>Есть что вернуть по Ctrl+Z.</summary>
+        public bool CanUndoRemoveRecent => _removedRecents.Count > 0;
+
+        /// <summary>
+        /// Убрать запись из «Недавних». Запоминается не номер, а сосед снизу:
+        /// список пересобирается при каждой поставленной аватарке, и номер к
+        /// моменту отмены показывал бы уже на другую картинку.
+        /// </summary>
+        private void RemoveRecent(string avatarRef)
+        {
+            if (_service is null || string.IsNullOrEmpty(avatarRef)) return;
+
+            string? before = null;
+            try
+            {
+                var recents = _service.GetRecentAvatars();
+                for (int i = 0; i < recents.Count; i++)
+                {
+                    if (!CharacterAvatarRef.SameFile(recents[i].AvatarRef, avatarRef)) continue;
+                    if (i + 1 < recents.Count) before = recents[i + 1].AvatarRef;
+                    break;
+                }
+
+                _service.RemoveRecentAvatar(avatarRef);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Quick avatars: cannot remove recent {Ref}", avatarRef);
+                return;
+            }
+
+            _removedRecents.Push((avatarRef, before));
+            this.RaisePropertyChanged(nameof(CanUndoRemoveRecent));
+
+            Reload(_service);
+        }
+
+        /// <summary>
+        /// Вернуть последнюю убранную запись. Отдаёт false, когда возвращать
+        /// нечего, — по этому признаку Ctrl+Z остаётся необработанным и
+        /// достаётся тому, кто умеет отменять что-то ещё.
+        /// </summary>
+        public bool UndoRemoveRecent()
+        {
+            if (_service is null || _removedRecents.Count == 0) return false;
+
+            var (avatarRef, before) = _removedRecents.Pop();
+            this.RaisePropertyChanged(nameof(CanUndoRemoveRecent));
+
+            try
+            {
+                _service.RestoreRecentAvatar(avatarRef, before);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Quick avatars: cannot restore recent {Ref}", avatarRef);
+                return false;
+            }
+
+            Reload(_service);
+            return true;
         }
     }
 }

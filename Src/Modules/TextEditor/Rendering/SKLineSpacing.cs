@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Writersword.Modules.TextEditor.Models.Styles;
 
 namespace Writersword.Modules.TextEditor.Rendering
@@ -27,15 +27,15 @@ namespace Writersword.Modules.TextEditor.Rendering
         public static SKLineSpacing Single => new(LineSpacingRule.Auto, 1f);
 
         /// <summary>
-        /// Высота строки по метрикам шрифта. Естественная высота — ascent + descent,
-        /// как их отдаёт Skia: на Windows это уже полная высота строки гарнитуры
-        /// (usWinAscent/usWinDescent), в которую межстрочный зазор входит. Отдельно
-        /// прибавлять leading нельзя — зазор учитывался бы дважды, и строки
-        /// оказывались заметно выше вордовских.
+        /// Высота строки по метрикам шрифта. Word считает одинарный интервал как
+        /// сумму подъёма, спуска и межстрочного зазора гарнитуры: у Times New Roman
+        /// 12 пт это 13,8 пт, а без зазора выходит 13,3 — на четыре процента ниже.
+        /// На трёхстах страницах такая недостача сокращает документ на полтора
+        /// десятка листов, поэтому зазор берётся из метрик Skia как есть.
         /// </summary>
         public float Resolve(float ascent, float descent, float leading)
         {
-            float natural = ascent + descent;
+            float natural = ascent + descent + Math.Max(leading, 0f);
 
             return Rule switch
             {
@@ -51,7 +51,7 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public float ResolveProbe(float ascent, float descent, float leading)
         {
-            float natural = ascent + descent;
+            float natural = ascent + descent + Math.Max(leading, 0f);
             return Math.Max(Resolve(ascent, descent, leading), natural);
         }
     }

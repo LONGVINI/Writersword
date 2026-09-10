@@ -74,6 +74,7 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
                     // при каждой прокрутке туда-обратно.
                     _thumbnail = _service.TryGetThumbnail(AvatarRef, 96);
                     if (_thumbnail == null) RequestThumbnail();
+                    else NotifyThumbnailReady();
                 }
                 return _thumbnail;
             }
@@ -81,6 +82,25 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
 
         /// <summary>Миниатюра готова. Пока нет — плитка показывает заглушку.</summary>
         public bool HasThumbnail => _thumbnail != null;
+
+        /// <summary>
+        /// Сообщить показу, что миниатюра уже здесь.
+        ///
+        /// Готовую миниатюру отдаёт кеш службы — прямо в этом чтении свойства,
+        /// без всякого ожидания. Молча так делать нельзя: тот, кто смотрит на
+        /// признак «миниатюра готова», спросил его раньше и получил «нет», а
+        /// второго повода спросить у него уже не будет. Так под каждой готовой
+        /// картинкой оставалась лежать заглушка — на фотографии незаметная, а
+        /// сквозь PNG с прозрачным фоном видная насквозь.
+        ///
+        /// Через очередь, а не сразу: оповещать об изменении прямо посреди
+        /// чтения свойства значит дёргать привязку, которая это чтение и
+        /// затеяла.
+        /// </summary>
+        private void NotifyThumbnailReady() =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => this.RaisePropertyChanged(nameof(HasThumbnail)),
+                Avalonia.Threading.DispatcherPriority.Background);
 
         private async void RequestThumbnail()
         {

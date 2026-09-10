@@ -293,7 +293,6 @@
 			<Setter Property="Cursor" Value="Help"/>
 			<!-- К знаку подводят намеренно, поэтому ждать секунду с лишним,
 			     как у обычных кнопок, здесь незачем. -->
-			<Setter Property="behaviours:TooltipBehavior.ShowDelay" Value="300"/>
 		</Style>
 		<Style Selector="Border.hint PathIcon">
 			<Setter Property="Width" Value="14"/>

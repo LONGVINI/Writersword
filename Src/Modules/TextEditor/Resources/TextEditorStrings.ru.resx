@@ -894,4 +894,295 @@
   <data name="Table_ContinuationLabel" xml:space="preserve">
     <value>Подпись продолж.</value>
   </data>
+  <data name="Nav_Title" xml:space="preserve">
+    <value>Навигатор</value>
+  </data>
+  <data name="Nav_Tip" xml:space="preserve">
+    <value>Показать или убрать навигатор по заголовкам</value>
+  </data>
+  <data name="Nav_SearchPlaceholder" xml:space="preserve">
+    <value>Поиск по заголовкам</value>
+  </data>
+  <data name="Nav_Empty" xml:space="preserve">
+    <value>Заголовков пока нет. Абзац становится заголовком, если носит стиль «Заголовок 1»…«Заголовок 6», имеет структурный уровень или помечен для оглавления.</value>
+  </data>
+  <data name="Nav_Levels" xml:space="preserve">
+    <value>Глубина показа заголовков</value>
+  </data>
+  <data name="Nav_CollapseAll" xml:space="preserve">
+    <value>Свернуть или развернуть всё</value>
+  </data>
+  <data name="Nav_Close" xml:space="preserve">
+    <value>Закрыть навигатор</value>
+  </data>
+  <data name="Tab_MenuAlignment" xml:space="preserve">
+    <value>Выравнивание позиции</value>
+  </data>
+  <data name="Tab_MenuLeader" xml:space="preserve">
+    <value>Заполнитель позиции</value>
+  </data>
+  <data name="Tab_MenuRemove" xml:space="preserve">
+    <value>Убрать эту позицию</value>
+  </data>
+  <data name="Tab_MenuNewAlignment" xml:space="preserve">
+    <value>Ставить позиции</value>
+  </data>
+  <data name="Tab_MenuNewLeader" xml:space="preserve">
+    <value>Заполнитель новых позиций</value>
+  </data>
+  <data name="Tab_MenuClear" xml:space="preserve">
+    <value>Убрать все позиции</value>
+  </data>
+  <data name="Tab_MenuSettings" xml:space="preserve">
+    <value>Табуляция…</value>
+  </data>
+  <data name="Tab_AlignLeft" xml:space="preserve">
+    <value>По левому краю</value>
+  </data>
+  <data name="Tab_AlignCenter" xml:space="preserve">
+    <value>По центру</value>
+  </data>
+  <data name="Tab_AlignRight" xml:space="preserve">
+    <value>По правому краю</value>
+  </data>
+  <data name="Tab_AlignDecimal" xml:space="preserve">
+    <value>По разделителю</value>
+  </data>
+  <data name="Tab_LeaderNone" xml:space="preserve">
+    <value>Нет</value>
+  </data>
+  <data name="Tab_LeaderDots" xml:space="preserve">
+    <value>Точки</value>
+  </data>
+  <data name="Tab_LeaderDashes" xml:space="preserve">
+    <value>Чёрточки</value>
+  </data>
+  <data name="Tab_LeaderLine" xml:space="preserve">
+    <value>Сплошная линия</value>
+  </data>
+  <data name="Tab_Title" xml:space="preserve">
+    <value>Табуляция</value>
+  </data>
+  <data name="Tab_Position" xml:space="preserve">
+    <value>Позиция табуляции</value>
+  </data>
+  <data name="Tab_DefaultStep" xml:space="preserve">
+    <value>Шаг табуляции по умолчанию</value>
+  </data>
+  <data name="Tab_Existing" xml:space="preserve">
+    <value>Заданные позиции</value>
+  </data>
+  <data name="Tab_Alignment" xml:space="preserve">
+    <value>Выравнивание</value>
+  </data>
+  <data name="Tab_Leader" xml:space="preserve">
+    <value>Заполнитель</value>
+  </data>
+  <data name="Tab_Set" xml:space="preserve">
+    <value>Установить</value>
+  </data>
+  <data name="Tab_Remove" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="Tab_ClearAll" xml:space="preserve">
+    <value>Удалить все</value>
+  </data>
+  <data name="Tab_Ok" xml:space="preserve">
+    <value>ОК</value>
+  </data>
+  <data name="Tab_Cancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="Tab_Empty" xml:space="preserve">
+    <value>Позиций пока нет</value>
+  </data>
+  <data name="Tab_RulerHint" xml:space="preserve">
+    <value>Щелчок по линейке ставит позицию, движение вниз убирает.</value>
+  </data>
+  <data name="Tab_Unit_Cm" xml:space="preserve">
+    <value>см</value>
+  </data>
+  <data name="Tab_Hint_TypeTitle" xml:space="preserve">
+    <value>Тип табуляции</value>
+  </data>
+  <data name="Tab_Hint_TypeBody" xml:space="preserve">
+    <value>Сейчас: *{0}*&#10;&#10;{1}&#10;&#10;Щелчок меняет тип. Этим типом встанет следующая позиция — чтобы её поставить, щёлкните по нижней полосе линейки.</value>
+  </data>
+  <data name="Tab_Hint_WhatLeft" xml:space="preserve">
+    <value>Текст начинается на отметке и идёт вправо.</value>
+  </data>
+  <data name="Tab_Hint_WhatCenter" xml:space="preserve">
+    <value>Текст стоит серединой на отметке.</value>
+  </data>
+  <data name="Tab_Hint_WhatRight" xml:space="preserve">
+    <value>Текст заканчивается на отметке. Ею прижимают номера страниц.</value>
+  </data>
+  <data name="Tab_Hint_WhatDecimal" xml:space="preserve">
+    <value>Числа встают разделителем на отметку, запятая под запятой.</value>
+  </data>
+  <data name="Tab_Hint_MarkerTitle" xml:space="preserve">
+    <value>Позиция {0}</value>
+  </data>
+  <data name="Tab_Hint_MarkerBody" xml:space="preserve">
+    <value>{0}&#10;Заполнитель: *{1}*.&#10;&#10;*Двигать* — тянуть значок. Идёт по делениям линейки; с зажатой правой кнопкой — плавно.&#10;*Убрать* — стянуть вниз с линейки и отпустить. Или правой кнопкой по значку — «Убрать эту позицию».&#10;*Точное значение* — правой кнопкой по линейке, «Табуляция…»: там позиция вводится числом.</value>
+  </data>
+  <data name="Tab_Hint_StripTitle" xml:space="preserve">
+    <value>Табуляция</value>
+  </data>
+  <data name="Tab_Hint_StripBody" xml:space="preserve">
+    <value>Щелчок ставит здесь позицию табуляции — того типа, что показан в углу линейки.&#10;&#10;В тексте к ней прыгает клавиша *Tab*: строка продолжается ровно с этого места, сколько бы букв ни стояло до него.&#10;&#10;Бледные засечки внизу — шаг табуляции по умолчанию. Он действует там, где своих позиций нет: заданная позиция отменяет шаг слева от себя.&#10;&#10;Правая кнопка открывает меню: тип и заполнитель новых позиций, «Убрать все позиции» и окно «Табуляция…» для ввода числом.</value>
+  </data>
+  <data name="Tab_Hint_IndentFirstTitle" xml:space="preserve">
+    <value>Отступ первой строки</value>
+  </data>
+  <data name="Tab_Hint_IndentLeftTitle" xml:space="preserve">
+    <value>Левый отступ</value>
+  </data>
+  <data name="Tab_Hint_IndentRightTitle" xml:space="preserve">
+    <value>Правый отступ</value>
+  </data>
+  <data name="Tab_Hint_IndentListTitle" xml:space="preserve">
+    <value>Край списка</value>
+  </data>
+  <data name="Tab_Hint_IndentBody" xml:space="preserve">
+    <value>{0}&#10;&#10;Тянуть — двигать по делениям линейки; с зажатой *правой кнопкой* — плавно, без привязки.</value>
+  </data>
+  <data name="Tab_Hint_IndentFirstWhat" xml:space="preserve">
+    <value>Откуда начинается первая строка абзаца.</value>
+  </data>
+  <data name="Tab_Hint_IndentLeftWhat" xml:space="preserve">
+    <value>Откуда начинаются вторая и следующие строки.</value>
+  </data>
+  <data name="Tab_Hint_IndentRightWhat" xml:space="preserve">
+    <value>Где строки заканчиваются.</value>
+  </data>
+  <data name="Tab_Hint_IndentListWhat" xml:space="preserve">
+    <value>Где стоит значок или номер списка.</value>
+  </data>
+  <data name="Tab_Hint_TypeLine" xml:space="preserve">
+    <value>{0} — {1}</value>
+  </data>
+  <data name="Toc_DefaultTitle" xml:space="preserve">
+    <value>Оглавление</value>
+  </data>
+  <data name="Toc_Group_Main" xml:space="preserve">
+    <value>Оглавление</value>
+  </data>
+  <data name="Toc_Group_Levels" xml:space="preserve">
+    <value>Уровни</value>
+  </data>
+  <data name="Toc_Group_Line" xml:space="preserve">
+    <value>Строка</value>
+  </data>
+  <data name="Toc_Group_Source" xml:space="preserve">
+    <value>Содержимое</value>
+  </data>
+  <data name="Toc_Group_Style" xml:space="preserve">
+    <value>Оформление</value>
+  </data>
+  <data name="Toc_Update" xml:space="preserve">
+    <value>Обновить</value>
+  </data>
+  <data name="Toc_Update_Tip" xml:space="preserve">
+    <value>Пересобрать список по нынешним заголовкам и номерам страниц.</value>
+  </data>
+  <data name="Toc_Insert" xml:space="preserve">
+    <value>Вставить</value>
+  </data>
+  <data name="Toc_Insert_Tip" xml:space="preserve">
+    <value>Вставить ещё одно оглавление на место каретки.</value>
+  </data>
+  <data name="Toc_GoTo" xml:space="preserve">
+    <value>Перейти</value>
+  </data>
+  <data name="Toc_GoTo_Tip" xml:space="preserve">
+    <value>Уйти к главе, на которую указывает строка под кареткой.</value>
+  </data>
+  <data name="Toc_Remove" xml:space="preserve">
+    <value>Убрать</value>
+  </data>
+  <data name="Toc_Remove_Tip" xml:space="preserve">
+    <value>Убрать это оглавление из рукописи.</value>
+  </data>
+  <data name="Toc_LevelsAll" xml:space="preserve">
+    <value>Все</value>
+  </data>
+  <data name="Toc_Levels1_Tip" xml:space="preserve">
+    <value>Только главы.</value>
+  </data>
+  <data name="Toc_Levels3_Tip" xml:space="preserve">
+    <value>Главы и два уровня под ними.</value>
+  </data>
+  <data name="Toc_Levels5_Tip" xml:space="preserve">
+    <value>До пятого уровня.</value>
+  </data>
+  <data name="Toc_Levels9_Tip" xml:space="preserve">
+    <value>Все девять уровней.</value>
+  </data>
+  <data name="Toc_MinLevel" xml:space="preserve">
+    <value>С уровня</value>
+  </data>
+  <data name="Toc_MinLevel_Tip" xml:space="preserve">
+    <value>Самый верхний уровень заголовков, попадающих в список.</value>
+  </data>
+  <data name="Toc_LevelIndent" xml:space="preserve">
+    <value>Отступ</value>
+  </data>
+  <data name="Toc_LevelIndent_Tip" xml:space="preserve">
+    <value>Шаг сдвига строки на один уровень, в пунктах.</value>
+  </data>
+  <data name="Toc_Leader_Dots" xml:space="preserve">
+    <value>Точками</value>
+  </data>
+  <data name="Toc_Leader_Dashes" xml:space="preserve">
+    <value>Чёрточками</value>
+  </data>
+  <data name="Toc_Leader_Line" xml:space="preserve">
+    <value>Линией</value>
+  </data>
+  <data name="Toc_Leader_None" xml:space="preserve">
+    <value>Ничем</value>
+  </data>
+  <data name="Toc_ShowPages" xml:space="preserve">
+    <value>Номера страниц</value>
+  </data>
+  <data name="Toc_IndentByLevel" xml:space="preserve">
+    <value>Отступ по уровням</value>
+  </data>
+  <data name="Toc_ShowTitle" xml:space="preserve">
+    <value>Название</value>
+  </data>
+  <data name="Toc_IncludeManual" xml:space="preserve">
+    <value>Помеченные абзацы</value>
+  </data>
+  <data name="Toc_AutoUpdate" xml:space="preserve">
+    <value>Само обновлять</value>
+  </data>
+  <data name="Toc_AutoUpdate_Tip" xml:space="preserve">
+    <value>Обновлять номера страниц, когда книга перекомпонована.</value>
+  </data>
+  <data name="Toc_Title_Tip" xml:space="preserve">
+    <value>Название над списком. Пусто — название по умолчанию.</value>
+  </data>
+  <data name="Toc_Title_Placeholder" xml:space="preserve">
+    <value>Оглавление</value>
+  </data>
+  <data name="Toc_Style_Level_Tip" xml:space="preserve">
+    <value>Строки какого уровня оформляются.</value>
+  </data>
+  <data name="Toc_Style_Size_Tip" xml:space="preserve">
+    <value>Кегль строк этого уровня.</value>
+  </data>
+  <data name="Toc_Style_Bold" xml:space="preserve">
+    <value>Полужирный</value>
+  </data>
+  <data name="Toc_Style_Italic" xml:space="preserve">
+    <value>Курсив</value>
+  </data>
+  <data name="Toc_Style_Reset" xml:space="preserve">
+    <value>Сбросить</value>
+  </data>
+  <data name="Toc_Style_Reset_Tip" xml:space="preserve">
+    <value>Вернуть стилям оглавления встроенный вид.</value>
+  </data>
 </root>

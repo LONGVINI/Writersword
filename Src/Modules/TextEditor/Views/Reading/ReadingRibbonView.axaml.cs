@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
@@ -24,6 +24,10 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             if (this.FindControl<TextBox>("PageInputBox") is { } pageBox)
                 pageBox.GotFocus += (_, _) =>
                     Dispatcher.UIThread.Post(() => BeginPageEdit(pageBox), DispatcherPriority.Background);
+
+            if (this.FindControl<TextBox>("PercentInputBox") is { } percentBox)
+                percentBox.GotFocus += (_, _) =>
+                    Dispatcher.UIThread.Post(() => BeginPercentEdit(percentBox), DispatcherPriority.Background);
 
             WireSheetFormatFlyout();
         }
@@ -111,6 +115,46 @@ namespace Writersword.Modules.TextEditor.Views.Reading
         {
             if (DataContext is not ViewModels.Reading.ReadingRibbonViewModel vm) return;
             if (vm.GoToPageCommand.CanExecute(null)) vm.GoToPageCommand.Execute(null);
+        }
+
+        /// <summary>
+        /// Enter в поле доли: лента встаёт на набранное место. Escape отбрасывает
+        /// введённое. Клавиатуру в обоих случаях забирает канвас — как и у поля
+        /// номера страницы.
+        /// </summary>
+        private void OnPercentInputKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter && e.Key != Key.Escape) return;
+
+            if (DataContext is ViewModels.Reading.ReadingRibbonViewModel vm
+                && vm.GoToPercentCommand.CanExecute(null))
+            {
+                if (e.Key == Key.Escape) vm.ResetPercentInput();
+                vm.GoToPercentCommand.Execute(null);
+            }
+
+            e.Handled = true;
+        }
+
+        /// <summary>Уход из поля доли применяет введённое, как и Enter.</summary>
+        private void OnPercentInputLostFocus(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is not ViewModels.Reading.ReadingRibbonViewModel vm) return;
+            if (vm.GoToPercentCommand.CanExecute(null)) vm.GoToPercentCommand.Execute(null);
+        }
+
+        /// <summary>
+        /// Поле доли взято в правку: знак процента убирается, остаётся одно число,
+        /// и оно сразу выделено — набрать своё можно поверх, не обходя знак курсором.
+        /// </summary>
+        private void BeginPercentEdit(TextBox box)
+        {
+            if (!box.IsFocused) return;
+
+            if (DataContext is ViewModels.Reading.ReadingRibbonViewModel vm)
+                box.Text = vm.PercentNumberText;
+
+            box.SelectAll();
         }
     }
 }

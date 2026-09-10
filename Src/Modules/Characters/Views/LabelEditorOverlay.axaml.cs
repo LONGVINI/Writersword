@@ -3,7 +3,10 @@ using System.Collections.ObjectModel;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using ReactiveUI;
 using Serilog;
 using Writersword.Modules.Characters.Models;
@@ -95,19 +98,6 @@ namespace Writersword.Modules.Characters.Views
                 foreach (var option in Icons) option.SetColor(value);
                 RaisePreviewChanged();
             }
-        }
-
-        /// <summary>
-        /// Записать вид в реестр проекта и разнести по всем персонажам с
-        /// этой же меткой. По умолчанию выключено: правка метки у одного
-        /// персонажа не должна менять её у остальных — «Ранен» с каплей у
-        /// одного и с крестом у другого это законно.
-        /// </summary>
-        private bool _applyToAll;
-        public bool ApplyToAll
-        {
-            get => _applyToAll;
-            set => this.RaiseAndSetIfChanged(ref _applyToAll, value);
         }
 
         /// <summary>Рисовать кружок под фигурой.</summary>
@@ -222,7 +212,7 @@ namespace Writersword.Modules.Characters.Views
 
         private LabelEditorDraft? _draft;
         private CharacterLabel? _original;
-        private Action<CharacterLabel, bool>? _apply;
+        private Action<CharacterLabel>? _apply;
 
         public LabelEditorOverlay()
         {
@@ -232,16 +222,22 @@ namespace Writersword.Modules.Characters.Views
         /// <summary>
         /// Показать редактор. label == null — создание новой метки;
         /// иначе — правка существующей (Id и Order сохраняются).
-        /// Колбэк apply вызывается по OK с готовой меткой и признаком
-        /// «сделать вид общим для всех персонажей с этой меткой».
+        /// Колбэк apply вызывается по OK с готовой меткой.
+        ///
+        /// Признака «сделать вид общим» больше нет: вид метки общий всегда.
+        /// Галка, которая им управляла, называлась «применить ко всем
+        /// персонажам» и читалась как «повесить метку на всех» — чего она не
+        /// делала никогда.
         /// </summary>
-        public void ShowFor(CharacterLabel? label, Action<CharacterLabel, bool> apply)
+        public void ShowFor(CharacterLabel? label, Action<CharacterLabel> apply, string? initialName = null)
         {
             _original = label;
             _apply = apply;
             _draft = new LabelEditorDraft
             {
-                Name = label?.Name ?? string.Empty,
+                // Имя, набранное в быстром выборе и не нашедшее метки, уезжает
+                // сюда: раз его набрали и не нашли, метку заводят именно с ним.
+                Name = label?.Name ?? initialName?.Trim() ?? string.Empty,
                 Icon = label?.Icon ?? CharacterLabelIcons.Dot,
                 Color = label?.Color ?? "#607D8B",
                 Dim = label?.Effect == CharacterLabelEffect.Dim,
@@ -263,6 +259,96 @@ namespace Writersword.Modules.Characters.Views
 
             DataContext = _draft;
             IsVisible = true;
+
+            // «Ещё» закрывается при каждом открытии: раскрытым его оставляют
+            // на один раз, а видеть короткое окно нужно всегда.
+            SetMoreOpen(false);
+
+            // Красная рамка от прошлого захода сюда не тянется.
+            ClearNameRequired();
+
+
+            // Курсор сразу в имени: у новой метки это первое и часто
+            // единственное, что вписывают.
+            Dispatcher.UIThread.Post(() =>
+            {
+                var box = this.FindControl<TextBox>("NameBox");
+                box?.Focus();
+                box?.SelectAll();
+            }, DispatcherPriority.Background);
+        }
+
+        // ── «Ещё» ─────────────────────────────────────────────────────────
+
+        private bool _moreOpen;
+
+        private void OnToggleMoreClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            SetMoreOpen(!_moreOpen);
+        }
+
+        private void SetMoreOpen(bool open)
+        {
+            _moreOpen = open;
+
+            var body = this.FindControl<StackPanel>("MoreBody");
+            if (body != null) body.IsVisible = open;
+
+            // Стрелка смотрит вправо, пока закрыто, и вниз, когда раскрыто —
+            // как у разделов инспектора.
+            var chev = this.FindControl<Avalonia.Controls.Shapes.Path>("MoreChev");
+            if (chev != null)
+                chev.RenderTransform = new RotateTransform(open ? 90 : 0);
+        }
+
+        // Enter в имени — то же, что ОК: метка это имя и значок, и тянуться
+        // мышью к кнопке ради подтверждения незачем.
+        private void OnNameKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            e.Handled = true;
+            OnOkClick(sender, e);
+        }
+
+        // ── Имя обязательно ───────────────────────────────────────────────
+
+        /// <summary>
+        /// Сказать, что без имени метку не завести: поле краснеет, курсор
+        /// встаёт в него. Окно при этом остаётся открытым — всё подобранное
+        /// в нём никуда не девается.
+        ///
+        /// Строки «впишите имя» под полем нет намеренно. Красная рамка и
+        /// прыгнувший внутрь курсор показывают и место, и требование; фраза
+        /// рядом с ними только пересказывает словами уже показанное и на
+        /// секунду удлиняет окно, сдвигая всё под ней.
+        /// </summary>
+        private void ShowNameRequired()
+        {
+            var box = this.FindControl<TextBox>("NameBox");
+            if (box == null) return;
+
+            if (!box.Classes.Contains("invalid")) box.Classes.Add("invalid");
+            box.Focus();
+        }
+
+        /// <summary>
+        /// Убрать красную рамку. Зовётся на первую же букву: человек уже
+        /// делает то, о чём его попросили, и рамка под рукой становится
+        /// придиркой.
+        /// </summary>
+        private void ClearNameRequired()
+        {
+            this.FindControl<TextBox>("NameBox")?.Classes.Remove("invalid");
+        }
+
+        /// <summary>
+        /// Первая же буква снимает красную рамку: человек уже делает то, о чём
+        /// его попросили.
+        /// </summary>
+        private void OnNameChanged(object? sender, TextChangedEventArgs e)
+        {
+            if (_draft != null && !string.IsNullOrWhiteSpace(_draft.Name)) ClearNameRequired();
         }
 
         private void CloseOverlay()
@@ -276,25 +362,40 @@ namespace Writersword.Modules.Characters.Views
 
         private void OnOkClick(object? sender, RoutedEventArgs e)
         {
-            if (_draft is not null && _apply is not null
-                && !string.IsNullOrWhiteSpace(_draft.Name))
+            if (_draft is null || _apply is null)
             {
-                var result = new CharacterLabel
-                {
-                    Id = _original?.Id ?? Guid.NewGuid().ToString(),
-                    Name = _draft.Name.Trim(),
-                    Icon = _draft.Icon,
-                    Color = _draft.Color,
-                    Effect = _draft.Dim ? CharacterLabelEffect.Dim : CharacterLabelEffect.None,
-                    ShowOnCard = _draft.ShowOnCard,
-                    Order = _original?.Order ?? int.MaxValue,
-                    Description = _draft.Description.Trim(),
-                    IconImage = _draft.IconImage,
-                    IconColor = _draft.IconColorOrEmpty,
-                    ShowBackdrop = _draft.ShowBackdrop
-                };
-                _apply(result, _draft.ApplyToAll);
+                CloseOverlay();
+                return;
             }
+
+            // Без имени метки не бывает — она им и опознаётся в списках, в
+            // поиске и в реестре проекта. Раньше окно на пустом имени просто
+            // закрывалось, унося с собой и подобранную картинку, и цвета, и
+            // выбранный значок: со стороны это выглядело так, будто ОК ничего
+            // не делает. Теперь окно остаётся открытым и говорит, чего не
+            // хватает.
+            if (string.IsNullOrWhiteSpace(_draft.Name))
+            {
+                ShowNameRequired();
+                return;
+            }
+
+            var result = new CharacterLabel
+            {
+                Id = _original?.Id ?? Guid.NewGuid().ToString(),
+                Name = _draft.Name.Trim(),
+                Icon = _draft.Icon,
+                Color = _draft.Color,
+                Effect = _draft.Dim ? CharacterLabelEffect.Dim : CharacterLabelEffect.None,
+                ShowOnCard = _draft.ShowOnCard,
+                Order = _original?.Order ?? int.MaxValue,
+                Description = _draft.Description.Trim(),
+                IconImage = _draft.IconImage,
+                IconColor = _draft.IconColorOrEmpty,
+                ShowBackdrop = _draft.ShowBackdrop
+            };
+
+            _apply(result);
             CloseOverlay();
         }
 
@@ -309,10 +410,20 @@ namespace Writersword.Modules.Characters.Views
         // Своя картинка вместо встроенного значка: герб дома, эмблема клуба,
         // нарисованный автором знак. Встроенный набор из тридцати иконок всё
         // равно не покроет чужую выдумку.
+        //
+        // Когда картинка уже стоит, та же плитка открывает обрезку заново:
+        // подобрать кусок с первого раза выходит не всегда, а снимать ради
+        // этого картинку и выбирать файл заново — лишний круг.
         private async void OnPickIconImageClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
             if (_draft == null || AvatarService == null) return;
+
+            if (_draft.HasCustomIcon)
+            {
+                _draft.IconImage = await CropIconAsync(_draft.IconImage!);
+                return;
+            }
 
             var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
             if (storage == null) return;
@@ -335,11 +446,76 @@ namespace Writersword.Modules.Characters.Views
                 // Значок сохраняется отдельным методом от аватара: у значков
                 // шире список форматов, и вектор проходит только здесь.
                 var imageRef = await AvatarService.SaveIconToProjectAsync(buffer.ToArray(), files[0].Name);
-                if (!string.IsNullOrEmpty(imageRef)) _draft.IconImage = imageRef;
+                if (!string.IsNullOrEmpty(imageRef))
+                    _draft.IconImage = await CropIconAsync(imageRef!);
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "Label icon pick failed");
+            }
+        }
+
+        // ── Кадр значка ───────────────────────────────────────────────────
+        //
+        // Та же обрезка, что у аватарок, и то же окно: значок метки — это
+        // круглая картинка размером в полтора десятка точек, и что именно из
+        // принесённого файла в неё попадёт, решать должен автор. Без выбора
+        // кадра лист со спрайтами превращался в неразличимую кашу, а портрет —
+        // в кусок плеча.
+        //
+        // Кадр живёт в самой ссылке (CharacterAvatarRef), поэтому показу
+        // ничего объяснять не нужно: загрузчик картинки применяет его сам —
+        // тем же путём, что и у аватарки персонажа.
+
+        private Avatars.CharacterAvatarCropOverlay? FindCropOverlay()
+        {
+            var host = this.FindAncestorOfType<CharactersModuleView>();
+            return host?.FindControl<Avatars.CharacterAvatarCropOverlay>("AvatarCropOverlayControl");
+        }
+
+        /// <summary>
+        /// Спросить кадр для картинки значка и вернуть ссылку с ним. Отказ от
+        /// обрезки возвращает ссылку как есть: картинка показывается целиком,
+        /// и это законный выбор, а не отмена всей затеи с картинкой.
+        /// </summary>
+        private async System.Threading.Tasks.Task<string?> CropIconAsync(string imageRef)
+        {
+            if (string.IsNullOrWhiteSpace(imageRef)) return imageRef;
+
+            // Вектор рисуется целиком и кадра не знает: обрезать SVG значило бы
+            // показать окно, чей результат некуда применить.
+            if (Services.LabelIconImages.IsVector(imageRef)) return imageRef;
+
+            var overlay = FindCropOverlay();
+            if (overlay == null || AvatarService == null) return imageRef;
+
+            var bytes = AvatarService.LoadAvatarBytes(CharacterAvatarRef.BaseOf(imageRef));
+            if (bytes == null) return imageRef;
+
+            Avalonia.Media.Imaging.Bitmap? bitmap = null;
+            try
+            {
+                using var stream = new System.IO.MemoryStream(bytes);
+                bitmap = new Avalonia.Media.Imaging.Bitmap(stream);
+
+                var crops = await overlay.ShowAsync(
+                    bitmap,
+                    CharacterAvatarRef.CropOf(imageRef),
+                    "Кадр значка метки");
+
+                if (crops == null) return imageRef;
+
+                // Метке нужен только кружковый кадр: полоски у значка нет.
+                return CharacterAvatarRef.WithCrop(imageRef, crops.Circle);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Label icon crop failed for {Ref}", imageRef);
+                return imageRef;
+            }
+            finally
+            {
+                bitmap?.Dispose();
             }
         }
 
@@ -349,6 +525,85 @@ namespace Writersword.Modules.Characters.Views
         {
             e.Handled = true;
             if (_draft != null) _draft.IconImage = null;
+        }
+
+        // ── Картинка броском в окно ───────────────────────────────────────
+        //
+        // Файл значка чаще всего уже лежит в открытой рядом папке, и путь
+        // «кнопка → диалог → найти в диалоге тот же файл» здесь лишний. Приём
+        // висит на всей панели, а не на плитке: попасть броском в плитку в
+        // тридцать шесть точек тяжело.
+
+        private void OnIconDragOver(object? sender, DragEventArgs e)
+        {
+            var accepts = _draft != null && e.DataTransfer.Contains(DataFormat.File);
+            e.DragEffects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
+            SetDropHint(accepts);
+            e.Handled = true;
+        }
+
+        private void OnIconDragLeave(object? sender, DragEventArgs e)
+        {
+            SetDropHint(false);
+            e.Handled = true;
+        }
+
+        private async void OnIconDrop(object? sender, DragEventArgs e)
+        {
+            e.Handled = true;
+            SetDropHint(false);
+
+            if (_draft == null || AvatarService == null) return;
+
+            var files = e.DataTransfer.TryGetFiles();
+            if (files == null) return;
+
+            // Берётся первый подходящий файл: значок у метки один, и класть
+            // «последний из брошенных» значило бы зависеть от того, в каком
+            // порядке их отдала система.
+            foreach (var file in files)
+            {
+                if (file is not IStorageFile storageFile) continue;
+                if (!IsIconFile(storageFile.Name)) continue;
+
+                try
+                {
+                    await using var stream = await storageFile.OpenReadAsync();
+                    using var buffer = new System.IO.MemoryStream();
+                    await stream.CopyToAsync(buffer);
+
+                    var imageRef = await AvatarService.SaveIconToProjectAsync(
+                        buffer.ToArray(), storageFile.Name);
+
+                    // Брошенная картинка идёт тем же путём, что и выбранная в
+                    // диалоге: сразу за приёмом — выбор кадра.
+                    if (!string.IsNullOrEmpty(imageRef))
+                        _draft.IconImage = await CropIconAsync(imageRef!);
+                }
+                catch (Exception ex)
+                {
+                    // Бросить могут что угодно — папку, ярлык, недоступный файл.
+                    _logger.Error(ex, "Label icon drop failed: {Name}", storageFile.Name);
+                }
+
+                return;
+            }
+        }
+
+        /// <summary>Расширение годится в значок метки. Список тот же, что в диалоге выбора.</summary>
+        private static bool IsIconFile(string? name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            var ext = System.IO.Path.GetExtension(name).ToLowerInvariant();
+
+            return ext is ".png" or ".jpg" or ".jpeg" or ".webp"
+                       or ".bmp" or ".gif" or ".ico" or ".svg";
+        }
+
+        private void SetDropHint(bool value)
+        {
+            var hint = this.FindControl<Border>("DropHint");
+            if (hint != null) hint.IsVisible = value;
         }
 
         // Скрим блокирует модуль, но окно не закрывает — как в остальных

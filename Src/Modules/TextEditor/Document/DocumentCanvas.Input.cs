@@ -113,10 +113,11 @@ namespace Writersword.Modules.TextEditor.Document
             // Ctrl + колесо — масштабирование (а не прокрутка). Шаг мультипликативный, чтобы
             // ощущался одинаково на любом масштабе. Меняем DocVm.Zoom: канвас перерисуется, а
             // TextEditorViewModel подхватит изменение и обновит ползунок и линейку.
-            // В книге колесо с Ctrl подводит и отводит саму книгу, а не меняет масштаб
-            // редактора: увеличивать интерфейс во время чтения незачем, а подойти
-            // ближе к странице — обычное желание.
-            if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && SpreadMode)
+            // В чтении колесо с Ctrl подводит и отводит саму страницу, а не меняет
+            // масштаб редактора: увеличивать интерфейс во время чтения незачем, а
+            // подойти ближе к тексту — обычное желание. Лента здесь заодно с книгой:
+            // приближение у них одно и то же.
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && ReadingActive)
             {
                 ChangeBookZoom(e.Delta.Y >= 0 ? 1 : -1);
                 e.Handled = true;
@@ -150,9 +151,17 @@ namespace Writersword.Modules.TextEditor.Document
             base.OnPointerPressed(e);
             Focus();
 
+            // Лента: нажатие не ставит каретку, не начинает выделение и не берёт
+            // объекты — в чтении не правят. Событие уходит дальше нетронутым: им
+            // прокручивают ленту пальцем и работает полоса прокрутки. Фокус при этом
+            // остаётся на канвасе — клавиши прокрутки и выход по Esc нужны здесь же.
+            if (ReadingRibbon) return;
+
             // Касание текста поднимает экранную клавиатуру. Мышь панель ввода не трогает:
             // на компьютере её нет, а на планшете с мышью она только закрыла бы страницу.
-            if (e.Pointer.Type == PointerType.Touch)
+            // В чтении её нет вовсе: вводить здесь нечего, а всплывшая клавиатура
+            // закрыла бы половину страницы.
+            if (e.Pointer.Type == PointerType.Touch && !ReadingActive)
                 RequestInputPane();
 
             FinishZoomImmediately();
@@ -654,6 +663,14 @@ namespace Writersword.Modules.TextEditor.Document
                 UpdateSpreadCornerHint(rawPt);
 
                 if (SpreadPointerMoved(xPt)) e.Handled = true;
+                return;
+            }
+
+            // Лента: брать здесь нечего, и курсор остаётся обычной стрелкой. Каретка
+            // над текстом обещала бы правку, которой в чтении нет.
+            if (ReadingRibbon)
+            {
+                Cursor = ReadingRibbonCursor;
                 return;
             }
             // Страницы рядом: во время жеста над объектом маппинг идёт через страницу,
@@ -1227,6 +1244,9 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // Лента: жестов правки здесь не начиналось, завершать нечего.
+            if (ReadingRibbon) return;
+
             if (ShapePointerReleased(e))
             {
                 e.Handled = true;
@@ -1625,9 +1645,16 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         // ── Keyboard ─────────────────────────────────────────────────────
-        // Редактирование заблокировано: документ в режиме сравнения (read-only).
-        // Навигация, выделение, копирование и прокрутка остаются доступными.
-        private bool IsEditingBlocked => DocVm?.IsReadOnly == true;
+        // Редактирование заблокировано: документ в режиме сравнения (read-only) либо
+        // открыто чтение. Навигация, выделение, копирование и прокрутка остаются
+        // доступными.
+        //
+        // Чтение здесь не для порядка: это читалка, и править в ней нечего. Ввод
+        // текста, ручки таблиц, перетаскивание картинок и фигур, вставка и вырезание,
+        // подстановка и всё остальное, что меняет рукопись, спрашивают именно этот
+        // признак — одного места хватает, чтобы ни один из путей правки не остался
+        // открытым.
+        private bool IsEditingBlocked => DocVm?.IsReadOnly == true || ReadingActive;
 
         protected override void OnTextInput(TextInputEventArgs e)
         {
@@ -1698,6 +1725,15 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // Лента: та же читалка, только прокручиваемая. Наружу уходят прокрутка и
+            // выход, всё остальное здесь и заканчивается — горячие клавиши правки в
+            // чтении бессмысленны, а ввод текста запрещён.
+            if (ReadingRibbon)
+            {
+                if (HandleReadingRibbonKey(e)) e.Handled = true;
+                return;
+            }
+
             // Завершение обрезки с клавиатуры: Enter применяет рамку кадрирования,
             // Esc отбрасывает её и возвращает картинку к прежним границам.
             if (_imageCropMode && (e.Key == Key.Enter || e.Key == Key.Escape))
@@ -1711,6 +1747,18 @@ namespace Writersword.Modules.TextEditor.Document
             // Клавиши выделенной фигуры: Delete удаляет её, Esc снимает выделение.
             if (ShapeKeyDown(e))
             {
+                e.Handled = true;
+                return;
+            }
+
+            // Выход из фокуса по Esc. Ниже обрезки и фигуры намеренно: там Esc
+            // отменяет начатое действие, и отменять его выходом из режима значило бы
+            // терять рамку кадрирования вместе с ним. Выше выхода из ячейки — фокус
+            // относится ко всему экрану, а не к месту каретки, и человек, нажавший
+            // Esc внутри таблицы, ждёт возвращения ленты, а не прыжка за таблицу.
+            if (e.Key == Key.Escape && DocVm is { IsFocusMode: true })
+            {
+                FocusEscapePressed?.Invoke();
                 e.Handled = true;
                 return;
             }
@@ -1796,12 +1844,35 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
-            // Tab в обычном абзаце — изменение отступа: Tab увеличивает, Shift+Tab уменьшает.
+            // Tab в обычном абзаце. У клавиши три работы, и разводятся они так же, как в Word.
+            //
+            // Захвачено больше одного абзаца — Tab двигает их все вправо, Shift+Tab влево.
+            // Вставить сюда символ табуляции значило бы стереть выделенное, а человек,
+            // выделивший несколько абзацев и нажавший Tab, просит сдвинуть их, а не удалить.
+            //
+            // Каретка в самом начале абзаца, и своих позиций табуляции у него нет — Tab
+            // правит отступ: так набирают красную строку, и отучать от этого не за чем.
+            //
+            // Во всех прочих случаях — символ табуляции. Начало абзаца с заданными позициями
+            // сюда тоже попадает, и это не оговорка: позиции ставят как раз затем, чтобы
+            // строка начиналась на отметке, и отнимать у такого абзаца первый прыжок значит
+            // отнимать половину смысла у самих позиций.
+            //
+            // Shift+Tab уменьшает отступ где угодно: обратной табуляции не существует, и
+            // другого смысла у сочетания нет.
+            //
             // Перехватываем сами, иначе Tab уходит в навигацию по кнопкам ленты. Путь
             // IncreaseIndent/DecreaseIndent пишет в операционный стек — Ctrl+Z работает.
             if (e.Key == Key.Tab && !IsInCell(_caretPara) && DocVm is not null)
             {
-                if (shft) DocVm.DecreaseIndent(); else DocVm.IncreaseIndent();
+                bool manyParagraphs = HasSel() && _selStartPara != _selEndPara;
+
+                if (shft) DocVm.DecreaseIndent();
+                else if (manyParagraphs) DocVm.IncreaseIndent();
+                else if (_caretChar <= 0 && !HasSel() && !CaretParagraphHasTabStops())
+                    DocVm.IncreaseIndent();
+                else InsertText("\t");
+
                 e.Handled = true;
                 return;
             }

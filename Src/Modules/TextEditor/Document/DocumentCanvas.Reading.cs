@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Threading;
 using SkiaSharp;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Writersword.Core.Models.Print;
 using Writersword.Modules.TextEditor.Models.Document;
@@ -33,6 +34,171 @@ namespace Writersword.Modules.TextEditor.Document
         /// <summary>Идёт чтение — любой подачей.</summary>
         private bool ReadingActive => DocVm?.ViewMode == EditorViewMode.Reading;
 
+        /// <summary>
+        /// Чтение лентой: тот же самый документ, что и в режиме страниц, только листы
+        /// склеены встык. Раскладка у ленты страничная — та же пагинация, те же поля,
+        /// те же места картинок и таблиц; лентой её делает одно отображение: страницы
+        /// ставятся друг за другом без зазоров и без верхних и нижних полей, а всё,
+        /// что выходит за низ листа, обрезается его краем.
+        /// </summary>
+        private bool ReadingRibbon => ReadingActive && !SpreadMode;
+
+        /// <summary>Поле сверху и снизу всей ленты. Постраничных полей у неё нет.</summary>
+        private const float ReadingRibbonPadPt = 26f;
+
+        /// <summary>Наименьшее поле между полосой ленты и краем окна.</summary>
+        private const float ReadingRibbonSideMarginPt = 18f;
+
+        // Курсор ленты. Обычная стрелка, и создаётся один раз: указатель шлёт движения
+        // десятками в секунду, и новый системный курсор на каждое из них — работа на
+        // ровном месте.
+        private static readonly Avalonia.Input.Cursor ReadingRibbonCursor =
+            new Avalonia.Input.Cursor(StandardCursorType.Arrow);
+
+        /// <summary>
+        /// Клавиатура ленты. Читалка, а не редактор: наружу уходит только прокрутка,
+        /// всё остальное здесь и заканчивается — иначе горячие клавиши правки работали
+        /// бы прямо посреди чтения.
+        ///
+        /// Возвращает true, если нажатие разобрано и дальше идти не должно.
+        /// </summary>
+        private bool HandleReadingRibbonKey(KeyEventArgs e)
+        {
+            bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+
+            // Ctrl с плюсом и минусом подводит и отводит ленту — то же, что и в книге.
+            // Размер шрифта рукописи при этом не меняется: за него отвечает ступень
+            // кегля чтения.
+            if (ctrl)
+            {
+                switch (e.Key)
+                {
+                    case Key.OemPlus:
+                    case Key.Add:
+                        ChangeBookZoom(1);
+                        return true;
+
+                    case Key.OemMinus:
+                    case Key.Subtract:
+                        ChangeBookZoom(-1);
+                        return true;
+
+                    case Key.D0:
+                    case Key.NumPad0:
+                        SetBookZoom(1.0);
+                        return true;
+                }
+
+                // Остальные сочетания с Ctrl — это горячие клавиши правки: вставка,
+                // отмена, форматирование. В чтении им делать нечего.
+                return true;
+            }
+
+            switch (e.Key)
+            {
+                case Key.Escape:
+                    // Выход из чтения и из полного экрана разбирает вью: она одна знает,
+                    // раскрыт ли модуль поверх окна и что сейчас нужно закрыть.
+                    ReadingEscapePressed?.Invoke();
+                    return true;
+
+                case Key.F11:
+                    ReadingFullscreenTogglePressed?.Invoke();
+                    return true;
+
+                case Key.Space:
+                    ScrollReadingRibbonByScreen(e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1);
+                    return true;
+
+                // Прокрутка ленты — дело полосы прокрутки: нажатие уходит наружу
+                // неразобранным, и её обработчик двигает ленту сам.
+                case Key.Up:
+                case Key.Down:
+                case Key.Left:
+                case Key.Right:
+                case Key.PageUp:
+                case Key.PageDown:
+                case Key.Home:
+                case Key.End:
+                    return false;
+
+                default:
+                    return true;
+            }
+        }
+
+        /// <summary>Прокрутка ленты на экран вниз или вверх.</summary>
+        private void ScrollReadingRibbonByScreen(int dir)
+        {
+            var sv = _parentScrollViewer;
+            if (sv is null || dir == 0) return;
+
+            // Экран без пары строк: так последняя строка предыдущего экрана остаётся
+            // видна сверху, и читатель не теряет место, на котором остановился.
+            double step = Math.Max(sv.Viewport.Height - FallbackLinePt * PtToPx * 2.0, 40.0);
+            double max = Math.Max(sv.Extent.Height - sv.Viewport.Height, 0.0);
+
+            sv.Offset = new Vector(sv.Offset.X, Math.Clamp(sv.Offset.Y + step * dir, 0.0, max));
+        }
+
+        /// <summary>
+        /// Рисовать ли рамки, маркеры и заливку выделения.
+        ///
+        /// В чтении — нет. Выделенная картинка, выделенная фигура и выделенный текст
+        /// живут в модели канваса и переживают вход в книгу: правил человек рукопись,
+        /// открыл чтение — и на странице висит рамка с маркерами размера, взяться
+        /// которым там неоткуда. Само выделение при этом не сбрасывается: выйдя из
+        /// книги, человек находит свою работу там же, где оставил.
+        /// </summary>
+        private bool SelectionDrawable => !ReadingActive;
+
+        /// <summary>
+        /// Показывать ли пометки редактора о том, что объект промахнулся мимо листа:
+        /// бледность и красную штриховку, а с ними и снятый клип.
+        ///
+        /// Они нужны при правке — объект в документе есть, и человеку надо его найти
+        /// и вернуть. В чтении возвращать нечего: там книга, а не рукопись, и
+        /// заштрихованный прямоугольник в поле над страницей читается как поломка.
+        /// Поэтому в книге такой объект просто обрезается своим листом, как всё
+        /// остальное.
+        /// </summary>
+        private bool OffPageMarkersVisible => !ReadingActive;
+
+        /// <summary>Вид рабочей области при правке.</summary>
+        private EditorViewSettings? EditorView => DocVm?.EditorView;
+
+        /// <summary>
+        /// Фон правки рисует не канвас, а окно: под ним лежит слой с картинкой.
+        ///
+        /// Канвас для этого не годится ничем. Холст в режиме страниц высотой во
+        /// весь документ, и картинка, вписанная в него, сжимается в полоску;
+        /// вписанная в видимое окно — дрожит при прокрутке, потому что канвас
+        /// перерисовывается не на каждый её пиксель, а слой окна не прокручивается
+        /// вовсе. Поэтому здесь поле просто не заливается: сквозь него виден слой.
+        ///
+        /// Чтения это не касается — там холст равен окну, книга не прокручивается,
+        /// и фон остаётся на канвасе, где и был.
+        /// </summary>
+        private bool WindowBackdropActive
+            => EditorThemeActive
+               && EditorView?.Active is { UseBackdropImage: true } t
+               && !string.IsNullOrWhiteSpace(t.BackdropImagePath);
+
+        /// <summary>
+        /// Лист правки перекрашен выбранным видом. Чтение сюда не входит: там свой
+        /// вид и свои настройки, и решает за него <see cref="ReadingActive"/>.
+        /// </summary>
+        private bool EditorThemeActive
+            => !ReadingActive && !SpreadMode && EditorView is { ThemeEnabled: true, Active: not null };
+
+        /// <summary>
+        /// Лист рисуется не белым: либо идёт чтение, либо вид назначен правке.
+        /// Одна проверка на весь файл — цвет бумаги, поле, чернила и свет обязаны
+        /// включаться и выключаться вместе, иначе получается тёмный лист с чёрным
+        /// текстом.
+        /// </summary>
+        private bool ThemedSurface => SpreadMode || ReadingActive || EditorThemeActive;
+
         // Ширина вьюпорта в устройствах, замеренная последним проходом раскладки.
         // Размер листа считается по ней, а не по ширине холста: холст в приближённой
         // книге шире вьюпорта, и лист от него разбухал бы вместе с приближением.
@@ -59,6 +225,23 @@ namespace Writersword.Modules.TextEditor.Document
         {
             get
             {
+                // Лента вписывается в окно только по ширине и только вниз: лист у неё
+                // документный, и на узком окне он иначе не влезал бы вовсе — появлялась
+                // бы горизонтальная прокрутка поперёк чтения. Крупнее собственного
+                // размера полоса не становится: увеличение — дело читателя.
+                if (ReadingRibbon)
+                {
+                    float ribbonSheetWPt = GetPageWidthPt();
+                    if (ribbonSheetWPt <= 1f) return 1.0;
+
+                    double ribbonAvailPx = Math.Max(
+                        ReadingViewportWidthPx - ReadingRibbonSideMarginPt * 2.0 * PtToPx, 80.0);
+                    double ribbonSheetPx = ribbonSheetWPt * PtToPx;
+                    if (ribbonSheetPx < 1.0) return 1.0;
+
+                    return Math.Clamp(ribbonAvailPx / ribbonSheetPx, 0.05, 1.0);
+                }
+
                 if (!SpreadMode) return 1.0;
                 if (_spreadPageWidthPt <= 1f || _spreadPageHeightPt <= 1f) return 1.0;
 
@@ -97,8 +280,26 @@ namespace Writersword.Modules.TextEditor.Document
             // прежний вид: чёрный текст там, где его только что сделали цветным.
             InvalidateSpreadSnapshots();
 
-            ResetReadingPan();
-            FitCanvasToViewport();
+            // Панорама и подгонка холста под вьюпорт — книжные вещи. При правке
+            // холст равен высоте документа, и подгонка обрезала бы его до одного
+            // экрана: прокрутка упёрлась бы в текущую страницу до следующей
+            // пересборки раскладки. Сменить вид листа она при этом не мешает —
+            // перерисовки ниже хватает.
+            // Лента сюда не входит вместе с книгой: у неё холст высотой во весь текст,
+            // и подгонка под окно отняла бы у неё прокрутку.
+            if (SpreadMode)
+            {
+                ResetReadingPan();
+                FitCanvasToViewport();
+            }
+            else if (ReadingRibbon)
+            {
+                // Приближение меняет и ширину полосы, и длину всей ленты. Полоса от
+                // этого уезжала влево, а место в тексте — вверх: холст стал выше, а
+                // прокрутка осталась на прежнем числе точек. Держим и то, и другое:
+                // полоса встаёт по центру окна, а лента — на той же доле длины.
+                KeepReadingRibbonPlace();
+            }
 
             // Перемер нужен: приближение меняет и ширину холста, и его высоту в
             // логических точках. Пересборку раскладки он при этом не поднимает —
@@ -107,19 +308,100 @@ namespace Writersword.Modules.TextEditor.Document
             InvalidateFull();
         }
 
+        // ── Место в ленте ─────────────────────────────────────────────────
+        // Страниц у ленты нет, и мерить место в ней нечем, кроме доли всей длины.
+        // Ползунок и поле в ленте чтения работают именно по ней: не «страница 7 из
+        // 40», а «41 %».
+
+        /// <summary>Доля прочитанного в ленте: 0 — начало, 100 — конец.</summary>
+        public double ReadingPercent
+        {
+            get
+            {
+                var sv = _parentScrollViewer;
+                if (sv is null) return 0.0;
+
+                double span = sv.Extent.Height - sv.Viewport.Height;
+                if (span <= 0.5) return 0.0;
+
+                return Math.Clamp(sv.Offset.Y / span * 100.0, 0.0, 100.0);
+            }
+        }
+
+        /// <summary>Место в ленте изменилось. Число — доля, 0..100.</summary>
+        public Action<double>? ReadingPercentChanged { get; set; }
+
+        /// <summary>
+        /// Ставит ленту на долю всей длины, 0..100.
+        ///
+        /// <paramref name="takeFocus"/> — забрать клавиатуру у ленты чтения. Просьба
+        /// из поля ввода приходит с ним: фокус остался бы в поле, и прокрутка с
+        /// клавиатуры молчала бы до первого щелчка мимо. Ползунок приходит без него —
+        /// отнятый фокус оборвал бы перетаскивание.
+        /// </summary>
+        public void GoReadingPercent(double percent, bool takeFocus)
+        {
+            var sv = _parentScrollViewer;
+            if (sv is null || !ReadingRibbon) return;
+
+            double span = Math.Max(sv.Extent.Height - sv.Viewport.Height, 0.0);
+            double target = span * Math.Clamp(percent, 0.0, 100.0) / 100.0;
+
+            if (Math.Abs(sv.Offset.Y - target) >= 0.5)
+                sv.Offset = new Vector(sv.Offset.X, target);
+
+            if (takeFocus) Focus();
+        }
+
+        /// <summary>Сообщает наружу, где сейчас стоит лента.</summary>
+        private void NotifyReadingPercent()
+        {
+            if (!ReadingRibbon) return;
+            ReadingPercentChanged?.Invoke(ReadingPercent);
+        }
+
+        /// <summary>
+        /// Возвращает ленту на прежнее место после того, как холст сменил размер:
+        /// полосу — по центру окна, текст — на ту же долю длины, на которой читатель
+        /// остановился.
+        ///
+        /// Доля снимается сейчас, а ставится следующим проходом разметки: холст ещё не
+        /// перемерен, и новых границ прокрутки в этот момент не существует.
+        /// </summary>
+        private void KeepReadingRibbonPlace()
+        {
+            var sv = _parentScrollViewer;
+            if (sv is null) return;
+
+            double maxY = Math.Max(sv.Extent.Height - sv.Viewport.Height, 0.0);
+            double place = maxY > 0.5 ? Math.Clamp(sv.Offset.Y / maxY, 0.0, 1.0) : 0.0;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                var view = _parentScrollViewer;
+                if (view is null || !ReadingRibbon) return;
+
+                double spanX = Math.Max(view.Extent.Width - view.Viewport.Width, 0.0);
+                double spanY = Math.Max(view.Extent.Height - view.Viewport.Height, 0.0);
+
+                view.Offset = new Vector(spanX / 2.0, spanY * place);
+                NotifyReadingPercent();
+            }, DispatcherPriority.Loaded);
+        }
+
         // ── Цвет бумаги и текста ──────────────────────────────────────────
 
         private readonly SKPaint _paintReadingPaper = new() { Color = SKColors.White };
         private readonly SKPaint _paintReadingBackdrop = new() { Color = new SKColor(0xE8, 0xE8, 0xE8) };
 
         /// <summary>
-        /// Кисть листа. В чтении цвет бумаги задаёт выбранный её тип, в остальных
-        /// режимах лист белый. Кисть переиспользуется: создавать её на каждую
-        /// страницу незачем.
+        /// Кисть листа. Цвет бумаги задаёт выбранный вид — в чтении свой, в правке
+        /// свой; вида нет — лист белый. Кисть переиспользуется: создавать её на
+        /// каждую страницу незачем.
         /// </summary>
         private SKPaint PagePaint()
         {
-            if (!SpreadMode && !ReadingActive) return _paintPageWhite;
+            if (!ThemedSurface) return _paintPageWhite;
 
             var color = ReadingPaperColor();
             if (_paintReadingPaper.Color != color) _paintReadingPaper.Color = color;
@@ -135,13 +417,19 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void DrawCanvasBackdrop(SKCanvas canvas, float widthPt, float heightPt)
         {
-            if (!SpreadMode && !ReadingActive)
+            if (!ThemedSurface)
             {
                 canvas.DrawRect(0, 0, widthPt, heightPt, _paintCanvasBg);
                 return;
             }
 
             var t = ActiveTheme;
+
+            // Фон правки задан картинкой — поле не заливается ничем. И цвет, и
+            // картинку рисует слой под канвасом: он не прокручивается вместе с
+            // рукописью, поэтому и не дрожит. Залить здесь хоть чем-нибудь значит
+            // закрыть его собой.
+            if (WindowBackdropActive) return;
 
             // Сплошной цвет ложится всегда: у градиента он служит запасным, а картинка
             // может быть прозрачной или не закрыть поле целиком — дыра в фоне выглядит
@@ -175,8 +463,19 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
 
-            if (t.UseBackdropImage) DrawBackdropImage(canvas, widthPt, heightPt, t);
+            // В чтении картинка поля остаётся на канвасе: холст там равен окну,
+            // книга не прокручивается, и дрожать нечему.
+            if (t.UseBackdropImage)
+                DrawBackdropImage(canvas, new SKRect(0, 0, widthPt, heightPt), t);
         }
+
+        // Замок на картинки вида. Их читает и рисует поток отрисовки, а освобождает
+        // поток правки: смена вида, цвета или пути к файлу выбрасывает прежний образ,
+        // и сделать это она может ровно в тот миг, когда им рисуют. Освобождённый
+        // образ роняет процесс прямо в нативном коде Skia — без стека и без шанса
+        // догадаться, откуда прилетело. Поэтому и чтение с отрисовкой, и освобождение
+        // идут под одним замком — так же, как у снимков страниц (_spreadCacheLock).
+        private readonly object _readingImageLock = new();
 
         private SKImage? _readingBackdropImage;
         private string? _readingBackdropImagePath;
@@ -200,14 +499,29 @@ namespace Writersword.Modules.TextEditor.Document
                 // Адрес разбирается хранилищем вида: он может вести в архив
                 // проекта, в данные программы или, у старых видов, прямо на диск.
                 var data = Models.Settings.ReadingAssets.Read(path);
-                if (data is null || data.Length == 0) return null;
+                if (data is null || data.Length == 0)
+                {
+                    // Молчать здесь нельзя. Адрес у картинки есть, а на экране
+                    // ровный цвет — и человек видит не «фон не задан», а «фон не
+                    // работает». Причина всегда одна из двух: файл не уложился в
+                    // хранилище вида или хранилище сейчас недоступно.
+                    _logger.Warning(
+                        "Background image is set but unreadable: {Path}", path);
+                    return null;
+                }
 
                 // Раскодировать сразу в пиксели, а не оставлять ленивый образ:
                 // страницы книги снимаются в растровую поверхность, и образ,
                 // привязавшийся к ускорителю при первой отрисовке в окно, туда
                 // молча не попадает.
                 using var bmp = SKBitmap.Decode(data);
-                if (bmp is null) return null;
+                if (bmp is null)
+                {
+                    _logger.Warning(
+                        "Background image could not be decoded: {Path} ({Size} bytes)",
+                        path, data.Length);
+                    return null;
+                }
                 _readingBackdropImage = SKImage.FromBitmap(bmp);
                 _readingBackdropImagePath = path;
             }
@@ -221,9 +535,22 @@ namespace Writersword.Modules.TextEditor.Document
             return _readingBackdropImage;
         }
 
-        /// <summary>Кладёт картинку на поле вокруг книги.</summary>
+        /// <summary>
+        /// Кладёт картинку фона в заданное окно. Как она в него ложится, решает вид:
+        /// заполнить с обрезкой, уместить целиком, растянуть или замостить.
+        /// </summary>
         private void DrawBackdropImage(
-            SKCanvas canvas, float widthPt, float heightPt, Models.Settings.ReadingTheme t)
+            SKCanvas canvas, SKRect area, Models.Settings.ReadingTheme t)
+        {
+            // Образ держится под замком всё время, пока им рисуют — см. _readingImageLock.
+            lock (_readingImageLock)
+            {
+                DrawBackdropImageLocked(canvas, area, t);
+            }
+        }
+
+        private void DrawBackdropImageLocked(
+            SKCanvas canvas, SKRect area, Models.Settings.ReadingTheme t)
         {
             var img = ReadingBackdropImage(t);
             if (img is null) return;
@@ -231,28 +558,35 @@ namespace Writersword.Modules.TextEditor.Document
             byte alpha = (byte)Math.Clamp(t.BackdropImageOpacity * 255.0, 0.0, 255.0);
             if (alpha == 0) return;
 
+            float widthPt = area.Width;
+            float heightPt = area.Height;
+            if (widthPt < 1f || heightPt < 1f) return;
+
             var sampling = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
             using var paint = new SKPaint { Color = new SKColor(255, 255, 255, alpha) };
             var src = new SKRect(0, 0, img.Width, img.Height);
 
             canvas.Save();
-            canvas.ClipRect(new SKRect(0, 0, widthPt, heightPt));
+            canvas.ClipRect(area);
 
             if (t.BackdropImageFit == Models.Settings.ReadingBackdropFit.Tile)
             {
                 float tileW = Math.Max(img.Width, 8f);
                 float tileH = Math.Max(img.Height, 8f);
-                for (float y = 0f; y < heightPt; y += tileH)
-                    for (float x = 0f; x < widthPt; x += tileW)
+
+                // Замощение идёт от левого верхнего угла окна, а не холста: иначе
+                // рисунок ползёт под рукописью при каждой прокрутке.
+                for (float y = area.Top; y < area.Bottom; y += tileH)
+                    for (float x = area.Left; x < area.Right; x += tileW)
                         canvas.DrawImage(img, src, new SKRect(x, y, x + tileW, y + tileH), sampling, paint);
             }
             else if (t.BackdropImageFit == Models.Settings.ReadingBackdropFit.Stretch)
             {
-                canvas.DrawImage(img, src, new SKRect(0, 0, widthPt, heightPt), sampling, paint);
+                canvas.DrawImage(img, src, area, sampling, paint);
             }
             else
             {
-                // Cover закрывает поле целиком и режет лишнее, Contain умещает целиком
+                // Cover закрывает окно целиком и режет лишнее, Contain умещает целиком
                 // и оставляет цвет по краям. Разница только в том, какую из сторон брать.
                 float scale = t.BackdropImageFit == Models.Settings.ReadingBackdropFit.Contain
                     ? Math.Min(widthPt / img.Width, heightPt / img.Height)
@@ -260,8 +594,8 @@ namespace Writersword.Modules.TextEditor.Document
 
                 float dw = img.Width * scale;
                 float dh = img.Height * scale;
-                float dx = (widthPt - dw) / 2f;
-                float dy = (heightPt - dh) / 2f;
+                float dx = area.Left + (widthPt - dw) / 2f;
+                float dy = area.Top + (heightPt - dh) / 2f;
                 canvas.DrawImage(img, src, new SKRect(dx, dy, dx + dw, dy + dh), sampling, paint);
             }
 
@@ -305,8 +639,20 @@ namespace Writersword.Modules.TextEditor.Document
         private static byte ShiftChannel(byte v, double target, double amount)
             => (byte)Math.Clamp(v + (target - v) * amount, 0.0, 255.0);
 
-        /// <summary>Активный вид чтения — то, чем рисуется книга.</summary>
-        private ReadingTheme? ActiveTheme => Reading?.Active;
+        /// <summary>
+        /// Активный вид — то, чем рисуется лист. В чтении это вид чтения, при правке
+        /// с включённым видом — вид правки. Ни один другой код в этом файле про два
+        /// источника не знает: он спрашивает вид и получает тот, который сейчас в
+        /// работе.
+        /// </summary>
+        private ReadingTheme? ActiveTheme
+        {
+            get
+            {
+                if (SpreadMode || ReadingActive) return Reading?.Active;
+                return EditorThemeActive ? EditorView?.Active : null;
+            }
+        }
 
         /// <summary>Цвет листа выбранного вида.</summary>
         private SKColor ReadingPaperColor()
@@ -456,15 +802,21 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void ReleaseReadingPaperImage()
         {
-            _readingPaperImage?.Dispose();
-            _readingPaperImage = null;
-            _readingPaperImagePath = null;
+            // Освобождение идёт под тем же замком, что и отрисовка: поток отрисовки
+            // может держать образ прямо сейчас, и выдернутый из-под него он валит
+            // процесс в нативном коде Skia.
+            lock (_readingImageLock)
+            {
+                _readingPaperImage?.Dispose();
+                _readingPaperImage = null;
+                _readingPaperImagePath = null;
 
-            // Картинка поля отпускается вместе с бумагой: обе меняются одной и той же
-            // правкой вида, и держать одну из них по старому пути незачем.
-            _readingBackdropImage?.Dispose();
-            _readingBackdropImage = null;
-            _readingBackdropImagePath = null;
+                // Картинка поля отпускается вместе с бумагой: обе меняются одной и той
+                // же правкой вида, и держать одну из них по старому пути незачем.
+                _readingBackdropImage?.Dispose();
+                _readingBackdropImage = null;
+                _readingBackdropImagePath = null;
+            }
         }
 
         /// <summary>
@@ -472,6 +824,16 @@ namespace Writersword.Modules.TextEditor.Document
         /// сохранением пропорций, замощённая повторяется в своём размере.
         /// </summary>
         private void DrawReadingPaperImage(SKCanvas canvas, float xPt, float yPt, float wPt, float hPt)
+        {
+            // Образ держится под замком всё время, пока им рисуют — см. _readingImageLock.
+            lock (_readingImageLock)
+            {
+                DrawReadingPaperImageLocked(canvas, xPt, yPt, wPt, hPt);
+            }
+        }
+
+        private void DrawReadingPaperImageLocked(
+            SKCanvas canvas, float xPt, float yPt, float wPt, float hPt)
         {
             var img = ReadingPaperImage();
             if (img is null) return;
@@ -539,7 +901,7 @@ namespace Writersword.Modules.TextEditor.Document
             var theme = ActiveTheme;
             bool reading = SpreadMode || ReadingActive;
 
-            if (!reading || r is null || theme is null)
+            if ((!reading && !EditorThemeActive) || theme is null)
             {
                 SKTextRenderer.DefaultTextColorOverride = null;
                 SKTextRenderer.ReadingFontFamilyOverride = null;
@@ -555,10 +917,24 @@ namespace Writersword.Modules.TextEditor.Document
 
             SKTextRenderer.DefaultTextColorOverride = ink;
             SKTextRenderer.ReadingPaperColorOverride = ReadingPaperColor();
-            SKTextRenderer.ReadingFontFamilyOverride =
-                string.IsNullOrWhiteSpace(theme.FontFamily) ? null : theme.FontFamily;
-            SKTextRenderer.ReadingFontScale = (float)r.FontScale;
-            SKTextRenderer.ReadingContentScale = ReadingContentScale;
+
+            // Шрифт и кегль подменяются только в чтении. Правка обязана показывать
+            // рукопись такой, какой её напечатают: чужая гарнитура и чужой размер
+            // здесь означали бы, что человек верстает вслепую — строки на экране
+            // рвутся не там, где на бумаге.
+            if (reading && r is not null)
+            {
+                SKTextRenderer.ReadingFontFamilyOverride =
+                    string.IsNullOrWhiteSpace(theme.FontFamily) ? null : theme.FontFamily;
+                SKTextRenderer.ReadingFontScale = (float)r.FontScale;
+                SKTextRenderer.ReadingContentScale = ReadingContentScale;
+            }
+            else
+            {
+                SKTextRenderer.ReadingFontFamilyOverride = null;
+                SKTextRenderer.ReadingFontScale = 1f;
+                SKTextRenderer.ReadingContentScale = 1f;
+            }
 
             // Маркер списка и рамка таблицы своего цвета обычно не имеют и рисуются
             // чёрным. На тёмной бумаге это чёрное по тёмному — точки списка пропадают,
@@ -599,6 +975,287 @@ namespace Writersword.Modules.TextEditor.Document
         {
             float scale = ReadingContentScale;
             return ((float)block.WidthPt * scale, (float)block.HeightPt * scale);
+        }
+
+        /// <summary>
+        /// Габарит фигуры с той же поправкой, что и у картинки. Фигура на листе
+        /// чтения обязана ужиматься вместе с ним: лист меньше печатного, а рамка или
+        /// стрелка в исходном размере на нём выглядит вдвое крупнее, чем в рукописи.
+        /// Нижний предел ставится ПОСЛЕ ужатия — иначе крошечная фигура на карманном
+        /// листе выросла бы вместо того, чтобы уменьшиться.
+        /// </summary>
+        private (float WidthPt, float HeightPt) ReadingShapeSize(ShapeBlock block)
+        {
+            float scale = ReadingContentScale;
+            return (
+                Math.Max((float)block.WidthPt * scale, ShapeMinSidePt),
+                Math.Max((float)block.HeightPt * scale, ShapeMinSidePt));
+        }
+
+        /// <summary>
+        /// Смещение плавающего или привязанного объекта по горизонтали, приведённое к
+        /// листу чтения.
+        ///
+        /// Размер объекта ужимается вместе с листом, а смещение до сих пор оставалось
+        /// печатным: на карманном листе, вдвое более узком, чем бумага документа,
+        /// картинка, стоявшая у правого поля А4, уезжала за обрез. Считается оно в
+        /// долях текстовой области — объект, стоявший на трети её ширины, там и
+        /// остаётся, на каком бы листе книгу ни открыли.
+        /// </summary>
+        private float ReadingOffsetXPt(double offsetPt)
+            => (float)offsetPt * (ReadingGeometryScaled ? _spreadOffsetScaleX : 1f);
+
+        /// <summary>
+        /// Лист книги отличается от бумаги документа настолько, что геометрию
+        /// плавающих объектов нужно пересчитывать.
+        ///
+        /// При формате «как у документа» лист книги — тот же самый лист, и трогать на
+        /// нём НЕЧЕГО: книга обязана показывать картинки ровно там же, где они стоят
+        /// на обычной странице. Всякий пересчёт здесь — искажение, а не подгонка.
+        /// </summary>
+        private bool ReadingGeometryScaled
+        {
+            get
+            {
+                if (!SpreadMode) return false;
+                if (Reading is not { ScaleContent: true }) return false;
+
+                return Math.Abs(_spreadOffsetScaleX - 1f) > 0.002f
+                    || Math.Abs(_spreadOffsetScaleY - 1f) > 0.002f;
+            }
+        }
+
+        /// <summary>
+        /// То же по вертикали, но с разбором на листы.
+        ///
+        /// Ось отдельная не из вредности: форматы книги сжимают лист по-разному —
+        /// «широкий» почти той же ширины, что бумага, но вдвое ниже, и общий множитель
+        /// уводил бы картинку за нижний край.
+        ///
+        /// Одним множителем здесь тоже нельзя, и это стоило отдельной поломки.
+        /// Вертикальное смещение отсчитывается от страницы БЛОКА в потоке, а картинку
+        /// разрешено утащить на несколько листов вниз — тогда смещение хранит в себе
+        /// высоты пройденных страниц. Ужатое целиком, оно стягивало такие картинки к
+        /// началу документа, и они сходились в кучу на первом же листе.
+        ///
+        /// Поэтому смещение разбирается на две части: сколько листов вниз — их место
+        /// занимают листы книги во всю свою высоту, — и где объект стоит на самом
+        /// листе; ужимается только вторая.
+        /// </summary>
+        private float ReadingOffsetYPt(double offsetPt)
+        {
+            if (!ReadingGeometryScaled) return (float)offsetPt;
+            if (_spreadDocPageStepPt <= 1f || _spreadReadPageStepPt <= 1f)
+                return (float)(offsetPt * _spreadOffsetScaleY);
+
+            double sign = offsetPt < 0.0 ? -1.0 : 1.0;
+            double abs = Math.Abs(offsetPt);
+
+            double pages = Math.Floor(abs / _spreadDocPageStepPt);
+            double rest = abs - pages * _spreadDocPageStepPt;
+
+            return (float)(sign * (pages * _spreadReadPageStepPt + rest * _spreadOffsetScaleY));
+        }
+
+        /// <summary>
+        /// Загоняет плавающий или привязанный объект в лист чтения.
+        ///
+        /// Смещения приведены к листу по долям (см. ReadingOffsetXPt/YPt), но этого
+        /// мало: объект, стоявший вплотную к краю бумаги, на другом листе всё равно
+        /// вылезает за обрез, а высокая картинка не помещается по высоте — лист книги
+        /// ниже печатного. Здесь габарит ужимается до текстовой области, а затем
+        /// возвращается внутрь её границ.
+        ///
+        /// Считается по AABB повёрнутого прямоугольника: на экране за край выходит
+        /// именно он, а не стороны самой картинки.
+        ///
+        /// В правке ничего не делает: там лист документа, и место объекта на нём —
+        /// решение автора, а не раскладки.
+        /// </summary>
+        private (float XPt, float YPt, float WidthPt, float HeightPt) FitFloatingToSheet(
+            float xPt, float yPt, float wPt, float hPt, double rotationDeg,
+            float sheetXPt, float sheetYPt, float sheetWPt, float sheetHPt)
+        {
+            // Лист тот же, что и в документе — объект остаётся ровно там, где автор его
+            // поставил, даже если он и там вылезал за поле: это его вёрстка, а не
+            // ошибка книги.
+            if (!ReadingGeometryScaled || wPt <= 0f || hPt <= 0f)
+                return (xPt, yPt, wPt, hPt);
+
+            var (ml, mt, mr, mb) = GetPagePaddingPt();
+
+            float left = sheetXPt + ml;
+            float top = sheetYPt + mt;
+            float availW = Math.Max(sheetWPt - ml - mr, 1f);
+            float availH = Math.Max(sheetHPt - mt - mb, 1f);
+
+            double rad = rotationDeg * Math.PI / 180.0;
+            float absCos = (float)Math.Abs(Math.Cos(rad));
+            float absSin = (float)Math.Abs(Math.Sin(rad));
+
+            float boxW = wPt * absCos + hPt * absSin;
+            float boxH = wPt * absSin + hPt * absCos;
+            if (boxW <= 0f || boxH <= 0f) return (xPt, yPt, wPt, hPt);
+
+            // Ужимается объект целиком и в одной пропорции: разное сжатие по осям
+            // растянуло бы картинку, а этого не просил никто.
+            float k = Math.Min(1f, Math.Min(availW / boxW, availH / boxH));
+            if (k < 1f)
+            {
+                wPt *= k; hPt *= k;
+                boxW *= k; boxH *= k;
+            }
+
+            // Центр записи и центр её габарита — одна и та же точка: запись хранит
+            // неповёрнутый прямоугольник, а поворот идёт вокруг центра.
+            float cx = xPt + wPt / 2f;
+            float cy = yPt + hPt / 2f;
+
+            float boxLeft = Math.Clamp(cx - boxW / 2f, left, left + availW - boxW);
+            float boxTop = Math.Clamp(cy - boxH / 2f, top, top + availH - boxH);
+
+            cx = boxLeft + boxW / 2f;
+            cy = boxTop + boxH / 2f;
+
+            return (cx - wPt / 2f, cy - hPt / 2f, wPt, hPt);
+        }
+
+        // Зазор между разведёнными объектами. Ноль поставил бы их вплотную, и на
+        // экране они читались бы как один слипшийся блок.
+        private const float ReadingObjectGapPt = 10f;
+
+        // Сколько раз объект пробует отойти вниз. Каждый шаг уводит его ниже уже
+        // размещённого соседа, и упереться в потолок раньше десятка попыток он может
+        // только на листе, забитом объектами целиком.
+        private const int ReadingAvoidSteps = 12;
+
+        /// <summary>
+        /// Разводит плавающий объект с теми, что уже стоят на этом листе.
+        ///
+        /// В книге лист другой формы, чем бумага документа: то, что на А4 стояло рядом
+        /// и не задевало друг друга, здесь налезает — картинка на картинку, фигура на
+        /// таблицу. Каждый объект считает своё место сам и о соседях не знает, поэтому
+        /// знание о них приходит отсюда: объект уступает и отходит вниз, пока не
+        /// перестанет задевать чужой габарит.
+        ///
+        /// Вниз, а не в сторону: колонка одна, и сдвиг вбок увёл бы объект из-под
+        /// текста, который его обтекает. Не поместился до низа листа — остаётся там,
+        /// где стоял: лучше наложение, чем объект, вытесненный с листа вовсе.
+        ///
+        /// В правке не работает: там настоящая страница документа, и место объекта на
+        /// ней — решение автора.
+        /// </summary>
+        private (float XPt, float YPt) AvoidReadingOverlap(
+            float xPt, float yPt, float wPt, float hPt, double rotationDeg,
+            int pageIdx,
+            List<PageRect> pages,
+            List<ImageEntry> images,
+            List<ShapeEntry> shapes,
+            List<TableEntry> tables,
+            object? self)
+        {
+            if (!SpreadMode || pages.Count == 0) return (xPt, yPt);
+            if (wPt <= 0f || hPt <= 0f) return (xPt, yPt);
+
+            int idx = Math.Clamp(pageIdx, 0, pages.Count - 1);
+            var page = pages[idx];
+
+            var (ml, mt, mr, mb) = GetPagePaddingPt();
+            float sheetTop = page.Ypt + mt;
+            float sheetBottom = page.Ypt + page.HeightPt - mb;
+
+            double rad = rotationDeg * Math.PI / 180.0;
+            float absCos = (float)Math.Abs(Math.Cos(rad));
+            float absSin = (float)Math.Abs(Math.Sin(rad));
+            float boxW = wPt * absCos + hPt * absSin;
+            float boxH = wPt * absSin + hPt * absCos;
+
+            float cx = xPt + wPt / 2f;
+            float cy = yPt + hPt / 2f;
+            float boxLeft = cx - boxW / 2f;
+            float boxTop = cy - boxH / 2f;
+
+            // Ниже низа листа отходить некуда, и объект остаётся на месте.
+            if (boxH >= sheetBottom - sheetTop) return (xPt, yPt);
+
+            var busy = new List<SKRect>();
+
+            foreach (var ie in images)
+            {
+                if (ie.PageIndex != idx) continue;
+                if (ie.InLine) continue;
+                if (ReferenceEquals(ie.Block, self)) continue;
+
+                double r = ie.Block.RotationDeg * Math.PI / 180.0;
+                float c = (float)Math.Abs(Math.Cos(r));
+                float sn = (float)Math.Abs(Math.Sin(r));
+                float bw = ie.WidthPt * c + ie.HeightPt * sn;
+                float bh = ie.WidthPt * sn + ie.HeightPt * c;
+                float icx = ie.XPt + ie.WidthPt / 2f;
+                float icy = ie.Ypt + ie.HeightPt / 2f;
+
+                busy.Add(new SKRect(icx - bw / 2f, icy - bh / 2f, icx + bw / 2f, icy + bh / 2f));
+            }
+
+            foreach (var se in shapes)
+            {
+                if (se.PageIndex != idx) continue;
+                if (ReferenceEquals(se.Block, self)) continue;
+
+                double r = se.Block.RotationDeg * Math.PI / 180.0;
+                float c = (float)Math.Abs(Math.Cos(r));
+                float sn = (float)Math.Abs(Math.Sin(r));
+                float bw = se.WidthPt * c + se.HeightPt * sn;
+                float bh = se.WidthPt * sn + se.HeightPt * c;
+                float scx = se.XPt + se.WidthPt / 2f;
+                float scy = se.Ypt + se.HeightPt / 2f;
+
+                busy.Add(new SKRect(scx - bw / 2f, scy - bh / 2f, scx + bw / 2f, scy + bh / 2f));
+            }
+
+            // Таблица — такой же занятый прямоугольник: ромб поверх её клеток выглядит
+            // ничуть не лучше, чем поверх картинки.
+            foreach (var te in tables)
+            {
+                if (te.PageIndex != idx) continue;
+
+                busy.Add(new SKRect(
+                    te.XPt, te.Ypt,
+                    te.XPt + te.Layout.TotalWidthPt,
+                    te.Ypt + te.Layout.TotalHeightPt));
+            }
+
+            if (busy.Count == 0) return (xPt, yPt);
+
+            float startTop = boxTop;
+
+            for (int step = 0; step < ReadingAvoidSteps; step++)
+            {
+                float lowest = float.MinValue;
+
+                foreach (var rect in busy)
+                {
+                    bool overlaps = boxLeft < rect.Right && boxLeft + boxW > rect.Left
+                                 && boxTop < rect.Bottom && boxTop + boxH > rect.Top;
+                    if (!overlaps) continue;
+
+                    if (rect.Bottom > lowest) lowest = rect.Bottom;
+                }
+
+                if (lowest <= float.MinValue) break;
+
+                float nextTop = lowest + ReadingObjectGapPt;
+
+                // Ниже листа места нет — объект возвращается туда, где стоял.
+                if (nextTop + boxH > sheetBottom) return (xPt, yPt);
+
+                boxTop = nextTop;
+            }
+
+            if (Math.Abs(boxTop - startTop) < 0.01f) return (xPt, yPt);
+
+            cy = boxTop + boxH / 2f;
+            return (xPt, cy - hPt / 2f);
         }
 
         // ── Номера страниц ────────────────────────────────────────────────
@@ -894,7 +1551,10 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void UpdateSpreadCornerHint(Point pointerPx)
         {
-            if (!SpreadMode || SpreadSinglePage || _spreadFlipDir != 0 || _pages.Count == 0)
+            // Пока взятый лист лежит плашмя, приподнятый уголок остаётся: он часть той
+            // же картинки, что и в покое, и гасить его в момент нажатия значит менять
+            // вид страницы до того, как читатель что-то сделал.
+            if (!SpreadMode || SpreadSinglePage || SpreadLeafLifted || _pages.Count == 0)
             {
                 ClearSpreadCornerHint();
                 return;
@@ -988,7 +1648,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void DrawSpreadCornerHint(SKCanvas canvas)
         {
-            if (!SpreadMode || SpreadSinglePage || _spreadFlipDir != 0) return;
+            if (!SpreadMode || SpreadSinglePage || SpreadLeafLifted) return;
             if (_spreadCornerHint <= 0.01f || _pages.Count == 0) return;
 
             int idx = Math.Clamp(_spreadLeftPage, 0, _pages.Count - 1);
@@ -1061,6 +1721,13 @@ namespace Writersword.Modules.TextEditor.Document
         /// уходят, и решение — выйти из полного экрана или из чтения — принимает вью.
         /// </summary>
         public Action? ReadingEscapePressed { get; set; }
+
+        /// <summary>
+        /// Нажали клавишу выхода в режиме фокуса. Правка идёт обычным порядком —
+        /// каретка, выделение, ввод, — поэтому Esc разбирается здесь же, где и
+        /// остальные клавиши, а решение принимает вью.
+        /// </summary>
+        public Action? FocusEscapePressed { get; set; }
 
         /// <summary>Нажали клавишу полноэкранного режима.</summary>
         public Action? ReadingFullscreenTogglePressed { get; set; }

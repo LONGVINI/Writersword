@@ -79,13 +79,26 @@ namespace Writersword.Infrastructure.Behaviours
                 "PreviewPath", typeof(TooltipBehavior));
 
         /// <summary>
+        /// Задержка перед появлением подсказки по умолчанию, в миллисекундах.
+        /// Одно число на всё приложение: подсказка, выскакивающая под курсором
+        /// по дороге к кнопке, мешает не меньше, чем отсутствующая. Полсекунды
+        /// не хватало — пока ведёшь мышь через панель, подсказки успевают
+        /// вспыхнуть у каждого значка по пути.
+        ///
+        /// Отдельные места вправе назначить свою задержку — но только чтобы
+        /// сделать её длиннее (крупная карточка с картинкой, всплывающая над
+        /// половиной окна). Числа короче этого в разметке не ставятся: там, где
+        /// они стояли, они лишь повторяли прежнее значение по умолчанию и
+        /// мешали менять его в одном месте.
+        /// </summary>
+        public const int DefaultShowDelayMs = 900;
+
+        /// <summary>
         /// Задержка перед появлением подсказки в миллисекундах.
-        /// Секунда с лишним ощущалась как «подсказка не работает»: пользователь
-        /// успевал увести мышь раньше, чем всплывало пояснение.
         /// </summary>
         public static readonly AttachedProperty<int> ShowDelayProperty =
             AvaloniaProperty.RegisterAttached<Control, int>(
-                "ShowDelay", typeof(TooltipBehavior), defaultValue: 400);
+                "ShowDelay", typeof(TooltipBehavior), defaultValue: DefaultShowDelayMs);
 
         private static readonly AttachedProperty<Popup?> PopupProperty =
             AvaloniaProperty.RegisterAttached<Control, Popup?>(
@@ -94,6 +107,18 @@ namespace Writersword.Infrastructure.Behaviours
         private static readonly AttachedProperty<DispatcherTimer?> TimerProperty =
             AvaloniaProperty.RegisterAttached<Control, DispatcherTimer?>(
                 "Timer", typeof(TooltipBehavior));
+
+        /// <summary>
+        /// Какое место внутри элемента подсказывается сейчас. Пусто — подсказка вызвана
+        /// обычным путём, через Tip, либо не показана вовсе.
+        ///
+        /// Нужно контролам, которые рисуют своё содержимое сами: у линейки внутри и
+        /// указатель типа табуляции, и значки позиций, и пустая полоса, а контрол один,
+        /// и повесить на него три разных Tip нельзя.
+        /// </summary>
+        private static readonly AttachedProperty<string?> SpotKeyProperty =
+            AvaloniaProperty.RegisterAttached<Control, string?>(
+                "SpotKey", typeof(TooltipBehavior));
 
         /// <summary>Устанавливает заголовок подсказки для элемента.</summary>
         public static void SetTip(Control element, string? value) =>
@@ -154,6 +179,78 @@ namespace Writersword.Infrastructure.Behaviours
 
         private static DispatcherTimer? GetTimer(Control element) =>
             element.GetValue(TimerProperty);
+
+        private static void SetSpotKey(Control element, string? value) =>
+            element.SetValue(SpotKeyProperty, value);
+
+        private static string? GetSpotKey(Control element) =>
+            element.GetValue(SpotKeyProperty);
+
+        /// <summary>
+        /// Показывает подсказку про отдельное место внутри элемента, у заданной точки.
+        ///
+        /// Обычный путь — Tip в разметке — вешает одну подсказку на весь контрол и всплывает
+        /// по его середине. Контролам, рисующим содержимое самостоятельно, этого мало: на
+        /// линейке под указателем может оказаться и переключатель типа табуляции, и значок
+        /// позиции, и пустая полоса, а контрол при этом один.
+        ///
+        /// spotKey — опознаватель места. Пока он не меняется, вызов ничего не делает: метод
+        /// зовут на каждое движение мыши, и без этого подсказка пересобиралась бы кадр за
+        /// кадром и не успевала показаться. Смена ключа закрывает прежнюю подсказку и
+        /// заводит задержку заново.
+        ///
+        /// Горячих клавиш здесь нет: место внутри контрола своей клавиши не имеет, а те,
+        /// что относятся ко всему контролу, ставятся обычным путём.
+        /// </summary>
+        public static void ShowSpot(
+            Control element,
+            string spotKey,
+            double anchorX,
+            string? tip,
+            string? description = null,
+            string? previewPath = null,
+            int delayMs = DefaultShowDelayMs)
+        {
+            if (string.IsNullOrEmpty(spotKey)
+                || (string.IsNullOrEmpty(tip) && string.IsNullOrEmpty(description)))
+            {
+                HideSpot(element);
+                return;
+            }
+
+            if (GetSpotKey(element) == spotKey) return;
+
+            HideTooltip(element);
+            SetSpotKey(element, spotKey);
+
+            var timer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(delayMs <= 0 ? 1 : delayMs)
+            };
+
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+
+                // Указатель мог уйти на другое место, пока шла задержка.
+                if (GetSpotKey(element) != spotKey) return;
+
+                OpenPopup(element, tip, description, previewPath, null, anchorX);
+            };
+
+            SetTimer(element, timer);
+            timer.Start();
+        }
+
+        /// <summary>
+        /// Убирает подсказку места. Зовётся, когда указатель ушёл с подсказываемой точки,
+        /// покинул контрол или начал жест.
+        /// </summary>
+        public static void HideSpot(Control element)
+        {
+            if (GetSpotKey(element) is null) return;
+            HideTooltip(element);
+        }
 
         static TooltipBehavior()
         {
@@ -367,13 +464,34 @@ namespace Writersword.Infrastructure.Behaviours
             string? description = GetDescription(element);
             if (string.IsNullOrEmpty(tip) && string.IsNullOrEmpty(description)) return;
 
+            // HotKeyId имеет приоритет над HotKey
+            var hotKeyString = ResolveHotKeyString(GetHotKeyId(element)) ?? GetHotKey(element);
+
+            OpenPopup(element, tip, description, GetPreviewPath(element), hotKeyString, null);
+        }
+
+        /// <summary>
+        /// Собирает и открывает всплывающее окно подсказки.
+        ///
+        /// Тексты приходят снаружи, а не читаются из свойств элемента: тем же кодом
+        /// показываются и подсказка всего контрола, и подсказка отдельного места внутри
+        /// него, у которого своих свойств нет.
+        ///
+        /// anchorX — точка внутри элемента, над которой встать. Пусто — встать по середине
+        /// элемента, как было всегда.
+        /// </summary>
+        private static void OpenPopup(
+            Control element,
+            string? tip,
+            string? description,
+            string? previewPath,
+            string? hotKeyString,
+            double? anchorX)
+        {
             var bgBrush = ResolveBrush(element, "AppTooltipBackground", new SolidColorBrush(Color.Parse("#2D2D30")));
             var borderBrush = ResolveBrush(element, "AppTooltipBorderBrush", new SolidColorBrush(Color.Parse("#3E3E42")));
             var fgBrush = ResolveBrush(element, "AppTooltipForeground", new SolidColorBrush(Color.Parse("#FFFFFF")));
             var keyBadgeBrush = ResolveBrush(element, "AppTooltipKeyBackground", new SolidColorBrush(Color.Parse("#3C3C3F")));
-
-            // HotKeyId имеет приоритет над HotKey
-            var hotKeyString = ResolveHotKeyString(GetHotKeyId(element)) ?? GetHotKey(element);
 
             _logger.Debug("TooltipBehavior: creating TooltipView, tip='{Tip}', description='{Description}'",
                 tip, description);
@@ -383,7 +501,7 @@ namespace Writersword.Infrastructure.Behaviours
             {
                 Title = tip,
                 Description = description,
-                PreviewPath = GetPreviewPath(element),
+                PreviewPath = previewPath,
                 TooltipBackground = bgBrush,
                 TooltipBorderBrush = borderBrush,
                 TooltipForeground = fgBrush,
@@ -425,6 +543,11 @@ namespace Writersword.Infrastructure.Behaviours
 
                 double elementLeft = pos.Value.X;
                 double elementCenterX = elementLeft + element.Bounds.Width / 2;
+
+                // Точка, над которой встать: середина элемента, а для подсказки про место
+                // внутри него — само это место.
+                double anchorCenterX = anchorX is double ax ? elementLeft + ax : elementCenterX;
+
                 double spaceAbove = pos.Value.Y;
                 double windowWidth = topLevel.Bounds.Width;
 
@@ -437,11 +560,18 @@ namespace Writersword.Infrastructure.Behaviours
                 view.ArrowAtBottom = goAbove;
                 popup.VerticalOffset = goAbove ? -4 : 4;
 
-                double idealLeft = elementCenterX - popupWidth / 2;
+                // Avalonia сама ставит окно по середине элемента, и HorizontalOffset —
+                // сдвиг именно от этого места. Считать сдвиг от желаемого положения нельзя:
+                // пока желаемое совпадало с серединой элемента, ошибка не проявлялась, но
+                // с якорем внутри широкого контрола окно уезжало ровно на расстояние между
+                // серединой и якорем.
+                double baseLeft = elementCenterX - popupWidth / 2;
+
+                double idealLeft = anchorCenterX - popupWidth / 2;
                 double clampedLeft = Math.Max(8, Math.Min(idealLeft, windowWidth - popupWidth - 8));
 
-                popup.HorizontalOffset = clampedLeft - idealLeft;
-                view.ArrowHorizontalOffset = elementCenterX - clampedLeft - 6;
+                popup.HorizontalOffset = clampedLeft - baseLeft;
+                view.ArrowHorizontalOffset = anchorCenterX - clampedLeft - 6;
 
                 _logger.Debug(
                     "TooltipBehavior: tooltip shown for {Element}, position={Position}, text='{Tip}'",
@@ -459,6 +589,7 @@ namespace Writersword.Infrastructure.Behaviours
         {
             GetTimer(element)?.Stop();
             SetTimer(element, null);
+            SetSpotKey(element, null);
 
             var popup = GetPopup(element);
             if (popup is not null)

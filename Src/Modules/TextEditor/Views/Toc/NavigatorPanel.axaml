@@ -1,0 +1,139 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
+             xmlns:toc="using:Writersword.Modules.TextEditor.ViewModels.Toc"
+             x:Class="Writersword.Modules.TextEditor.Views.Toc.NavigatorPanel"
+             Width="268">
+
+	<UserControl.Styles>
+		<Style Selector="TextBlock.NavTitle">
+			<Setter Property="FontSize"          Value="12"/>
+			<Setter Property="FontWeight"        Value="SemiBold"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+		<!-- Ширина задана минимумом, а не жёстким значением: кнопки шапки одинаково
+		     квадратные, но той, что показывает глубину, нужно вместить надпись «1-3». -->
+		<Style Selector="Button.NavIcon">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="MinWidth"        Value="24"/>
+			<Setter Property="Height"          Value="24"/>
+			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="CornerRadius"    Value="5"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		</Style>
+		<Style Selector="Button.NavIcon:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<!-- Уровень заголовка виден размером и насыщенностью, а не только отступом:
+		     глава должна читаться главой с одного взгляда. -->
+		<Style Selector="TextBlock.NavEntry">
+			<Setter Property="FontSize"          Value="12"/>
+			<Setter Property="TextTrimming"      Value="CharacterEllipsis"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+
+		<Style Selector="TextBlock.NavPage">
+			<Setter Property="FontSize"          Value="11"/>
+			<Setter Property="Margin"            Value="8 0 0 0"/>
+			<Setter Property="MinWidth"          Value="18"/>
+			<Setter Property="TextAlignment"     Value="Right"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+
+		<Style Selector="TreeViewItem">
+			<Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+			<Setter Property="Padding"    Value="0"/>
+			<Setter Property="MinHeight"  Value="0"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Border Background="{DynamicResource BgBaseBrush}"
+	        BorderBrush="{DynamicResource BorderDefaultBrush}"
+	        BorderThickness="0 0 1 0">
+
+		<Grid RowDefinitions="Auto Auto * Auto">
+
+			<!-- Шапка: название, глубина показа, свернуть и закрыть -->
+			<Grid Grid.Row="0" ColumnDefinitions="* Auto Auto Auto"
+			      Margin="10 8 6 6">
+
+				<TextBlock Grid.Column="0" Classes="NavTitle"
+				           Text="{x:Static loc:TextEditorStrings.Nav_Title}"/>
+
+				<!-- Глубина показа. Три уровня закрывают почти любую рукопись, и
+				     выбирать из девяти в списке дольше, чем нажать цифру. -->
+				<Button Grid.Column="1" x:Name="LevelsBtn" Classes="NavIcon"
+				        Padding="6 0"
+				        ToolTip.Tip="{x:Static loc:TextEditorStrings.Nav_Levels}">
+					<TextBlock x:Name="LevelsText" FontSize="11" Text="1-3"/>
+				</Button>
+
+				<Button Grid.Column="2" x:Name="CollapseBtn" Classes="NavIcon"
+				        ToolTip.Tip="{x:Static loc:TextEditorStrings.Nav_CollapseAll}">
+					<PathIcon Data="M19 13H5v-2h14v2z" Width="12" Height="12"/>
+				</Button>
+
+				<Button Grid.Column="3" x:Name="CloseBtn" Classes="NavIcon"
+				        ToolTip.Tip="{x:Static loc:TextEditorStrings.Nav_Close}">
+					<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+					          Width="11" Height="11"/>
+				</Button>
+			</Grid>
+
+			<!-- Поиск по заголовкам -->
+			<TextBox Grid.Row="1" x:Name="SearchBox"
+			         Margin="10 0 10 8"
+			         FontSize="12"
+			         Padding="8 5"
+			         CornerRadius="6"
+			         PlaceholderText="{x:Static loc:TextEditorStrings.Nav_SearchPlaceholder}"
+			         Text="{Binding SearchText, Mode=TwoWay}"/>
+
+			<!-- Дерево заголовков -->
+			<TreeView Grid.Row="2" x:Name="HeadingsTree"
+			          ItemsSource="{Binding Roots}"
+			          Background="Transparent"
+			          BorderThickness="0"
+			          Padding="4 0 4 8">
+				<TreeView.ItemTemplate>
+					<TreeDataTemplate ItemsSource="{Binding Children}">
+						<Border Padding="4 3" CornerRadius="4" Background="Transparent">
+							<Grid ColumnDefinitions="* Auto">
+								<TextBlock Grid.Column="0"
+								           Classes="NavEntry"
+								           Text="{Binding Text}"
+								           ToolTip.Tip="{Binding Text}"/>
+								<TextBlock Grid.Column="1"
+								           Classes="NavPage"
+								           Text="{Binding PageText}"
+								           IsVisible="{Binding HasPage}"/>
+							</Grid>
+						</Border>
+					</TreeDataTemplate>
+				</TreeView.ItemTemplate>
+			</TreeView>
+
+			<!-- Пусто: объясняем, откуда берутся заголовки, а не просто молчим -->
+			<TextBlock Grid.Row="2"
+			           x:Name="EmptyHint"
+			           Margin="14 12"
+			           FontSize="11"
+			           TextWrapping="Wrap"
+			           VerticalAlignment="Top"
+			           IsVisible="{Binding IsEmpty}"
+			           Foreground="{DynamicResource TextMutedBrush}"
+			           Text="{x:Static loc:TextEditorStrings.Nav_Empty}"/>
+
+		</Grid>
+	</Border>
+
+</UserControl>

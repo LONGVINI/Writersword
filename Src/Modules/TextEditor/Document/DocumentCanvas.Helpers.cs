@@ -2179,7 +2179,12 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Уведомляем вертикальную линейку о странице каретки
             if (_caretPara >= 0 && _caretPara < _layouts.Count)
+            {
                 CaretPageChanged?.Invoke(_layouts[_caretPara].PageIndex);
+
+                // Каретка могла перейти на лист в другой колонке — линейке нужен его край.
+                NotifyPageOffsetX();
+            }
         }
 
         // Сброс каретки без прокрутки — используется при клике мышью.
@@ -2193,7 +2198,12 @@ namespace Writersword.Modules.TextEditor.Document
             NotifyInputMethod();
 
             if (_caretPara >= 0 && _caretPara < _layouts.Count)
+            {
                 CaretPageChanged?.Invoke(_layouts[_caretPara].PageIndex);
+
+                // Каретка могла перейти на лист в другой колонке — линейке нужен его край.
+                NotifyPageOffsetX();
+            }
         }
 
         private static int Clamp(int v, int min, int max) => v < min ? min : v > max ? max : v;
@@ -2326,7 +2336,14 @@ namespace Writersword.Modules.TextEditor.Document
                 RightIndentMm = layout.RightIndentPt * PtToMm,
                 MarkerMm = hasMarker ? lp!.ComputedMarkerIndentPt * PtToMm : 0.0,
                 HasMarker = hasMarker,
-                LeftOverhangMm = leftOverhangPt * PtToMm
+                LeftOverhangMm = leftOverhangPt * PtToMm,
+
+                // Позиции табуляции берутся из самого абзаца, а не из раскладки: раскладка
+                // хранит их результат — ширину прыжка на конкретной строке, — а линейке
+                // нужны сами отметки, и они лежат в свойствах абзаца ровно в той системе
+                // отсчёта, в которой линейка их и рисует.
+                TabStops = pl.Vm.Model?.Properties.TabStops,
+                DefaultTabStopMm = (DocVm?.Document.DefaultTabStopPt ?? 35.4) * PtToMm
             });
         }
 

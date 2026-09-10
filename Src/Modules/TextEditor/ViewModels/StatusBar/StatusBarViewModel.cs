@@ -380,10 +380,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
         }
 
         /// <summary>
-        /// Слово — последовательность без пробелов, в которой есть хотя бы буква или
-        /// цифра. Одиночные знаки препинания словами не считаются: тире прямой речи
-        /// стоит отдельным знаком, и без этого условия художественный текст получал
-        /// тысячи лишних «слов» против того, что показывают другие редакторы.
+        /// Слово — последовательность без пробелов. Единственное исключение — отрезки
+        /// из одних только тире: тире прямой речи и тире вместо пропущенного сказуемого
+        /// стоят отдельными знаками, и на художественном тексте их набираются тысячи.
+        /// Прочие одиночные знаки — звёздочка разделителя, номер, отбившаяся точка —
+        /// словами считаются: ровно так их считает Word, и на рукописи в девяносто
+        /// тысяч слов это разница ровно в те несколько единиц, что расходились.
         /// </summary>
         private static int CountWords(string text)
         {
@@ -391,16 +393,23 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
 
             int count = 0;
             foreach (Match match in Regex.Matches(text, @"\S+"))
-            {
-                foreach (char c in match.Value)
-                {
-                    if (!char.IsLetterOrDigit(c)) continue;
-                    count++;
-                    break;
-                }
-            }
+                if (!IsDashOnly(match.Value)) count++;
 
             return count;
+        }
+
+        /// <summary>
+        /// Отрезок состоит из одних тире. Проверяется категория знака, а не список
+        /// символов: в тексте встречаются и длинное тире, и короткое, и дефис, и все
+        /// они словами не являются.
+        /// </summary>
+        private static bool IsDashOnly(string token)
+        {
+            foreach (char c in token)
+                if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.DashPunctuation)
+                    return false;
+
+            return true;
         }
     }
 }

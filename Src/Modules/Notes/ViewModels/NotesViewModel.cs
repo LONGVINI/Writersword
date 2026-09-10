@@ -17,6 +17,9 @@ namespace Writersword.Modules.Notes.ViewModels
 
         public NoteBlockViewModel(NoteBlock model)
         {
+            ArgumentNullException.ThrowIfNull(model);
+            if (!Enum.IsDefined(model.Type))
+                throw new ArgumentException("Unknown Notes block type", nameof(model));
             Id = model.Id == Guid.Empty ? Guid.NewGuid() : model.Id;
             _type = model.Type;
             _text = model.Text ?? string.Empty;
@@ -87,7 +90,7 @@ namespace Writersword.Modules.Notes.ViewModels
             _ => 14
         };
         public bool IsHeading => Type is NoteBlockType.Heading1 or NoteBlockType.Heading2 or NoteBlockType.Heading3;
-        public bool IsVisuallyStruck => IsChecked || IsStruckThrough;
+        public bool IsVisuallyStruck => (IsChecklist && IsChecked) || IsStruckThrough;
 
         public NoteBlock ToModel() => new()
         {
@@ -108,6 +111,7 @@ namespace Writersword.Modules.Notes.ViewModels
             this.RaisePropertyChanged(nameof(Prefix));
             this.RaisePropertyChanged(nameof(EditorFontSize));
             this.RaisePropertyChanged(nameof(IsHeading));
+            this.RaisePropertyChanged(nameof(IsVisuallyStruck));
         }
     }
 
@@ -117,6 +121,7 @@ namespace Writersword.Modules.Notes.ViewModels
 
         public NotePageViewModel(NotePage model)
         {
+            ArgumentNullException.ThrowIfNull(model);
             Id = model.Id == Guid.Empty ? Guid.NewGuid() : model.Id;
             _title = string.IsNullOrWhiteSpace(model.Title) ? "Без названия" : model.Title;
             CreatedAtUtc = model.CreatedAtUtc == default ? DateTime.UtcNow : model.CreatedAtUtc;
@@ -217,6 +222,7 @@ namespace Writersword.Modules.Notes.ViewModels
             {
                 this.RaiseAndSetIfChanged(ref _isPagePanelOpen, value);
                 this.RaisePropertyChanged(nameof(IsWidePagePanelVisible));
+                this.RaisePropertyChanged(nameof(IsCompactHeaderVisible));
             }
         }
 
@@ -227,10 +233,12 @@ namespace Writersword.Modules.Notes.ViewModels
         }
 
         public bool IsWidePagePanelVisible => !IsCompact && IsPagePanelOpen;
-        public bool IsCompactHeaderVisible => IsCompact;
+        public bool IsCompactHeaderVisible => !IsWidePagePanelVisible;
 
         public NotePageViewModel AddPage()
         {
+            if (IsReadOnly)
+                throw new InvalidOperationException("Notes is read-only");
             var page = new NotePageViewModel(new NotePage { Title = $"Страница {Pages.Count + 1}" });
             Pages.Add(page);
             SelectedPage = page;
@@ -239,6 +247,8 @@ namespace Writersword.Modules.Notes.ViewModels
 
         public void SelectBlock(NoteBlockViewModel? block)
         {
+            if (block != null && SelectedPage?.Blocks.Contains(block) != true)
+                return;
             if (SelectedBlock != null)
                 SelectedBlock.IsSelected = false;
             SelectedBlock = block;
@@ -248,7 +258,7 @@ namespace Writersword.Modules.Notes.ViewModels
 
         public NoteBlockViewModel CommitLine(NoteBlockViewModel block)
         {
-            if (SelectedPage == null)
+            if (SelectedPage == null || IsReadOnly || !SelectedPage.Blocks.Contains(block))
                 return block;
 
             // Маркер преобразуется только у обычного абзаца, чтобы содержимое
@@ -269,7 +279,7 @@ namespace Writersword.Modules.Notes.ViewModels
 
         public NoteBlockViewModel? RemoveEmptyBlock(NoteBlockViewModel block)
         {
-            if (SelectedPage == null || SelectedPage.Blocks.Count <= 1 || block.Text.Length != 0)
+            if (SelectedPage == null || IsReadOnly || SelectedPage.Blocks.Count <= 1 || block.Text.Length != 0)
                 return null;
             var index = SelectedPage.Blocks.IndexOf(block);
             if (index < 0)
@@ -283,9 +293,11 @@ namespace Writersword.Modules.Notes.ViewModels
 
         public void SetSelectedBlockType(NoteBlockType type)
         {
-            if (SelectedBlock == null || IsReadOnly)
+            if (SelectedPage == null || SelectedBlock == null || IsReadOnly || !Enum.IsDefined(type))
                 return;
             SelectedBlock.Type = type;
+            if (type != NoteBlockType.Checklist)
+                SelectedBlock.IsChecked = false;
             SelectedPage!.UpdatedAtUtc = DateTime.UtcNow;
             RaiseSelectedBlockProperties();
         }
@@ -317,11 +329,19 @@ namespace Writersword.Modules.Notes.ViewModels
 
         public void LoadData(NotesData? data)
         {
+            if (data != null && (data.FormatVersion != 1 || data.Pages == null))
+                throw new ArgumentException("Unsupported or invalid Notes data", nameof(data));
+
+            // Сначала строится вся новая модель. Ошибка в любой странице или
+            // блоке не должна очищать уже открытые пользовательские данные.
+            var pages = (data?.Pages ?? new()).Select(page => new NotePageViewModel(page)).ToList();
+            if (pages.Count == 0)
+                pages.Add(new NotePageViewModel(new NotePage { Title = "Заметки" }));
+
+            SelectedPage = null;
             Pages.Clear();
-            foreach (var page in data?.Pages ?? new())
-                Pages.Add(new NotePageViewModel(page));
-            if (Pages.Count == 0)
-                Pages.Add(new NotePageViewModel(new NotePage { Title = "Заметки" }));
+            foreach (var page in pages)
+                Pages.Add(page);
             SelectedPage = Pages[0];
         }
 

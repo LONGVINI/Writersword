@@ -208,8 +208,7 @@
 													<DataTemplate x:DataType="tabs:CharacterScaleDotViewModel">
 														<Button Classes="scale-dot"
                                                                 Click="OnScaleDotClick"
-                                                                behaviours:TooltipBehavior.Tip="{Binding Hint}"
-                                                                behaviours:TooltipBehavior.ShowDelay="250">
+                                                                behaviours:TooltipBehavior.Tip="{Binding Hint}">
 															<Panel>
 																<Ellipse Width="16" Height="16"
                                                                          Stroke="{DynamicResource BorderDefaultBrush}"

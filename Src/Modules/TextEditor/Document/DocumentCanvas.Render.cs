@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Rendering.SceneGraph;
@@ -143,7 +143,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // Книжный разворот верстается страницами, поэтому и рисуется страничным
                 // проходом: раскладка у него та же, что в режиме страниц, отличается
                 // только размер листа и его место на экране.
-                if (skeletonMode == EditorViewMode.Page || SpreadMode)
+                if (skeletonMode == EditorViewMode.Page || SpreadMode || ReadingRibbon)
                 {
                     RenderPageSkeleton(canvas, pages, canvasHeightPt, canvasWidth);
                 }
@@ -179,7 +179,7 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
-            if (SpreadMode && _spreadFlipDir != 0)
+            if (SpreadMode && SpreadLeafLifted)
             {
                 canvas.Save();
                 canvas.Scale(scale, scale);
@@ -304,7 +304,7 @@ namespace Writersword.Modules.TextEditor.Document
                 offscreen.Translate(0f, -bitmapTopYInPts);
 
                 var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
-                if (mode == EditorViewMode.Page || SpreadMode)
+                if (mode == EditorViewMode.Page || SpreadMode || ReadingRibbon)
                     RenderPageMode(offscreen, layouts, pages, tables, images, canvasHeightPt, canvasWidth, false);
                 else
                     RenderFlowMode(offscreen, mode, layouts, tables, images, canvasHeightPt, canvasWidth, false);
@@ -364,7 +364,7 @@ namespace Writersword.Modules.TextEditor.Document
                 canvas.Save();
                 canvas.Scale(scale, scale);
                 var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
-                if (mode == EditorViewMode.Page || SpreadMode)
+                if (mode == EditorViewMode.Page || SpreadMode || ReadingRibbon)
                     RenderPageMode(canvas, layouts, pages, tables, images, canvasHeightPt, canvasWidth, CaretDrawable);
                 else
                     RenderFlowMode(canvas, mode, layouts, tables, images, canvasHeightPt, canvasWidth, CaretDrawable);
@@ -693,7 +693,38 @@ namespace Writersword.Modules.TextEditor.Document
 
             DrawCanvasBackdrop(canvas, bgWPt, bgHPt);
 
-            if (pages is null || pages.Count == 0) return;
+            // Книга листов подложке не отдаёт. Разворот стоит не там, где лежат
+            // страницы в потоке документа: пара уходит в центр вьюпорта, остальные
+            // уводятся за холст. Скелет об этом не знает и кладёт лист по логическим
+            // координатам — из-под книги проступает пустая бумага, которой на экране
+            // быть не должно. Сама книга целиком рисуется основным проходом того же
+            // кадра, и закрывать под ней нечего.
+            //
+            // Свет ложится и на подложку: готовый кадр накрыт вуалью тепла и яркости,
+            // и подложка без неё светлее — открывшаяся при листании полоса меняла цвет
+            // и возвращалась обратно, когда подъезжал снимок.
+            if (SpreadMode)
+            {
+                DrawReadingDim(canvas, bgWPt, bgHPt);
+                return;
+            }
+
+            if (pages is null || pages.Count == 0)
+            {
+                if (EditorThemeActive) DrawReadingDim(canvas, bgWPt, bgHPt);
+                return;
+            }
+
+            // Лента: под текстом лежит одна сплошная полоса бумаги во всю длину
+            // рукописи. Отдельных листов на ней нет, поэтому нет ни зазоров, ни теней
+            // по краям каждого — иначе на месте склейки была бы видна граница.
+            if (ReadingRibbon)
+            {
+                DrawRibbonSheet(canvas, pages, canvasHeightPt,
+                    Math.Max((canvasWPt - pages[0].WidthPt) / 2f, 0f));
+                DrawReadingDim(canvas, bgWPt, bgHPt);
+                return;
+            }
 
             float scale = (float)(PtToPx * z);
             float scrollTopPt = scale > 0f ? (float)_scrollOffsetY / scale : 0f;
@@ -720,6 +751,8 @@ namespace Writersword.Modules.TextEditor.Document
                     canvas.DrawRect(page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, PagePaint());
                 }
                 canvas.Restore();
+
+                if (EditorThemeActive) DrawReadingDim(canvas, bgWPt, bgHPt);
                 return;
             }
 
@@ -733,6 +766,60 @@ namespace Writersword.Modules.TextEditor.Document
                 canvas.DrawRect(visX + 3, visY + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
                 canvas.DrawRect(visX, visY, page.WidthPt, page.HeightPt, PagePaint());
             }
+
+            if (EditorThemeActive) DrawReadingDim(canvas, bgWPt, bgHPt);
+        }
+
+        /// <summary>
+        /// Бумага ленты: одна полоса шириной в лист документа и высотой во весь холст.
+        /// Рисуется и скелетом, и основным проходом — оба обязаны показывать одну и ту
+        /// же полосу, иначе при быстрой прокрутке под открывшейся областью мелькал бы
+        /// фон вместо бумаги.
+        /// </summary>
+        private void DrawRibbonSheet(
+            SKCanvas canvas, List<PageRect> pages, float canvasHeightPt, float sheetXPt)
+        {
+            if (pages.Count == 0) return;
+
+            float sheetWPt = pages[0].WidthPt;
+            float sheetHPt = Math.Max(canvasHeightPt, 1f);
+
+            canvas.DrawRect(sheetXPt + 3f, 3f, sheetWPt, sheetHPt, _paintPageShadow);
+            canvas.DrawRect(sheetXPt, 0f, sheetWPt, sheetHPt, PagePaint());
+            DrawReadingPaperImage(canvas, sheetXPt, 0f, sheetWPt, sheetHPt);
+        }
+
+        /// <summary>
+        /// Перекрытие половин разворота у корешка — доля точки экрана. Меньше точки:
+        /// сдвиг половины на видимую величину увёл бы текст от центра книги.
+        /// </summary>
+        private float SpineOverlapPt()
+        {
+            float pxPerPt = PtToPx * (float)Math.Max(Zoom, 0.01);
+            return pxPerPt > 0.01f ? 0.34f / pxPerPt : 0.25f;
+        }
+
+        /// <summary>
+        /// Сплошная бумага под разворотом: обе половины одним прямоугольником, вместе
+        /// с тенью под книгой. Поверх неё половины рисуются как обычно — своими
+        /// прямоугольниками и своими картинками бумаги; шва между ними больше нет,
+        /// потому что под ним лежит та же бумага.
+        /// </summary>
+        private void DrawSpreadPaperBed(SKCanvas canvas, List<PageRect> pages)
+        {
+            if (pages.Count == 0) return;
+
+            var (leftIdx, rightIdx) = SpreadUnderPages();
+            if (leftIdx < 0 || leftIdx >= pages.Count) return;
+
+            var pg = pages[leftIdx];
+            var (x, y) = SpreadPlacement(leftIdx, true);
+
+            bool pair = rightIdx >= 0 && rightIdx < pages.Count;
+            float wPt = pg.WidthPt * (pair ? 2f : 1f);
+
+            canvas.DrawRect(x + 3f, y + 3f, wPt, pg.HeightPt, _paintPageShadow);
+            canvas.DrawRect(x, y, wPt, pg.HeightPt, PagePaint());
         }
 
         private void RenderPageMode(
@@ -773,6 +860,35 @@ namespace Writersword.Modules.TextEditor.Document
 
             var (firstPage, lastPage) = GetVisiblePageRange(pages);
 
+            // Лента: бумага одна на всю рукопись, а содержимое каждой страницы
+            // переносится на своё место в склейке и обрезается своей полосой.
+            //
+            // Обрезка здесь — это и есть ответ на «картинка вылезла за низ листа»: на
+            // бумаге её обрезал бы обрез страницы, и в ленте обрезает ровно так же, а
+            // сразу под линией обреза идёт то, что стоит на следующей странице.
+            if (ReadingRibbon && pages.Count > 0)
+            {
+                DrawRibbonSheet(canvas, pages, canvasHeightPt, pages[0].PadLeftPt);
+
+                for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
+                {
+                    var ribbonPage = pages[pi];
+                    var (ribbonDx, ribbonDy) = PageVisualDelta(pi, pages);
+                    var (bandTopPt, bandBotPt) = RibbonPageBand(pi, pages);
+
+                    canvas.Save();
+                    canvas.ClipRect(new SKRect(
+                        ribbonPage.PadLeftPt, bandTopPt,
+                        ribbonPage.PadLeftPt + ribbonPage.WidthPt, bandBotPt));
+                    canvas.Translate(ribbonDx, ribbonDy);
+                    RenderPageContent(canvas, layouts, pages, tables, images, pi, pi, drawCaret);
+                    canvas.Restore();
+                }
+
+                DrawReadingDim(canvas, bgWPt, bgHPt);
+                return;
+            }
+
             // Разворот идёт общей веткой «страницы рядом»: она уже умеет переносить
             // контент на визуальную позицию листа, а куда именно — решает PageVisualDelta.
             if (_pagesPerRow <= 1 && !SpreadMode)
@@ -782,6 +898,10 @@ namespace Writersword.Modules.TextEditor.Document
                     var page = pages[pi];
                     canvas.DrawRect(page.PadLeftPt + 3, page.Ypt + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
                     canvas.DrawRect(page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, PagePaint());
+
+                    // Своя картинка бумаги ложится поверх её цвета. Вида нет или
+                    // картинка не задана — вызов ничего не рисует.
+                    DrawReadingPaperImage(canvas, page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt);
                 }
 
                 RenderPageContent(canvas, layouts, pages, tables, images, firstPage, lastPage, drawCaret);
@@ -795,6 +915,15 @@ namespace Writersword.Modules.TextEditor.Document
             // Листы рисуются все сразу, отдельным проходом до контента: контент страницы
             // может выходить за её пределы (картинка мимо листа), и белый лист соседа,
             // нарисованный позже, закрасил бы уже нарисованное поверх него.
+            // Книга: бумага под разворотом заливается ОДНИМ прямоугольником на обе
+            // половины, до всего остального. Порознь их края сходятся на дробной точке
+            // экрана, каждый округляется сам по себе, и по корешку оставалась нитка в
+            // пиксель — на светлой бумаге она читается как дыра, а при любом движении
+            // книги переезжает на соседнюю точку и мигает. Одному прямоугольнику
+            // сходиться нечем.
+            if (SpreadMode && !SpreadSinglePage)
+                DrawSpreadPaperBed(canvas, pages);
+
             for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
             {
                 var bgPage = pages[pi];
@@ -809,11 +938,29 @@ namespace Writersword.Modules.TextEditor.Document
                 float bgY = bgPage.Ypt + bgDy;
 
                 canvas.DrawRect(bgX + 3, bgY + 3, bgPage.WidthPt, bgPage.HeightPt, _paintPageShadow);
-                canvas.DrawRect(bgX, bgY, bgPage.WidthPt, bgPage.HeightPt, PagePaint());
+
+                // Половины разворота заходят друг на друга у корешка на треть точки
+                // экрана. Порознь их края сходятся на дробной координате, и у картинки
+                // бумаги крайний столбец пикселей выходит полупрозрачным — сквозь него
+                // проступает то, что лежит ниже, тонкой ниткой по всему корешку. С
+                // перекрытием крайний столбец каждой половины ложится на соседку, и
+                // сходиться нечему.
+                float bgSheetX = bgX;
+                float bgSheetW = bgPage.WidthPt;
+                if (SpreadMode && !SpreadSinglePage)
+                {
+                    var (spineLeftIdx, spineRightIdx) = SpreadUnderPages();
+                    float overlapPt = SpineOverlapPt();
+
+                    if (pi == spineLeftIdx) bgSheetW += overlapPt;
+                    else if (pi == spineRightIdx) { bgSheetX -= overlapPt; bgSheetW += overlapPt; }
+                }
+
+                canvas.DrawRect(bgSheetX, bgY, bgSheetW, bgPage.HeightPt, PagePaint());
 
                 // Своя картинка бумаги ложится поверх её цвета: цвет остаётся видимым
                 // там, где картинка полупрозрачна или не закрывает лист целиком.
-                DrawReadingPaperImage(canvas, bgX, bgY, bgPage.WidthPt, bgPage.HeightPt);
+                DrawReadingPaperImage(canvas, bgSheetX, bgY, bgSheetW, bgPage.HeightPt);
             }
 
             for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
@@ -895,7 +1042,11 @@ namespace Writersword.Modules.TextEditor.Document
             // Вуаль яркости ложится последней — поверх всего, что уже нарисовано.
             // Пока идёт переворот, свет накладывает вызывающий — уже поверх летящего
             // листа. Здесь он лёг бы под него, и бумага в полёте была бы ярче книги.
-            if (SpreadMode && _spreadFlipDir == 0) DrawReadingDim(canvas, bgWPt, bgHPt);
+            //
+            // При правке с назначенным видом свет ложится так же: тёплота и яркость
+            // относятся к экрану, а не к книге, и за письмом нужны ровно затем же.
+            if ((SpreadMode && !SpreadLeafLifted) || EditorThemeActive)
+                DrawReadingDim(canvas, bgWPt, bgHPt);
         }
 
         // Контентный проход страниц [firstPage..lastPage] в логических координатах:
@@ -959,7 +1110,8 @@ namespace Writersword.Modules.TextEditor.Document
                 // клип спрятал бы её полностью — объект в документе есть, а на экране
                 // его нет, ни найти, ни выделить, ни вернуть. Такая рисуется бледной
                 // и заштрихованной.
-                bool imgOffPage = ie.PageIndex < pages.Count
+                bool imgOffPage = OffPageMarkersVisible
+                    && ie.PageIndex < pages.Count
                     && IsImageOffItsPage(ie, pages[ie.PageIndex]);
 
                 bool imgClip = ie.PageIndex < pages.Count
@@ -1017,7 +1169,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // Картинка попала в текстовое выделение — заливаем той же кистью, что и текст.
                 // Иначе выделение «проходит сквозь» картинку: пользователь не видит, что она
                 // тоже будет скопирована и удалена.
-                if (_imagesInTextSelection.Contains(ie.Block))
+                if (SelectionDrawable && _imagesInTextSelection.Contains(ie.Block))
                     canvas.DrawRect(imgRect, _paintSelection);
 
                 // Картинка целиком мимо своего листа: она ничего не делает и не печатается.
@@ -1116,7 +1268,8 @@ namespace Writersword.Modules.TextEditor.Document
                 // клип спрятал бы её полностью — объект в документе есть, а на экране
                 // его нет, ни найти, ни выделить, ни вернуть. Такая рисуется бледной
                 // и заштрихованной.
-                bool imgOffPage = ie.PageIndex < pages.Count
+                bool imgOffPage = OffPageMarkersVisible
+                    && ie.PageIndex < pages.Count
                     && IsImageOffItsPage(ie, pages[ie.PageIndex]);
 
                 bool imgClip = ie.PageIndex < pages.Count
@@ -1174,7 +1327,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // Картинка попала в текстовое выделение — заливаем той же кистью, что и текст.
                 // Иначе выделение «проходит сквозь» картинку: пользователь не видит, что она
                 // тоже будет скопирована и удалена.
-                if (_imagesInTextSelection.Contains(ie.Block))
+                if (SelectionDrawable && _imagesInTextSelection.Contains(ie.Block))
                     canvas.DrawRect(imgRect, _paintSelection);
 
                 // Картинка целиком мимо своего листа: она ничего не делает и не печатается.
@@ -1192,7 +1345,11 @@ namespace Writersword.Modules.TextEditor.Document
             // Предпросмотр обрезки — поверх всего: исходная картинка целиком,
             // срезаемые края затемнены, рамка кадрирования с маркерами. Картинка в
             // документе при этом не тронута: срез применяется при выходе из режима.
-            if (_imageCropMode && _cropImage is not null)
+            //
+            // В чтении ничего этого нет: книга показывает рукопись, а не правит её.
+            // Выделение, оставшееся с правки, доезжало до книги вместе с моделью — и
+            // на странице висела рамка с ручками, взяться которой там неоткуда.
+            if (_imageCropMode && _cropImage is not null && SelectionDrawable)
             {
                 foreach (var ie in images)
                 {
@@ -1249,7 +1406,7 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
             // Рамка выделенной картинки — поверх всего.
-            else if (_selectedImage is not null)
+            else if (_selectedImage is not null && SelectionDrawable)
             {
                 foreach (var ie in images)
                 {
@@ -1816,6 +1973,11 @@ namespace Writersword.Modules.TextEditor.Document
             // Чтение колонкой: под текстом лежит бумажная лента. Без неё строки висят
             // прямо на сером фоне холста, и режим выглядит недоделанным — читать светлый
             // текст удобно на светлом же поле, а не на подложке рабочей области.
+            // Полоса ленты: её края служат и обрезом для картинок, поэтому её размеры
+            // считаются до отрисовки и живут до конца прохода.
+            float readingSheetXPt = 0f;
+            float readingSheetWPt = canvasWPt;
+
             if (mode == EditorViewMode.Reading)
             {
                 float columnPt = ReadingColumnWidthPt(canvasWPt);
@@ -1824,9 +1986,22 @@ namespace Writersword.Modules.TextEditor.Document
                 float sheetX = Math.Max((canvasWPt - sheetW) / 2f, 0f);
                 float sheetH = Math.Max(canvasHeightPt, 1f);
 
+                readingSheetXPt = sheetX;
+                readingSheetWPt = sheetW;
+
                 canvas.DrawRect(sheetX + 3f, 3f, sheetW, sheetH, _paintPageShadow);
                 canvas.DrawRect(sheetX, 0f, sheetW, sheetH, PagePaint());
                 DrawReadingPaperImage(canvas, sheetX, 0f, sheetW, sheetH);
+            }
+            else if (EditorThemeActive)
+            {
+                // Черновик и веб-режим листов не знают: текст лежит прямо на холсте
+                // во всю его ширину. Поэтому бумагой красится сам холст — узкая
+                // лента чтения здесь была бы полосой посреди строк, которые идут
+                // мимо неё.
+                float sheetH = Math.Max(canvasHeightPt, 1f);
+                canvas.DrawRect(0f, 0f, canvasWPt, sheetH, PagePaint());
+                DrawReadingPaperImage(canvas, 0f, 0f, canvasWPt, sheetH);
             }
 
             float zoom2 = (float)Zoom;
@@ -1848,8 +2023,31 @@ namespace Writersword.Modules.TextEditor.Document
                 if (ie.InLine) continue;
                 if (ie.Ypt + ie.HeightPt < viewTopPt) continue;
                 if (ie.Ypt > viewBotPt) continue;
+
+                // В ленте картинка стоит в своём размере, и вылезшая за полосу
+                // обрезается её краем — ровно так же, как обрезала бы бумага. Клип
+                // ставится по самой полосе, а не по колонке текста: поля у ленты те
+                // же, что и у листа, и картинка вправе заходить в них.
+                bool flowSheetClip = mode == EditorViewMode.Reading;
+                if (flowSheetClip)
+                {
+                    canvas.Save();
+                    canvas.ClipRect(new SKRect(
+                        readingSheetXPt, 0f,
+                        readingSheetXPt + readingSheetWPt, Math.Max(canvasHeightPt, 1f)));
+                }
+
                 DrawFlowImage(canvas, ie);
+
+                if (flowSheetClip) canvas.Restore();
             }
+
+            // Фигуры потока. Страниц у ленты нет, поэтому и клипа по листу нет —
+            // обрезает та же полоса, что и картинки.
+            RenderFlowShapes(canvas, viewTopPt, viewBotPt,
+                readingSheetXPt, readingSheetWPt,
+                Math.Max(canvasHeightPt, 1f),
+                mode == EditorViewMode.Reading, beforeText: true);
 
             for (int i = 0; i < layouts.Count; i++)
             {
@@ -1860,9 +2058,54 @@ namespace Writersword.Modules.TextEditor.Document
                 RenderParaLayout(canvas, i, pl, layouts, drawCaret);
             }
 
+            RenderFlowShapes(canvas, viewTopPt, viewBotPt,
+                readingSheetXPt, readingSheetWPt,
+                Math.Max(canvasHeightPt, 1f),
+                mode == EditorViewMode.Reading, beforeText: false);
+
             // Вуаль яркости — поверх готового текста, как и в книге.
-            if (mode == EditorViewMode.Reading)
+            if (mode == EditorViewMode.Reading || EditorThemeActive)
                 DrawReadingDim(canvas, canvasWPt, Math.Max(canvasHeightPt, 1f));
+        }
+
+        /// <summary>
+        /// Фигуры потока: те, что стоят в ленте и в черновике на месте своих блоков.
+        /// Отдельно от страничного прохода намеренно — там половина работы это клип по
+        /// листу и пометка ушедшей мимо страницы, а здесь ни страниц, ни листа нет.
+        /// Порядок тот же: «за текстом» до текста, остальные после.
+        /// </summary>
+        private void RenderFlowShapes(
+            SKCanvas canvas, float viewTopPt, float viewBotPt,
+            float sheetXPt, float sheetWPt, float sheetHPt,
+            bool clipToSheet, bool beforeText)
+        {
+            List<ShapeEntry> shapes;
+            lock (_renderLock) { shapes = _shapes; }
+            if (shapes.Count == 0) return;
+
+            foreach (var se in shapes)
+            {
+                var wm = se.Block.WrapMode;
+                bool drawsFirst = wm is WrapMode.Behind or WrapMode.Inline;
+                if (drawsFirst != beforeText) continue;
+
+                if (se.Ypt + se.HeightPt < viewTopPt) continue;
+                if (se.Ypt > viewBotPt) continue;
+
+                if (clipToSheet)
+                {
+                    canvas.Save();
+                    canvas.ClipRect(new SKRect(sheetXPt, 0f, sheetXPt + sheetWPt, sheetHPt));
+                }
+
+                // Поворот здесь НЕ применяется: его делает сам рендерер фигуры.
+                DrawShape(canvas,
+                    se.Block,
+                    new SKRect(se.XPt, se.Ypt, se.XPt + se.WidthPt, se.Ypt + se.HeightPt),
+                    offPage: false);
+
+                if (clipToSheet) canvas.Restore();
+            }
         }
 
         /// <summary>
@@ -1923,11 +2166,15 @@ namespace Writersword.Modules.TextEditor.Document
 
             DrawImageBorder(canvas, dst, ie.Block, alpha);
 
-            if (_imagesInTextSelection.Contains(ie.Block))
+            if (SelectionDrawable && _imagesInTextSelection.Contains(ie.Block))
                 canvas.DrawRect(dst, _paintSelection);
 
             if (hasXform) canvas.Restore();
         }
+
+        // Насколько номер списка отступает от края бумаги, когда вынос пришлось
+        // укоротить. Ноль поставил бы цифру вплотную к обрезу.
+        private const float ListMarkerSheetGuardPt = 4f;
 
         /// <summary>
         /// Рисует один параграф (обычный или в ячейке таблицы).
@@ -1996,6 +2243,40 @@ namespace Writersword.Modules.TextEditor.Document
                 float markerAbsPt = (float)lp.ComputedMarkerIndentPt;
                 markerHanging = textLeftPt - markerAbsPt;
                 markerMinGap = (float)lp.MarkerTextMinGapPt;
+
+                // Номер не уходит за левый край своего листа. Вынос отсчитывается от
+                // текстовой зоны, а на листе книги она ближе к краю бумаги, чем на А4:
+                // номер, вынесенный печатным выносом, оказывался за листом, где его
+                // срезал клип страницы, — и пункт оставался вовсе без номера. Здесь
+                // вынос укорачивается ровно настолько, чтобы цифра осталась на бумаге.
+                //
+                // Ограничение живёт в отрисовке, а не в раскладке, намеренно: раскладка
+                // берётся из кеша и про лист, на который её положат, ничего не знает.
+                List<PageRect> markerPages;
+                lock (_renderLock) { markerPages = _pages; }
+
+                float markerX = absX + renderLayout.LeftIndentPt - markerHanging;
+                float? minMarkerX = null;
+
+                if (pl.PageIndex >= 0 && pl.PageIndex < markerPages.Count)
+                {
+                    minMarkerX = markerPages[pl.PageIndex].PadLeftPt + ListMarkerSheetGuardPt;
+                }
+                else if (ReadingActive)
+                {
+                    // Лента: листов нет вовсе, текст идёт одной полосой, и границей
+                    // служит сама колонка. Прежняя проверка опиралась на страницу и
+                    // здесь не срабатывала ни разу — номер уезжал за левый край окна,
+                    // где его не видно и не достать.
+                    //
+                    // Левый край колонки — это AbsXPt абзаца: отступ самого абзаца
+                    // рендер прибавляет отдельно, поэтому вынос отмеряется именно от
+                    // него, а не от текста строки.
+                    minMarkerX = absX + ListMarkerSheetGuardPt;
+                }
+
+                if (minMarkerX is { } limit && markerX < limit)
+                    markerHanging -= limit - markerX;
             }
 
             SKTextRenderer.RenderParagraphLines(
@@ -2029,7 +2310,11 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         // В книге каретки нет: там не печатают, а читают. Позиция при этом живёт и
         // дальше — она служит закладкой, по которой книга открывается в следующий раз.
-        private bool CaretDrawable => _caretVisible && !_zooming && !_caretIndexPending && !SpreadMode;
+        // Каретка в чтении не рисуется вовсе. Мигающая палочка посреди страницы —
+        // обещание правки, которой здесь нет: ни ввода, ни выделения, ни постановки
+        // каретки нажатием.
+        private bool CaretDrawable =>
+            _caretVisible && !_zooming && !_caretIndexPending && !SpreadMode && !ReadingActive;
 
         private void DrawCaretOnCanvas(
             SKCanvas canvas,
@@ -2107,6 +2392,27 @@ namespace Writersword.Modules.TextEditor.Document
             viewTopPt -= bufferPt;
             viewBotPt += bufferPt;
 
+            // Лента: страницы стоят не там, где лежат в раскладке, — видимость
+            // считается по полосам склейки.
+            if (ReadingRibbon)
+            {
+                int ribbonFirst = pages.Count - 1;
+                int ribbonLast = pages.Count - 1;
+                bool ribbonFound = false;
+
+                for (int i = 0; i < pages.Count; i++)
+                {
+                    var (bandTopPt, bandBotPt) = RibbonPageBand(i, pages);
+                    if (bandBotPt < viewTopPt) continue;
+
+                    if (!ribbonFound) { ribbonFirst = i; ribbonFound = true; }
+                    ribbonLast = i;
+                    if (bandTopPt > viewBotPt) break;
+                }
+
+                return (ribbonFirst, ribbonLast);
+            }
+
             // Страницы рядом: видимость определяется визуальными рядами.
             if (_pagesPerRow > 1)
             {
@@ -2136,6 +2442,10 @@ namespace Writersword.Modules.TextEditor.Document
             float xPt, float yPt, List<ParaLayout> layouts,
             SKTextLayout? resolvedLayout = null)
         {
+            // В чтении выделения нет: текст там не правится, а синяя заливка,
+            // оставшаяся с правки, читается как ошибка отрисовки.
+            if (!SelectionDrawable) return;
+
             var sl = resolvedLayout ?? pl.Layout;
             if (sl is null) return;
             int len = pl.Vm?.PlainText?.Length ?? 0;
@@ -2403,7 +2713,7 @@ namespace Writersword.Modules.TextEditor.Document
                 float ex = xPt + emptyCaret.X + alignOffset;
                 float ey = yPt + (emptyCaret.Y - emptyYBase);
                 float eh = emptyCaret.Height > 0.01f ? emptyCaret.Height : FallbackLinePt;
-                canvas.DrawLine(ex, ey, ex, ey + eh, _paintCaret);
+                DrawCaretMark(canvas, ex, ey, eh, ResolveCaretColor(layout, 0, 0));
                 return;
             }
 
@@ -2491,7 +2801,89 @@ namespace Writersword.Modules.TextEditor.Document
 
             float cx = xPt + caret.X + caretAlignOffset;
             float cy = yPt + (caret.Y - yBase);
-            canvas.DrawLine(cx, cy, cx, cy + caret.Height, _paintCaret);
+            DrawCaretMark(canvas, cx, cy, caret.Height, ResolveCaretColor(layout, drawLineIdx, pos));
+        }
+
+        /// <summary>Толщина каретки на экране, в пикселях. Одна и та же при любом масштабе.</summary>
+        private const double CaretWidthPx = 2.0;
+
+        /// <summary>
+        /// Рисует каретку: полоса заданного цвета, шириной ровно в <see cref="CaretWidthPx"/>
+        /// экранных пикселя, посаженная на пиксельную сетку.
+        ///
+        /// Толщина задаётся в пикселях, а не в пунктах документа, и потому не зависит ни от
+        /// масштаба, ни от того, где именно на строке стоит каретка. Прежний штрих в 1,1 пункта
+        /// проходил через масштаб холста и на экране оказывался то одним пикселем, то двумя.
+        ///
+        /// Округление левого края — не украшение: без него полоса шириной в два пикселя
+        /// ложится половинками на три и снова выглядит по-разному в разных местах строки.
+        /// </summary>
+        private void DrawCaretMark(SKCanvas canvas, float xPt, float yPt, float heightPt, SKColor color)
+        {
+            double scale = PtToPx * Zoom;
+            if (scale <= 0.0001) return;
+
+            float widthPt = (float)(CaretWidthPx / scale);
+            float snappedXPt = (float)(Math.Round(xPt * scale) / scale);
+
+            _paintCaret.Color = color;
+            canvas.DrawRect(snappedXPt, yPt, widthPt, heightPt, _paintCaret);
+        }
+
+        /// <summary>
+        /// Цвет каретки — цвет текста, который она сейчас пишет.
+        ///
+        /// Чёрным намертво она была видна только на белом листе: на тёмном виде рабочей
+        /// области каретка пропадала совсем. Цвет берётся у того куска текста, который
+        /// каретка продолжает, и потому сам собой совпадает и с темой листа, и с авторским
+        /// цветом — если человек печатает красным, каретка красная.
+        ///
+        /// Готовый цвет прогоняется через тот же расчёт краски, что и текст: тема листа
+        /// перекрашивает чёрный, оставляя цветное авторским.
+        /// </summary>
+        private SKColor ResolveCaretColor(SKTextLayout layout, int lineIndex, int pos)
+        {
+            // Свой цвет каретки, если человек его задал на вкладке «Вид». Он старше цвета
+            // текста: его и назначают тогда, когда каретка цвета текста плохо различима.
+            if (DocVm?.CanvasSettings.CaretColor is { Length: > 0 } custom
+                && SKColor.TryParse(custom, out var chosen))
+                return chosen;
+
+            SKRunSegment? segment = null;
+
+            if (lineIndex >= 0 && lineIndex < layout.Lines.Count)
+                segment = FindCaretSegment(layout.Lines[lineIndex], pos);
+
+            // Строка подсказана неверно или пуста — ищем по всему абзацу: цвет важнее
+            // экономии на обходе, а строк в абзаце единицы.
+            for (int i = 0; segment is null && i < layout.Lines.Count; i++)
+                segment = FindCaretSegment(layout.Lines[i], pos);
+
+            return SKTextRenderer.ResolveInk(segment?.Color ?? SKColors.Black);
+        }
+
+        /// <summary>
+        /// Кусок текста, вид которого перенимает каретка. Берётся тот, что стоит слева от
+        /// неё: новый символ наследует форматирование предыдущего — так же решает и Word,
+        /// и так же ведёт себя наша лента, показывая начертание под кареткой.
+        /// </summary>
+        private static SKRunSegment? FindCaretSegment(SKLineLayout line, int pos)
+        {
+            int probe = pos > 0 ? pos - 1 : 0;
+            SKRunSegment? previous = null;
+
+            foreach (var seg in line.Segments)
+            {
+                if (seg.IsInlineObject || seg.IsTabJump) continue;
+
+                int start = seg.GlobalCharOffset;
+                int end = start + seg.Text.Length;
+
+                if (probe >= start && probe < end) return seg;
+                if (probe >= end) previous = seg;
+            }
+
+            return previous;
         }
 
         // Общий сдвиг строки по выравниванию (центр/право + абзацный отступ первой строки для

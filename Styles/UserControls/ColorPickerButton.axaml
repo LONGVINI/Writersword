@@ -39,23 +39,36 @@
 							     же значок, что и в самой палитре: белый круг с красным крестом.
 							     Код цвета берётся из Tag: внутри шаблона у кнопки своя область
 							     имён, и до HexColor на UserControl отсюда не дотянуться. -->
+							<!-- Значок вписывается в кнопку, а не задан в точках. Кнопку ставят
+							     разного размера — 16×16 в ленте, 18, 20, 24×17 во вкладке «Вид», — и
+							     значок в жёстких 17 точках на маленькой кнопке оказывался КРУПНЕЕ её
+							     самой: белый круг вылезал за круглую рамку, и весь значок читался
+							     как съехавший от центра. Viewbox масштабирует готовую картинку по
+							     меньшей стороне и держит её посередине при любом размере кнопки.
+							     Отступ в полторы точки — под саму рамку: без него значок ложится
+							     прямо на неё. -->
 							<Panel Name="NoColorMark" IsHitTestVisible="False"
+							       Margin="1.5"
 							       IsVisible="{TemplateBinding Tag, Converter={x:Static conv:IsNoColorCodeConverter.Instance}}">
-								<Ellipse Width="17" Height="17" Fill="White"
-								         HorizontalAlignment="Center" VerticalAlignment="Center"/>
-								<!-- Крест собран из двух повёрнутых полосок, а не из Line: у Line
-								     точки заданы в абсолютных координатах, размер фигуры берётся по
-								     границам этой геометрии, и раскладка ставит фигуру по своему
-								     выравниванию — нарисованное уезжает от центра кружка.
-								     Прямоугольник с заданными сторонами центрируется раскладкой, а
-								     поворот идёт вокруг его середины (RenderTransformOrigin по
-								     умолчанию — центр), поэтому крест стоит ровно. -->
-								<Rectangle Width="12" Height="1.6" Fill="#E53935"
-								           HorizontalAlignment="Center" VerticalAlignment="Center"
-								           RenderTransform="rotate(45deg)"/>
-								<Rectangle Width="12" Height="1.6" Fill="#E53935"
-								           HorizontalAlignment="Center" VerticalAlignment="Center"
-								           RenderTransform="rotate(-45deg)"/>
+								<Viewbox Stretch="Uniform"
+								         HorizontalAlignment="Center" VerticalAlignment="Center">
+									<Panel Width="20" Height="20">
+										<Ellipse Width="20" Height="20" Fill="White"/>
+										<!-- Крест собран из двух повёрнутых полосок, а не из Line: у Line
+										     точки заданы в абсолютных координатах, размер фигуры берётся
+										     по границам этой геометрии, и раскладка ставит фигуру по
+										     своему выравниванию — нарисованное уезжает от центра кружка.
+										     Прямоугольник с заданными сторонами центрируется раскладкой,
+										     а поворот идёт вокруг его середины (RenderTransformOrigin по
+										     умолчанию — центр), поэтому крест стоит ровно. -->
+										<Rectangle Width="14" Height="2" Fill="#E53935"
+										           HorizontalAlignment="Center" VerticalAlignment="Center"
+										           RenderTransform="rotate(45deg)"/>
+										<Rectangle Width="14" Height="2" Fill="#E53935"
+										           HorizontalAlignment="Center" VerticalAlignment="Center"
+										           RenderTransform="rotate(-45deg)"/>
+									</Panel>
+								</Viewbox>
 							</Panel>
 						</Panel>
 					</ControlTemplate>
@@ -478,8 +491,18 @@
 							</Setter>
 						</Style>
 
+						<!-- Число под боковой полосой. Ширина задана, а текст
+						     выровнен по центру внутри неё: иначе «0» и «360»
+						     занимают разную ширину — подпись при каждом движении
+						     переезжает сама под собой, а колонка рядом со
+						     спектром меняет ширину, и квадрат ездит по
+						     горизонтали, пока тянешь полосу. Тридцать — как у
+						     чисел в строках RGB, чтобы цифры в обоих местах
+						     стояли одинаково. -->
 						<Style Selector="TextBlock.miniVLabel">
+							<Setter Property="Width" Value="30"/>
 							<Setter Property="FontSize" Value="11"/>
+							<Setter Property="TextAlignment" Value="Center"/>
 							<Setter Property="HorizontalAlignment" Value="Center"/>
 							<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
 						</Style>
@@ -830,12 +853,26 @@
 												     в кнопку. -->
 												<Panel IsHitTestVisible="False"
 												       IsVisible="{Binding Converter={x:Static res:PaletteConverters.IsNoColor}}">
-													<Ellipse Width="22" Height="22" Fill="White"
-													         HorizontalAlignment="Center" VerticalAlignment="Center"/>
-													<Line StartPoint="6,20" EndPoint="20,6"
-													      Stroke="#E53935" StrokeThickness="2"/>
-													<Line StartPoint="6,6" EndPoint="20,20"
-													      Stroke="#E53935" StrokeThickness="2"/>
+													<!-- Значок ровно тот же, что и на самой кнопке пикера, и собран
+													     так же: круг и крест лежат в ОДНОЙ панели 20×20 и
+													     вписываются в ячейку целиком.
+													     Порознь их центрировать нельзя: круг и крест — два разных
+													     элемента, каждый со своим габаритом, и в ячейке другого
+													     размера их середины расходятся на доли точки, а на глаз
+													     это уже съехавший крест. Viewbox центрирует картинку один
+													     раз — как единое целое. -->
+													<Viewbox Stretch="Uniform" Margin="2"
+													         HorizontalAlignment="Center" VerticalAlignment="Center">
+														<Panel Width="20" Height="20">
+															<Ellipse Width="20" Height="20" Fill="White"/>
+															<Rectangle Width="14" Height="2" Fill="#E53935"
+															           HorizontalAlignment="Center" VerticalAlignment="Center"
+															           RenderTransform="rotate(45deg)"/>
+															<Rectangle Width="14" Height="2" Fill="#E53935"
+															           HorizontalAlignment="Center" VerticalAlignment="Center"
+															           RenderTransform="rotate(-45deg)"/>
+														</Panel>
+													</Viewbox>
 												</Panel>
 											</Panel>
 										</Border>
@@ -882,12 +919,26 @@
 												     в кнопку. -->
 												<Panel IsHitTestVisible="False"
 												       IsVisible="{Binding Converter={x:Static res:PaletteConverters.IsNoColor}}">
-													<Ellipse Width="22" Height="22" Fill="White"
-													         HorizontalAlignment="Center" VerticalAlignment="Center"/>
-													<Line StartPoint="6,20" EndPoint="20,6"
-													      Stroke="#E53935" StrokeThickness="2"/>
-													<Line StartPoint="6,6" EndPoint="20,20"
-													      Stroke="#E53935" StrokeThickness="2"/>
+													<!-- Значок ровно тот же, что и на самой кнопке пикера, и собран
+													     так же: круг и крест лежат в ОДНОЙ панели 20×20 и
+													     вписываются в ячейку целиком.
+													     Порознь их центрировать нельзя: круг и крест — два разных
+													     элемента, каждый со своим габаритом, и в ячейке другого
+													     размера их середины расходятся на доли точки, а на глаз
+													     это уже съехавший крест. Viewbox центрирует картинку один
+													     раз — как единое целое. -->
+													<Viewbox Stretch="Uniform" Margin="2"
+													         HorizontalAlignment="Center" VerticalAlignment="Center">
+														<Panel Width="20" Height="20">
+															<Ellipse Width="20" Height="20" Fill="White"/>
+															<Rectangle Width="14" Height="2" Fill="#E53935"
+															           HorizontalAlignment="Center" VerticalAlignment="Center"
+															           RenderTransform="rotate(45deg)"/>
+															<Rectangle Width="14" Height="2" Fill="#E53935"
+															           HorizontalAlignment="Center" VerticalAlignment="Center"
+															           RenderTransform="rotate(-45deg)"/>
+														</Panel>
+													</Viewbox>
 												</Panel>
 											</Panel>
 										</Border>

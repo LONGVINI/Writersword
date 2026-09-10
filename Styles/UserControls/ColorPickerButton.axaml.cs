@@ -599,7 +599,48 @@ namespace Writersword.Styles.UserControls
             var r = (byte)Math.Clamp(Math.Round(ReadMiniSlider(rName)), 0, 255);
             var g = (byte)Math.Clamp(Math.Round(ReadMiniSlider(gName)), 0, 255);
             var b = (byte)Math.Clamp(Math.Round(ReadMiniSlider(bName)), 0, 255);
-            PushToSpectrum(Color.FromRgb(r, g, b));
+            PushWithoutEcho(new[] { rName, gName, bName },
+                () => PushToSpectrum(Color.FromRgb(r, g, b)));
+        }
+
+        // ── Эхо ползунка, за который сейчас держатся ──────────────────────
+        //
+        // Ползунок отдаёт цвет спектру, спектр пересчитывает его и рассылает
+        // обратно по всем ползункам — включая тот, который его и подвинул.
+        // Обратная дорога идёт через восьмибитный RGB и HSV с округлением, и
+        // возвращается не то же самое число: R=137 приходит как 136 или 138,
+        // V=57.3 — как 57.6.
+        //
+        // Для ползунка это «кто-то снаружи подвинул значение»: он ставит
+        // бегунок туда, куда сказали, а перетаскивание в это время считает
+        // смещение от точки захвата. Два хозяина у одного значения — бегунок
+        // и дёргается под курсором, а вместе с ним прыгает точка на квадрате
+        // и сам цвет.
+        //
+        // Поэтому на время передачи ползунки-источники исключаются из
+        // рассылки: пока человек их держит, значение задаёт он, и
+        // подтверждать его пересчётом незачем. Цвет дорожки при этом
+        // обновляется как обычно — он от эха не зависит, и градиент под
+        // бегунком продолжает жить.
+        //
+        // Заслонка снимается в прежнее состояние, а не в null: вызовы
+        // вложены друг в друга (ползунок → спектр → рассылка), и жёсткое
+        // обнуление открыло бы эхо на середине передачи.
+        private string[]? _echoBlocked;
+
+        private bool EchoBlocked(string name) =>
+            _echoBlocked is not null && Array.IndexOf(_echoBlocked, name) >= 0;
+
+        /// <summary>
+        /// Отдать цвет наружу, не пуская пересчёт обратно в те ползунки,
+        /// которыми сейчас двигают.
+        /// </summary>
+        private void PushWithoutEcho(string[] sources, Action push)
+        {
+            var previous = _echoBlocked;
+            _echoBlocked = sources;
+            try { push(); }
+            finally { _echoBlocked = previous; }
         }
 
         private void OnValHslChanged(object? sender, RangeBaseValueChangedEventArgs e)
@@ -608,7 +649,8 @@ namespace Writersword.Styles.UserControls
             var h = ReadMiniSlider("ValSlHslH");
             var s = ReadMiniSlider("ValSlHslS") / 100.0;
             var l = ReadMiniSlider("ValSlHslL") / 100.0;
-            PushToSpectrum(HslToRgb(h, s, l));
+            PushWithoutEcho(new[] { "ValSlHslH", "ValSlHslS", "ValSlHslL" },
+                () => PushToSpectrum(HslToRgb(h, s, l)));
         }
 
         private void OnValHsvChanged(object? sender, RangeBaseValueChangedEventArgs e)
@@ -617,8 +659,10 @@ namespace Writersword.Styles.UserControls
             var h = ReadMiniSlider("ValSlHsvH");
             var s = ReadMiniSlider("ValSlHsvS") / 100.0;
             var v = ReadMiniSlider("ValSlHsvV") / 100.0;
-            _spectrum.HsvColor = new HsvColor(1, ((h % 360) + 360) % 360,
-                Math.Clamp(s, 0, 1), Math.Clamp(v, 0, 1));
+            ColorSpectrum spectrum = _spectrum;
+            PushWithoutEcho(new[] { "ValSlHsvH", "ValSlHsvS", "ValSlHsvV" },
+                () => spectrum.HsvColor = new HsvColor(1, ((h % 360) + 360) % 360,
+                    Math.Clamp(s, 0, 1), Math.Clamp(v, 0, 1)));
         }
 
         /// <summary>
@@ -629,9 +673,11 @@ namespace Writersword.Styles.UserControls
         private void OnMiniValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
         {
             if (_syncingMini || _spectrum is null) return;
-            var hsv = _spectrum.HsvColor;
-            _spectrum.HsvColor = new HsvColor(1, hsv.H, hsv.S,
-                Math.Clamp(e.NewValue / 100.0, 0, 1));
+            ColorSpectrum spectrum = _spectrum;
+            var hsv = spectrum.HsvColor;
+            var v = Math.Clamp(e.NewValue / 100.0, 0, 1);
+            PushWithoutEcho(new[] { "MiniSlVv" },
+                () => spectrum.HsvColor = new HsvColor(1, hsv.H, hsv.S, v));
         }
 
         /// <summary>
@@ -664,7 +710,7 @@ namespace Writersword.Styles.UserControls
 
         private void SetMiniSliderValue(string name, double value)
         {
-            if (_miniRoot is null) return;
+            if (_miniRoot is null || EchoBlocked(name)) return;
             var slider = FindInFlyout<Slider>(_miniRoot, name);
             if (slider is not null) slider.Value = value;
         }
@@ -684,8 +730,11 @@ namespace Writersword.Styles.UserControls
         private void OnMiniHueChanged(object? sender, RangeBaseValueChangedEventArgs e)
         {
             if (_syncingMini || _spectrum is null) return;
-            var hsv = _spectrum.HsvColor;
-            _spectrum.HsvColor = new HsvColor(1, Math.Clamp(e.NewValue, 0, 360), hsv.S, hsv.V);
+            ColorSpectrum spectrum = _spectrum;
+            var hsv = spectrum.HsvColor;
+            var h = Math.Clamp(e.NewValue, 0, 360);
+            PushWithoutEcho(new[] { "MiniSlH" },
+                () => spectrum.HsvColor = new HsvColor(1, h, hsv.S, hsv.V));
         }
 
         /// <summary>Отдать спектру цвет в RGB — единственная точка, из которой он уходит наружу.</summary>
@@ -763,7 +812,12 @@ namespace Writersword.Styles.UserControls
             if (_miniRoot is null) return;
             var slider = FindInFlyout<Slider>(_miniRoot, name);
             if (slider is null) return;
-            slider.Value = value;
+
+            // Ползунку, который сейчас держат, значение не навязывается: он
+            // сам его и задал, а обратно оно приходит округлённым (см.
+            // PushWithoutEcho). Дорожка перекрашивается в любом случае.
+            if (!EchoBlocked(name)) slider.Value = value;
+
             slider.Background = background;
         }
 

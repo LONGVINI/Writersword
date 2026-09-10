@@ -261,8 +261,7 @@
 							<ToggleButton Classes="RibbonToggleLarge"
 							              Command="{Binding WrapInlineCommand}"
 							              IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Inline, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Картинка стоит в тексте как блок и сдвигает строки"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Картинка стоит в тексте как блок и сдвигает строки">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
 									          Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM7 8h10v8H7V8z"/>
@@ -273,8 +272,7 @@
 							<ToggleButton Classes="RibbonToggleLarge"
 							              Command="{Binding WrapSquareCommand}"
 							              IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Square, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Текст обтекает картинку по прямоугольнику"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Текст обтекает картинку по прямоугольнику">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
 									          Data="M3 3h18v2H3V3zm0 4h8v2H3V7zm0 4h8v2H3v-2zm0 4h8v2H3v-2zm0 4h18v2H3v-2zM13 7h8v8h-8V7z"/>
@@ -285,8 +283,7 @@
 							<ToggleButton Classes="RibbonToggleLarge"
 							              Command="{Binding WrapInFrontCommand}"
 							              IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=InFront, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Объект лежит поверх текста и не двигает строки"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Объект лежит поверх текста и не двигает строки">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
 									          Data="M3 4h18v2H3V4zm0 14h18v2H3v-2zM3 8h18v2H3V8zm0 4h18v2H3v-2zM8 7h8v10H8V7z"/>
@@ -297,8 +294,7 @@
 							<ToggleButton Classes="RibbonToggleLarge"
 							              Command="{Binding WrapBehindCommand}"
 							              IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Behind, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Картинка лежит за текстом, выделение такой картинки — Ctrl+клик"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Картинка лежит за текстом, выделение такой картинки — Ctrl+клик">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
 									          Data="M5 4h14v14H5V4zM3 8h18v2H3zm0 4h18v2H3z"/>
@@ -339,8 +335,7 @@
 								               Increment="1"
 								               FormatString="0.##"
 								               ClipValueToMinMax="True"
-								               behaviours:TooltipBehavior.Tip="Ширина картинки в выбранных единицах. В режиме обрезки заблокирована"
-								               behaviours:TooltipBehavior.ShowDelay="700"/>
+								               behaviours:TooltipBehavior.Tip="Ширина картинки в выбранных единицах. В режиме обрезки заблокирована"/>
 
 								<PathIcon Grid.Row="1" Grid.Column="0"
 								          Width="13" Height="13" Margin="0 0 3 0"
@@ -354,8 +349,7 @@
 								               Increment="1"
 								               FormatString="0.##"
 								               ClipValueToMinMax="True"
-								               behaviours:TooltipBehavior.Tip="Высота картинки в выбранных единицах. В режиме обрезки заблокирована"
-								               behaviours:TooltipBehavior.ShowDelay="700"/>
+								               behaviours:TooltipBehavior.Tip="Высота картинки в выбранных единицах. В режиме обрезки заблокирована"/>
 
 								<!-- Единицы и пропорции — колонкой справа от полей: единицы у строки -->
 								<!-- ширины, замок у строки высоты.                                   -->
@@ -363,8 +357,7 @@
 								        Classes="UnitToggle" Content="{Binding UnitLabel}"
 								        Margin="4 0 0 3" VerticalAlignment="Center"
 								        Command="{Binding ToggleUnitCommand}"
-								        behaviours:TooltipBehavior.Tip="Единицы размеров — миллиметры или пиксели. Нажатие переключает"
-								        behaviours:TooltipBehavior.ShowDelay="700"/>
+								        behaviours:TooltipBehavior.Tip="Единицы размеров — миллиметры или пиксели. Нажатие переключает"/>
 
 								<ToggleButton Grid.Row="1" Grid.Column="2"
 								              Classes="SegSmall" Margin="4 0 0 3"
@@ -372,8 +365,7 @@
 								              VerticalAlignment="Center"
 								              Command="{Binding ToggleAspectCommand}"
 								              IsChecked="{Binding IsAspectLocked, Mode=OneWay}"
-								              behaviours:TooltipBehavior.Tip="Сохранять пропорции при изменении размера"
-								              behaviours:TooltipBehavior.ShowDelay="700">
+								              behaviours:TooltipBehavior.Tip="Сохранять пропорции при изменении размера">
 									<PathIcon Width="14" Height="14"
 									          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
 								</ToggleButton>
@@ -394,8 +386,7 @@
 							<StackPanel Orientation="Horizontal" Spacing="2">
 								<Button Classes="RibbonBtn"
 								        Command="{Binding RotateLeft90Command}"
-								        behaviours:TooltipBehavior.Tip="Повернуть на 90 градусов против часовой стрелки"
-								        behaviours:TooltipBehavior.ShowDelay="700">
+								        behaviours:TooltipBehavior.Tip="Повернуть на 90 градусов против часовой стрелки">
 									<PathIcon Width="14" Height="14"
 									          Data="M7.11 8.53L5.7 7.11C4.8 8.27 4.24 9.61 4.07 11h2.02c.14-.87.49-1.72 1.02-2.47zM6.09 13H4.07c.17 1.39.72 2.73 1.62 3.89l1.41-1.42c-.52-.75-.87-1.59-1.01-2.47zm1.01 5.32c1.16.9 2.51 1.44 3.9 1.61V17.9c-.87-.15-1.71-.49-2.46-1.03L7.1 18.32zM13 4.07V1L8.45 5.55 13 10V6.09c2.84.48 5 2.94 5 5.91s-2.16 5.43-5 5.91v2.02c3.95-.49 7-3.85 7-7.93s-3.05-7.44-7-7.93z"/>
 								</Button>
@@ -406,13 +397,11 @@
 								               Increment="1"
 								               FormatString="0.#"
 								               ClipValueToMinMax="True"
-								               behaviours:TooltipBehavior.Tip="Точный угол поворота картинки в градусах"
-								               behaviours:TooltipBehavior.ShowDelay="700"/>
+								               behaviours:TooltipBehavior.Tip="Точный угол поворота картинки в градусах"/>
 
 								<Button Classes="RibbonBtn"
 								        Command="{Binding RotateRight90Command}"
-								        behaviours:TooltipBehavior.Tip="Повернуть на 90 градусов по часовой стрелке"
-								        behaviours:TooltipBehavior.ShowDelay="700">
+								        behaviours:TooltipBehavior.Tip="Повернуть на 90 градусов по часовой стрелке">
 									<PathIcon Width="14" Height="14"
 									          Data="M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11c-.17-1.39-.72-2.73-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.17 2.74-.71 3.9-1.61l-1.44-1.44c-.75.54-1.59.89-2.46 1.03zm3.89-2.42l1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z"/>
 								</Button>
@@ -421,8 +410,7 @@
 							<Slider Classes="knob" Width="140"
 							        Minimum="0" Maximum="359.9"
 							        Value="{Binding RotationAngle, Mode=TwoWay}"
-							        behaviours:TooltipBehavior.Tip="Плавный поворот картинки"
-							        behaviours:TooltipBehavior.ShowDelay="700"/>
+							        behaviours:TooltipBehavior.Tip="Плавный поворот картинки"/>
 
 						</StackPanel>
 					</DockPanel>
@@ -451,8 +439,7 @@
 							<!-- срабатывала одновременно с подсказками полей внутри, и две всплывающие -->
 							<!-- панели накладывались друг на друга, закрывая текст обеих.               -->
 							<TextBlock Classes="RibbonGroupLabel" Text="Отступы обтекания"
-							           behaviours:TooltipBehavior.Tip="Отступ текста от краёв картинки, в пунктах"
-							           behaviours:TooltipBehavior.ShowDelay="700"/>
+							           behaviours:TooltipBehavior.Tip="Отступ текста от краёв картинки, в пунктах"/>
 						</Grid>
 						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
 
@@ -468,8 +455,7 @@
 									               Value="{Binding WrapPadTop, Mode=TwoWay}"
 									               Minimum="0" Maximum="50" Increment="0.1"
 									               FormatString="0.##" ClipValueToMinMax="True"
-									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки сверху"
-									               behaviours:TooltipBehavior.ShowDelay="700"/>
+									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки сверху"/>
 								</StackPanel>
 								<!-- Единицы над замком, обе кнопки — колонкой справа от полей.
 								     Размеры не задаются: их держит общий стиль, и любое местное
@@ -479,8 +465,7 @@
 								        Margin="6 0 0 2"
 								        VerticalAlignment="Center"
 								        Command="{Binding TogglePadUnitCommand}"
-								        behaviours:TooltipBehavior.Tip="Единицы отступов — миллиметры или пиксели. Нажатие переключает"
-								        behaviours:TooltipBehavior.ShowDelay="700"/>
+								        behaviours:TooltipBehavior.Tip="Единицы отступов — миллиметры или пиксели. Нажатие переключает"/>
 
 								<ToggleButton Grid.Row="1" Grid.Column="2"
 								              Classes="SegSmall" Margin="6 0 0 0"
@@ -488,8 +473,7 @@
 								              VerticalAlignment="Center"
 								              Command="{Binding ToggleWrapPadLinkCommand}"
 								              IsChecked="{Binding IsWrapPadLinked, Mode=OneWay}"
-								              behaviours:TooltipBehavior.Tip="Связать стороны — правка одного отступа применяется ко всем четырём"
-								              behaviours:TooltipBehavior.ShowDelay="700">
+								              behaviours:TooltipBehavior.Tip="Связать стороны — правка одного отступа применяется ко всем четырём">
 									<PathIcon Width="13" Height="13"
 									          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
 								</ToggleButton>
@@ -501,8 +485,7 @@
 									               Value="{Binding WrapPadBottom, Mode=TwoWay}"
 									               Minimum="0" Maximum="50" Increment="0.1"
 									               FormatString="0.##" ClipValueToMinMax="True"
-									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки снизу"
-									               behaviours:TooltipBehavior.ShowDelay="700"/>
+									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки снизу"/>
 								</StackPanel>
 								<StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="2" Margin="0 0 4 0">
 									<TextBlock Text="←" FontSize="12" VerticalAlignment="Center"
@@ -511,8 +494,7 @@
 									               Value="{Binding WrapPadLeft, Mode=TwoWay}"
 									               Minimum="0" Maximum="50" Increment="0.1"
 									               FormatString="0.##" ClipValueToMinMax="True"
-									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки слева"
-									               behaviours:TooltipBehavior.ShowDelay="700"/>
+									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки слева"/>
 								</StackPanel>
 								<StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="2">
 									<TextBlock Text="→" FontSize="12" VerticalAlignment="Center"
@@ -521,8 +503,7 @@
 									               Value="{Binding WrapPadRight, Mode=TwoWay}"
 									               Minimum="0" Maximum="50" Increment="0.1"
 									               FormatString="0.##" ClipValueToMinMax="True"
-									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки справа"
-									               behaviours:TooltipBehavior.ShowDelay="700"/>
+									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки справа"/>
 								</StackPanel>
 							</Grid>
 
@@ -542,8 +523,7 @@
 							<ToggleButton Classes="RibbonToggleLarge"
 							              Command="{Binding WrapSideLargestCommand}"
 							              IsChecked="{Binding CurrentWrapSide, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=LargestOnly, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Текст идёт только по той стороне, где больше места"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Текст идёт только по той стороне, где больше места">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
 									          Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM3 7h6v2H3V7zm0 4h6v2H3v-2zm0 4h6v2H3v-2zM11 7h10v8H11V7z"/>
@@ -554,8 +534,7 @@
 							<ToggleButton Classes="RibbonToggleLarge"
 							              Command="{Binding WrapSideBothCommand}"
 							              IsChecked="{Binding CurrentWrapSide, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=BothSides, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Строка идёт слева от картинки и продолжается справа"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Строка идёт слева от картинки и продолжается справа">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
 									          Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM3 7h4v2H3V7zm0 4h4v2H3v-2zm0 4h4v2H3v-2zm14-8h4v2h-4V7zm0 4h4v2h-4v-2zm0 4h4v2h-4v-2zM9 7h6v8H9V7z"/>
@@ -566,8 +545,7 @@
 							<ToggleButton Classes="RibbonToggleLarge"
 							              Command="{Binding WrapSideLeftCommand}"
 							              IsChecked="{Binding CurrentWrapSide, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=LeftOnly, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Текст идёт только слева от картинки"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Текст идёт только слева от картинки">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
 									          Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM3 7h8v2H3V7zm0 4h8v2H3v-2zm0 4h8v2H3v-2zM13 7h8v8h-8V7z"/>
@@ -578,8 +556,7 @@
 							<ToggleButton Classes="RibbonToggleLarge"
 							              Command="{Binding WrapSideRightCommand}"
 							              IsChecked="{Binding CurrentWrapSide, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=RightOnly, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Текст идёт только справа от картинки"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Текст идёт только справа от картинки">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
 									          Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM13 7h8v2h-8V7zm0 4h8v2h-8v-2zm0 4h8v2h-8v-2zM3 7h8v8H3V7z"/>
@@ -606,15 +583,13 @@
 							<StackPanel Spacing="2" VerticalAlignment="Center">
 								<Button Classes="RibbonBtn" MinHeight="24"
 								        Command="{Binding BringToFrontCommand}"
-								        behaviours:TooltipBehavior.Tip="На передний план — поверх остальных объектов"
-								        behaviours:TooltipBehavior.ShowDelay="700">
+								        behaviours:TooltipBehavior.Tip="На передний план — поверх остальных объектов">
 									<PathIcon Width="14" Height="14" Data="M8 3h13v13H8V3zm-5 5h3v10h10v3H3V8z"/>
 								</Button>
 
 								<Button Classes="RibbonBtn" MinHeight="24"
 								        Command="{Binding SendToBackCommand}"
-								        behaviours:TooltipBehavior.Tip="На задний план — под остальные объекты"
-								        behaviours:TooltipBehavior.ShowDelay="700">
+								        behaviours:TooltipBehavior.Tip="На задний план — под остальные объекты">
 									<PathIcon Width="14" Height="14" Data="M3 3h13v5h-3V6H6v7h2v3H3V3zm8 5h10v13H11V8z"/>
 								</Button>
 							</StackPanel>
@@ -623,8 +598,7 @@
 							              IsVisible="{Binding IsPinAvailable}"
 							              Command="{Binding TogglePinToPageCommand}"
 							              IsChecked="{Binding IsPinnedToPage, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Картинка остаётся на текущей странице и не переносится на другую вслед за текстом. Страница и все страницы до неё сохраняются, даже если текста на них не останется"
-							              behaviours:TooltipBehavior.ShowDelay="700">
+							              behaviours:TooltipBehavior.Tip="Картинка остаётся на текущей странице и не переносится на другую вслед за текстом. Страница и все страницы до неё сохраняются, даже если текста на них не останется">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
 									          Data="M14 4v6l3 3v2h-4v5l-1 1-1-1v-5H7v-2l3-3V4H9V2h6v2h-1z"/>

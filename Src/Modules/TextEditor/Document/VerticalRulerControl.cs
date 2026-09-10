@@ -27,18 +27,23 @@ namespace Writersword.Modules.TextEditor.Document
         private const double MinorTickWidthPx = 6.0;
         private const double TinyTickWidthPx = 3.0;
 
-        private static readonly SKColor ColBg = new(0xF0, 0xF0, 0xF0);
-        private static readonly SKColor ColMarginZone = new(0xD8, 0xD8, 0xD8);
-        private static readonly SKColor ColTickMajor = new(0x60, 0x60, 0x60);
-        private static readonly SKColor ColTickMinor = new(0x99, 0x99, 0x99);
-        private static readonly SKColor ColTickTiny = new(0xBB, 0xBB, 0xBB);
-        private static readonly SKColor ColTickMajorM = new(0x99, 0x99, 0x99);
-        private static readonly SKColor ColTickMinorM = new(0xBB, 0xBB, 0xBB);
-        private static readonly SKColor ColTickTinyM = new(0xD0, 0xD0, 0xD0);
-        private static readonly SKColor ColLabel = new(0x44, 0x44, 0x44);
-        private static readonly SKColor ColLabelMargin = new(0x88, 0x88, 0x88);
-        private static readonly SKColor ColBorder = new(0xCC, 0xCC, 0xCC);
-        private static readonly SKColor ColMarginHandle = new(0x88, 0x88, 0x88);
+        // Палитра берётся у листа и пересобирается перед каждой отрисовкой — та
+        // же, что у горизонтальной линейки: две линейки одного листа обязаны
+        // выглядеть одинаково, а собранные по отдельности они разойдутся.
+        private RulerPalette _palette = RulerPalette.Default;
+
+        private SKColor ColBg => _palette.Sheet;
+        private SKColor ColMarginZone => _palette.MarginZone;
+        private SKColor ColTickMajor => _palette.TickMajor;
+        private SKColor ColTickMinor => _palette.TickMinor;
+        private SKColor ColTickTiny => _palette.TickTiny;
+        private SKColor ColTickMajorM => _palette.TickMajorMuted;
+        private SKColor ColTickMinorM => _palette.TickMinorMuted;
+        private SKColor ColTickTinyM => _palette.TickTinyMuted;
+        private SKColor ColLabel => _palette.Label;
+        private SKColor ColLabelMargin => _palette.LabelMuted;
+        private SKColor ColBorder => _palette.Border;
+        private SKColor ColMarginHandle => _palette.MarginHandle;
 
         private RulerViewModel? _vm;
         private bool _isDraggingMargin;
@@ -76,6 +81,9 @@ namespace Writersword.Modules.TextEditor.Document
         internal void RenderWithSKCanvas(SKCanvas canvas)
         {
             if (_vm is null) return;
+
+            // Цвета берутся у листа перед каждым кадром: вид меняется на ходу.
+            _palette = RulerPalette.Resolve(_vm);
 
             float w = (float)RulerWidthPx;
             float h = (float)Bounds.Height;

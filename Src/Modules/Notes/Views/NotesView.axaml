@@ -9,17 +9,66 @@
     <UserControl.Styles>
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
 
-        <!-- Общий проект пока не задаёт checked-состояние для ToggleButton.
-             Локально добавляется только активное состояние форматирования. -->
-        <Style Selector="ToggleButton.notesToggle:checked">
-            <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}" />
+        <!-- Цвета и состояния кнопок задают общие RibbonBtn и RibbonToggle.
+             Локальные стили выравнивают размеры и сохраняют фокус редактора. -->
+        <Style Selector="Button.notesTool">
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Margin" Value="0,2,4,2" />
         </Style>
-        <Style Selector="ToggleButton.notesToggle:checked /template/ ContentPresenter">
+        <Style Selector="Button.notesIcon">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="MinWidth" Value="28" />
+        </Style>
+        <Style Selector="ToggleButton.notesTool">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinWidth" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Margin" Value="0,2,4,2" />
+        </Style>
+        <Style Selector="ToggleButton.notesTool:disabled /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource TextDisabledBrush}" />
+        </Style>
+
+        <!-- Состояния строк используют кисти приложения: выбранная страница
+             сохраняет акцент при наведении и переключении цветовой темы. -->
+        <Style Selector="ListBox.notesPages ListBoxItem">
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        </Style>
+        <Style Selector="ListBox.notesPages ListBoxItem /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        </Style>
+        <Style Selector="ListBox.notesPages ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource BgHoverBrush}" />
+        </Style>
+        <Style Selector="ListBox.notesPages ListBoxItem:selected /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}" />
             <Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}" />
+        </Style>
+        <Style Selector="ListBox.notesPages ListBoxItem:selected:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}" />
+        </Style>
+        <Style Selector="ListBox.notesPages ListBoxItem PathIcon">
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+        </Style>
+        <Style Selector="ListBox.notesPages ListBoxItem:selected PathIcon">
+            <Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}" />
         </Style>
     </UserControl.Styles>
 
@@ -28,131 +77,108 @@
                 Background="{DynamicResource BgPanelBrush}"
                 BorderBrush="{DynamicResource BorderDefaultBrush}"
                 BorderThickness="0,0,0,1"
-                Padding="8,6">
+                Padding="8,4">
+            <!-- Группы переносятся целиком, чтобы связанные команды оставались
+                 рядом при уменьшении ширины модуля. -->
             <WrapPanel Orientation="Horizontal">
-                <Button Width="30" Height="28" Padding="6" Margin="0,0,4,0"
-                        Background="{DynamicResource BgSurfaceBrush}"
-                        BorderBrush="{DynamicResource BorderDefaultBrush}"
-                        BorderThickness="1" CornerRadius="6" Focusable="False"
-                        ToolTip.Tip="Показать или скрыть страницы"
-                        Click="OnTogglePagesClick">
-                    <PathIcon Width="14" Height="14"
-                              Data="M3 3h6v18H3V3zm8 0h10v18H11V3zM5 5v14h2V5H5zm8 0v14h6V5h-6z" />
-                </Button>
-
-                <Button Height="28" Padding="8,4" Margin="0,0,8,0"
-                        Background="{DynamicResource BgSurfaceBrush}"
-                        BorderBrush="{DynamicResource BorderDefaultBrush}"
-                        BorderThickness="1" CornerRadius="6" Focusable="False"
-                        ToolTip.Tip="Добавить страницу"
-                        IsEnabled="{Binding !IsReadOnly}"
-                        Click="OnAddPageClick">
-                    <StackPanel Orientation="Horizontal" Spacing="5">
+                <StackPanel Orientation="Horizontal" Margin="0,0,4,0">
+                    <Button Classes="RibbonBtn notesTool notesIcon"
+                            ToolTip.Tip="Показать или скрыть страницы"
+                            Click="OnTogglePagesClick">
                         <PathIcon Width="14" Height="14"
-                                  Data="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm1 2.5L17.5 7H15V4.5zM11 10h2v3h3v2h-3v3h-2v-3H8v-2h3v-3z" />
-                        <TextBlock Text="Новая страница"
-                                   FontSize="{DynamicResource FontSizeS}"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
+                                  Data="M3 3h18v18H3V3zm2 2v14h4V5H5zm6 0v14h8V5h-8z" />
+                    </Button>
+                    <Button Classes="RibbonBtn notesTool" Padding="8,4"
+                            ToolTip.Tip="Добавить страницу"
+                            IsEnabled="{Binding !IsReadOnly}"
+                            Click="OnAddPageClick">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <PathIcon Width="14" Height="14"
+                                      Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                            <TextBlock Text="Новая страница"
+                                       FontSize="{DynamicResource FontSizeS}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
 
-                <ComboBox Width="150" Height="28" Margin="0,0,8,0" Padding="8,3"
+                <ComboBox Width="150" Height="28" MinHeight="28"
+                          Margin="0,2,8,2" Padding="8,3"
+                          FontSize="{DynamicResource FontSizeS}"
                           IsVisible="{Binding IsCompactHeaderVisible}"
                           ItemsSource="{Binding Pages}"
                           SelectedItem="{Binding SelectedPage, Mode=TwoWay}"
                           DisplayMemberBinding="{Binding Title}" />
 
-                <ToggleButton Classes="notesToggle" Width="34" Height="28" Padding="5" Margin="0,0,3,0"
-                              Background="{DynamicResource BgSurfaceBrush}"
-                              BorderBrush="{DynamicResource BorderDefaultBrush}"
-                              BorderThickness="1" CornerRadius="4" Focusable="False"
-                              IsChecked="{Binding IsParagraphSelected, Mode=OneWay}"
-                              Tag="Paragraph" ToolTip.Tip="Обычный текст"
-                              IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
-                    <PathIcon Width="14" Height="14" Data="M4 5h16v2H4V5zm0 5h16v2H4v-2zm0 5h11v2H4v-2z" />
-                </ToggleButton>
-                <ToggleButton Classes="notesToggle" Width="34" Height="28" Padding="5" Margin="0,0,3,0"
-                              Background="{DynamicResource BgSurfaceBrush}"
-                              BorderBrush="{DynamicResource BorderDefaultBrush}"
-                              BorderThickness="1" CornerRadius="4" Focusable="False"
-                              IsChecked="{Binding IsHeading1Selected, Mode=OneWay}"
-                              Tag="Heading1" ToolTip.Tip="Заголовок первого уровня"
-                              IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
-                    <TextBlock Text="H1" FontSize="12" FontWeight="SemiBold" />
-                </ToggleButton>
-                <ToggleButton Classes="notesToggle" Width="34" Height="28" Padding="5" Margin="0,0,8,0"
-                              Background="{DynamicResource BgSurfaceBrush}"
-                              BorderBrush="{DynamicResource BorderDefaultBrush}"
-                              BorderThickness="1" CornerRadius="4" Focusable="False"
-                              IsChecked="{Binding IsHeading2Selected, Mode=OneWay}"
-                              Tag="Heading2" ToolTip.Tip="Заголовок второго уровня"
-                              IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
-                    <TextBlock Text="H2" FontSize="11" FontWeight="SemiBold" />
-                </ToggleButton>
+                <StackPanel Orientation="Horizontal" Margin="0,0,4,0">
+                    <ToggleButton Classes="RibbonToggle notesTool"
+                                  IsChecked="{Binding IsParagraphSelected, Mode=OneWay}"
+                                  Tag="Paragraph" ToolTip.Tip="Обычный текст"
+                                  IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
+                        <PathIcon Width="14" Height="14"
+                                  Data="M4 5h16v2H4V5zm0 6h16v2H4v-2zm0 6h10v2H4v-2z" />
+                    </ToggleButton>
+                    <ToggleButton Classes="RibbonToggle notesTool"
+                                  IsChecked="{Binding IsHeading1Selected, Mode=OneWay}"
+                                  Tag="Heading1" ToolTip.Tip="Заголовок первого уровня"
+                                  IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
+                        <PathIcon Width="14" Height="14"
+                                  Data="M2 5h2v6h6V5h2v14h-2v-6H4v6H2V5zm13 6 3-2h2v8h2v2h-6v-2h2v-5l-2 1-1-2z" />
+                    </ToggleButton>
+                    <ToggleButton Classes="RibbonToggle notesTool"
+                                  IsChecked="{Binding IsHeading2Selected, Mode=OneWay}"
+                                  Tag="Heading2" ToolTip.Tip="Заголовок второго уровня"
+                                  IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
+                        <PathIcon Width="14" Height="14"
+                                  Data="M2 5h2v6h6V5h2v14h-2v-6H4v6H2V5zm13 7c0-2 1.5-3 3.5-3S22 10 22 12c0 1.3-.8 2.2-2 3l-2.5 2H22v2h-7v-2l3.8-3c.9-.7 1.2-1.2 1.2-2 0-.7-.6-1-1.5-1s-1.5.3-1.5 1h-2z" />
+                    </ToggleButton>
+                </StackPanel>
 
-                <ToggleButton Classes="notesToggle" Width="34" Height="28" Padding="5" Margin="0,0,3,0"
-                              Background="{DynamicResource BgSurfaceBrush}"
-                              BorderBrush="{DynamicResource BorderDefaultBrush}"
-                              BorderThickness="1" CornerRadius="4" Focusable="False"
-                              IsChecked="{Binding IsBulletSelected, Mode=OneWay}"
-                              Tag="Bullet" ToolTip.Tip="Маркированный список"
-                              IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
-                    <PathIcon Width="14" Height="14"
-                              Data="M4 5h2v2H4V5zm4 0h12v2H8V5zM4 11h2v2H4v-2zm4 0h12v2H8v-2zM4 17h2v2H4v-2zm4 0h12v2H8v-2z" />
-                </ToggleButton>
-                <ToggleButton Classes="notesToggle" Width="34" Height="28" Padding="5" Margin="0,0,3,0"
-                              Background="{DynamicResource BgSurfaceBrush}"
-                              BorderBrush="{DynamicResource BorderDefaultBrush}"
-                              BorderThickness="1" CornerRadius="4" Focusable="False"
-                              IsChecked="{Binding IsChecklistSelected, Mode=OneWay}"
-                              Tag="Checklist" ToolTip.Tip="Список задач"
-                              IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
-                    <PathIcon Width="14" Height="14"
-                              Data="M3 4h7v7H3V4zm2 2v3h3V6H5zm7 0h9v2h-9V6zM3 14h7v7H3v-7zm2 2v3h3v-3H5zm7 0h9v2h-9v-2z" />
-                </ToggleButton>
-                <ToggleButton Classes="notesToggle" Width="34" Height="28" Padding="5" Margin="0,0,3,0"
-                              Background="{DynamicResource BgSurfaceBrush}"
-                              BorderBrush="{DynamicResource BorderDefaultBrush}"
-                              BorderThickness="1" CornerRadius="4" Focusable="False"
-                              IsChecked="{Binding IsQuoteSelected, Mode=OneWay}"
-                              Tag="Quote" ToolTip.Tip="Цитата"
-                              IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
-                    <PathIcon Width="14" Height="14"
-                              Data="M6 7h5v5H8v5H4v-6c0-2.2.7-3.7 2-4zm9 0h5v5h-3v5h-4v-6c0-2.2.7-3.7 2-4z" />
-                </ToggleButton>
-                <Button Width="34" Height="28" Padding="5" Margin="0,0,8,0"
-                        Background="{DynamicResource BgSurfaceBrush}"
-                        BorderBrush="{DynamicResource BorderDefaultBrush}"
-                        BorderThickness="1" CornerRadius="4" Focusable="False"
-                        Tag="Divider" ToolTip.Tip="Разделитель"
-                        IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
-                    <PathIcon Width="14" Height="14" Data="M3 11h18v2H3z" />
-                </Button>
+                <StackPanel Orientation="Horizontal" Margin="0,0,4,0">
+                    <ToggleButton Classes="RibbonToggle notesTool"
+                                  IsChecked="{Binding IsBulletSelected, Mode=OneWay}"
+                                  Tag="Bullet" ToolTip.Tip="Маркированный список"
+                                  IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
+                        <PathIcon Width="14" Height="14"
+                                  Data="M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z" />
+                    </ToggleButton>
+                    <ToggleButton Classes="RibbonToggle notesTool"
+                                  IsChecked="{Binding IsChecklistSelected, Mode=OneWay}"
+                                  Tag="Checklist" ToolTip.Tip="Список задач"
+                                  IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
+                        <PathIcon Width="14" Height="14"
+                                  Data="M3 4h7v7H3V4zm2 2v3h3V6H5zm7 0h9v2h-9V6zM3 14h7v7H3v-7zm2 2v3h3v-3H5zm7 0h9v2h-9v-2z" />
+                    </ToggleButton>
+                    <ToggleButton Classes="RibbonToggle notesTool"
+                                  IsChecked="{Binding IsQuoteSelected, Mode=OneWay}"
+                                  Tag="Quote" ToolTip.Tip="Цитата"
+                                  IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
+                        <PathIcon Width="14" Height="14"
+                                  Data="M6 7h5v5H8v5H4v-6c0-2.2.7-3.7 2-4zm9 0h5v5h-3v5h-4v-6c0-2.2.7-3.7 2-4z" />
+                    </ToggleButton>
+                    <Button Classes="RibbonBtn notesTool notesIcon"
+                            Tag="Divider" ToolTip.Tip="Разделитель"
+                            IsEnabled="{Binding !IsReadOnly}" Click="OnBlockTypeClick">
+                        <PathIcon Width="14" Height="14" Data="M3 11h18v2H3v-2z" />
+                    </Button>
+                </StackPanel>
 
-                <ToggleButton Classes="notesToggle" Width="34" Height="28" Padding="5" Margin="0,0,3,0"
-                              Background="{DynamicResource BgSurfaceBrush}"
-                              BorderBrush="{DynamicResource BorderDefaultBrush}"
-                              BorderThickness="1" CornerRadius="4" Focusable="False"
-                              IsChecked="{Binding IsStrikeSelected, Mode=OneWay}"
-                              ToolTip.Tip="Зачеркнуть строку"
-                              IsEnabled="{Binding !IsReadOnly}" Click="OnStrikeClick">
-                    <Grid Width="14" Height="14">
-                        <TextBlock Text="S" FontSize="12" FontWeight="SemiBold"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        <Border Height="1" VerticalAlignment="Center"
-                                Background="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
-                    </Grid>
-                </ToggleButton>
-                <ToggleButton Classes="notesToggle" Width="34" Height="28" Padding="5"
-                              Background="{DynamicResource BgSurfaceBrush}"
-                              BorderBrush="{DynamicResource BorderDefaultBrush}"
-                              BorderThickness="1" CornerRadius="4" Focusable="False"
-                              IsChecked="{Binding IsHighlightSelected, Mode=OneWay}"
-                              ToolTip.Tip="Выделить строку"
-                              IsEnabled="{Binding !IsReadOnly}" Click="OnHighlightClick">
-                    <PathIcon Width="14" Height="14"
-                              Data="M17.75 7L14 3.25 4 13.25V17h3.75L17.75 7zM3 19h18v2H3v-2zm12.9-13.9l1-1a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4l-1 1-4-4z" />
-                </ToggleButton>
+                <StackPanel Orientation="Horizontal">
+                    <ToggleButton Classes="RibbonToggle notesTool"
+                                  IsChecked="{Binding IsStrikeSelected, Mode=OneWay}"
+                                  ToolTip.Tip="Зачеркнуть строку"
+                                  IsEnabled="{Binding !IsReadOnly}" Click="OnStrikeClick">
+                        <PathIcon Width="14" Height="14"
+                                  Data="M7 4h10v2h-4v4h-2V6H7V4zm-4 7h18v2H3v-2zm8 3h2v6h-2v-6z" />
+                    </ToggleButton>
+                    <ToggleButton Classes="RibbonToggle notesTool"
+                                  IsChecked="{Binding IsHighlightSelected, Mode=OneWay}"
+                                  ToolTip.Tip="Выделить строку"
+                                  IsEnabled="{Binding !IsReadOnly}" Click="OnHighlightClick">
+                        <PathIcon Width="14" Height="14"
+                                  Data="M23.06 18.17l-4.58-4.58-.01.01L9.27 4.42C8.9 4.05 8.43 3.86 7.96 3.86c-.47 0-.94.19-1.31.55l-1.27 1.27c-.37.37-.56.84-.55 1.31 0 .47.19.95.56 1.31L9.7 12.6l-4.1 4.1C4.4 17.9 4 19 4 20h2c0-.48.2-1.02.64-1.46l4.1-4.1 3.72 3.72c.37.37.84.55 1.31.55.47 0 .94-.18 1.31-.55l1.27-1.27c.72-.73.73-1.9.01-2.62 0-.03-.02-.04-.03-.06z" />
+                    </ToggleButton>
+                </StackPanel>
             </WrapPanel>
         </Border>
 
@@ -161,22 +187,24 @@
                     IsVisible="{Binding IsWidePagePanelVisible}"
                     Background="{DynamicResource BgPanelBrush}"
                     BorderBrush="{DynamicResource BorderDefaultBrush}"
-                    BorderThickness="0,0,1,0" Padding="8">
+                    BorderThickness="0,0,1,0"
+                    Padding="{DynamicResource PaddingS}">
                 <Grid RowDefinitions="Auto,*">
-                    <TextBlock Margin="6,4,6,8" Text="Страницы"
+                    <TextBlock Margin="8,4,8,8" Text="Страницы"
                                FontSize="{DynamicResource FontSizeS}"
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource TextSecondaryBrush}" />
-                    <ListBox Grid.Row="1" Background="Transparent" BorderThickness="0"
+                    <ListBox Grid.Row="1" Classes="notesPages"
+                             Background="Transparent" BorderThickness="0" Padding="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ItemsSource="{Binding Pages}"
                              SelectedItem="{Binding SelectedPage, Mode=TwoWay}">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:NotePageViewModel">
-                                <Grid ColumnDefinitions="Auto,*" Margin="2">
-                                    <PathIcon Width="13" Height="13" Margin="0,0,7,0"
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <PathIcon Width="14" Height="14" Margin="0,0,8,0"
                                               VerticalAlignment="Center"
-                                              Foreground="{DynamicResource TextMutedBrush}"
-                                              Data="M6 2h8l6 6v14H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 2H6v16h12V9h-5V4zm2 1.5V7h1.5L15 5.5z" />
+                                              Data="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z" />
                                     <TextBlock Grid.Column="1" Text="{Binding Title}"
                                                FontSize="{DynamicResource FontSizeS}"
                                                TextTrimming="CharacterEllipsis"
@@ -188,7 +216,7 @@
                 </Grid>
             </Border>
 
-            <Grid Grid.Column="1" Margin="20" RowDefinitions="Auto,*">
+            <Grid Grid.Column="1" Margin="{DynamicResource PaddingM}" RowDefinitions="Auto,*">
                 <TextBox Text="{Binding SelectedPage.Title, Mode=TwoWay}"
                          PlaceholderText="Название страницы"
                          FontSize="{DynamicResource FontSizeXXL}"
@@ -196,10 +224,13 @@
                          Padding="8,4"
                          IsEnabled="{Binding !IsReadOnly}" />
 
-                <Border Grid.Row="1" Margin="0,10,0,0" Padding="12"
+                <Border Grid.Row="1" Margin="0,12,0,0"
+                        Padding="{DynamicResource PaddingM}"
                         Background="{DynamicResource BgPanelBrush}"
                         BorderBrush="{DynamicResource BorderDefaultBrush}"
                         BorderThickness="1" CornerRadius="4">
+                    <!-- События ввода подключаются в code-behind с нужной
+                         стратегией маршрутизации до обработки AvaloniaEdit. -->
                     <avaloniaEdit:TextEditor x:Name="Editor"
                                              Background="Transparent"
                                              Foreground="{DynamicResource TextPrimaryBrush}"
@@ -208,9 +239,7 @@
                                              WordWrap="True"
                                              HorizontalScrollBarVisibility="Disabled"
                                              VerticalScrollBarVisibility="Auto"
-                                             IsReadOnly="{Binding IsReadOnly}"
-                                             KeyDown="OnEditorKeyDown"
-                                             PointerReleased="OnEditorPointerReleased" />
+                                             IsReadOnly="{Binding IsReadOnly}" />
                 </Border>
             </Grid>
         </Grid>

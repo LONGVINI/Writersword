@@ -424,8 +424,59 @@ namespace Writersword.Modules.TextEditor.Services
             if (outline is int outlineValue)
                 elements.Add(new W.OutlineLevel { Val = outlineValue });
 
+            var tabs = BuildTabs(props);
+            if (tabs is not null) elements.Add(tabs);
+
             return elements;
         }
+
+        /// <summary>
+        /// Позиции табуляции абзаца.
+        ///
+        /// Без них оглавление уезжает в Word ровно так же, как приезжало оттуда до
+        /// починки импорта: номер страницы отрывается от правого поля и прилипает к
+        /// названию главы, а точки между ними исчезают — их рисует не текст, а
+        /// заполнитель позиции.
+        /// </summary>
+        private static W.Tabs? BuildTabs(Models.Styles.ParagraphProperties? props)
+        {
+            if (props?.TabStops is not { Count: > 0 } stops) return null;
+
+            var tabs = new W.Tabs();
+
+            foreach (var stop in stops)
+            {
+                var tab = new W.TabStop
+                {
+                    Val = new EnumValue<W.TabStopValues>(MapTabAlignment(stop.Alignment)),
+                    Position = (int)Math.Round(stop.PositionPt * TwipsPerPoint)
+                };
+
+                var leader = MapTabLeader(stop.Leader);
+                if (leader is not null)
+                    tab.Leader = new EnumValue<W.TabStopLeaderCharValues>(leader.Value);
+
+                tabs.Append(tab);
+            }
+
+            return tabs;
+        }
+
+        private static W.TabStopValues MapTabAlignment(Models.Styles.TabAlignment alignment) => alignment switch
+        {
+            Models.Styles.TabAlignment.Right => W.TabStopValues.Right,
+            Models.Styles.TabAlignment.Center => W.TabStopValues.Center,
+            Models.Styles.TabAlignment.Decimal => W.TabStopValues.Decimal,
+            _ => W.TabStopValues.Left
+        };
+
+        private static W.TabStopLeaderCharValues? MapTabLeader(Models.Styles.TabLeaderStyle leader) => leader switch
+        {
+            Models.Styles.TabLeaderStyle.Dots => W.TabStopLeaderCharValues.Dot,
+            Models.Styles.TabLeaderStyle.Dashes => W.TabStopLeaderCharValues.Hyphen,
+            Models.Styles.TabLeaderStyle.Line => W.TabStopLeaderCharValues.Underscore,
+            _ => null
+        };
 
         private W.SpacingBetweenLines? BuildSpacing(Models.Styles.ParagraphProperties? props)
         {

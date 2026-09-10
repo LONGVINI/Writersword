@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace Writersword.Modules.TextEditor.Models.Styles
@@ -87,13 +89,74 @@ namespace Writersword.Modules.TextEditor.Models.Styles
 
         /// <summary>
         /// Структурный уровень абзаца (Outline Level): 0 — основной текст, 1…9 — уровни.
-        /// Не задаёт отступ; это смысловая метка для будущего оглавления и навигатора.
+        /// Не задаёт отступ; это смысловая метка для оглавления и навигатора.
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int OutlineLevel { get; set; }
 
-        /// <summary>Создаёт копию свойств.</summary>
-        public ParagraphProperties Clone() => (ParagraphProperties)MemberwiseClone();
+        /// <summary>
+        /// Взять абзац в оглавление, даже если он не носит стиль заголовка и уровня ему
+        /// не задано.
+        ///
+        /// Пометка нужна ровно там, где Word заставляет городить стиль ради одной строки:
+        /// эпиграф, интерлюдия, письмо посреди главы — вещи, которые в оглавлении видеть
+        /// хочется, а выглядеть заголовком они не должны.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool IncludeInToc { get; set; }
+
+        /// <summary>
+        /// Абзац принадлежит оглавлению с этим опознавателем — это его строка, а не текст
+        /// рукописи. По метке оглавление узнаёт своё и пересобирает только себя, не трогая
+        /// соседний текст; по ней же строки оглавления не попадают в оглавление сами.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Guid? TocOwnerId { get; set; }
+
+        /// <summary>
+        /// Уровень строки внутри оглавления: 0 — название «Оглавление», 1…9 — сами строки.
+        /// Значим только вместе с <see cref="TocOwnerId"/>.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public int TocEntryLevel { get; set; }
+
+        /// <summary>
+        /// Куда ведёт строка оглавления — опознаватель абзаца-заголовка.
+        /// Заголовок мог быть удалён: тогда строка просто перестаёт быть ссылкой.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Guid? TocTargetBlockId { get; set; }
+
+        /// <summary>
+        /// Позиции табуляции этого абзаца. Null — у абзаца своих позиций нет, и символ
+        /// табуляции идёт к ближайшей позиции по умолчанию (шаг задан документом).
+        ///
+        /// Свои позиции полностью отменяют шаг по умолчанию слева от последней из них —
+        /// так же поступает Word: расставив свои, человек описывает строку сам.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<TabStop>? TabStops { get; set; }
+
+        /// <summary>
+        /// Создаёт копию свойств.
+        ///
+        /// Позиции табуляции копируются поимённо, а не ссылкой: почленное копирование
+        /// отдало бы копии тот же самый список, и правка табуляции в одном абзаце
+        /// расходилась бы по всем, кто произошёл от него через Enter или буфер обмена.
+        /// </summary>
+        public ParagraphProperties Clone()
+        {
+            var copy = (ParagraphProperties)MemberwiseClone();
+
+            if (TabStops is not null)
+            {
+                var tabs = new List<TabStop>(TabStops.Count);
+                foreach (var tab in TabStops) tabs.Add(tab.Clone());
+                copy.TabStops = tabs;
+            }
+
+            return copy;
+        }
 
         /// <summary>
         /// Копирует все свойства из src в текущий экземпляр (не меняя ссылку).
@@ -114,6 +177,22 @@ namespace Writersword.Modules.TextEditor.Models.Styles
             PageBreakBefore = src.PageBreakBefore;
             StyleName = src.StyleName;
             OutlineLevel = src.OutlineLevel;
+            IncludeInToc = src.IncludeInToc;
+
+            if (src.TabStops is null)
+            {
+                TabStops = null;
+            }
+            else
+            {
+                var tabs = new List<TabStop>(src.TabStops.Count);
+                foreach (var tab in src.TabStops) tabs.Add(tab.Clone());
+                TabStops = tabs;
+            }
+
+            TocOwnerId = src.TocOwnerId;
+            TocEntryLevel = src.TocEntryLevel;
+            TocTargetBlockId = src.TocTargetBlockId;
         }
     }
 }

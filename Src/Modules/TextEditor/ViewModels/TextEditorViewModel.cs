@@ -17,11 +17,13 @@ using Writersword.Modules.TextEditor.ViewModels.Blocks;
 using Writersword.Modules.TextEditor.ViewModels.Components;
 using Writersword.Modules.TextEditor.ViewModels.Reading;
 using Writersword.Modules.TextEditor.ViewModels.StatusBar;
+using Writersword.Modules.TextEditor.ViewModels.Toc;
 using Writersword.Modules.TextEditor.ViewModels.Toolbar;
 
 namespace Writersword.Modules.TextEditor.ViewModels
 {
-    public sealed class TextEditorViewModel : ReactiveObject, ITextEditorCommandTarget, IReadingHost, IDisposable
+    public sealed class TextEditorViewModel
+        : ReactiveObject, ITextEditorCommandTarget, IReadingHost, IEditorViewHost, ITocHost, IDisposable
     {
         private static readonly ILogger _logger = Log.ForContext<TextEditorViewModel>();
 
@@ -38,6 +40,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private bool _isModified;
         private DocumentViewModel? _documentViewModel;
         private double _monitorSizeInches;
+        private IDisposable? _navigatorRefresh;
 
         // ── Public properties ─────────────────────────────────────────────
 
@@ -49,6 +52,242 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public RibbonViewModel Ribbon { get; }
         public StatusBarViewModel StatusBar { get; }
+
+        /// <summary>
+        /// Навигатор по заголовкам — дерево глав сбоку от рукописи.
+        ///
+        /// Живёт всю сессию модуля, а не заводится вместе с документом: открытая панель
+        /// это выбор человека, а не свойство рукописи, и закрывать её на каждое открытие
+        /// книги значило бы спорить с ним.
+        /// </summary>
+        public NavigatorViewModel Navigator { get; }
+
+        /// <summary>Панель навигатора показана.</summary>
+        public bool IsNavigatorVisible
+        {
+            get => Navigator.IsVisible;
+            set
+            {
+                if (Navigator.IsVisible == value) return;
+                Navigator.IsVisible = value;
+                this.RaisePropertyChanged();
+                // Пока панель закрыта, дерево не пересобирается: считать некому и не для
+                // кого. Открылась — собираем сразу, иначе человек увидит вчерашнюю книгу.
+                if (value) RefreshNavigator();
+            }
+        }
+
+        /// <summary>Показать или убрать навигатор.</summary>
+        public void ToggleNavigator() => IsNavigatorVisible = !IsNavigatorVisible;
+
+        /// <summary>Пересобирает дерево заголовков по текущему документу.</summary>
+        public void RefreshNavigator()
+        {
+            var docVm = DocumentViewModel;
+            if (docVm is null)
+            {
+                Navigator.Rebuild(null, null);
+                return;
+            }
+
+            Navigator.Rebuild(docVm.Document, docVm.GetBlockPageNumbers());
+        }
+
+        /// <summary>
+        /// Обновляет в навигаторе только номера страниц. Вызывается после перекомпоновки:
+        /// заголовки те же, а страницы под ними уехали.
+        /// </summary>
+        public void RefreshNavigatorPages()
+        {
+            var docVm = DocumentViewModel;
+            if (docVm is null || !Navigator.IsVisible) return;
+            Navigator.UpdatePageNumbers(docVm.GetBlockPageNumbers());
+        }
+
+        /// <summary>
+        /// Откладывает пересборку дерева. Название главы набирают посимвольно, и обходить
+        /// документ на каждую букву незачем: человек в это время смотрит в текст, а не в
+        /// панель.
+        /// </summary>
+        private void ScheduleNavigatorRefresh()
+        {
+            if (!Navigator.IsVisible) return;
+
+            _navigatorRefresh?.Dispose();
+            _navigatorRefresh = Observable
+                .Timer(TimeSpan.FromMilliseconds(350))
+                .ObserveOn(AvaloniaScheduler.Instance)
+                .Subscribe(_ => RefreshNavigator());
+        }
+
+        /// <summary>
+        /// Ставит документу вид из общих настроек: режим показа, масштаб, число листов в
+        /// ряду и цвет листа.
+        ///
+        /// На время применения подписка на обратное сообщение снимается: иначе выставленные
+        /// значения тут же вернулись бы в настройки, и первое же открытие документа со
+        /// старым, ещё записанным в файл видом переписало бы человеку его собственный выбор.
+        /// </summary>
+        private void ApplyViewPreferences(DocumentViewModel docVm)
+        {
+            docVm.ViewPreferenceChanged -= OnViewPreferenceChanged;
+
+            docVm.ViewMode = Settings.DefaultViewMode;
+            docVm.PagesPerRow = Settings.PagesPerRow;
+
+            var canvas = docVm.CanvasSettings;
+            if (canvas is not null)
+            {
+                if (Settings.CanvasPreset == Models.Page.CanvasThemePreset.Custom)
+                {
+                    canvas.Preset = Models.Page.CanvasThemePreset.Custom;
+                    canvas.PageBackgroundColor = Settings.CanvasPageBackground;
+                    canvas.DefaultTextColor = Settings.CanvasTextColor;
+                }
+                else
+                {
+                    canvas.ApplyPreset(Settings.CanvasPreset);
+                }
+
+                // Цвет каретки живёт мимо пресетов: он не про бумагу, а про то, чем на
+                // ней пишут, и переключение вида листа его не трогает.
+                canvas.CaretColor = Settings.CaretColor;
+            }
+        }
+
+        /// <summary>
+        /// Запоминает вид рабочей области в общих настройках. Зовётся на каждое изменение:
+        /// человек переключил режим, покрутил масштаб, поставил листы в ряд или сменил
+        /// цвет листа.
+        /// </summary>
+        private void OnViewPreferenceChanged()
+        {
+            var docVm = DocumentViewModel;
+            if (docVm is null) return;
+
+            Settings.DefaultViewMode = docVm.ViewMode;
+            Settings.DefaultZoom = docVm.Zoom;
+            Settings.PagesPerRow = docVm.PagesPerRow;
+
+            var canvas = docVm.CanvasSettings;
+            if (canvas is not null)
+            {
+                Settings.CanvasPreset = canvas.Preset;
+                Settings.CanvasPageBackground = canvas.PageBackgroundColor;
+                Settings.CanvasTextColor = canvas.DefaultTextColor;
+                Settings.CaretColor = canvas.CaretColor;
+            }
+
+            GlobalSettingsChanged?.Invoke(Settings);
+        }
+
+        // ── Оглавление ────────────────────────────────────────────────────
+
+        /// <inheritdoc/>
+        public Models.Toc.TocSettings? ActiveToc => DocumentViewModel?.ActiveToc();
+
+        /// <inheritdoc/>
+        public void RebuildActiveToc()
+        {
+            var toc = ActiveToc;
+            if (toc is null) return;
+
+            DocumentViewModel?.RebuildToc(toc);
+        }
+
+        /// <inheritdoc/>
+        public void RemoveActiveToc()
+        {
+            var toc = ActiveToc;
+            if (toc is null) return;
+
+            DocumentViewModel?.RemoveToc(toc);
+            SyncTocTab();
+        }
+
+        /// <inheritdoc/>
+        public void InsertToc() => DocumentViewModel?.InsertTOC();
+
+        /// <inheritdoc/>
+        public void GoToTocTarget() => DocumentViewModel?.GoToTocTarget();
+
+        /// <inheritdoc/>
+        public (double FontSizePt, bool IsBold, bool IsItalic)? GetTocLevelStyle(int level)
+            => DocumentViewModel?.GetTocLevelStyle(level);
+
+        /// <inheritdoc/>
+        public void SetTocLevelStyle(int level, double? fontSizePt, bool? isBold, bool? isItalic)
+            => DocumentViewModel?.SetTocLevelStyle(level, fontSizePt, isBold, isItalic);
+
+        /// <inheritdoc/>
+        public void ResetTocStyles() => DocumentViewModel?.ResetTocStyles();
+
+        /// <inheritdoc/>
+        public string TocDefaultTitle
+        {
+            get
+            {
+                string? title = Resources.TextEditorStrings.Toc_DefaultTitle;
+                return string.IsNullOrEmpty(title) ? "Оглавление" : title;
+            }
+        }
+
+        /// <summary>
+        /// Показывает вкладку «Оглавление», пока каретка стоит внутри него, и убирает,
+        /// когда человек ушёл в текст.
+        ///
+        /// Вкладка не выбирается автоматически при входе: человек мог зайти в оглавление,
+        /// чтобы поправить в нём слово, и уводить его из «Главной» на этом основании
+        /// значило бы отобрать инструменты набора. Она просто появляется рядом.
+        /// </summary>
+        private void SyncTocTab()
+        {
+            bool inToc = ActiveToc is not null;
+
+            if (Ribbon.IsTocTabVisible == inToc)
+            {
+                if (inToc) Ribbon.Toc.RefreshAll();
+                return;
+            }
+
+            Ribbon.IsTocTabVisible = inToc;
+
+            if (inToc) Ribbon.Toc.RefreshAll();
+            else RestoreRibbonTabIfHidden(TocTabIndex);
+        }
+
+        /// <summary>
+        /// Уводит риббон с закрывшейся контекстной вкладки. Выбранная, но скрытая вкладка
+        /// роняет TabControl — см. пояснение у RestoreTabAfterContextHidden.
+        /// </summary>
+        private void RestoreRibbonTabIfHidden(int hiddenIndex)
+        {
+            if (Ribbon.SelectedTabIndex != hiddenIndex) return;
+            Ribbon.SelectedTabIndex = 0;
+        }
+
+        private void OnStructureChangedForNavigator()
+        {
+            // Вставка и пересборка оглавления меняют поток, не двигая каретку в другой
+            // абзац: события о ней не приходит, и вкладка ленты без этой строки
+            // появлялась бы только после того, как человек сам щёлкнет в список.
+            SyncTocTab();
+
+            ScheduleNavigatorRefresh();
+        }
+
+        private void OnActiveParagraphChangedForNavigator(int paragraphIndex)
+        {
+            SyncTocTab();
+
+            if (!Navigator.IsVisible) return;
+
+            Navigator.SetCurrentParagraph(paragraphIndex);
+
+            // Уход из абзаца — та точка, где название главы дописано: дерево пересобирается
+            // здесь, а не на каждый набранный символ.
+            ScheduleNavigatorRefresh();
+        }
 
         // ── Чтение ────────────────────────────────────────────────────────
 
@@ -118,7 +357,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Подача не сбрасывается: выбранный вид чтения — предпочтение человека,
             // и в следующий раз книга должна открыться так же, как он её оставил.
-            StatusBar.ViewMode = EditorViewMode.Page;
+            //
+            // Режим ставится модели напрямую, а не присвоением в строку состояния:
+            // её сеттер выходит по совпадению значения, и стоило индикатору хоть раз
+            // разойтись с моделью — выход из книги переставал работать вовсе.
+            DocumentViewModel.SetViewMode(EditorViewMode.Page);
+            StatusBar.SyncViewMode(EditorViewMode.Page);
             RefreshSpreadState();
         }
 
@@ -280,6 +524,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             var doc = DocumentViewModel?.Document;
 
+            // Каким вид правки был записан до правки списков. По нему ниже решается,
+            // перенимать ли рабочей копией то, что человек настроил в окне видов.
+            var before = EditorView is { } editorBefore
+                ? FindReadingTheme(editorBefore.ThemeId)
+                : null;
+
             var forDocument = new System.Collections.Generic.List<Models.Settings.ReadingTheme>();
             var forGlobal = new System.Collections.Generic.List<Models.Settings.ReadingTheme>();
 
@@ -336,7 +586,30 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 reading.ThemeId = current.Id;
             }
 
+            // Тем же списком видов пользуется вкладка «Вид»: вид мог быть
+            // переименован, удалён или заведён заново, и списку правки об этом
+            // нужно знать не меньше, чем ленте чтения.
+            //
+            // Рабочая копия перенимает правки из окна только тогда, когда до сих
+            // пор совпадала с сохранённым видом. Настроил человек в окне картинку
+            // фона — она появится на листе сразу; крутил он перед этим ползунки в
+            // ленте — на экране его собственная настройка, и подменять её тем, что
+            // сохранено под тем же именем, значит стереть его работу.
+            if (EditorView is { } editorView)
+            {
+                var current = FindReadingTheme(editorView.ThemeId);
+
+                bool wasUntouched = editorView.Active is { } active
+                                    && ReadingTheme.SameLook(before, active);
+
+                editorView.ThemeId = current.Id;
+                if (wasUntouched) editorView.Active = current.Clone();
+            }
+
             ReadingRibbon.RefreshAll();
+            Ribbon.Appearance.RebuildThemeItems();
+            Ribbon.Appearance.RefreshAll();
+            ApplyRulerTheme();
             DocumentViewModel?.RaiseReadingSettingsChanged();
 
             // Документ изменился — правка видов такая же правка, как любая другая.
@@ -348,14 +621,473 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// <summary>Открывает окно видов чтения.</summary>
         public void OpenReadingThemes() => ReadingThemesRequested?.Invoke();
 
+        /// <summary>
+        /// Заводит новый вид. Окно видов открывается с уже созданной копией
+        /// выбранного: сам вид заводит окно — там же, где живут уникальное имя,
+        /// области хранения и правка полей.
+        /// </summary>
+        public void CreateReadingTheme() => ReadingThemeCreateRequested?.Invoke();
+
         /// <summary>Просьба показать окно видов чтения. Исполняет вью.</summary>
         public Action? ReadingThemesRequested { get; set; }
+
+        /// <summary>Просьба открыть окно видов сразу на новом виде. Исполняет вью.</summary>
+        public Action? ReadingThemeCreateRequested { get; set; }
+
+        /// <summary>
+        /// Открывает библиотеку фонов для поля вокруг книги. Библиотека одна и та же,
+        /// что и у фона рабочей области: заготовки, свои папки и свои файлы — заводить
+        /// для чтения второй такой же склад незачем.
+        /// </summary>
+        public void PickReadingBackdropImage() => ReadingBackdropImageRequested?.Invoke();
+
+        /// <summary>Просьба показать библиотеку фонов для чтения. Исполняет вью.</summary>
+        public Action? ReadingBackdropImageRequested { get; set; }
+
+        /// <summary>Адрес картинки поля у вида чтения — окну фонов, чтобы отметить её.</summary>
+        public string? ReadingBackdropReference => Reading?.Active?.BackdropImagePath;
+
+        /// <summary>
+        /// Кладёт выбранную картинку в поле вокруг книги. Путь уже уложен в хранилище
+        /// вида — сюда приходит его адрес, а не имя файла на диске.
+        /// </summary>
+        public void SetReadingBackdropImage(string reference)
+        {
+            if (string.IsNullOrWhiteSpace(reference)) return;
+            if (Reading?.Active is not { } theme) return;
+
+            theme.BackdropImagePath = reference;
+
+            // Выбранная картинка сама по себе ничего не покажет, пока она не включена:
+            // человек выбирал её именно затем, чтобы увидеть.
+            theme.UseBackdropImage = true;
+
+            ApplyReadingVisual();
+            PersistReadingPreferences();
+            ReadingRibbon.RefreshAll();
+        }
+
+        /// <summary>Убирает картинку из поля вокруг книги.</summary>
+        public void ClearReadingBackdropImage()
+        {
+            if (Reading?.Active is not { } theme) return;
+
+            theme.UseBackdropImage = false;
+            theme.BackdropImagePath = null;
+
+            ApplyReadingVisual();
+            PersistReadingPreferences();
+            ReadingRibbon.RefreshAll();
+        }
 
         /// <summary>
         /// Общие настройки модуля изменились и их пора сохранить. Модуль знает, куда
         /// их писать; вью-модель — нет.
         /// </summary>
         public Action<TextEditorSettings>? GlobalSettingsChanged { get; set; }
+
+        // ── Договор с вкладкой «Вид» (IEditorViewHost) ────────────────────
+
+        /// <summary>Вид рабочей области текущего документа.</summary>
+        public Models.Settings.EditorViewSettings? EditorView => DocumentViewModel?.EditorView;
+
+        /// <summary>
+        /// Правка вида видна сразу: цвет листа, свет, обработка картинок. Раскладка
+        /// при этом не пересобирается — от цвета бумаги переносы строк не зависят,
+        /// а гонять полную пагинацию на каждое движение ползунка нельзя.
+        /// </summary>
+        public void ApplyEditorViewVisual()
+        {
+            // Только перерисовка. Обновлять отсюда ленту нельзя: сюда приходит
+            // каждое движение ползунка света, и полный пересмотр вкладки на каждый
+            // его шаг означал бы десятки обходов свойств на одно движение руки.
+            DocumentViewModel?.RaiseReadingVisualChanged();
+            ApplyRulerTheme();
+            BackdropLayerChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Фон рабочей области сменился: цвет поля, картинка, её укладка или
+        /// плотность. Слой под прокруткой перекладывает вью — модуль не знает ни
+        /// про кисти, ни про то, чем читаются картинки в окно.
+        /// </summary>
+        public Action? BackdropLayerChanged { get; set; }
+
+        /// <summary>
+        /// Чем закрыт фон рабочей области при правке: цвет поля, адрес картинки,
+        /// её укладка и плотность. Картинки нет — вью прячет слой, и поле снова
+        /// заливает канвас, как было до вкладки.
+        ///
+        /// В чтении фон остаётся на канвасе, поэтому здесь его нет: холст книги
+        /// равен окну, и дрожать при прокрутке там нечему.
+        /// </summary>
+        public (string FieldHex, string? ImageRef,
+                Models.Settings.ReadingBackdropFit Fit, double Opacity)? WindowBackdrop()
+        {
+            if (EditorView is not { ThemeEnabled: true } v) return null;
+            if (v.Active is not { } theme) return null;
+            if (!theme.UseBackdropImage) return null;
+            if (string.IsNullOrWhiteSpace(theme.BackdropImagePath)) return null;
+
+            return (Models.Settings.ReadingTheme.FieldColorHex(theme),
+                    theme.BackdropImagePath,
+                    theme.BackdropImageFit,
+                    Math.Clamp(theme.BackdropImageOpacity, 0.0, 1.0));
+        }
+
+        /// <summary>
+        /// Ставит линейкам цвета листа. Линейка стоит вплотную к странице, и
+        /// светлая полоса над ночной бумагой бьёт по глазам ровно тем, ради чего
+        /// лист и перекрашивали. В чтении линеек нет вовсе, поэтому вид чтения
+        /// сюда не попадает.
+        /// </summary>
+        private void ApplyRulerTheme()
+        {
+            if (EditorView is not { ThemeEnabled: true } v)
+            {
+                Ruler.ApplyTheme(false, null, null, null);
+                return;
+            }
+
+            var theme = v.Active;
+            if (theme is null)
+            {
+                Ruler.ApplyTheme(false, null, null, null);
+                return;
+            }
+
+            Ruler.ApplyTheme(
+                true,
+                theme.SheetColor,
+                theme.InkColor,
+                Models.Settings.ReadingTheme.FieldColorHex(theme));
+        }
+
+        /// <summary>
+        /// Переносит вид правки из общих настроек в живые настройки документа.
+        /// Зовётся при загрузке: цвет листа за письмом — предпочтение человека, и
+        /// ждать его он будет в любом документе, а не только в том, где выбрал.
+        /// </summary>
+        private void ApplyEditorViewPreferences(Models.Settings.EditorViewSettings target)
+        {
+            target.ThemeEnabled = Settings.EditorThemeEnabled;
+            target.ThemeId = string.IsNullOrWhiteSpace(Settings.EditorThemeId)
+                ? Models.Settings.ReadingTheme.WhiteId
+                : Settings.EditorThemeId;
+
+            // Рабочая копия берётся из настроек, а если её там нет (данные прежних
+            // версий) — собирается из вида по опознавателю.
+            target.Active = Settings.EditorTheme?.Clone()
+                ?? FindReadingTheme(target.ThemeId).Clone();
+
+            target.FocusHidesRuler = Settings.FocusHidesRuler;
+            target.FocusHidesStatusBar = Settings.FocusHidesStatusBar;
+            target.FocusRibbonOnHover = Settings.FocusRibbonOnHover;
+
+            target.Normalize();
+
+            // Свёрнутая лента — тоже предпочтение, и переживает оно перезапуск так
+            // же, как вид листа. Поле, а не свойство: писать настройки обратно в
+            // тот же миг, когда мы их только что прочитали, незачем.
+            _isRibbonCollapsed = Settings.RibbonCollapsed;
+            this.RaisePropertyChanged(nameof(IsRibbonCollapsed));
+            this.RaisePropertyChanged(nameof(IsRibbonVisible));
+        }
+
+        /// <summary>
+        /// Запоминает вид правки. Зовётся вкладкой после каждой правки, которая
+        /// должна пережить и перезапуск, и переход в другой документ.
+        /// </summary>
+        public void PersistEditorViewPreferences()
+        {
+            if (EditorView is not { } v) return;
+
+            Settings.EditorThemeEnabled = v.ThemeEnabled;
+            Settings.EditorThemeId = v.ThemeId;
+            Settings.EditorTheme = v.Active?.Clone();
+            Settings.FocusHidesRuler = v.FocusHidesRuler;
+            Settings.FocusHidesStatusBar = v.FocusHidesStatusBar;
+            Settings.FocusRibbonOnHover = v.FocusRibbonOnHover;
+
+            GlobalSettingsChanged?.Invoke(Settings);
+        }
+
+        /// <summary>
+        /// Просьба выбрать картинку, которая ляжет позади страниц. Файловое окно
+        /// открывает вью: модель модуля не знает ни про окна, ни про хранилище
+        /// картинок вида.
+        /// </summary>
+        public Action? BackdropImageRequested { get; set; }
+
+        /// <summary>Открывает выбор картинки фона.</summary>
+        public void PickBackdropImage() => BackdropImageRequested?.Invoke();
+
+        /// <summary>
+        /// Убирает картинку из-под страниц. Сам путь стирается вместе с признаком:
+        /// выключенная картинка, о которой нигде не сказано, — это забытая
+        /// настройка, которая однажды всплывёт при смене вида.
+        /// </summary>
+        public void ClearBackdropImage()
+        {
+            if (EditorView?.Active is not { } theme) return;
+
+            theme.UseBackdropImage = false;
+            theme.BackdropImagePath = null;
+
+            ApplyEditorViewVisual();
+            PersistEditorViewPreferences();
+            Ribbon.Appearance.RefreshAll();
+        }
+
+        /// <summary>
+        /// Кладёт выбранную картинку под страницы. Путь уже уложен в хранилище
+        /// вида — сюда приходит его адрес, а не имя файла на диске.
+        /// </summary>
+        public void SetBackdropImage(string reference)
+        {
+            if (string.IsNullOrWhiteSpace(reference)) return;
+            if (EditorView is not { } v || v.Active is not { } theme) return;
+
+            theme.BackdropImagePath = reference;
+
+            // Выбранная картинка сама по себе ничего не покажет, пока она не
+            // включена: человек выбирал её именно затем, чтобы увидеть.
+            theme.UseBackdropImage = true;
+
+            // И вид применяется, если до сих пор стоял «Без вида»: иначе картинка
+            // ложится в копию, которую никто не рисует.
+            v.ThemeEnabled = true;
+
+            ApplyEditorViewVisual();
+            PersistEditorViewPreferences();
+            Ribbon.Appearance.RefreshAll();
+        }
+
+        /// <summary>Показывать линейки. Хранится в общих настройках модуля.</summary>
+        public bool ShowRuler
+        {
+            get => Settings.ShowRuler;
+            set
+            {
+                if (Settings.ShowRuler == value) return;
+
+                Settings.ShowRuler = value;
+                RefreshSpreadState();
+                this.RaisePropertyChanged();
+                GlobalSettingsChanged?.Invoke(Settings);
+            }
+        }
+
+        /// <summary>Показывать строку состояния.</summary>
+        public bool ShowStatusBar
+        {
+            get => Settings.ShowStatusBar;
+            set
+            {
+                if (Settings.ShowStatusBar == value) return;
+
+                Settings.ShowStatusBar = value;
+                this.RaisePropertyChanged();
+                this.RaisePropertyChanged(nameof(IsStatusBarVisible));
+                GlobalSettingsChanged?.Invoke(Settings);
+            }
+        }
+
+        /// <summary>Цвет каретки, когда своего не задано — оранжевый, заметный на любом листе.</summary>
+        private const string DefaultCaretColor = "#FF6600";
+
+        /// <summary>
+        /// Кареткой правит свой цвет, а не цвет текста под ней.
+        ///
+        /// Хранится одним полем — самим цветом: пусто значит «как у текста». Пара из
+        /// признака и цвета разошлась бы при первом же ручном правлении файла настроек,
+        /// и пришлось бы решать, кто из них главный.
+        /// </summary>
+        public bool IsCaretColorCustom
+        {
+            get => !string.IsNullOrWhiteSpace(Settings.CaretColor);
+            set
+            {
+                if (value == IsCaretColorCustom) return;
+
+                Settings.CaretColor = value
+                    ? (string.IsNullOrWhiteSpace(Settings.CaretColor)
+                        ? DefaultCaretColor
+                        : Settings.CaretColor)
+                    : null;
+
+                ApplyCaretColor();
+            }
+        }
+
+        /// <summary>Свой цвет каретки. Пока он не включён, показывает то, что включится.</summary>
+        public string CaretColor
+        {
+            get => string.IsNullOrWhiteSpace(Settings.CaretColor)
+                ? DefaultCaretColor
+                : Settings.CaretColor!;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value)) return;
+                if (string.Equals(Settings.CaretColor, value, StringComparison.OrdinalIgnoreCase)) return;
+
+                Settings.CaretColor = value;
+                ApplyCaretColor();
+            }
+        }
+
+        /// <summary>
+        /// Доносит цвет каретки до листа и запоминает его. Настройка общая для всех
+        /// документов, но рисует по ней канвас, а он читает вид рабочей области текущего
+        /// документа — поэтому значение кладётся и туда.
+        /// </summary>
+        private void ApplyCaretColor()
+        {
+            var canvas = DocumentViewModel?.CanvasSettings;
+            if (canvas is not null) canvas.CaretColor = Settings.CaretColor;
+
+            this.RaisePropertyChanged(nameof(IsCaretColorCustom));
+            this.RaisePropertyChanged(nameof(CaretColor));
+
+            GlobalSettingsChanged?.Invoke(Settings);
+            DocumentViewModel?.RaiseReadingVisualChanged();
+        }
+
+        private bool _isFocusMode;
+
+        /// <summary>
+        /// Режим фокуса: лента уезжает под верхний край, а с нею — то, что человек
+        /// отметил на вкладке. На экране остаётся рукопись.
+        ///
+        /// От полноэкранного режима отличается тем, что окно остаётся окном: фокус
+        /// убирает лишнее внутри модуля, а не отбирает у человека рабочий стол.
+        /// </summary>
+        public bool IsFocusMode
+        {
+            get => _isFocusMode;
+            set
+            {
+                if (_isFocusMode == value) return;
+
+                this.RaiseAndSetIfChanged(ref _isFocusMode, value);
+
+                // Модель документа держит тот же признак: канвасу он нужен, чтобы
+                // разобрать Esc, не спрашивая ленту.
+                if (DocumentViewModel is { } doc && doc.IsFocusMode != value)
+                    doc.IsFocusMode = value;
+
+                // Вызванная язычком лента не переживает выход и вход в фокус:
+                // иначе, выйдя при поднятой ленте и вернувшись, человек застаёт
+                // режим уже наполовину раскрытым.
+                _isFocusRibbonPeeking = false;
+
+                RefreshSpreadState();
+
+                this.RaisePropertyChanged(nameof(IsFocusRibbonPeeking));
+                this.RaisePropertyChanged(nameof(IsRibbonVisible));
+                this.RaisePropertyChanged(nameof(IsStatusBarVisible));
+
+                Ribbon.Appearance.RefreshAll();
+            }
+        }
+
+        private bool _isFocusRibbonPeeking;
+
+        /// <summary>
+        /// Лента вызвана в фокусе на время: язычком или наведением к верхнему краю.
+        /// Сам фокус при этом не выключается — человек взял инструмент и вернётся к
+        /// тексту, а не вышел из режима.
+        /// </summary>
+        public bool IsFocusRibbonPeeking
+        {
+            get => _isFocusRibbonPeeking;
+            set
+            {
+                if (_isFocusRibbonPeeking == value) return;
+
+                this.RaiseAndSetIfChanged(ref _isFocusRibbonPeeking, value);
+                this.RaisePropertyChanged(nameof(IsRibbonVisible));
+            }
+        }
+
+        private bool _isRibbonCollapsed;
+
+        /// <summary>
+        /// Лента свёрнута язычком — как в Word и как лента чтения. Это не фокус:
+        /// линейки и строка состояния остаются на месте, уходит только полоса
+        /// инструментов, и вернуть её можно тем же язычком.
+        /// </summary>
+        public bool IsRibbonCollapsed
+        {
+            get => _isRibbonCollapsed;
+            set
+            {
+                if (_isRibbonCollapsed == value) return;
+
+                this.RaiseAndSetIfChanged(ref _isRibbonCollapsed, value);
+
+                Settings.RibbonCollapsed = value;
+                GlobalSettingsChanged?.Invoke(Settings);
+
+                this.RaisePropertyChanged(nameof(IsRibbonVisible));
+            }
+        }
+
+        /// <summary>
+        /// Видна ли лента редактора.
+        ///
+        /// Три причины её отсутствия и одна причина возврата: в чтении ленты
+        /// правки нет вовсе; в фокусе она уезжает вместе с остальным верхом;
+        /// свёрнутая язычком она уезжает одна. Вызванная язычком или наведением
+        /// (<see cref="IsFocusRibbonPeeking"/>) она возвращается поверх любого из
+        /// этих состояний — иначе взять инструмент, не выходя из режима, нечем.
+        /// </summary>
+        public bool IsRibbonVisible
+        {
+            get
+            {
+                if (IsReadingMode) return false;
+                if (IsFocusRibbonPeeking) return true;
+                if (IsFocusMode) return false;
+                return !IsRibbonCollapsed;
+            }
+        }
+
+        private bool _isFullscreen;
+
+        /// <summary>
+        /// Правка во весь экран: окно раскрывается, оболочка приложения уходит,
+        /// остаётся модуль. От фокуса отличается тем, что забирает экран, а не
+        /// прячет полосы внутри окна, — и одно другому не мешает.
+        ///
+        /// В настройках не хранится намеренно: окно, само собой раскрывшееся на
+        /// весь экран при запуске, пугает больше, чем помогает. Тем же правилом
+        /// живёт полноэкранное чтение.
+        /// </summary>
+        public bool IsFullscreen
+        {
+            get => _isFullscreen;
+            set
+            {
+                if (_isFullscreen == value) return;
+
+                this.RaiseAndSetIfChanged(ref _isFullscreen, value);
+                FullscreenRequested?.Invoke(value);
+                Ribbon.Appearance.RefreshAll();
+            }
+        }
+
+        /// <summary>Видна ли строка состояния.</summary>
+        public bool IsStatusBarVisible
+        {
+            get
+            {
+                if (IsReadingMode) return false;
+                if (!Settings.ShowStatusBar) return false;
+                if (IsFocusMode && EditorView is { FocusHidesStatusBar: true }) return false;
+                return true;
+            }
+        }
 
         // ── Договор с лентой чтения (IReadingHost) ────────────────────────
 
@@ -388,6 +1120,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void GoReadingPage(int pageIndex, bool animate)
             => ReadingGoToPageRequested?.Invoke(pageIndex, animate);
 
+        /// <summary>Поставить ленту на долю всей длины, 0..100.</summary>
+        public void GoReadingPercent(double percent, bool takeFocus)
+            => ReadingGoToPercentRequested?.Invoke(percent, takeFocus);
+
         /// <summary>Разворачивает модуль на весь экран и обратно.</summary>
         public void ApplyReadingFullscreen(bool on) => FullscreenRequested?.Invoke(on);
 
@@ -412,6 +1148,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// </summary>
         public Action<int, bool>? ReadingGoToPageRequested { get; set; }
 
+        /// <summary>
+        /// Просьба поставить ленту на долю всей длины, 0..100. Исполняет канвас
+        /// через вью.
+        /// </summary>
+        public Action<double, bool>? ReadingGoToPercentRequested { get; set; }
+
         private void RefreshSpreadState()
         {
             var mode = DocumentViewModel?.ViewMode ?? EditorViewMode.Page;
@@ -427,9 +1169,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
             //
             // Вертикальная показывает поля страницы, а в потоковых режимах страниц не
             // существует — там она мерила бы то, чего нет.
-            bool showRuler = Settings.ShowRuler;
+            // В фокусе линейки уезжают вместе с лентой, если человек этого попросил:
+            // сантиметры полей нужны при вёрстке, а не когда на экране оставлена одна
+            // рукопись.
+            bool focusHidesRuler = IsFocusMode && EditorView is { FocusHidesRuler: true };
+
+            bool showRuler = Settings.ShowRuler && !focusHidesRuler;
             Ruler.IsVisible = !reading && showRuler;
             IsVerticalRulerVisible = mode == EditorViewMode.Page && showRuler;
+
+            this.RaisePropertyChanged(nameof(IsRibbonVisible));
+            this.RaisePropertyChanged(nameof(IsStatusBarVisible));
         }
 
         private bool _isVerticalRulerVisible = true;
@@ -475,8 +1225,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _spellCheck = new SpellCheckService();
             _exportService = new ExportService();
 
-            Ribbon = new RibbonViewModel(this);
+            Ribbon = new RibbonViewModel(this, this, this);
             StatusBar = new StatusBarViewModel();
+            Navigator = new NavigatorViewModel();
+            Navigator.GoToParagraphRequested = index => DocumentViewModel?.GoToParagraph(index);
             Ruler = new RulerViewModel();
             ReadingRibbon = new ReadingRibbonViewModel(this);
 
@@ -493,6 +1245,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // Левый край таблицы через линейку.
             Ruler.TableLeftEdgeChanging += OnRulerTableLeftEdgeChanging;
             Ruler.TableLeftEdgeChanged += OnRulerTableLeftEdgeChanged;
+
+            // Позиции табуляции: линейка отдаёт готовый набор, окно точной настройки —
+            // тот же набор плюс шаг по умолчанию.
+            Ruler.TabStopsChanged += OnRulerTabStopsChanged;
+            Ruler.TabSettingsRequested += OnTabSettingsRequested;
 
             Ruler.GetMinParagraphIndentMm = () =>
             {
@@ -576,6 +1333,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 _documentViewModel.CursorContextChanged -= OnCursorContextChanged;
                 _documentViewModel.DocumentRestored -= OnDocumentRestored;
+                _documentViewModel.StructureChanged -= OnStructureChangedForNavigator;
+                _documentViewModel.ParagraphFormatChanged -= OnStructureChangedForNavigator;
+                _documentViewModel.ActiveParagraphChanged -= OnActiveParagraphChangedForNavigator;
+                _documentViewModel.ViewPreferenceChanged -= OnViewPreferenceChanged;
             }
 
             // Старое представление картинки «в тексте» (отдельный блок в потоке) переводим
@@ -611,6 +1372,33 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 docVm.SetActiveParagraph(docVm.Paragraphs[0]);
             DocumentViewModel = docVm;
 
+            // Навигатор следит за структурой рукописи: заголовки меняются вместе с текстом,
+            // и обновлять дерево по кнопке значило бы показывать вчерашнюю книгу.
+            docVm.StructureChanged += OnStructureChangedForNavigator;
+            docVm.ParagraphFormatChanged += OnStructureChangedForNavigator;
+            docVm.ActiveParagraphChanged += OnActiveParagraphChangedForNavigator;
+
+            // Команда риббона приходит в того из двух получателей, кто оказался под рукой:
+            // и модуль, и документ отвечают на один и тот же договор. Панелью при этом
+            // распоряжается модуль, поэтому документ переадресует вызов ему.
+            docVm.ToggleNavigatorDelegate = ToggleNavigator;
+
+            // Вид рабочей области — общий для всех рукописей: как человек смотрит на
+            // текст, зависит от его глаз и монитора, а не от книги. Поэтому режим показа,
+            // масштаб, раскладка листов и цвет листа приходят из общих настроек, а не из
+            // файла: там они остались бы от чужого экрана.
+            ApplyViewPreferences(docVm);
+
+            docVm.ViewPreferenceChanged -= OnViewPreferenceChanged;
+            docVm.ViewPreferenceChanged += OnViewPreferenceChanged;
+
+            // Название над списком приходит из ресурсов модуля: документ о языке
+            // интерфейса не знает, а рукопись с зашитым внутрь словом «Contents»
+            // выглядела бы чужой у русского читателя.
+            docVm.TocDefaultTitleProvider = () => Resources.TextEditorStrings.Toc_DefaultTitle;
+
+            RefreshNavigator();
+
             _paragraphsSubscription?.Dispose();
             _paragraphsSubscription = SubscribeToParagraphChanges(docVm);
 
@@ -618,9 +1406,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // это предпочтение человека, а не свойство рукописи. Сессия проекта потом
             // может уточнить его своим сохранённым состоянием.
             ApplyReadingPreferences(docVm.Reading);
+            ApplyEditorViewPreferences(docVm.EditorView);
+
+            // Список видов на вкладке «Вид» пересобирается вместе с документом: к
+            // рукописи могли быть приложены свои виды, и в прежнем списке их нет.
+            Ribbon.Appearance.RebuildThemeItems();
+            Ribbon.Appearance.RefreshAll();
+            ApplyRulerTheme();
+            BackdropLayerChanged?.Invoke();
 
             StatusBar.IsSpellCheckActive = Settings.SpellCheckEnabled;
-            StatusBar.Zoom = document.Zoom > 0 ? document.Zoom : Settings.DefaultZoom;
+            // Масштаб тоже общий: в файле он остался бы от чужого монитора.
+            StatusBar.Zoom = Settings.DefaultZoom > 0 ? Settings.DefaultZoom : 1.0;
             DocumentViewModel?.SetZoom(StatusBar.Zoom);
 
             // Режим просмотра восстанавливается из документа так же, как зум. Без этого
@@ -830,6 +1627,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private const int TableTabIndex = 4;
         private const int ImageTabIndex = 5;
         private const int ImagePlacementTabIndex = 6;
+        private const int TocTabIndex = 7;
 
         // Вкладка, активная до автопереключения на «Формат» — восстанавливается
         // при снятии выделения картинки.
@@ -849,6 +1647,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             TableTabIndex => Ribbon.IsTableTabVisible,
             ImageTabIndex => Ribbon.IsImageTabVisible,
             ImagePlacementTabIndex => Ribbon.IsImageTabVisible,
+            TocTabIndex => Ribbon.IsTocTabVisible,
             _ => index >= 0 && index < TableTabIndex
         };
 
@@ -929,6 +1728,44 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void OnIndentDragStarted() => DocumentViewModel?.BeginParagraphFormatBatch();
         private void OnIndentDragEnded() => DocumentViewModel?.EndParagraphFormatBatch();
+
+        /// <summary>
+        /// Показать окно «Табуляция». Ставится представлением — окно живёт слоем поверх
+        /// модуля, и модель о нём не знает, как не знает и об окне статистики.
+        /// </summary>
+        public Action? TabSettingsRequested { get; set; }
+
+        private void OnTabSettingsRequested() => TabSettingsRequested?.Invoke();
+
+        /// <summary>
+        /// Новый набор позиций табуляции пришёл с линейки. Набор всегда полный: линейка
+        /// держит его целиком и после каждого жеста отдаёт заново.
+        /// </summary>
+        private void OnRulerTabStopsChanged(
+            System.Collections.Generic.List<Models.Styles.TabStop> stops)
+            => DocumentViewModel?.SetTabStops(stops);
+
+        /// <summary>
+        /// Итог окна «Табуляция»: набор позиций уходит абзацу, шаг по умолчанию — всему
+        /// документу. Шаг общий не по недосмотру: это свойство рукописи, и в docx оно
+        /// тоже лежит одно на файл (w:defaultTabStop).
+        /// </summary>
+        public void ApplyTabSettings(
+            System.Collections.Generic.List<Models.Styles.TabStop> stops, double defaultStepPt)
+        {
+            var docVm = DocumentViewModel;
+            if (docVm is null) return;
+
+            docVm.SetTabStops(stops);
+            Ruler.SetTabStops(stops);
+
+            if (defaultStepPt > 1 && Math.Abs(docVm.Document.DefaultTabStopPt - defaultStepPt) > 0.01)
+            {
+                docVm.Document.DefaultTabStopPt = defaultStepPt;
+                Ruler.DefaultTabStopMm = defaultStepPt * 25.4 / 72.0;
+                docVm.RelayoutAll();
+            }
+        }
 
         private void OnRulerIndentMarkerChanged(RulerIndentMarkerType markerType, double valueMm)
         {
@@ -1311,6 +2148,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertBookmark(string name) => DocumentViewModel?.InsertBookmark(name);
         public void InsertHyperlink(string url, string? text) => DocumentViewModel?.InsertHyperlink(url, text);
         public void InsertTOC() => DocumentViewModel?.InsertTOC();
+        public void UpdateTOC() => DocumentViewModel?.UpdateTOC();
         public void InsertComment(string text) => DocumentViewModel?.InsertComment(text);
 
         // ── Фигура ────────────────────────────────────────────────────────
@@ -1454,9 +2292,32 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Ruler.Zoom = zoom;
         }
 
-        public void SetViewMode(EditorViewMode m) => DocumentViewModel?.SetViewMode(m);
+        /// <summary>
+        /// Ставит режим показа — из ленты, из горячей клавиши, откуда угодно.
+        ///
+        /// Режим ведётся целиком: модель документа, индикатор строки состояния и
+        /// зависящий от режима интерфейс. Раньше здесь менялась только модель, и
+        /// строка состояния оставалась при своём. Рассогласование выходило боком
+        /// ровно на выходе из чтения: тот выходит через строку состояния, а её
+        /// сеттер молча выходит по совпадению значения — и человек, вошедший в
+        /// книгу не её кнопкой, оставался в книге навсегда.
+        /// </summary>
+        public void SetViewMode(EditorViewMode m)
+        {
+            if (DocumentViewModel is null) return;
+
+            DocumentViewModel.SetViewMode(m);
+            StatusBar.SyncViewMode(m);
+            RefreshSpreadState();
+        }
         public void ToggleFullscreen() => DocumentViewModel?.ToggleFullscreen();
-        public void ToggleFocusMode() => DocumentViewModel?.ToggleFocusMode();
+        /// <summary>
+        /// Включает и выключает фокус. Идёт через свойство модуля, а не через модель
+        /// документа: убирать нужно ленту, линейки и строку состояния, а они живут
+        /// здесь. Модель документа получает тот же признак следом — канвасу он нужен
+        /// для разбора Esc.
+        /// </summary>
+        public void ToggleFocusMode() => IsFocusMode = !IsFocusMode;
         public void SetCanvasTheme(CanvasThemePreset p) => DocumentViewModel?.SetCanvasTheme(p);
         public void SetCanvasColors(string bg, string tc) => DocumentViewModel?.SetCanvasColors(bg, tc);
 
@@ -1565,13 +2426,34 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             foreach (var section in DocumentViewModel.Document.Sections)
                 foreach (var block in section.Blocks)
-                    if (block is ParagraphBlock para)
-                        paragraphs.Add(para.GetPlainText());
+                    CollectParagraphs(block, paragraphs);
 
             // Число страниц и строк здесь не трогается: их знает раскладка канваса и
             // присылает своим уведомлением. Прежняя единица затирала настоящее число
             // страниц при каждом пересчёте текста.
             StatusBar.UpdateFromParagraphs(paragraphs);
+        }
+
+        /// <summary>
+        /// Собирает текст абзацев блока, спускаясь внутрь таблиц. Абзацы в ячейках —
+        /// такой же текст документа, и Word считает их наравне с остальными: обход
+        /// одних только блоков верхнего уровня занижал и слова, и знаки, и число
+        /// абзацев ровно на объём таблиц.
+        /// </summary>
+        private static void CollectParagraphs(BlockModel block, List<string> paragraphs)
+        {
+            switch (block)
+            {
+                case ParagraphBlock para:
+                    paragraphs.Add(para.GetPlainText());
+                    break;
+
+                case TableBlock table:
+                    foreach (var cell in table.Cells)
+                        foreach (var cellParagraph in cell.Paragraphs)
+                            CollectParagraphs(cellParagraph, paragraphs);
+                    break;
+            }
         }
 
         // ── IDisposable ───────────────────────────────────────────────────
@@ -1589,13 +2471,20 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Ruler.MarginCommitted -= OnRulerMarginCommitted;
             Ruler.TableLeftEdgeChanging -= OnRulerTableLeftEdgeChanging;
             Ruler.TableLeftEdgeChanged -= OnRulerTableLeftEdgeChanged;
+            Ruler.TabStopsChanged -= OnRulerTabStopsChanged;
+            Ruler.TabSettingsRequested -= OnTabSettingsRequested;
 
             if (_documentViewModel is not null)
             {
                 _documentViewModel.CursorContextChanged -= OnCursorContextChanged;
                 _documentViewModel.DocumentRestored -= OnDocumentRestored;
+                _documentViewModel.StructureChanged -= OnStructureChangedForNavigator;
+                _documentViewModel.ParagraphFormatChanged -= OnStructureChangedForNavigator;
+                _documentViewModel.ActiveParagraphChanged -= OnActiveParagraphChangedForNavigator;
+                _documentViewModel.ViewPreferenceChanged -= OnViewPreferenceChanged;
             }
 
+            _navigatorRefresh?.Dispose();
             _autoSaveSubscription?.Dispose();
             _paragraphsSubscription?.Dispose();
             _spellCheck.Dispose();

@@ -8,6 +8,7 @@ using Avalonia.Media.Imaging;
 using Serilog;
 using SkiaSharp;
 using Writersword.Modules.Characters.Interfaces;
+using Writersword.Modules.Characters.Models;
 
 namespace Writersword.Modules.Characters.Services
 {
@@ -38,10 +39,20 @@ namespace Writersword.Modules.Characters.Services
         /// <summary>
         /// Вектор опознаётся по расширению в ссылке: ссылка хранит имя файла,
         /// под которым картинка легла в проект, вместе с расширением.
+        ///
+        /// Расширение ищется в адресе, а не во всей ссылке: за адресом может
+        /// стоять кадр обрезки («…|crop=0.1,0.1,0.5,0.5»), и по концу такой
+        /// строки вектор опознался бы растром — со всеми последствиями:
+        /// значок перестал бы краситься цветом фигуры и начал бы обрезаться
+        /// по кругу.
         /// </summary>
-        public static bool IsVector(string? reference) =>
-            !string.IsNullOrWhiteSpace(reference) &&
-            reference.EndsWith(".svg", StringComparison.OrdinalIgnoreCase);
+        public static bool IsVector(string? reference)
+        {
+            var baseRef = CharacterAvatarRef.BaseOf(reference);
+
+            return !string.IsNullOrWhiteSpace(baseRef) &&
+                   baseRef.EndsWith(".svg", StringComparison.OrdinalIgnoreCase);
+        }
 
         /// <summary>
         /// Картинка значка. Цвет перекраски применяется только к вектору:

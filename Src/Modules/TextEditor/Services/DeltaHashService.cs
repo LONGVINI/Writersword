@@ -263,6 +263,14 @@ namespace Writersword.Modules.TextEditor.Services
                 writer.WritePropertyName("autoReplace");
                 JsonSerializer.Serialize(writer, document.DocumentAutoReplaceRules);
             }
+            // Виды чтения, приложенные к рукописи. Без них заведённый в документе вид
+            // не менял ни одного чанка, снимок документа считался неизменным, и на
+            // диск уходила прежняя базовая линия — вид пропадал при перезапуске.
+            if (document.ReadingThemes is not null)
+            {
+                writer.WritePropertyName("readingThemes");
+                JsonSerializer.Serialize(writer, document.ReadingThemes);
+            }
             WriteIdArray(writer, "sections", document.Sections.Select(s => s.Id));
             writer.WriteEndObject();
             writer.Flush();

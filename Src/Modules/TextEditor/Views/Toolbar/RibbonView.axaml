@@ -129,6 +129,23 @@
 					<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
 				</Style>
 
+
+				<!-- Контекстная вкладка «Оглавление» — тот же приём, что у прочих
+				     контекстных: акцентом горит только выбранная. -->
+				<Style Selector="TabItem.TocContextTab > TextBlock">
+					<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+					<Setter Property="FontWeight" Value="Medium"/>
+				</Style>
+				<Style Selector="TabItem.TocContextTab:selected">
+					<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+				<Style Selector="TabItem.TocContextTab:selected > TextBlock">
+					<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+				<Style Selector="TabItem.TocContextTab:pointerover">
+					<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+
 			</TabControl.Styles>
 
 			<!-- ── Главная ──────────────────────────────────────────────── -->
@@ -176,6 +193,24 @@
 				       IsHitTestVisible="{Binding IsEditingEnabled}"
 				       Opacity="{Binding ContentOpacity}">
 					<tabs:RibbonReferencesTab DataContext="{Binding References}"/>
+				</Panel>
+			</TabItem>
+
+			<!-- ── Вид ──────────────────────────────────────────────────── -->
+			<!-- Чем залит лист при правке, каким светом, что делать с картинками -->
+			<!-- и что остаётся на экране в фокусе. Режимы показа и масштаб сюда  -->
+			<!-- не входят: они живут в строке состояния, и вторых таких же       -->
+			<!-- кнопок в ленте быть не должно.                                   -->
+			<!--                                                                  -->
+			<!-- Единственная вкладка без приглушения в режиме сравнения версий:  -->
+			<!-- она не правит рукопись, а меняет то, как рукопись показана, и    -->
+			<!-- запрещать это, пока человек сравнивает версии, незачем.          -->
+			<TabItem>
+				<TabItem.Header>
+					<TextBlock Text="Вид"/>
+				</TabItem.Header>
+				<Panel Height="{StaticResource RibbonBodyHeight}">
+					<tabs:RibbonAppearanceTab DataContext="{Binding Appearance}"/>
 				</Panel>
 			</TabItem>
 
@@ -233,6 +268,21 @@
 				       IsHitTestVisible="{Binding IsEditingEnabled}"
 				       Opacity="{Binding ContentOpacity}">
 					<tabs:RibbonImagePlacementTab DataContext="{Binding Image}"/>
+				</Panel>
+			</TabItem>
+
+			<!-- ── Оглавление (КОНТЕКСТНАЯ) ──────────────────────────────── -->
+			<!-- Видна, пока каретка стоит внутри оглавления.                 -->
+			<!-- IsTocTabVisible управляется из TextEditorViewModel.          -->
+			<TabItem Classes="TocContextTab"
+			         IsVisible="{Binding IsTocTabVisible}">
+				<TabItem.Header>
+					<TextBlock Text="Оглавление"/>
+				</TabItem.Header>
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonTocTab DataContext="{Binding Toc}"/>
 				</Panel>
 			</TabItem>
 

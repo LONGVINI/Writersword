@@ -6,5 +6,15 @@
 		     Файл именно .targets: он подключается после Avalonia SDK, когда
 		     элементы Watch для .axaml уже добавлены и их можно убрать. -->
 		<Watch Remove="**\*.axaml" />
+
+		<!-- Страховка к DefaultItemExcludes из Directory.Build.props. Если
+		     какой-нибудь SDK добавит свои элементы мимо этого свойства, здесь —
+		     уже после всех шаблонов — содержимое папки присланных файлов уходит
+		     из сборки окончательно. -->
+		<Compile Remove="Claude outputs\**" />
+		<AvaloniaXaml Remove="Claude outputs\**" />
+		<AvaloniaResource Remove="Claude outputs\**" />
+		<EmbeddedResource Remove="Claude outputs\**" />
+		<None Remove="Claude outputs\**" />
 	</ItemGroup>
 </Project>
