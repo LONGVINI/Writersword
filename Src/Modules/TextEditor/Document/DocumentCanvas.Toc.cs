@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Avalonia.Threading;
+using Writersword.Modules.TextEditor.Models.Document;
 
 namespace Writersword.Modules.TextEditor.Document
 {
@@ -53,12 +54,61 @@ namespace Writersword.Modules.TextEditor.Document
         /// движением незачем. Заодно даром достаётся всё, что уже умеет каретка —
         /// плавная прокрутка, разворот страниц рядом и подсветка в линейке.
         /// </summary>
-        public void GoToParagraph(int paragraphIndex)
+        public void GoToParagraph(int paragraphIndex) => GoToParagraph(paragraphIndex, true);
+
+        /// <param name="rememberPlace">
+        /// true — положить прежнее место в историю прыжков.
+        ///
+        /// Ложь нужна возвратам каретки, которые прыжком не являются: восстановление
+        /// после пересборки оглавления, отмена, повтор. Они приводят каретку туда же,
+        /// где человек и был, и запись такого «прыжка» в историю засорила бы её местами,
+        /// возвращаться в которые незачем.
+        /// </param>
+        public void GoToParagraph(int paragraphIndex, bool rememberPlace)
         {
             if (paragraphIndex < 0) return;
             if (DocVm is null || paragraphIndex >= DocVm.Paragraphs.Count) return;
 
+            // Место, откуда уходим, кладётся в историю прыжков: вернуться прокруткой из
+            // чужой главы человек не сможет — он не знает, где был.
+            if (rememberPlace) RememberPlaceBeforeJump();
+
             RestoreCaretState(paragraphIndex, 0);
+        }
+
+        /// <summary>
+        /// Уводит рукопись к абзацу по его опознавателю.
+        ///
+        /// Место в потоке считается тем же правилом, что и в GetBlockPageNumbers и в
+        /// TocService: только абзацы верхнего уровня первого раздела, по порядку блоков.
+        /// Третьего счёта абзацев в модуле нет намеренно — разойдясь, они увели бы
+        /// переход по оглавлению не в ту главу.
+        /// </summary>
+        /// <returns>false — абзаца с таким опознавателем в рукописи нет.</returns>
+        public bool GoToBlock(Guid blockId)
+        {
+            if (DocVm is null) return false;
+
+            var doc = DocVm.Document;
+            if (doc is null || doc.Sections.Count == 0) return false;
+
+            var blocks = doc.Sections[0].Blocks;
+            int paragraphIndex = 0;
+
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                if (blocks[i] is not ParagraphBlock para) continue;
+
+                if (para.Id == blockId)
+                {
+                    GoToParagraph(paragraphIndex);
+                    return true;
+                }
+
+                paragraphIndex++;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -71,12 +121,71 @@ namespace Writersword.Modules.TextEditor.Document
 
             DocVm.GetBlockPageNumbersDelegate = GetBlockPageNumbers;
             DocVm.GoToParagraphDelegate = GoToParagraph;
+            DocVm.PushUndoCommandDelegate = PushUndoCommand;
+            DocVm.SetCaretToParagraphDelegate = SetCaretToParagraphNow;
 
             DocVm.StylesChanged -= OnStylesChanged;
             DocVm.StylesChanged += OnStylesChanged;
 
             DocVm.TocPageNumbersStale -= OnTocPageNumbersStale;
             DocVm.TocPageNumbersStale += OnTocPageNumbersStale;
+        }
+
+        /// <summary>
+        /// Ставит каретку на абзац сейчас же, ничего не прокручивая.
+        ///
+        /// Отличие от <see cref="GoToParagraph"/> в одном, но существенном: тот
+        /// откладывает переход до конца кадра. Отмене и повтору откладывать нельзя —
+        /// сразу после их возврата полотно прокручивает вид к каретке, и к этому мигу
+        /// она обязана стоять на новом месте. Прокрутку здесь не делаем намеренно: её
+        /// сделает тот самый проход, и делать её дважды значит дёрнуть лист.
+        /// </summary>
+        private void SetCaretToParagraphNow(int paragraphIndex)
+        {
+            if (DocVm is null) return;
+            if (paragraphIndex < 0 || paragraphIndex >= DocVm.Paragraphs.Count) return;
+            if (_layouts.Count == 0) return;
+
+            // Раскладка обязана знать этот абзац: поиск слайса на ненайденный отвечает
+            // нулём, и каретка уезжает в начало книги вместе с видом.
+            if (!IsParagraphInLayouts(paragraphIndex))
+            {
+                RebuildLayouts();
+                if (!IsParagraphInLayouts(paragraphIndex)) return;
+            }
+
+            _caretPara = FindFirstSliceForDocVmParagraph(paragraphIndex);
+            _caretChar = 0;
+            _caretLineHint = -1;
+
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            SyncSel();
+        }
+
+        /// <summary>
+        /// Кладёт готовый шаг отмены в тот же стек, куда уходят снимки документа.
+        ///
+        /// Стеков два — снимочный и операционный, — и порядок отмены между ними ведётся
+        /// отдельным списком. Своя команда обязана в него попасть, иначе Ctrl+Z пойдёт
+        /// не по хронологии: сперва вычерпает один стек, потом другой, и человек увидит,
+        /// как отменяется позавчерашнее вместо только что сделанного.
+        /// </summary>
+        private void PushUndoCommand(Writersword.Core.Interfaces.Modules.IUndoableCommand command)
+        {
+            if (command is null) return;
+
+            if (UndoStack is null)
+            {
+                _logger.Warning("[UNDO] PushUndoCommand: UndoStack is null, '{D}'", command.Description);
+                return;
+            }
+
+            UndoStack.Push(command);
+            RecordSnapshotInOrder();
+            DocVm?.RaiseContentModified();
+
+            _logger.Debug("[UNDO] PushUndoCommand: pushed '{D}'", command.Description);
         }
 
         /// <summary>
@@ -145,23 +254,82 @@ namespace Writersword.Modules.TextEditor.Document
             if (DocVm is null) return;
             if (_tocPassRunning) return;
 
+            // Оглавлений в рукописи не осталось — проставлять номера некому. Проверка
+            // стоит здесь, а не только там, где проход назначают: назначить его могли
+            // ДО того, как оглавление снесли, и тогда он приходил на пустое место и
+            // всё равно гнал полный пересбор раскладки. На трёхсотстраничной книге это
+            // полсотни миллисекунд впустую сразу после удаления и столько же после
+            // отмены.
+            if (DocVm.Document.TableOfContents is not { Count: > 0 }) return;
+
+            // Раскладка обязана быть пересобрана по новому составу абзацев: номера
+            // страниц спрашиваются у неё, а не выводятся из текста.
+            //
+            // Пересборка может и отказаться. На холодном кеше она уходит в порционный
+            // прогрев и до его конца отдаёт прежние слайсы — построенные ДО вставки
+            // оглавления. А оглавление сдвинуло вниз всю книгу.
+            //
+            // Проход, спросивший номера у такой раскладки, получает прежние числа,
+            // видит, что менять нечего, и уходит — истратив свой ход и записав в
+            // _tocKnownPageCount прежнее число страниц. Так первое в рукописи
+            // оглавление и оставалось с номерами от книги без оглавления: стили
+            // Toc1…Toc9 дописываются как раз при первой вставке, дописанные стили
+            // чистят кеш раскладки целиком, и она уходит в прогрев ровно в ту минуту,
+            // когда проход назначается.
+            //
+            // Поэтому ход не тратится: проход ждёт готовой раскладки, и назначит его
+            // сам прогрев, когда закончит.
+            bool warmingUp;
+
+            _tocPassRunning = true;
+            try
+            {
+                RebuildLayouts();
+                warmingUp = _layoutWarmupActive;
+            }
+            finally
+            {
+                _tocPassRunning = false;
+            }
+
+            if (warmingUp)
+            {
+                _tocPassAwaitsWarmup = true;
+                _tocPassAwaitsWarmupForce |= force;
+
+                _logger.Debug("[TOC] Проход по номерам отложен до конца прогрева раскладки");
+                return;
+            }
+
             const int MaxPasses = 3;
 
             // Проход сам пересобирает раскладку, а пересборка сообщает о смене числа
             // страниц — и назначала бы следующий проход, тот третий, и так без конца.
             // На время работы такие сообщения не принимаются: круги здесь и без того
             // отсчитаны.
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            int passesRun = 0;
+            int entriesTouched = 0;
+
             _tocPassRunning = true;
             try
             {
-                RebuildLayouts();
-
                 for (int pass = 0; pass < MaxPasses; pass++)
                 {
                     if (!DocVm.ApplyTocPageNumbers(force)) break;
 
-                    // Текст строк изменился: их раскладки в кэше считаны под прежние числа.
-                    _layoutCache.Clear();
+                    passesRun++;
+
+                    // Текст строк изменился: их раскладки в кэше считаны под прежние
+                    // числа. Чистятся раскладки ровно этих строк, а не весь кэш: сброс
+                    // целиком гнал через Skia каждый абзац книги ради полутора сотен
+                    // строк оглавления — и делал это на каждом круге, до трёх раз.
+                    var touched = DocVm.TakeTocTouched();
+                    entriesTouched += touched.Count;
+
+                    foreach (var pvm in touched)
+                        _layoutCache.Remove(pvm);
+
                     RebuildLayouts();
                 }
             }
@@ -170,6 +338,11 @@ namespace Writersword.Modules.TextEditor.Document
                 _tocPassRunning = false;
                 _tocKnownPageCount = _pages.Count;
             }
+
+            watch.Stop();
+            _logger.Debug(
+                "[TOC] Проход по номерам: {Ms} мс, кругов {Passes}, строк {Entries}",
+                watch.ElapsedMilliseconds, passesRun, entriesTouched);
 
             _caretLineHint = -1;
             SnapCaretToCorrectSlice();
@@ -180,6 +353,33 @@ namespace Writersword.Modules.TextEditor.Document
         // Проход по номерам страниц идёт прямо сейчас. Пока он идёт, сообщения о
         // смене числа страниц не назначают следующий: их порождает он сам.
         private bool _tocPassRunning;
+
+        // Проход ждёт конца прогрева кеша раскладки. Перепланировать себя по таймеру он
+        // не может: прогрев идёт порциями и длится столько, сколько длится, а проход,
+        // пришедший раньше времени, молча получил бы прежние номера страниц.
+        private bool _tocPassAwaitsWarmup;
+
+        // Ждущему проходу нужно помнить, был ли он назначен явным действием человека:
+        // такой проход обновляет и те оглавления, которым самообновление выключено.
+        private bool _tocPassAwaitsWarmupForce;
+
+        /// <summary>
+        /// Прогрев кеша раскладки закончен — раскладка построена по настоящему составу
+        /// абзацев. Если проход по номерам оглавления ждал этой минуты, назначаем его.
+        ///
+        /// Зовётся из <see cref="PumpLayoutWarmup"/> и только оттуда.
+        /// </summary>
+        private void OnLayoutWarmupFinished()
+        {
+            if (!_tocPassAwaitsWarmup) return;
+
+            _tocPassAwaitsWarmup = false;
+
+            bool force = _tocPassAwaitsWarmupForce;
+            _tocPassAwaitsWarmupForce = false;
+
+            OnTocPageNumbersStale(force);
+        }
 
         // Число страниц на прошлой раскладке. По его изменению оглавления с включённым
         // самообновлением получают новые номера: страницы поехали — числа устарели.
@@ -218,6 +418,8 @@ namespace Writersword.Modules.TextEditor.Document
             _tocPageNumbersPending = false;
             _tocPageNumbersForce = false;
             _tocPassRunning = false;
+            _tocPassAwaitsWarmup = false;
+            _tocPassAwaitsWarmupForce = false;
         }
     }
 }

@@ -1318,7 +1318,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 if (baseRef == null) return;
             }
 
-            var combined = CharacterAvatarRef.Combine(baseRef, crops.Circle, crops.Strip);
+            var combined = CharacterAvatarRef.Apply(baseRef, crops);
             if (combined == null) return;
 
             // ApplyAvatarRef сообщает о смене наружу — карточка и модель

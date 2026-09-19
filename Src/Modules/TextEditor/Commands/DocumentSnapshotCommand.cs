@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -8,6 +8,52 @@ using Writersword.Modules.TextEditor.ViewModels;
 
 namespace Writersword.Modules.TextEditor.Commands
 {
+    /// <summary>
+    /// Место правки: выделение и каретка на момент снимка.
+    ///
+    /// Одной каретки здесь мало. Ctrl+A оставляет её в конце книги, и отмена,
+    /// вернув только её, уносила вид на последнюю страницу — человек правил
+    /// наверху, а оказывался внизу. Выделение говорит, где правка была на самом
+    /// деле: от его начала до его конца.
+    /// </summary>
+    public readonly struct EditPlace
+    {
+        public EditPlace(
+            int caretPara, int caretChar,
+            int selStartPara, int selStartChar,
+            int selEndPara, int selEndChar)
+        {
+            CaretPara = caretPara;
+            CaretChar = caretChar;
+            SelStartPara = selStartPara;
+            SelStartChar = selStartChar;
+            SelEndPara = selEndPara;
+            SelEndChar = selEndChar;
+        }
+
+        /// <summary>Слайс раскладки, на котором стояла каретка.</summary>
+        public int CaretPara { get; }
+
+        /// <summary>Место каретки в тексте слайса.</summary>
+        public int CaretChar { get; }
+
+        /// <summary>Слайс, с которого выделение начали тянуть.</summary>
+        public int SelStartPara { get; }
+
+        /// <summary>Место в тексте, с которого выделение начали тянуть.</summary>
+        public int SelStartChar { get; }
+
+        /// <summary>Слайс, на котором выделение отпустили.</summary>
+        public int SelEndPara { get; }
+
+        /// <summary>Место в тексте, на котором выделение отпустили.</summary>
+        public int SelEndChar { get; }
+
+        /// <summary>Было ли выделение, или каретка просто стояла в тексте.</summary>
+        public bool HasSelection
+            => SelStartPara != SelEndPara || SelStartChar != SelEndChar;
+    }
+
     /// <summary>
     /// Снапшот полного состояния документа — до и после операции.
     /// Сериализует DocumentModel в JSON при создании (before) и при Commit (after).
@@ -25,15 +71,16 @@ namespace Writersword.Modules.TextEditor.Commands
         private readonly string _before;
         private string? _after;
 
-        // Позиции каретки до и после операции.
-        // Хранятся как индекс параграфа в Paragraphs + символьная позиция.
-        private readonly int _caretParaBefore;
-        private readonly int _caretCharBefore;
-        private int _caretParaAfter;
-        private int _caretCharAfter;
+        // Места правки до и после операции: выделение плюс каретка.
+        private readonly EditPlace _placeBefore;
+        private EditPlace _placeAfter;
 
-        // Callback для восстановления каретки после undo/redo.
-        public Action<int, int>? RestoreCaretCallback { get; set; }
+        /// <summary>
+        /// Куда вернуть выделение и каретку после отмены или повтора. Полотно ставит
+        /// обработчик при заведении снимка: само оно решает, как место разложить по
+        /// своим полям, а команде про слайсы раскладки знать незачем.
+        /// </summary>
+        public Action<EditPlace>? RestorePlaceCallback { get; set; }
 
         public string Description { get; }
 
@@ -60,21 +107,18 @@ namespace Writersword.Modules.TextEditor.Commands
             }
         }
 
-        public DocumentSnapshotCommand(DocumentViewModel docVm, string description,
-            int caretPara, int caretChar)
+        public DocumentSnapshotCommand(DocumentViewModel docVm, string description, EditPlace place)
         {
             _docVm = docVm;
             Description = description;
             _before = Serialize(docVm.Document);
-            _caretParaBefore = caretPara;
-            _caretCharBefore = caretChar;
+            _placeBefore = place;
         }
 
-        public void Commit(int caretPara, int caretChar)
+        public void Commit(EditPlace place)
         {
             _after = Serialize(_docVm.Document);
-            _caretParaAfter = caretPara;
-            _caretCharAfter = caretChar;
+            _placeAfter = place;
         }
 
         public void Execute()
@@ -82,14 +126,14 @@ namespace Writersword.Modules.TextEditor.Commands
             if (_after is not null)
             {
                 Restore(_after);
-                RestoreCaretCallback?.Invoke(_caretParaAfter, _caretCharAfter);
+                RestorePlaceCallback?.Invoke(_placeAfter);
             }
         }
 
         public void Undo()
         {
             Restore(_before);
-            RestoreCaretCallback?.Invoke(_caretParaBefore, _caretCharBefore);
+            RestorePlaceCallback?.Invoke(_placeBefore);
         }
 
         private void Restore(string json)
@@ -125,6 +169,18 @@ namespace Writersword.Modules.TextEditor.Commands
             doc.ColumnSettings.ColumnCount = restored.ColumnSettings.ColumnCount;
             doc.ColumnSettings.GapMm = restored.ColumnSettings.GapMm;
             doc.ColumnSettings.ShowSeparator = restored.ColumnSettings.ShowSeparator;
+
+            // Свойства рукописи, живущие вне разделов. Снимок их сохранял, а
+            // восстановление обходило стороной, и отмена возвращала текст, оставляя
+            // на месте шаг табуляции, настройки оглавления, замены и примечания —
+            // то есть ровно то, ради чего шаг отмены и открывали.
+            doc.DefaultTabStopPt = restored.DefaultTabStopPt;
+            doc.TableOfContents = restored.TableOfContents;
+            doc.DocumentAutoReplaceRules = restored.DocumentAutoReplaceRules;
+
+            doc.Annotations.Clear();
+            foreach (var annotation in restored.Annotations)
+                doc.Annotations.Add(annotation);
 
             _docVm.RebuildParagraphViewModelsPublic();
 

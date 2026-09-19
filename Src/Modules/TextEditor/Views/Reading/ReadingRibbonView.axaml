@@ -155,6 +155,7 @@
 		     подгонка селекторами давала то съехавшую дорожку, то бегунок мимо неё.
 		     Здесь дорожка, заполнение и бегунок описаны явно и стоят ровно. -->
 		<Style Selector="Slider.RibbonSlider">
+			<Setter Property="behaviours:SliderJumpBehavior.Enabled" Value="True"/>
 			<Setter Property="MinHeight"         Value="0"/>
 			<Setter Property="Height"            Value="18"/>
 			<Setter Property="Width"             Value="104"/>
@@ -164,7 +165,7 @@
 			<Setter Property="Focusable"         Value="False"/>
 			<Setter Property="Template">
 				<ControlTemplate>
-					<Grid Margin="7 0">
+					<Grid>
 						<!-- Дорожка -->
 						<Border Height="4"
 						        CornerRadius="2"
@@ -381,7 +382,7 @@
 							              IsChecked="{Binding IsFlowSpread, Mode=OneWay}"
 							              Command="{Binding SetFlowSpreadCommand}"
 							              behaviours:TooltipBehavior.Tip="Разворот"
-							              behaviours:TooltipBehavior.Description="Две страницы рядом, как в раскрытой книге. Листается перетаскиванием угла, щелчком по краю, стрелками и пробелом.">
+							              behaviours:TooltipBehavior.Description="Две страницы рядом, как в раскрытой книге. Листается перетаскиванием угла, щелчком по краю, стрелками и пробелом">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Data="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5z"/>
 									<TextBlock Text="Разворот" FontSize="9" TextAlignment="Center"/>
@@ -391,7 +392,7 @@
 							              IsChecked="{Binding IsFlowSingle, Mode=OneWay}"
 							              Command="{Binding SetFlowSingleCommand}"
 							              behaviours:TooltipBehavior.Tip="Один лист"
-							              behaviours:TooltipBehavior.Description="Одна страница по центру. Листается скольжением: щелчок по левой половине — назад, по правой — вперёд, и так же за пределами листа. Работают колесо и стрелки. Удобно в узком окне и на вертикальном экране.">
+							              behaviours:TooltipBehavior.Description="Одна страница по центру. Листается скольжением: щелчок по левой половине — назад, по правой — вперёд, и так же за пределами листа. Работают колесо и стрелки. Удобно в узком окне и на вертикальном экране">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Data="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
 									<TextBlock Text="Один лист" FontSize="9" TextAlignment="Center"/>
@@ -401,7 +402,7 @@
 							              IsChecked="{Binding IsFlowColumn, Mode=OneWay}"
 							              Command="{Binding SetFlowColumnCommand}"
 							              behaviours:TooltipBehavior.Tip="Лента"
-							              behaviours:TooltipBehavior.Description="Сплошной поток без страниц: текст прокручивается колонкой, как в читалке.">
+							              behaviours:TooltipBehavior.Description="Сплошной поток без страниц: текст прокручивается колонкой, как в читалке">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Data="M4 5h16v2H4zm0 4h16v2H4zm0 4h16v2H4zm0 4h11v2H4z"/>
 									<TextBlock Text="Лента" FontSize="9" TextAlignment="Center"/>
@@ -443,7 +444,7 @@
 									         KeyDown="OnPercentInputKeyDown"
 									         LostFocus="OnPercentInputLostFocus"
 									         behaviours:TooltipBehavior.Tip="Место в тексте"
-									         behaviours:TooltipBehavior.Description="Доля прочитанного от начала рукописи. Наберите своё число и нажмите Enter — лента встанет туда."/>
+									         behaviours:TooltipBehavior.Description="Доля прочитанного от начала рукописи. Наберите своё число и нажмите Enter — лента встанет туда"/>
 
 									<Button Classes="RibbonBtn" MinHeight="24"
 									        Command="{Binding EndPercentCommand}"
@@ -458,9 +459,7 @@
 								        HorizontalAlignment="Center"
 								        Minimum="0"
 								        Maximum="100"
-								        Value="{Binding PercentPosition, Mode=TwoWay}"
-								        behaviours:TooltipBehavior.Tip="Место в рукописи"
-								        behaviours:TooltipBehavior.Description="Перемотка ленты по всей длине текста. Ползунок идёт по долям, а не по страницам: у ленты их нет."/>
+								        Value="{Binding PercentPosition, Mode=TwoWay}"/>
 							</StackPanel>
 						</StackPanel>
 					</DockPanel>
@@ -504,7 +503,7 @@
 									         KeyDown="OnPageInputKeyDown"
 									         LostFocus="OnPageInputLostFocus"
 									         behaviours:TooltipBehavior.Tip="Номер страницы"
-									         behaviours:TooltipBehavior.Description="Щелчок выделяет номер — наберите свой и нажмите Enter, книга перелистнётся туда с обычной анимацией. В развороте открывается пара, которой эта страница принадлежит."/>
+									         behaviours:TooltipBehavior.Description="Щелчок выделяет номер — наберите свой и нажмите Enter, книга перелистнётся туда с обычной анимацией. В развороте открывается пара, которой эта страница принадлежит"/>
 
 									<Button Classes="RibbonBtn" MinHeight="24"
 									        Command="{Binding NextPageCommand}"
@@ -523,22 +522,24 @@
 								<!-- Шаг ползунка равен шагу листания: в развороте книга открывается
 								     парами, и остановка ползунка между страницами одной пары никуда
 								     не ведёт — бегунок просто отскакивал бы назад. -->
+								<!-- Прилипание к делениям выключено намеренно: после перехода
+								     бегунок доезжает до нового номера ходом, а прилипание рвало
+								     бы этот ход на ступени. На развороте бегунок всё равно
+								     встаёт на пару — за этим следит сама вью-модель. -->
 								<Slider Classes="RibbonSlider"
 								        Width="200"
 								        HorizontalAlignment="Center"
 								        Minimum="1"
 								        Maximum="{Binding PageMax}"
 								        TickFrequency="{Binding PageStep}"
-								        IsSnapToTickEnabled="True"
-								        Value="{Binding PagePosition, Mode=TwoWay}"
-								        behaviours:TooltipBehavior.Tip="Место в книге"
-								        behaviours:TooltipBehavior.Description="Перемотка по всей рукописи. Страница меняется сразу, без перелистывания: ползунок тащат, и анимировать каждое его положение значит превратить перемотку в кашу."/>
+								        IsSnapToTickEnabled="False"
+								        Value="{Binding PagePosition, Mode=TwoWay}"/>
 							</StackPanel>
 
 							<ToggleButton Classes="RibbonToggle FlowBtn"
 							              IsChecked="{Binding ShowPageNumbers, Mode=TwoWay}"
 							              behaviours:TooltipBehavior.Tip="Номера страниц"
-							              behaviours:TooltipBehavior.Description="Еле заметные цифры у нижних внешних углов листа. Если нумерация уже есть в колонтитулах документа, свои цифры не рисуются.">
+							              behaviours:TooltipBehavior.Description="Еле заметные цифры у нижних внешних углов листа. Если нумерация уже есть в колонтитулах документа, свои цифры не рисуются">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
 									          Data="M4 2h16v20H4z M6 4v16h12V4z M7.6 6.4h8.8v1.5H7.6z M7.6 9.4h8.8v1.5H7.6z M9.8 13.8h1.2v5.6H9.8z M8.6 15h1.2v1H8.6z M12.4 13.8h3.6v1h-3.6z M15 14.8h1v1.5h-1z M12.4 16.3h3.6v1h-3.6z M12.4 17.3h1v1.1h-1z M12.4 18.4h3.6v1h-3.6z"/>
@@ -573,7 +574,7 @@
 							        Classes="RibbonBtn TileBtn"
 							        IsVisible="{Binding IsPaged}"
 							        behaviours:TooltipBehavior.Tip="Пропорции листа"
-							        behaviours:TooltipBehavior.Description="Форма страницы при чтении. На печать и на сам документ не влияет.">
+							        behaviours:TooltipBehavior.Description="Форма страницы при чтении. На печать и на сам документ не влияет">
 								<StackPanel Spacing="1" HorizontalAlignment="Stretch">
 									<PathIcon Width="22" Height="22"
 									          HorizontalAlignment="Center"
@@ -611,7 +612,7 @@
 												        Command="{Binding SetFormatCommand}"
 												        CommandParameter="Document"
 												        behaviours:TooltipBehavior.Tip="Как в документе"
-												        behaviours:TooltipBehavior.Description="Те же пропорции, что при печати.">
+												        behaviours:TooltipBehavior.Description="Те же пропорции, что при печати">
 													<StackPanel Orientation="Horizontal" Spacing="8">
 														<Panel Classes="SheetPreviewCell">
 															<Border Classes="SheetPreview" Width="20" Height="28"/>
@@ -623,7 +624,7 @@
 												        Command="{Binding SetFormatCommand}"
 												        CommandParameter="Pocket"
 												        behaviours:TooltipBehavior.Tip="Карманный"
-												        behaviours:TooltipBehavior.Description="Узкий и высокий, как у бумажной книги.">
+												        behaviours:TooltipBehavior.Description="Узкий и высокий, как у бумажной книги">
 													<StackPanel Orientation="Horizontal" Spacing="8">
 														<Panel Classes="SheetPreviewCell">
 															<Border Classes="SheetPreview" Width="17" Height="28"/>
@@ -635,7 +636,7 @@
 												        Command="{Binding SetFormatCommand}"
 												        CommandParameter="Square"
 												        behaviours:TooltipBehavior.Tip="Квадратный"
-												        behaviours:TooltipBehavior.Description="Альбомная подача, поля одинаковы со всех сторон.">
+												        behaviours:TooltipBehavior.Description="Альбомная подача, поля одинаковы со всех сторон">
 													<StackPanel Orientation="Horizontal" Spacing="8">
 														<Panel Classes="SheetPreviewCell">
 															<Border Classes="SheetPreview" Width="25" Height="25"/>
@@ -647,7 +648,7 @@
 												        Command="{Binding SetFormatCommand}"
 												        CommandParameter="Wide"
 												        behaviours:TooltipBehavior.Tip="Широкий"
-												        behaviours:TooltipBehavior.Description="Под экран: минимум полей по бокам.">
+												        behaviours:TooltipBehavior.Description="Под экран: минимум полей по бокам">
 													<StackPanel Orientation="Horizontal" Spacing="8">
 														<Panel Classes="SheetPreviewCell">
 															<Border Classes="SheetPreview" Width="29" Height="23"/>
@@ -675,12 +676,16 @@
 									          Data="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
 									<TextBlock Classes="FieldCaption" Text="Вид" Width="52"/>
 
+									<!-- Ширина кнопки задана и не зависит от имени вида: имя человек
+									     придумывает сам, и длинное растягивало кнопку, сдвигая всё,
+									     что стоит в ленте правее. Не поместилось — обрежется
+									     многоточием, полное имя есть в списке. -->
 									<Button Classes="RibbonBtn"
-									        MinHeight="24" MinWidth="120"
+									        MinHeight="24" Width="120"
 									        Padding="8 0"
-									        HorizontalContentAlignment="Left"
+									        HorizontalContentAlignment="Stretch"
 									        behaviours:TooltipBehavior.Tip="Вид чтения"
-									        behaviours:TooltipBehavior.Description="Оформление книги: цвет бумаги, цвет букв, поле вокруг и свет. Правка ползунками на ходу превращает вид в «Кастомное» — сохранить её под именем можно в окне видов.">
+									        behaviours:TooltipBehavior.Description="Оформление книги: цвет бумаги, цвет букв, поле вокруг и свет. Правка ползунками на ходу превращает вид в «Кастомное» — сохранить её под именем можно в окне видов">
 										<Grid ColumnDefinitions="* Auto">
 											<TextBlock Grid.Column="0"
 											           Text="{Binding SelectedThemeItem.Label}"
@@ -694,7 +699,13 @@
 										<Button.Flyout>
 											<Flyout Placement="Bottom">
 												<Border Padding="8">
-													<ItemsControl ItemsSource="{Binding ThemeItems}" Width="228">
+													<Grid RowDefinitions="* Auto" Width="228">
+													<ScrollViewer Grid.Row="0"
+													              MaxHeight="330"
+													              AllowAutoHide="False"
+													              HorizontalScrollBarVisibility="Disabled"
+													              VerticalScrollBarVisibility="Auto">
+													<ItemsControl ItemsSource="{Binding ThemeItems}">
 														<ItemsControl.ItemsPanel>
 															<ItemsPanelTemplate>
 																<WrapPanel Orientation="Horizontal"/>
@@ -733,20 +744,24 @@
 															</DataTemplate>
 														</ItemsControl.ItemTemplate>
 													</ItemsControl>
+													</ScrollViewer>
+
+											<!-- Настройка видов — закреплённой кнопкой внизу списка, как у палитр
+											     цвета. Она не уезжает вместе с плитками: до неё должно быть можно
+											     дотянуться, сколько бы видов человек ни завёл. -->
+											<Button Grid.Row="1" Margin="0 8 0 0"
+											        Content="Настроить виды"
+											        HorizontalAlignment="Stretch"
+											        HorizontalContentAlignment="Center"
+											        FontSize="11" Padding="8 6" CornerRadius="6"
+											        Background="{DynamicResource AccentDefaultBrush}"
+											        Foreground="White"
+											        Click="OnConfigureThemesClick"
+											        Command="{Binding OpenThemesCommand}"/>
+													</Grid>
 												</Border>
 											</Flyout>
 										</Button.Flyout>
-									</Button>
-
-									<!-- Завести свой вид. Значок палитры — рядом с сеткой, как и
-									     во вкладке «Вид» правки. -->
-									<Button Classes="RibbonBtn" MinHeight="24" MinWidth="24"
-									        Padding="2 0"
-									        Command="{Binding CreateThemeCommand}"
-									        behaviours:TooltipBehavior.Tip="Создать вид"
-									        behaviours:TooltipBehavior.Description="Новый вид заводится копией выбранного — от знакомой точки настраивать проще, чем от белого листа. Откроется окно видов, где его и настраивают.">
-										<PathIcon Width="13" Height="13"
-										          Data="M12 3a9 9 0 100 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1a1.49 1.49 0 01-.36-.97c0-.83.67-1.5 1.5-1.5H16a5 5 0 005-5c0-4.42-4.03-8-9-8zM6.5 12a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm3-4a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm5 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm4.5 4a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/>
 									</Button>
 								</StackPanel>
 
@@ -761,7 +776,7 @@
 									                            ToolTip.Tip="{x:Null}"
 									                            HexColor="{Binding BackdropColorHex, Mode=TwoWay}"
 									                            behaviours:TooltipBehavior.Tip="Заливка поля вокруг книги"
-									                            behaviours:TooltipBehavior.Description="Цвет или градиент — тот же выбор, что и у любого другого цвета в программе. Пока своего нет, поле выводится из бумаги: под светлой книгой темнее, под тёмной чуть светлее."/>
+									                            behaviours:TooltipBehavior.Description="Цвет или градиент — тот же выбор, что и у любого другого цвета в программе. Пока своего нет, поле выводится из бумаги: под светлой книгой темнее, под тёмной чуть светлее"/>
 									<Button Classes="RibbonBtn" MinHeight="20" MinWidth="20"
 									        Padding="2 0"
 									        Command="{Binding ResetBackdropCommand}"
@@ -772,35 +787,10 @@
 								</StackPanel>
 							</StackPanel>
 
-							<!-- Картинка поля. Кнопки и подача те же, что и у фона рабочей
-							     области во вкладке «Вид»: большая плитка открывает общую
-							     библиотеку фонов — готовые фоны, свои папки и свои файлы, —
-							     а крестик рядом убирает выбранную. Тумблера здесь больше нет:
-							     выбор картинки её и включает, а «выключено, но выбрано» —
-							     состояние, которое человеку объяснить нечем; и до сих пор
-							     тумблер без выбранного файла щёлкал вхолостую. -->
-							<StackPanel Orientation="Horizontal" Spacing="3">
-								<Button Classes="RibbonToggle FlowBtn"
-								        Command="{Binding PickBackdropImageCommand}"
-								        behaviours:TooltipBehavior.Tip="Картинка поля"
-								        behaviours:TooltipBehavior.Description="Ложится на поле вокруг книги поверх заливки. Открывается та же библиотека фонов, что и у рабочей области: готовые фоны, свои папки и свои файлы.">
-									<StackPanel Spacing="2" HorizontalAlignment="Center">
-										<PathIcon Data="M21 19V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5z"/>
-										<TextBlock Text="Картинка" FontSize="9" TextAlignment="Center"/>
-									</StackPanel>
-								</Button>
-
-								<Button Classes="RibbonBtn"
-								        MinWidth="24" MinHeight="24"
-								        Padding="0"
-								        VerticalAlignment="Center"
-								        IsEnabled="{Binding HasBackdropImage}"
-								        Command="{Binding ClearBackdropImageCommand}"
-								        behaviours:TooltipBehavior.Tip="Убрать картинку">
-									<PathIcon Width="12" Height="12"
-									          Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-								</Button>
-							</StackPanel>
+							<!-- Картинки поля здесь больше нет. Её место — в окне видов:
+							     картинка принадлежит виду и уезжает вместе с ним, а вторая
+							     точка входа в ленте вела в отдельную библиотеку фонов и
+							     задавала то же самое мимо вида. -->
 						</StackPanel>
 					</DockPanel>
 				</Border>
@@ -825,7 +815,7 @@
 
 								<StackPanel Orientation="Horizontal" Spacing="4"
 								            behaviours:TooltipBehavior.Tip="Шрифт чтения"
-								            behaviours:TooltipBehavior.Description="Подменяет шрифт только на экране. В документе начертание остаётся авторским.">
+								            behaviours:TooltipBehavior.Description="Подменяет шрифт только на экране. В документе начертание остаётся авторским">
 									<PathIcon Classes="FieldGlyph"
 									          Data="M9.93 13.5h4.14L12 7.98zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-4.05 16.5l-1.14-3H9.17l-1.12 3H5.96l5.11-13h1.86l5.11 13h-2.09z"/>
 									<TextBlock Classes="FieldCaption" Text="Шрифт"/>
@@ -848,7 +838,7 @@
 									        Content="{Binding FontStepLabel}"
 									        Command="{Binding FontStepResetCommand}"
 									        behaviours:TooltipBehavior.Tip="Ступень размера — нажмите, чтобы вернуть авторскую"
-									        behaviours:TooltipBehavior.Description="Насколько буквы крупнее авторских. Своего кегля здесь нет намеренно: читатель делает текст крупнее или мельче, но не назначает рукописи другой размер. Нажатие возвращает ступень к нулю — шрифт и цвет остаются как есть."/>
+									        behaviours:TooltipBehavior.Description="Насколько буквы крупнее авторских. Своего кегля здесь нет намеренно: читатель делает текст крупнее или мельче, но не назначает рукописи другой размер. Нажатие возвращает ступень к нулю — шрифт и цвет остаются как есть"/>
 									<Button Classes="RibbonBtn"
 									        MinHeight="24" MinWidth="24"
 									        Padding="4 0"
@@ -863,7 +853,7 @@
 									     буквы и круглый образец цвета рядом. -->
 									<StackPanel Orientation="Horizontal" Spacing="3"
 									            behaviours:TooltipBehavior.Tip="Цвет текста при чтении"
-									            behaviours:TooltipBehavior.Description="Действует на текст, которому цвет не задан автором сознательно: чёрный и серый — это цвет по умолчанию, и его вид вправе заменить своим. Цветной текст остаётся цветным.">
+									            behaviours:TooltipBehavior.Description="Действует на текст, которому цвет не задан автором сознательно: чёрный и серый — это цвет по умолчанию, и его вид вправе заменить своим. Цветной текст остаётся цветным">
 										<PathIcon Data="M11.39 1.48L6.18 15h2.31l1.05-3h5.12l1.05 3h2.31L12.61 1.48h-1.22zm-1.21 8.52l1.82-5.2 1.82 5.2H10.18zM2 20h20v-2H2v2z"
 										          Width="14" Height="14" VerticalAlignment="Center"/>
 										<controls:ColorPickerButton Width="18" Height="18"
@@ -877,7 +867,7 @@
 									        Padding="4 0"
 									        Command="{Binding ResetTextCommand}"
 									        behaviours:TooltipBehavior.Tip="Сбросить"
-									        behaviours:TooltipBehavior.Description="Вернуть шрифт, цвет и размер такими, как в документе.">
+									        behaviours:TooltipBehavior.Description="Вернуть шрифт, цвет и размер такими, как в документе">
 										<PathIcon Width="12" Height="12"
 										          Data="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z"/>
 									</Button>
@@ -902,7 +892,7 @@
 							<StackPanel Spacing="1" VerticalAlignment="Center">
 								<StackPanel Orientation="Horizontal" Spacing="4"
 								            behaviours:TooltipBehavior.Tip="Яркость"
-								            behaviours:TooltipBehavior.Description="Приглушает свет над страницей, не трогая цвета документа.">
+								            behaviours:TooltipBehavior.Description="Приглушает свет над страницей, не трогая цвета документа">
 									<TextBlock Classes="ParamLabel" Text="Яркость"/>
 									<Slider Classes="RibbonSlider"
 									        Minimum="35" Maximum="100"
@@ -910,7 +900,7 @@
 								</StackPanel>
 								<StackPanel Orientation="Horizontal" Spacing="4"
 								            behaviours:TooltipBehavior.Tip="Контраст"
-								            behaviours:TooltipBehavior.Description="Разводит текст и бумагу. Меньше — буквы мягче, больше — резче. Работает и на тёмной бумаге.">
+								            behaviours:TooltipBehavior.Description="Разводит текст и бумагу. Меньше — буквы мягче, больше — резче. Работает и на тёмной бумаге">
 									<TextBlock Classes="ParamLabel" Text="Контраст"/>
 									<Slider Classes="RibbonSlider"
 									        Minimum="60" Maximum="160"
@@ -918,7 +908,7 @@
 								</StackPanel>
 								<StackPanel Orientation="Horizontal" Spacing="4"
 								            behaviours:TooltipBehavior.Tip="Тёплота"
-								            behaviours:TooltipBehavior.Description="Убирает синеву, как ночной режим экрана. Помогает читать перед сном.">
+								            behaviours:TooltipBehavior.Description="Убирает синеву, как ночной режим экрана. Помогает читать перед сном">
 									<TextBlock Classes="ParamLabel" Text="Тёплота"/>
 									<Slider Classes="RibbonSlider"
 									        Minimum="0" Maximum="100"
@@ -947,7 +937,7 @@
 							<StackPanel Spacing="2" VerticalAlignment="Center">
 								<StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Center"
 								            behaviours:TooltipBehavior.Tip="Приближение книги"
-								            behaviours:TooltipBehavior.Description="Меняет размер книги на экране, а не количество текста на листе. Крупную книгу ведёт указатель у края.">
+								            behaviours:TooltipBehavior.Description="Меняет размер книги на экране, а не количество текста на листе. Крупную книгу ведёт указатель у края">
 									<Button Classes="RibbonBtn"
 									        MinHeight="24"
 									        Command="{Binding ZoomOutCommand}"
@@ -970,7 +960,7 @@
 							<ToggleButton Classes="RibbonToggle"
 							              IsChecked="{Binding ScaleContent, Mode=TwoWay}"
 							              behaviours:TooltipBehavior.Tip="Ужимать содержимое"
-							              behaviours:TooltipBehavior.Description="Картинки и таблицы уменьшаются вместе с листом, чтобы не рвать колонку.">
+							              behaviours:TooltipBehavior.Description="Картинки и таблицы уменьшаются вместе с листом, чтобы не рвать колонку">
 								<StackPanel Spacing="1" HorizontalAlignment="Center">
 									<PathIcon Data="M21 15h-2v2h-2v2h4zM7 5H5v2H3V3h4zm14-2v4h-2V5h-2V3zM3 21v-4h2v2h2v2zm2-6H3V9h2zm14 0V9h2v6zM9 3h6v2H9zm0 16h6v2H9z" Width="14" Height="14"/>
 									<TextBlock Text="Ужимать" FontSize="9" TextAlignment="Center"/>
@@ -992,7 +982,7 @@
 							<ToggleButton Classes="RibbonToggle FlowBtn"
 							              IsChecked="{Binding Fullscreen, Mode=TwoWay}"
 							              behaviours:TooltipBehavior.Tip="Во весь экран"
-							              behaviours:TooltipBehavior.Description="Окно разворачивается во весь экран, а книга занимает его почти целиком: вкладки и панели приложения уходят, нижняя строка остаётся. Возврат — F11 или Esc."
+							              behaviours:TooltipBehavior.Description="Окно разворачивается во весь экран, а книга занимает его почти целиком: вкладки и панели приложения уходят, нижняя строка остаётся. Возврат — F11 или Esc"
 							              behaviours:TooltipBehavior.HotKey="F11">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Data="M7 14H5v5h5v-2H7zm-2-4h2V7h3V5H5zm12 7h-3v2h5v-5h-2zM14 5v2h3v3h2V5z"/>
@@ -1003,7 +993,7 @@
 							              IsChecked="False"
 							              Command="{Binding ExitCommand}"
 							              behaviours:TooltipBehavior.Tip="Выйти из чтения"
-							              behaviours:TooltipBehavior.Description="Вернуться к правке. Книга откроется там же, где вы её оставили."
+							              behaviours:TooltipBehavior.Description="Вернуться к правке. Книга откроется там же, где вы её оставили"
 							              behaviours:TooltipBehavior.HotKey="Esc">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Data="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67zM19 3H5c-1.11 0-2 .9-2 2v4h2V5h14v14H5v-4H3v4c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>

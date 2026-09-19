@@ -444,7 +444,15 @@ namespace Writersword.Modules.Characters
             data.Folders = _viewModel?.GetFolders() ?? new List<CharacterFolder>();
             data.IsFirstLaunch = false;
             if (_anketaService is CharacterAnketaService as_)
+            {
                 data.CustomAnketas = as_.GetCustom().ToList();
+
+                // Шаблоны проекта — рядом со своими анкетами: шаблон,
+                // ссылающийся на анкету из чужого проекта, был бы списком
+                // пустых мест.
+                data.Templates = as_.GetCustomTemplates().ToList();
+                data.RecentAnketaIds = as_.GetRecentAnketaIds().ToList();
+            }
             data.Preview = GetPreviews().ToList();
             // Verbose вместо Debug: вызывается фоновым аутосейвом каждые несколько
             // секунд и при штатном уровне лога только засоряет вывод.
@@ -514,7 +522,11 @@ namespace Writersword.Modules.Characters
                 _characterService.LoadModuleData(moduleData);
 
                 if (_anketaService is CharacterAnketaService as_)
+                {
                     as_.LoadCustomAnketas(moduleData.CustomAnketas ?? new List<CharacterAnketa>());
+                    as_.LoadTemplates(moduleData.Templates ?? new List<CharacterTemplate>());
+                    as_.LoadRecentAnketas(moduleData.RecentAnketaIds ?? new List<string>());
+                }
 
                 if (_viewModel != null)
                 {

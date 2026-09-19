@@ -31,7 +31,7 @@ namespace Writersword.Infrastructure.Services.Project
     {
         private readonly ILogger<ProjectWorkflow> _logger;
         private readonly IProjectService _projectService;
-        private readonly IZipCacheService _cacheService;
+        private readonly IProjectCacheService _cacheService;
         private readonly IDialogService _dialogService;
         private readonly ISettingsService _settingsService;
         private readonly INotificationService _notificationService;
@@ -52,7 +52,7 @@ namespace Writersword.Infrastructure.Services.Project
 
         public ProjectWorkflow(
                IProjectService projectService,
-               IZipCacheService cacheService,
+               IProjectCacheService cacheService,
                IDialogService dialogService,
                ISettingsService settingsService,
                INotificationService notificationService,
@@ -124,7 +124,7 @@ namespace Writersword.Infrastructure.Services.Project
                             var currentHash = await Task.Run(() =>
                             {
                                 // Глобальный шлюз файла: хеширование не пересекается с записью
-                                // конфигов/кеша в этот же ZIP из других потоков.
+                                // конфигов/кеша в этот же файл из других потоков.
                                 using var fileGate = ProjectFileLock.Acquire(filePath);
                                 using var sha = System.Security.Cryptography.SHA256.Create();
                                 using var fs = new FileStream(
@@ -139,7 +139,7 @@ namespace Writersword.Infrastructure.Services.Project
                         if (!hashMatched)
                         {
                             // Несовпадение хеша файла НЕ означает несовпадение данных модулей:
-                            // ZIP проекта перезаписывается и без правок содержимого — например,
+                            // файл проекта меняется и без правок содержимого — например,
                             // автосохранение workspace.json (layout) при каждом переключении
                             // вкладки меняет хеш всего файла. Раньше это сразу трактовалось как
                             // «есть несохранённые данные», и каждая вкладка при каждом запуске
@@ -329,7 +329,7 @@ namespace Writersword.Infrastructure.Services.Project
                     {
                         _logger.LogDebug("Cache found for lazy tab - Cache: {CacheDate}, Save: {SaveDate}", cacheDate, saveDate);
 
-                        // Task.Run: _fileLock.Wait() в ZipCacheService (singleton) синхронно
+                        // Task.Run: _fileLock.Wait() в кеш-сервисе (singleton) синхронно
                         // блокирует UI-поток. Фоновый авто-сейв держит тот же лок и ждёт
                         // Dispatcher.UIThread.InvokeAsync — классический дедлок.
                         // Task.Run переносит ожидание на пул потоков.
@@ -458,7 +458,7 @@ namespace Writersword.Infrastructure.Services.Project
         /// <summary>
         /// Перезагрузить все активные модули из данных проекта.
         /// Используется при переключении версий в Compare mode.
-        /// После перезагрузки CustomData применяет локальные настройки из ZIP.
+        /// После перезагрузки CustomData применяет локальные настройки из проекта.
         /// </summary>
         private async Task ReloadModulesFromProject(DocumentTabViewModel tab)
         {
@@ -499,7 +499,7 @@ namespace Writersword.Infrastructure.Services.Project
                         _logger.LogDebug("Cleared module (no data): {moduleType}", module.moduleType);
                 }
 
-                // Применяем локальные настройки из ZIP после перезагрузки
+                // Применяем локальные настройки из проекта после перезагрузки
                 var storage = tab.Context?.FileStorage;
                 if (storage != null)
                 {
@@ -651,7 +651,7 @@ namespace Writersword.Infrastructure.Services.Project
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => tab.UpdateProject(reloaded));
 
                 // Перезагрузка модулей после переоткрытия хранилища: внутри
-                // применяются локальные настройки из ZIP.
+                // применяются локальные настройки из проекта.
                 await ReloadModulesFromProject(tab);
 
                 tab.Workspace?.RefreshModulesFromContext();
@@ -856,7 +856,7 @@ namespace Writersword.Infrastructure.Services.Project
                         }
 
                         // Перезагрузка модулей ПОСЛЕ переоткрытия хранилища: внутри
-                        // применяются локальные настройки из ZIP, а раньше хранилище
+                        // применяются локальные настройки из проекта, а раньше хранилище
                         // в этот момент было закрыто ("FileStorage is null").
                         if (discardProject != null)
                             await ReloadModulesFromProject(capturedTab);
@@ -1003,7 +1003,7 @@ namespace Writersword.Infrastructure.Services.Project
                 }
 
                 // Перезагрузка модулей ПОСЛЕ переоткрытия хранилища: внутри применяются
-                // локальные настройки из ZIP, а раньше хранилище в этот момент было
+                // локальные настройки из проекта, а раньше хранилище в этот момент было
                 // закрыто ("FileStorage is null").
                 if (project != null)
                 {
@@ -1045,7 +1045,7 @@ namespace Writersword.Infrastructure.Services.Project
 
         /// <summary>
         /// Удалить осиротевший временный файл сохранения.
-        /// ZipProjectService собирает новый архив в «путь.tmp» и заменяет им
+        /// Сохранение собирает новый файл проекта в «путь.tmp» и заменяет им
         /// проект через File.Move. Если процесс умер между этими шагами, .tmp
         /// остаётся лежать рядом и путает: он похож на проект, но недописан.
         /// Удаляется только когда сам проект на месте — иначе .tmp может быть
@@ -1195,9 +1195,9 @@ namespace Writersword.Infrastructure.Services.Project
                     foreach (var kvp in activeCustomData)
                         allData[kvp.Key] = kvp.Value;
 
-                    // Защита от потери данных: если модуль присутствовал в ZIP на диске,
+                    // Защита от потери данных: если модуль присутствовал в файле проекта,
                     // но не попал в allData (GetCustomData вернул null или бросил исключение,
-                    // а кеш пуст) — берём старое значение из ZIP.
+                    // а кеш пуст) — берём старое значение из проекта.
                     // Это предотвращает затирание данных при временном сбое сбора.
                     tab.Context.CloseStorage();
                     var savedProject = await _projectService.LoadAsync(filePath);
@@ -1214,7 +1214,7 @@ namespace Writersword.Infrastructure.Services.Project
                             {
                                 allData[kvp.Key] = kvp.Value;
                                 _logger.LogWarning(
-                                    "Module {M} missing from collected data — preserved from ZIP", kvp.Key);
+                                    "Module {M} missing from collected data — preserved from project file", kvp.Key);
                             }
                         }
                     }
@@ -1255,8 +1255,8 @@ namespace Writersword.Infrastructure.Services.Project
                     foreach (var kvp in cache)
                         allData[kvp.Key] = kvp.Value;
 
-                    // Защита от потери данных: если модуль был в ZIP но не попал в кеш —
-                    // берём старое значение из ZIP.
+                    // Защита от потери данных: если модуль был в проекте но не попал в кеш —
+                    // берём старое значение из проекта.
                     tab.Context.CloseStorage();
                     var savedProject = await _projectService.LoadAsync(filePath);
                     tab.Context.ReopenStorage();
@@ -1272,7 +1272,7 @@ namespace Writersword.Infrastructure.Services.Project
                             {
                                 allData[kvp.Key] = kvp.Value;
                                 _logger.LogWarning(
-                                    "Module {M} missing from cache — preserved from ZIP (inactive tab)", kvp.Key);
+                                    "Module {M} missing from cache — preserved from project file (inactive tab)", kvp.Key);
                             }
                         }
                     }
@@ -1653,7 +1653,7 @@ namespace Writersword.Infrastructure.Services.Project
         /// <summary>
         /// Очистка кешей .wsasd при штатном закрытии приложения.
         /// Сохранение здесь намеренно не выполняется: запись при закрытии — это
-        /// путь, которым пустые данные модуля попадают в ZIP. Кеш либо совпадает
+        /// путь, которым пустые данные модуля попадают в проект. Кеш либо совпадает
         /// с проектом и удаляется, либо расходится и остаётся для восстановления.
         /// </summary>
         public async Task CleanupCachesAsync(IEnumerable<string> projectPaths)
@@ -1695,11 +1695,11 @@ namespace Writersword.Infrastructure.Services.Project
                     if (_comparisonService.AreDataEqual(cache, savedRelevant))
                     {
                         _cacheService.DeleteCache(filePath);
-                        _logger.LogDebug("Cache removed on shutdown (identical to ZIP): {Path}", filePath);
+                        _logger.LogDebug("Cache removed on shutdown (identical to project file): {Path}", filePath);
                     }
                     else
                     {
-                        _logger.LogWarning("Cache kept on shutdown (differs from ZIP): {Path}", filePath);
+                        _logger.LogWarning("Cache kept on shutdown (differs from project file): {Path}", filePath);
                     }
                 }
                 catch (Exception ex)

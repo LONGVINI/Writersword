@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <!-- 
     Microsoft ResX Schema 
@@ -1406,7 +1406,15 @@
     <comment>Ribbon button</comment>
   </data>
   <data name="Toc_Update_Tip" xml:space="preserve">
-    <value>Rebuild the list from the current headings and page numbers.</value>
+    <value>Rebuild the list from the current headings and page numbers</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_UpdatePages" xml:space="preserve">
+    <value>Page numbers</value>
+    <comment>Ribbon button</comment>
+  </data>
+  <data name="Toc_UpdatePages_Tip" xml:space="preserve">
+    <value>Refresh only the page numbers. Entry text is left as it is, including your own edits</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_Insert" xml:space="preserve">
@@ -1414,7 +1422,7 @@
     <comment>Ribbon button</comment>
   </data>
   <data name="Toc_Insert_Tip" xml:space="preserve">
-    <value>Insert one more table of contents at the caret.</value>
+    <value>Insert one more table of contents at the caret</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_GoTo" xml:space="preserve">
@@ -1422,7 +1430,7 @@
     <comment>Ribbon button</comment>
   </data>
   <data name="Toc_GoTo_Tip" xml:space="preserve">
-    <value>Go to the chapter this line points to.</value>
+    <value>Go to the chapter this line points to</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_Remove" xml:space="preserve">
@@ -1430,7 +1438,7 @@
     <comment>Ribbon button</comment>
   </data>
   <data name="Toc_Remove_Tip" xml:space="preserve">
-    <value>Remove this table of contents from the manuscript.</value>
+    <value>Remove this table of contents from the manuscript</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_LevelsAll" xml:space="preserve">
@@ -1438,19 +1446,19 @@
     <comment>Ribbon button caption</comment>
   </data>
   <data name="Toc_Levels1_Tip" xml:space="preserve">
-    <value>Only chapters.</value>
+    <value>Only chapters</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_Levels3_Tip" xml:space="preserve">
-    <value>Chapters and two levels below them.</value>
+    <value>Chapters and two levels below them</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_Levels5_Tip" xml:space="preserve">
-    <value>Down to the fifth level.</value>
+    <value>Down to the fifth level</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_Levels9_Tip" xml:space="preserve">
-    <value>All nine levels.</value>
+    <value>All nine levels</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_MinLevel" xml:space="preserve">
@@ -1458,7 +1466,7 @@
     <comment>Ribbon field label</comment>
   </data>
   <data name="Toc_MinLevel_Tip" xml:space="preserve">
-    <value>Topmost heading level taken into the list.</value>
+    <value>Topmost heading level taken into the list</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_LevelIndent" xml:space="preserve">
@@ -1466,7 +1474,15 @@
     <comment>Ribbon field label</comment>
   </data>
   <data name="Toc_LevelIndent_Tip" xml:space="preserve">
-    <value>Step of the shift per level, in points.</value>
+    <value>Step of the shift per level, in points</value>
+    <comment>Ribbon tooltip</comment>
+  </data>
+  <data name="Toc_LeaderDensity" xml:space="preserve">
+    <value>Density</value>
+    <comment>Ribbon field label</comment>
+  </data>
+  <data name="Toc_LeaderDensity_Tip" xml:space="preserve">
+    <value>How densely the leader marks are set. 100% is the usual step, 200% is twice as dense</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_Leader_Dots" xml:space="preserve">
@@ -1506,11 +1522,11 @@
     <comment>Ribbon checkbox</comment>
   </data>
   <data name="Toc_AutoUpdate_Tip" xml:space="preserve">
-    <value>Refresh the page numbers when the book is repaginated.</value>
+    <value>Refresh the page numbers when the book is repaginated</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_Title_Tip" xml:space="preserve">
-    <value>Title above the list. Empty — the default name.</value>
+    <value>Title above the list. Empty — the default name</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_Title_Placeholder" xml:space="preserve">
@@ -1518,11 +1534,11 @@
     <comment>Ribbon text box placeholder</comment>
   </data>
   <data name="Toc_Style_Level_Tip" xml:space="preserve">
-    <value>Which level's lines are being formatted.</value>
+    <value>Which level's lines are being formatted</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_Style_Size_Tip" xml:space="preserve">
-    <value>Font size of the lines of this level.</value>
+    <value>Font size of the lines of this level</value>
     <comment>Ribbon tooltip</comment>
   </data>
   <data name="Toc_Style_Bold" xml:space="preserve">
@@ -1538,7 +1554,7 @@
     <comment>Ribbon button</comment>
   </data>
   <data name="Toc_Style_Reset_Tip" xml:space="preserve">
-    <value>Return the table of contents styles to their built-in look.</value>
+    <value>Return the table of contents styles to their built-in look</value>
     <comment>Ribbon tooltip</comment>
   </data>
 </root>

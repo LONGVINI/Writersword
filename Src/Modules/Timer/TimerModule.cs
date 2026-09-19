@@ -134,7 +134,7 @@ namespace Writersword.Modules.Timer
         /// <summary>
         /// Получить текущие локальные настройки из _settingsVm.
         /// Если VM не создана — возвращает глобальные.
-        /// Вызывается сервисом при сохранении в ZIP.
+        /// Вызывается сервисом при сохранении проекта.
         /// </summary>
         public object GetLocalSettings()
         {
@@ -252,7 +252,7 @@ namespace Writersword.Modules.Timer
 
         /// <summary>
         /// Создать View для локальных настроек проекта.
-        /// Начальные значения берутся из ZIP через ILocalSettingsStorageService,
+        /// Начальные значения берутся из проекта через ILocalSettingsStorageService,
         /// или из глобальных если локальных нет.
         /// </summary>
         public Control CreateLocalSettingsView()

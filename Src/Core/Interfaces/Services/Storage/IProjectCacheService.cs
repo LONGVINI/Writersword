@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Cache;
@@ -6,11 +6,11 @@ using Writersword.Core.Models.Cache;
 namespace Writersword.Core.Interfaces.Services
 {
     /// <summary>
-    /// Интерфейс сервиса кеширования данных модулей
-    /// Кеш хранится в .writersword.wsasd файле рядом с проектом
-    /// Ключ данных модуля — moduleType (строка), не InstanceId
+    /// Интерфейс сервиса кеширования данных модулей.
+    /// Кеш хранится в базе .writersword.wsasd рядом с проектом.
+    /// Ключ данных модуля — moduleType (строка), не InstanceId.
     /// </summary>
-    public interface IZipCacheService
+    public interface IProjectCacheService
     {
         /// <summary>
         /// Проверить существование кеша для проекта
@@ -30,9 +30,9 @@ namespace Writersword.Core.Interfaces.Services
         Dictionary<string, object?>? LoadCache(string projectPath, string? expectedProjectId = null);
 
         /// <summary>
-        /// Загрузить CustomData И SessionData из кеша одним чтением архива.
+        /// Загрузить CustomData И SessionData из кеша одним обращением к базе.
         /// Возвращает два словаря: moduleType → CustomData, moduleType → SessionData.
-        /// SessionData может быть null для модулей у которых нет сессионных данных.
+        /// SessionData может отсутствовать для модулей, у которых нет сессионных данных.
         /// </summary>
         (Dictionary<string, object?> CustomData, Dictionary<string, object?> SessionData)?
             LoadCacheWithSession(string projectPath, string? expectedProjectId = null);
@@ -74,8 +74,8 @@ namespace Writersword.Core.Interfaces.Services
         void MoveCacheToBackup(string projectPath);
 
         /// <summary>
-        /// Прочитать ModulesData из project.json без эксклюзивной блокировки файла
-        /// Используется для сравнения при принятии решения о записи кеша
+        /// Прочитать данные модулей из файла проекта без внутреннего замка кеша.
+        /// Используется для сравнения при принятии решения о записи кеша.
         /// </summary>
         Dictionary<string, object?>? ReadProjectDataWithoutLock(string projectPath);
     }

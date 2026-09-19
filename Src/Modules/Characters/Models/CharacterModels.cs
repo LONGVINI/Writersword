@@ -111,4 +111,34 @@ namespace Writersword.Modules.Characters.Models
         public List<CharacterAnketaField> Fields { get; set; } = new();
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Шаблон — именованный список анкет.
+    ///
+    /// Три уровня, и путать их нельзя: поле спрашивает одну вещь («длина
+    /// ушей»), анкета собирает поля в раздел («Внешность»), шаблон собирает
+    /// анкеты под тип персонажа («Эльф» = Внешность + Магия + События).
+    /// Выбрал шаблон — подключились все его анкеты разом, и не надо
+    /// набирать их по одной каждому новому персонажу.
+    ///
+    /// Шаблон хранит только опознаватели анкет, а не их копии: правка анкеты
+    /// должна доходить до всех, кто её подключил, иначе «Внешность» внутри
+    /// шаблона и «Внешность» сама по себе разъедутся и перестанут быть одним
+    /// разделом — а вместе с этим перестанут сравниваться и значения.
+    /// </summary>
+    public class CharacterTemplate
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public bool IsBuiltIn { get; set; } = false;
+
+        /// <summary>
+        /// Анкеты шаблона по порядку. Порядок значим: он задаёт, в каком
+        /// порядке разделы встанут в карточке.
+        /// </summary>
+        public List<string> AnketaIds { get; set; } = new();
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
 }

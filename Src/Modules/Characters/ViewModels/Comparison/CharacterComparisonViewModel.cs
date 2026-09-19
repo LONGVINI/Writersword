@@ -114,6 +114,33 @@ namespace Writersword.Modules.Characters.ViewModels.Comparison
                 case CharacterParameterType.Boolean:
                     return parameter.BoolValue ? parameter.TrueLabel : parameter.FalseLabel;
 
+                // Свободное число показывается как есть, без «из скольких»:
+                // у длины ушей нет максимума, с которым её делят. Невписанное
+                // остаётся пустым, а не превращается в ноль.
+                case CharacterParameterType.Number:
+                    return parameter.HasNumber
+                        ? parameter.NumericValue.ToString("0.###", CultureInfo.CurrentCulture)
+                        : string.Empty;
+
+                // Описание живёт в том же поле, что и короткий текст. В таблицу
+                // оно идёт целиком: обрезать его тут — значит показать в
+                // сравнении не то, что написано.
+                case CharacterParameterType.LongText:
+                    return parameter.TextValue ?? string.Empty;
+
+                // Отмеченное перечисляется через запятую в том порядке, в
+                // каком идут сами варианты, а не в каком их отмечали: иначе
+                // две одинаковые карточки читались бы как разные.
+                case CharacterParameterType.MultiChoice:
+                    if (parameter.SelectedStates == null || parameter.SelectedStates.Count == 0)
+                        return string.Empty;
+
+                    if (parameter.States == null || parameter.States.Count == 0)
+                        return string.Join(", ", parameter.SelectedStates);
+
+                    return string.Join(", ",
+                        parameter.States.Where(state => parameter.SelectedStates.Contains(state)));
+
                 default:
                     return string.Empty;
             }

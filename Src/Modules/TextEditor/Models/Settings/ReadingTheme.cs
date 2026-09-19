@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -15,6 +15,19 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         Stretch = 2,
         /// <summary>Замостить в исходном размере.</summary>
         Tile = 3
+    }
+
+    /// <summary>Как вид разбирается с набором картинок.</summary>
+    public enum ReadingImageFlow
+    {
+        /// <summary>Всегда первая. Набор при этом никуда не девается.</summary>
+        Single = 0,
+
+        /// <summary>Каждый следующий лист берёт следующую картинку, по кругу.</summary>
+        Sequence = 1,
+
+        /// <summary>Лист берёт картинку из набора по жребию — но всегда одну и ту же.</summary>
+        Shuffle = 2
     }
 
     /// <summary>
@@ -52,8 +65,58 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// <summary>Цвет текста, у которого нет своего (HEX).</summary>
         public string InkColor { get; set; } = "#2E2A24";
 
-        /// <summary>Картинка бумаги. Пусто — лист заливается цветом.</summary>
-        public string? ImagePath { get; set; }
+        // ── Только для правки ─────────────────────────────────────────────
+        // Всё, что ниже, видно за письмом и в чтении не значит ничего: там не
+        // правят, линейки нет, и позиции табуляции показывать нечему. Пусто в любом
+        // из этих полей — цвет выводится из бумаги и чернил, как и раньше.
+        //
+        // Живёт это в виде, а не в общих настройках, потому что нужно ровно тогда,
+        // когда меняется бумага: подобранное под ночной лист обязано уйти вместе с
+        // ним, стоит вернуться на белый.
+
+        /// <summary>
+        /// Цвет каретки при правке (HEX). Пусто — каретка берёт цвет текста, который
+        /// пишет, и меняется вместе с ним.
+        /// </summary>
+        public string? CaretColor { get; set; }
+
+        /// <summary>Полоса линейки (HEX). Пусто — цвет бумаги вида.</summary>
+        public string? RulerSheetColor { get; set; }
+
+        /// <summary>Деления и цифры линейки (HEX). Пусто — цвет чернил вида.</summary>
+        public string? RulerInkColor { get; set; }
+
+        /// <summary>Зона за краем листа на линейке (HEX). Пусто — цвет поля вида.</summary>
+        public string? RulerFieldColor { get; set; }
+
+        /// <summary>
+        /// Позиции табуляции: засечки на линейке и квадрат-переключатель в её углу
+        /// (HEX). Пусто — прежний бирюзовый.
+        /// </summary>
+        public string? TabMarkColor { get; set; }
+
+        /// <summary>
+        /// Картинки бумаги. Пусто — лист заливается цветом.
+        ///
+        /// Набор, а не одна: листы в книге разные, и читатель вправе собрать их
+        /// столько, сколько хочет. Что с набором делать — решает <see cref="ImageFlow"/>.
+        /// </summary>
+        public List<string> ImagePaths { get; set; } = new();
+
+        /// <summary>Что вид делает с набором картинок бумаги.</summary>
+        public ReadingImageFlow ImageFlow { get; set; } = ReadingImageFlow.Sequence;
+
+        /// <summary>
+        /// Прежнее поле одной картинки бумаги. Читается из старых файлов и вливается
+        /// в набор; наружу не отдаётся — у вида теперь набор, и спрашивать нужно его.
+        /// </summary>
+        [JsonPropertyName("ImagePath")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? LegacyImagePath
+        {
+            get => null;
+            set => AddImage(ImagePaths, value);
+        }
 
         /// <summary>Плотность картинки поверх цвета листа: 0 — не видна, 1 — целиком.</summary>
         public double ImageOpacity { get; set; } = 1.0;
@@ -75,11 +138,31 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// </summary>
         public string? BackdropColor { get; set; }
 
-        /// <summary>Класть на поле картинку поверх заливки.</summary>
-        public bool UseBackdropImage { get; set; }
+        /// <summary>
+        /// Картинки поля. Пусто — поле заливается цветом.
+        ///
+        /// Переключателя «использовать картинку» здесь нет намеренно: картинка либо
+        /// выбрана, либо нет, и второе состояние про то же самое было лишним. Заливка
+        /// при этом остаётся нужной — она видна там, где картинка не закрывает поле
+        /// целиком, и это выбор человека, а не недосмотр.
+        ///
+        /// Набор поле пока показывает по первой картинке: разным картинкам на одном
+        /// экране взяться неоткуда. Хранится он целиком — чтобы не собирать заново,
+        /// когда появится, к чему их привязать.
+        /// </summary>
+        public List<string> BackdropImagePaths { get; set; } = new();
 
-        /// <summary>Картинка поля.</summary>
-        public string? BackdropImagePath { get; set; }
+        /// <summary>Что вид делает с набором картинок поля.</summary>
+        public ReadingImageFlow BackdropImageFlow { get; set; } = ReadingImageFlow.Single;
+
+        /// <summary>Прежнее поле одной картинки поля. Только для чтения старых файлов.</summary>
+        [JsonPropertyName("BackdropImagePath")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? LegacyBackdropImagePath
+        {
+            get => null;
+            set => AddImage(BackdropImagePaths, value);
+        }
 
         /// <summary>Как картинка поля ложится на экран.</summary>
         public ReadingBackdropFit BackdropImageFit { get; set; } = ReadingBackdropFit.Cover;
@@ -87,13 +170,14 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// <summary>Плотность картинки поля: 0 — не видна, 1 — целиком.</summary>
         public double BackdropImageOpacity { get; set; } = 1.0;
 
-        // ── Текст ─────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Шрифт вида. Пусто — как в документе. Задавать не обязательно: вид
-        /// может менять только цвета, а начертание оставлять авторским.
-        /// </summary>
-        public string? FontFamily { get; set; }
+        // Шрифта у вида нет намеренно.
+        //
+        // Вид — один и тот же за письмом и за чтением, и держит он ровно то, что не
+        // доедет до печати: имя, цвета, бумагу, поле. Гарнитура в этот список не
+        // входит: за письмом рукопись обязана выглядеть так, как её напечатают, а за
+        // чтением начертание — такая же поправка под конкретные глаза, как и ступень
+        // размера. Обе живут в настройках чтения (ReadingSettings), обе не уезжают с
+        // видом и не меняются молча при его переключении.
 
         // ── Свет ──────────────────────────────────────────────────────────
 
@@ -120,9 +204,108 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         [JsonIgnore]
         public bool IsGlobal { get; set; }
 
+        /// <summary>
+        /// Вид убран из списков выбора. Сам он никуда не девается и правится в окне
+        /// видов как обычно — его просто не предлагают: встроенных шесть, а нужны из
+        /// них обычно один-два, и остальные только удлиняют список.
+        ///
+        /// Служебное, как и области: где вид спрятан, помнит не он сам, а настройки
+        /// программы — иначе спрятанный встроенный вид негде было бы записать.
+        /// </summary>
+        [JsonIgnore]
+        public bool IsHidden { get; set; }
+
         /// <summary>Тёмный ли лист. По нему решается вид служебных мелочей.</summary>
         [JsonIgnore]
         public bool IsDark => IsDarkHex(SheetColor);
+
+        // ── Наборы картинок ───────────────────────────────────────────────
+
+        /// <summary>Есть ли у вида хоть одна картинка бумаги.</summary>
+        [JsonIgnore]
+        public bool HasPaperImage => ImagePaths.Count > 0;
+
+        /// <summary>Есть ли у вида хоть одна картинка поля.</summary>
+        [JsonIgnore]
+        public bool HasBackdropImage => BackdropImagePaths.Count > 0;
+
+        /// <summary>
+        /// Картинка бумаги для листа с этим номером.
+        ///
+        /// Номер листа, а не порядковый номер вызова: один и тот же лист обязан
+        /// выглядеть одинаково на каждом кадре, при возврате к нему и в снимке для
+        /// переворота. Отсюда и жребий без генератора случайных чисел — перемешанный
+        /// номер листа: он постоянен, но соседние листы не идут подряд по набору.
+        /// </summary>
+        public string? PaperImageFor(int sheetIndex) => Pick(ImagePaths, ImageFlow, sheetIndex);
+
+        /// <summary>Картинка поля. Экран один, поэтому и картинка одна.</summary>
+        public string? BackdropImageFor(int index = 0)
+            => Pick(BackdropImagePaths, BackdropImageFlow, index);
+
+        /// <summary>
+        /// Прогоняет все картинки вида через преобразователь адресов: перенос в архив
+        /// проекта, перенос в данные программы, отсев пропавших. Одно место на оба
+        /// набора — иначе очередной перенос однажды забудет половину.
+        /// </summary>
+        public void MapImageReferences(Func<string?, string?> map)
+        {
+            if (map is null) return;
+            Remap(ImagePaths, map);
+            Remap(BackdropImagePaths, map);
+        }
+
+        /// <summary>Все картинки вида — бумага и поле вместе.</summary>
+        [JsonIgnore]
+        public IEnumerable<string> AllImages
+        {
+            get
+            {
+                foreach (var one in ImagePaths) yield return one;
+                foreach (var one in BackdropImagePaths) yield return one;
+            }
+        }
+
+        private static void AddImage(List<string> set, string? reference)
+        {
+            if (string.IsNullOrWhiteSpace(reference)) return;
+            if (set.Contains(reference!)) return;
+            set.Add(reference!);
+        }
+
+        private static void Remap(List<string> set, Func<string?, string?> map)
+        {
+            for (int i = set.Count - 1; i >= 0; i--)
+            {
+                string? mapped = map(set[i]);
+                if (string.IsNullOrWhiteSpace(mapped)) set.RemoveAt(i);
+                else set[i] = mapped!;
+            }
+        }
+
+        private static string? Pick(List<string> set, ReadingImageFlow flow, int index)
+        {
+            if (set.Count == 0) return null;
+            if (set.Count == 1 || flow == ReadingImageFlow.Single) return set[0];
+
+            int i = index < 0 ? 0 : index;
+            if (flow == ReadingImageFlow.Sequence) return set[i % set.Count];
+
+            return set[(int)(Scramble(i) % (uint)set.Count)];
+        }
+
+        /// <summary>Перемешивает номер листа. Одинаковый ответ на одинаковый номер.</summary>
+        private static uint Scramble(int value)
+        {
+            unchecked
+            {
+                uint x = (uint)value * 2654435761u;
+                x ^= x >> 15;
+                x *= 2246822519u;
+                x ^= x >> 13;
+                return x;
+            }
+        }
 
         public ReadingTheme Clone() => new()
         {
@@ -131,20 +314,26 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             IsBuiltIn = IsBuiltIn,
             SheetColor = SheetColor,
             InkColor = InkColor,
-            ImagePath = ImagePath,
+            CaretColor = CaretColor,
+            RulerSheetColor = RulerSheetColor,
+            RulerInkColor = RulerInkColor,
+            RulerFieldColor = RulerFieldColor,
+            TabMarkColor = TabMarkColor,
+            ImagePaths = new List<string>(ImagePaths),
+            ImageFlow = ImageFlow,
             ImageOpacity = ImageOpacity,
             ImageTile = ImageTile,
             BackdropColor = BackdropColor,
-            UseBackdropImage = UseBackdropImage,
-            BackdropImagePath = BackdropImagePath,
+            BackdropImagePaths = new List<string>(BackdropImagePaths),
+            BackdropImageFlow = BackdropImageFlow,
             BackdropImageFit = BackdropImageFit,
             BackdropImageOpacity = BackdropImageOpacity,
-            FontFamily = FontFamily,
             Brightness = Brightness,
             Contrast = Contrast,
             Warmth = Warmth,
             InDocument = InDocument,
-            IsGlobal = IsGlobal
+            IsGlobal = IsGlobal,
+            IsHidden = IsHidden
         };
 
         /// <summary>
@@ -162,24 +351,36 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             if (a is null || b is null) return false;
 
             const StringComparison Ci = StringComparison.OrdinalIgnoreCase;
-            const StringComparison Cs = StringComparison.Ordinal;
 
             static bool Same(string? x, string? y, StringComparison how)
                 => string.Equals(x ?? string.Empty, y ?? string.Empty, how);
 
             static bool Near(double x, double y) => Math.Abs(x - y) < 0.0005;
 
+            static bool SameSet(List<string> x, List<string> y)
+            {
+                if (x.Count != y.Count) return false;
+                for (int i = 0; i < x.Count; i++)
+                    if (!string.Equals(x[i], y[i], StringComparison.Ordinal)) return false;
+                return true;
+            }
+
             return Same(a.SheetColor, b.SheetColor, Ci)
                 && Same(a.InkColor, b.InkColor, Ci)
-                && Same(a.ImagePath, b.ImagePath, Cs)
+                && Same(a.CaretColor, b.CaretColor, Ci)
+                && Same(a.RulerSheetColor, b.RulerSheetColor, Ci)
+                && Same(a.RulerInkColor, b.RulerInkColor, Ci)
+                && Same(a.RulerFieldColor, b.RulerFieldColor, Ci)
+                && Same(a.TabMarkColor, b.TabMarkColor, Ci)
+                && SameSet(a.ImagePaths, b.ImagePaths)
+                && a.ImageFlow == b.ImageFlow
                 && Near(a.ImageOpacity, b.ImageOpacity)
                 && a.ImageTile == b.ImageTile
                 && Same(a.BackdropColor, b.BackdropColor, Ci)
-                && a.UseBackdropImage == b.UseBackdropImage
-                && Same(a.BackdropImagePath, b.BackdropImagePath, Cs)
+                && SameSet(a.BackdropImagePaths, b.BackdropImagePaths)
+                && a.BackdropImageFlow == b.BackdropImageFlow
                 && a.BackdropImageFit == b.BackdropImageFit
                 && Near(a.BackdropImageOpacity, b.BackdropImageOpacity)
-                && Same(a.FontFamily, b.FontFamily, Cs)
                 && Near(a.Brightness, b.Brightness)
                 && Near(a.Contrast, b.Contrast)
                 && Near(a.Warmth, b.Warmth);

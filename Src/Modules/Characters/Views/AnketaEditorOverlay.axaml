@@ -115,7 +115,7 @@
 									<Border Classes="fieldCard" Margin="0,0,0,8">
 										<StackPanel Spacing="8">
 
-											<Grid ColumnDefinitions="*,Auto,Auto,Auto">
+											<Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
 												<!-- Подсказка по уже существующим полям проекта.
 												     Выбрал существующее — новое поле получает
 												     его идентификатор, и значения встают в один
@@ -136,20 +136,32 @@
 												                 BorderThickness="1"
 												                 CornerRadius="4"
 												                 Padding="8,6"/>
-												<Button Grid.Column="1" Classes="iconBtn"
+												<!-- Тип поля бейджем: по одному имени не сказать, чем «Рост»
+												     отличается от «Возраста», а поля настройки у разных типов
+												     разные и показываются не всегда. -->
+												<Border Classes="typeBadge" Grid.Column="1" Margin="6,0,0,0"
+												        VerticalAlignment="Center"
+												        Padding="6,2" CornerRadius="4"
+												        Background="{DynamicResource BgSurfaceBrush}"
+												        BorderBrush="{DynamicResource BorderSubtleBrush}"
+												        BorderThickness="1">
+													<TextBlock Text="{Binding TypeLabel}" FontSize="10"
+													           Foreground="{DynamicResource TextSecondaryBrush}"/>
+												</Border>
+												<Button Grid.Column="2" Classes="iconBtn"
 												        Click="OnMoveFieldUpClick"
 												        Margin="6,0,0,0">
 													<Path Data="M7.41,15.41 L12,10.83 16.59,15.41 18,14 12,8 6,14z"
 													      Fill="{DynamicResource TextSecondaryBrush}"
 													      Stretch="Uniform" Width="10" Height="10"/>
 												</Button>
-												<Button Grid.Column="2" Classes="iconBtn"
+												<Button Grid.Column="3" Classes="iconBtn"
 												        Click="OnMoveFieldDownClick">
 													<Path Data="M7.41,8.59 L12,13.17 16.59,8.59 18,10 12,16 6,10z"
 													      Fill="{DynamicResource TextSecondaryBrush}"
 													      Stretch="Uniform" Width="10" Height="10"/>
 												</Button>
-												<Button Grid.Column="3" Classes="iconBtn"
+												<Button Grid.Column="4" Classes="iconBtn"
 												        Click="OnRemoveFieldClick">
 													<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
 													      Fill="{DynamicResource TextSecondaryBrush}"
@@ -211,6 +223,18 @@
 							        Content="{x:Static loc:CharactersStrings.Param_AddBoolean}"
 							        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_AddBoolean}"
 							        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Param_HintYesNo}"/>
+							<Button Classes="typeOpt" Click="OnAddNumberClick"
+							        Content="Число"
+							        behaviours:TooltipBehavior.Tip="Свободное число"
+							        behaviours:TooltipBehavior.Description="Величина без краёв: рост, вес, год, длина ушей. От шкалы отличается тем, что мерой служит само число, а не «сколько из пяти»"/>
+							<Button Classes="typeOpt" Click="OnAddLongTextClick"
+							        Content="Описание"
+							        behaviours:TooltipBehavior.Tip="Большое поле"
+							        behaviours:TooltipBehavior.Description="Несколько абзацев: внешность, привычки, прошлое. От короткого текста отличается высотой поля"/>
+							<Button Classes="typeOpt" Click="OnAddMultiChoiceClick"
+							        Content="Несколько"
+							        behaviours:TooltipBehavior.Tip="Несколько вариантов"
+							        behaviours:TooltipBehavior.Description="Список галок: отметить можно сколько угодно. Варианты перечисляются через запятую, как и у обычного выбора"/>
 						</WrapPanel>
 					</StackPanel>
 				</ScrollViewer>

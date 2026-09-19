@@ -99,6 +99,24 @@ namespace Writersword.Modules.Characters.Views
             e.Handled = true;
         }
 
+        private void OnAddNumberClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            _draft?.AddField(CharacterParameterType.Number);
+        }
+
+        private void OnAddLongTextClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            _draft?.AddField(CharacterParameterType.LongText);
+        }
+
+        private void OnAddMultiChoiceClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            _draft?.AddField(CharacterParameterType.MultiChoice);
+        }
+
         private void OnAddBooleanClick(object? sender, RoutedEventArgs e)
         {
             _draft?.AddField(CharacterParameterType.Boolean);

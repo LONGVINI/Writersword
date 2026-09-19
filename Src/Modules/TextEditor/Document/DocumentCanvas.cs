@@ -1057,7 +1057,7 @@ namespace Writersword.Modules.TextEditor.Document
         // Внутренний буфер для скопированной картинки. СТАТИЧЕСКИЙ — общий для всех
         // вкладок/проектов в процессе, поэтому копия переживает переключение проекта.
         // Хранит полную копию блока (свойства: размер, кроп, поворот, рамка) И байты
-        // файла картинки: при вставке байты пишутся в ZIP ЦЕЛЕВОГО проекта новым файлом,
+        // файла картинки: при вставке байты пишутся в ЦЕЛЕВОЙ проект новым файлом,
         // поэтому картинка не ломается при вставке в другой проект.
         private static ImageBlock? _clipboardImage;
         private static byte[]? _clipboardImageBytes;
@@ -1236,6 +1236,11 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 _undoOrder.AddLast(UndoSource.Text);
                 _redoOrder.Clear();
+
+                // Рукопись изменилась — фантомный возврат снимается. Иначе Ctrl+Z после
+                // прыжка и правки увёл бы человека по навигации, оставив правку на
+                // месте: сделал бы вид, что отменил, ничего не отменив.
+                ForgetPhantomReturn();
             }
         }
 
@@ -1244,6 +1249,10 @@ namespace Writersword.Modules.TextEditor.Document
         {
             _undoOrder.AddLast(UndoSource.Snapshot);
             _redoOrder.Clear();
+
+            // Та же причина, что и в PushTextCommand: появился шаг отмены, значит
+            // рукопись изменилась, и Ctrl+Z обязан снова быть отменой.
+            ForgetPhantomReturn();
         }
 
         // Сброс порядка отмены — при смене документа, когда стеки очищаются.
@@ -2697,11 +2706,16 @@ namespace Writersword.Modules.TextEditor.Document
             ExitImageCropMode(apply: false);
             MoveCaretToImage(img);
 
-            BeginEdit("Удаление изображения");
             _selectedImage = null;
-            DocVm?.RemoveImage(img);
+
+            if (!TryOperationalRemoveImage(img, "Удаление изображения"))
+            {
+                BeginEdit("Удаление изображения");
+                DocVm?.RemoveImage(img);
+                CommitEdit();
+            }
+
             ImageSelectionChanged?.Invoke(false);
-            CommitEdit();
 
             InvalidateFull();
         }
@@ -3832,6 +3846,11 @@ namespace Writersword.Modules.TextEditor.Document
             // Пересчёт через measure: раскладка соберётся из тёплого кеша.
             InvalidateMeasure();
             InvalidateFull();
+
+            // Проход по номерам оглавления мог прийти во время прогрева и уйти ни с чем:
+            // раскладка отдавала ему прежние слайсы. Теперь она настоящая — назначаем
+            // проход заново (DocumentCanvas.Toc).
+            OnLayoutWarmupFinished();
         }
 
         private void RebuildLayouts()
@@ -3920,9 +3939,14 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             rebuildStopwatch.Stop();
-            if (rebuildStopwatch.ElapsedMilliseconds > 50)
+
+            // Порог поднят со ста миллисекунд и запись переведена в отладочную: на
+            // книге в триста страниц пересборка дольше пятидесяти миллисекунд — не
+            // происшествие, а обычное дело, и предупреждением она забивала журнал
+            // по нескольку раз на каждую правку.
+            if (rebuildStopwatch.ElapsedMilliseconds > 250)
             {
-                _logger.Warning(
+                _logger.Debug(
                     "RebuildLayouts took {ElapsedMs}ms on UI thread: mode={Mode}, paragraphs={ParaCount}, layoutCache={CacheCount}",
                     rebuildStopwatch.ElapsedMilliseconds,
                     DocVm.ViewMode,
@@ -4168,7 +4192,22 @@ namespace Writersword.Modules.TextEditor.Document
             bool sameParagraph = ReferenceEquals(target, source.Para);
             if (sameParagraph && (at == source.CharIndex || at == source.CharIndex + 1)) return;
 
-            BeginEdit("Перемещение картинки в тексте");
+            // Переноска меняет текст двух абзацев и больше ничего: состав блоков тот же,
+            // картинка остаётся в том же хранилище объектов строки. Такую правку
+            // описывает шаг на два абзаца, и снимок всей рукописи здесь не нужен.
+            //
+            // Быстрый путь берётся, только когда оба абзаца лежат в потоке: абзац ячейки
+            // шаг не найдёт — он ищет по потоку документа, как и все прочие шаги отмены.
+            bool operational = TextUndoStack is not null
+                               && _layouts[_caretPara].Cell is null
+                               && DocVm.IsFlowParagraph(source.Para)
+                               && DocVm.IsFlowParagraph(target);
+
+            var sourceBefore = operational ? source.Para.ToCharCells() : null;
+            var targetBefore = operational && !sameParagraph ? target.ToCharCells() : null;
+            int sourceCharBefore = source.CharIndex;
+
+            if (!operational) BeginEdit("Перемещение картинки в тексте");
 
             source.Para.SpliceText(source.CharIndex, source.CharIndex + 1, string.Empty);
 
@@ -4177,7 +4216,42 @@ namespace Writersword.Modules.TextEditor.Document
 
             target.InsertInlineObject(at, image.Id);
 
-            CommitEdit();
+            if (operational)
+            {
+                var entries = new List<Commands.ParagraphCellsCommand.Entry>
+                {
+                    new Commands.ParagraphCellsCommand.Entry
+                    {
+                        ParaId = source.Para.Id,
+                        Before = sourceBefore!,
+                        After = source.Para.ToCharCells()
+                    }
+                };
+
+                if (!sameParagraph)
+                {
+                    entries.Add(new Commands.ParagraphCellsCommand.Entry
+                    {
+                        ParaId = target.Id,
+                        Before = targetBefore!,
+                        After = target.ToCharCells()
+                    });
+                }
+
+                PushTextCommand(new Commands.ParagraphCellsCommand(
+                    DocVm, entries, "Перемещение картинки в тексте")
+                {
+                    RestoreCaretCallback = RestoreCaretToParagraphLight,
+                    CaretParaAfter = target.Id,
+                    CaretCharAfter = at + 1,
+                    CaretParaBefore = source.Para.Id,
+                    CaretCharBefore = sourceCharBefore + 1
+                });
+            }
+            else
+            {
+                CommitEdit();
+            }
 
             RefreshParagraphAfterInlineChange(source.Para);
             if (!sameParagraph) RefreshParagraphAfterInlineChange(target);

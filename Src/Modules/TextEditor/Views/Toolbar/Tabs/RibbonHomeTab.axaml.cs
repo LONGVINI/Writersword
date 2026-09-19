@@ -78,6 +78,35 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
 
         // ── FontSize list ─────────────────────────────────────────────────
 
+        // Кегль, набранный в поле, уходит в рукопись целиком — по Enter или когда
+        // поле теряет фокус.
+        //
+        // Раньше поле писало в рукопись на каждый набранный знак: пока человек
+        // набирал «14», документ успевал получить сначала единицу, и в историю
+        // ложились два шага вместо одного. Первый Ctrl+Z возвращал текст к однопунктовому
+        // кеглю, которого никто не просил.
+        //
+        // Esc возвращает в поле то, что стоит в рукописи, и ничего не применяет.
+        private void OnFontSizeInputKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (sender is not TextBox box) return;
+            if (DataContext is not RibbonHomeTabViewModel vm) return;
+
+            if (e.Key == Key.Enter)
+            {
+                vm.CurrentFontSizeText = box.Text ?? string.Empty;
+                box.Text = vm.CurrentFontSizeText;
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == Key.Escape)
+            {
+                box.Text = vm.CurrentFontSizeText;
+                e.Handled = true;
+            }
+        }
+
         private void OnFontSizeListSelectionChanged(object? sender, SelectionChangedEventArgs e)
         {
             if (sender is not ListBox lb) return;

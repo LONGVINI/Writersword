@@ -308,6 +308,50 @@ namespace Writersword.Modules.Characters.ViewModels
             OnFrameThicknessChanged?.Invoke(Id, _frameThickness);
         }
 
+        // ── Тихая синхронизация из модели ─────────────────────────────────
+        //
+        // Правку, пришедшую из модели, строка обязана показать, но не обязана
+        // записывать обратно: она её не делала. Обычные сеттеры зовут колбэки,
+        // а те пишут в проект и кладут шаг в историю отмены — синхронизация
+        // после сохранения карточки заводила бы лишний шаг на каждое поле и
+        // писала бы в проект то, что в нём уже лежит. Тот же приём, что у
+        // SyncAvatarRef.
+
+        /// <summary>Показать ступень важности из модели, не записывая обратно.</summary>
+        public void SyncImportance(Models.Enums.CharacterImportanceLevel level)
+        {
+            if (_importanceLevel == level) return;
+
+            _importanceLevel = level;
+            this.RaisePropertyChanged(nameof(ImportanceLevel));
+            this.RaisePropertyChanged(nameof(ImportanceMark));
+        }
+
+        /// <summary>Показать толщину рамки из модели, не записывая обратно.</summary>
+        public void SyncFrameThickness(double value)
+        {
+            SetFrameThicknessPreview(value);
+        }
+
+        /// <summary>
+        /// Показать вид аватара из модели, не записывая обратно. Картинка
+        /// сбрасывается по той же причине, что и в обычном сеттере: кадр у
+        /// кружка и у полоски свой, и прежняя показала бы не то.
+        /// </summary>
+        public void SyncAvatarStrip(bool strip)
+        {
+            if (_avatarStrip == strip) return;
+
+            _avatarStrip = strip;
+            this.RaisePropertyChanged(nameof(AvatarStrip));
+
+            _avatarBitmap = null;
+            _bitmapLoaded = false;
+            this.RaisePropertyChanged(nameof(AvatarBitmap));
+
+            RaiseAvatarViewProps();
+        }
+
         // Карточка выбрана в списке для правки боковой панелью. Выделение
         // живёт только в представлении: в модель персонажа оно не попадает и
         // проект им не пачкается.

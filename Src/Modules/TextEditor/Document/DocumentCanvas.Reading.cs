@@ -181,8 +181,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private bool WindowBackdropActive
             => EditorThemeActive
-               && EditorView?.Active is { UseBackdropImage: true } t
-               && !string.IsNullOrWhiteSpace(t.BackdropImagePath);
+               && EditorView?.Active is { HasBackdropImage: true };
 
         /// <summary>
         /// Лист правки перекрашен выбранным видом. Чтение сюда не входит: там свой
@@ -465,7 +464,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             // В чтении картинка поля остаётся на канвасе: холст там равен окну,
             // книга не прокручивается, и дрожать нечему.
-            if (t.UseBackdropImage)
+            if (t.HasBackdropImage)
                 DrawBackdropImage(canvas, new SKRect(0, 0, widthPt, heightPt), t);
         }
 
@@ -483,7 +482,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// <summary>Картинка поля. Читается один раз и держится, пока путь не сменится.</summary>
         private SKImage? ReadingBackdropImage(Models.Settings.ReadingTheme t)
         {
-            string? path = t.BackdropImagePath;
+            string? path = t.BackdropImageFor();
             if (string.IsNullOrWhiteSpace(path)) return null;
 
             if (_readingBackdropImage is not null
@@ -754,26 +753,32 @@ namespace Writersword.Modules.TextEditor.Document
 
         // ── Картинка бумаги ───────────────────────────────────────────────
 
-        private SKImage? _readingPaperImage;
-        private string? _readingPaperImagePath;
+        // Прочитанные картинки бумаги — по адресу. Набор, а не одна: у вида их может
+        // быть сколько угодно, и разные листы берут разные. Держатся до смены вида:
+        // читать и раскодировать файл на каждый кадр нельзя.
+        private readonly Dictionary<string, SKImage> _readingPaperImages = new(StringComparer.Ordinal);
+
+        // Больше этого числа картинок в памяти не держим. Набор бывает и в сотню
+        // листов, а каждый разложенный в пиксели лист — это мегабайты. Лишние
+        // выбрасываются по одной, самые давние: листают книгу подряд, и соседние
+        // листы почти всегда те же самые.
+        private const int ReadingPaperImageCacheMax = 12;
+        private readonly List<string> _readingPaperImageOrder = new();
 
         /// <summary>
-        /// Картинка бумаги, если она задана своей бумагой. Держится в памяти до смены
-        /// пути: читать файл на каждый кадр нельзя.
+        /// Картинка бумаги для листа с этим номером. Какая именно — решает сам вид
+        /// (см. ReadingTheme.PaperImageFor): одна на всю книгу, по очереди или по
+        /// жребию.
         /// </summary>
-        private SKImage? ReadingPaperImage()
+        private SKImage? ReadingPaperImage(int sheetIndex)
         {
             var t = ActiveTheme;
             if (t is null) return null;
 
-            string? path = t.ImagePath;
+            string? path = t.PaperImageFor(sheetIndex);
             if (string.IsNullOrWhiteSpace(path)) return null;
 
-            if (_readingPaperImage is not null
-                && string.Equals(_readingPaperImagePath, path, StringComparison.Ordinal))
-                return _readingPaperImage;
-
-            ReleaseReadingPaperImage();
+            if (_readingPaperImages.TryGetValue(path!, out var cached)) return cached;
 
             try
             {
@@ -787,17 +792,30 @@ namespace Writersword.Modules.TextEditor.Document
                 // поля: ленивый образ не рисуется в растровый снимок страницы.
                 using var bmp = SKBitmap.Decode(data);
                 if (bmp is null) return null;
-                _readingPaperImage = SKImage.FromBitmap(bmp);
-                _readingPaperImagePath = path;
+
+                var image = SKImage.FromBitmap(bmp);
+                _readingPaperImages[path!] = image;
+                _readingPaperImageOrder.Add(path!);
+                TrimReadingPaperImages();
+                return image;
             }
             catch (Exception ex)
             {
                 _logger.Warning(ex, "Failed to read the paper image: {Path}", path);
-                _readingPaperImage = null;
-                _readingPaperImagePath = null;
+                return null;
             }
+        }
 
-            return _readingPaperImage;
+        /// <summary>Выбрасывает самые давние картинки, если их набралось слишком много.</summary>
+        private void TrimReadingPaperImages()
+        {
+            while (_readingPaperImageOrder.Count > ReadingPaperImageCacheMax)
+            {
+                string oldest = _readingPaperImageOrder[0];
+                _readingPaperImageOrder.RemoveAt(0);
+
+                if (_readingPaperImages.Remove(oldest, out var stale)) stale.Dispose();
+            }
         }
 
         private void ReleaseReadingPaperImage()
@@ -807,9 +825,9 @@ namespace Writersword.Modules.TextEditor.Document
             // процесс в нативном коде Skia.
             lock (_readingImageLock)
             {
-                _readingPaperImage?.Dispose();
-                _readingPaperImage = null;
-                _readingPaperImagePath = null;
+                foreach (var image in _readingPaperImages.Values) image.Dispose();
+                _readingPaperImages.Clear();
+                _readingPaperImageOrder.Clear();
 
                 // Картинка поля отпускается вместе с бумагой: обе меняются одной и той
                 // же правкой вида, и держать одну из них по старому пути незачем.
@@ -823,19 +841,20 @@ namespace Writersword.Modules.TextEditor.Document
         /// Кладёт картинку бумаги на лист. Растянутая занимает лист целиком с
         /// сохранением пропорций, замощённая повторяется в своём размере.
         /// </summary>
-        private void DrawReadingPaperImage(SKCanvas canvas, float xPt, float yPt, float wPt, float hPt)
+        private void DrawReadingPaperImage(
+            SKCanvas canvas, float xPt, float yPt, float wPt, float hPt, int sheetIndex)
         {
             // Образ держится под замком всё время, пока им рисуют — см. _readingImageLock.
             lock (_readingImageLock)
             {
-                DrawReadingPaperImageLocked(canvas, xPt, yPt, wPt, hPt);
+                DrawReadingPaperImageLocked(canvas, xPt, yPt, wPt, hPt, sheetIndex);
             }
         }
 
         private void DrawReadingPaperImageLocked(
-            SKCanvas canvas, float xPt, float yPt, float wPt, float hPt)
+            SKCanvas canvas, float xPt, float yPt, float wPt, float hPt, int sheetIndex)
         {
-            var img = ReadingPaperImage();
+            var img = ReadingPaperImage(sheetIndex);
             if (img is null) return;
 
             var t = ActiveTheme;
@@ -925,7 +944,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (reading && r is not null)
             {
                 SKTextRenderer.ReadingFontFamilyOverride =
-                    string.IsNullOrWhiteSpace(theme.FontFamily) ? null : theme.FontFamily;
+                    string.IsNullOrWhiteSpace(r.FontFamily) ? null : r.FontFamily;
                 SKTextRenderer.ReadingFontScale = (float)r.FontScale;
                 SKTextRenderer.ReadingContentScale = ReadingContentScale;
             }

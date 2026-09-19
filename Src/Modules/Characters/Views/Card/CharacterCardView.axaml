@@ -103,9 +103,15 @@
 			<tabs:CharacterBasicsTabView DataContext="{Binding BasicsTab}"/>
 		</TabItem>
 
-		<TabItem Header="{x:Static loc:CharactersStrings.Tab_Parameters}">
-			<tabs:CharacterParametersTabView DataContext="{Binding ParametersTab}"/>
-		</TabItem>
+		<!-- Вкладки «Параметры» здесь больше нет. Поля подключённых анкет
+		     показываются разделами прямо в «Общем», под кнопкой набора:
+		     подключил — тут же и заполняешь. Отдельная вкладка заставляла
+		     ходить туда-обратно и держала плоский список без заголовков, по
+		     которому не сказать, из какой анкеты взялось поле.
+
+		     Сама вью-модель вкладки осталась: она хранит значения и отдаёт их
+		     при сохранении, а «Общее» только показывает её список разделами
+		     (см. AttachParameters у CharacterBasicsTabViewModel). -->
 
 		<TabItem Header="{x:Static loc:CharactersStrings.Tab_Relationships}">
 			<tabs:CharacterRelationshipsTabView DataContext="{Binding RelationshipsTab}"/>

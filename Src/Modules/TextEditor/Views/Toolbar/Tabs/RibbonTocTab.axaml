@@ -191,6 +191,16 @@
 								</StackPanel>
 							</Button>
 
+							<Button Command="{Binding UpdatePagesCommand}" Classes="RibbonBtnLarge"
+							        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_UpdatePages_Tip}">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zM8 13h8v2H8v-2zm0 4h5v2H8v-2z"
+									          Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Toc_UpdatePages}"
+									           FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
 							<Button Command="{Binding InsertCommand}" Classes="RibbonBtnLarge"
 							        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Insert_Tip}">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
@@ -376,6 +386,21 @@
 										        Background="{DynamicResource AccentDefaultBrush}"/>
 									</StackPanel>
 								</Button>
+							</StackPanel>
+
+							<!-- Плотность дорожки. Величина вкусовая: густые точки держат
+							     глаз на строке в книге с длинными названиями, редкие не
+							     спорят с текстом в тонкой брошюре. -->
+							<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+								<TextBlock Classes="RibbonFieldLabel"
+								           Text="{x:Static loc:TextEditorStrings.Toc_LeaderDensity}"/>
+								<NumericUpDown Classes="Ribbon" Width="86"
+								               Value="{Binding LeaderDensityPercent, Mode=TwoWay}"
+								               Minimum="25" Maximum="400"
+								               Increment="25"
+								               FormatString="0'%'"
+								               ClipValueToMinMax="True"
+								               behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_LeaderDensity_Tip}"/>
 							</StackPanel>
 
 							<!-- Галочки: номера страниц и отступ по уровням -->

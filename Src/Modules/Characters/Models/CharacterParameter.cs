@@ -78,6 +78,15 @@ namespace Writersword.Modules.Characters.Models
         private double _numericValue;
         public double NumericValue { get => _numericValue; set => Set(ref _numericValue, value); }
 
+        /// <summary>
+        /// Число вписано. Нужно свободному числу: у шкалы ноль — это край и
+        /// законное значение, а у роста или длины ушей ноль означал бы, что
+        /// автор измерил и получил ноль. «Не указано» и «ноль» — разные
+        /// утверждения, ровно как «страх = 0» и «не испытывает страха» выше.
+        /// </summary>
+        private bool _hasNumber;
+        public bool HasNumber { get => _hasNumber; set => Set(ref _hasNumber, value); }
+
         private double _step = 1;
         public double Step { get => _step; set => Set(ref _step, value); }
 
@@ -109,6 +118,16 @@ namespace Writersword.Modules.Characters.Models
 
         private int _currentStateIndex;
         public int CurrentStateIndex { get => _currentStateIndex; set => Set(ref _currentStateIndex, value); }
+
+        /// <summary>
+        /// Отмеченные варианты, когда их можно выбрать несколько.
+        ///
+        /// Хранятся словами, а не номерами: список вариантов у поля живой —
+        /// его правят, дополняют, переставляют, — и номер после любой такой
+        /// правки показывал бы на соседа. Слово переживает перестановку, а
+        /// вариант, которого в списке больше нет, просто перестаёт отмечаться.
+        /// </summary>
+        public List<string> SelectedStates { get; set; } = new();
 
         // ── Да или нет ───────────────────────────────────────────────────
 

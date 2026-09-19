@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -273,11 +274,20 @@ namespace Writersword.Infrastructure.Behaviours
             bool hasContent = !string.IsNullOrEmpty(GetTip(element))
                               || !string.IsNullOrEmpty(GetDescription(element));
 
+            element.DetachedFromVisualTree -= OnSourceDetached;
+
             if (hasContent)
             {
                 element.PointerEntered += OnPointerEntered;
                 element.PointerExited += OnPointerExited;
                 element.PointerPressed += OnPointerPressed;
+
+                // Элемент может исчезнуть вместе со своим окном: выпадающий список
+                // закрылся, вкладка сменилась, оверлей ушёл. Уведомления об уходе
+                // указателя в этом случае не будет вовсе, и подсказка оставалась висеть
+                // поверх всего — убрать её было нечем, потому что убирать её должен был
+                // элемент, которого больше нет.
+                element.DetachedFromVisualTree += OnSourceDetached;
                 _logger.Debug("TooltipBehavior: subscribed to {Element}, tip='{Tip}'",
                     element.GetType().Name, GetTip(element));
             }
@@ -305,6 +315,55 @@ namespace Writersword.Infrastructure.Behaviours
             timer.Start();
             _logger.Debug("TooltipBehavior: timer started for {Element}, delay={Delay}ms",
                 element.GetType().Name, GetShowDelay(element));
+        }
+
+        /// <summary>Элемент ушёл из дерева — подсказке держаться не за что.</summary>
+        private static void OnSourceDetached(object? sender, VisualTreeAttachmentEventArgs e)
+        {
+            if (sender is Control element) HideTooltip(element);
+        }
+
+        // Открытая сейчас подсказка и окно, за нажатиями в котором она следит. Подсказка
+        // на экране одна, поэтому и сторож один: любое нажатие в окне её гасит — даже
+        // если оно пришлось мимо элемента, которому она принадлежит.
+        private static Control? _openOn;
+        private static TopLevel? _openWatchedTopLevel;
+
+        private static void WatchTopLevelPresses(Control element)
+        {
+            var topLevel = TopLevel.GetTopLevel(element);
+            if (topLevel is null) return;
+
+            UnwatchTopLevelPresses();
+
+            _openOn = element;
+            _openWatchedTopLevel = topLevel;
+            topLevel.AddHandler(
+                InputElement.PointerPressedEvent, OnTopLevelPressed, RoutingStrategies.Tunnel);
+        }
+
+        private static void UnwatchTopLevelPresses()
+        {
+            if (_openWatchedTopLevel is not null)
+                _openWatchedTopLevel.RemoveHandler(
+                    InputElement.PointerPressedEvent, OnTopLevelPressed);
+
+            _openWatchedTopLevel = null;
+            _openOn = null;
+        }
+
+        private static void OnTopLevelPressed(object? sender, PointerPressedEventArgs e)
+        {
+            var element = _openOn;
+            if (element is null) return;
+
+            // Нажатие по самому элементу разбирает его собственный обработчик: там у
+            // подсказки поведение переключателя, и гасить её здесь значило бы отнимать
+            // у него эту работу.
+            if (e.Source is Visual source && element.IsVisualAncestorOf(source)) return;
+            if (ReferenceEquals(e.Source, element)) return;
+
+            HideTooltip(element);
         }
 
         /// <summary>
@@ -337,6 +396,19 @@ namespace Writersword.Infrastructure.Behaviours
                 _logger.Debug("TooltipBehavior: pointer pressed on {Element}, hiding tooltip",
                     element.GetType().Name);
                 HideTooltip(element);
+                return;
+            }
+
+            // По ползункам подсказка на нажатие не показывается.
+            //
+            // Нажатие на кнопке — вопрос «что это?», и показать ответ сразу правильно.
+            // Нажатие на ползунке — уже само действие: человек ведёт бегунок и смотрит
+            // на то, что меняется, а подсказка в этот момент выскакивает поверх ленты и
+            // закрывает собой ровно то, ради чего ползунок тащат. При наведении она
+            // по-прежнему появляется — там она и нужна.
+            if (element is Avalonia.Controls.Primitives.RangeBase)
+            {
+                GetTimer(element)?.Stop();
                 return;
             }
 
@@ -580,6 +652,9 @@ namespace Writersword.Infrastructure.Behaviours
 
             SetPopup(element, popup);
             popup.Open();
+
+            // Сторож на окно: пока подсказка открыта, любое нажатие мимо её гасит.
+            WatchTopLevelPresses(element);
         }
 
         /// <summary>
@@ -590,6 +665,8 @@ namespace Writersword.Infrastructure.Behaviours
             GetTimer(element)?.Stop();
             SetTimer(element, null);
             SetSpotKey(element, null);
+
+            if (ReferenceEquals(_openOn, element)) UnwatchTopLevelPresses();
 
             var popup = GetPopup(element);
             if (popup is not null)

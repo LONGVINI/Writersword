@@ -242,7 +242,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             var crops = await RequestCropForRef(avatarRef);
             if (crops == null) return;
 
-            var combined = CharacterAvatarRef.Combine(avatarRef, crops.Circle, crops.Strip);
+            var combined = CharacterAvatarRef.Apply(avatarRef, crops);
             if (combined != null) PickStored(combined);
         }
 

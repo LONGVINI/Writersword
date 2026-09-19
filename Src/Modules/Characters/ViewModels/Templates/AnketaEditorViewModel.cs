@@ -92,6 +92,14 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
                 field.Step = 1;
             }
 
+            // Списку выбора — заготовки вариантов, чтобы поле сразу что-то
+            // предлагало. Пустой список ничем не отличается от сломанного.
+            if (type == CharacterParameterType.StateList ||
+                type == CharacterParameterType.MultiChoice)
+            {
+                field.StatesRaw = "Первый, Второй, Третий";
+            }
+
             Fields.Add(new AnketaFieldDraft(field));
         }
 
@@ -164,11 +172,36 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
                 this.RaiseAndSetIfChanged(ref _type, value);
                 this.RaisePropertyChanged(nameof(IsScale));
                 this.RaisePropertyChanged(nameof(IsChoice));
+                this.RaisePropertyChanged(nameof(TypeLabel));
             }
         }
 
         public bool IsScale => _type == CharacterParameterType.Numeric;
-        public bool IsChoice => _type == CharacterParameterType.StateList;
+
+        /// <summary>
+        /// Список вариантов правится у обоих выборов — и одиночного, и
+        /// множественного: разница между ними только в том, сколько из
+        /// списка можно отметить.
+        /// </summary>
+        public bool IsChoice => _type == CharacterParameterType.StateList ||
+                                _type == CharacterParameterType.MultiChoice;
+
+        /// <summary>
+        /// Тип поля человеческим языком — бейджем на строке поля. Без него по
+        /// списку не сказать, чем «Рост» отличается от «Возраста»: у обоих
+        /// только имя, а поля настройки у них разные и показываются не всегда.
+        /// </summary>
+        public string TypeLabel => _type switch
+        {
+            CharacterParameterType.Numeric => "Шкала",
+            CharacterParameterType.Text => "Текст",
+            CharacterParameterType.StateList => "Выбор",
+            CharacterParameterType.Boolean => "Да / нет",
+            CharacterParameterType.Number => "Число",
+            CharacterParameterType.LongText => "Описание",
+            CharacterParameterType.MultiChoice => "Несколько",
+            _ => string.Empty
+        };
 
         private bool _isComparable;
         /// <summary>

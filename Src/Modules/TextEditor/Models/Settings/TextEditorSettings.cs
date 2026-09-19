@@ -97,6 +97,22 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// </summary>
         public List<ReadingTheme> ReadingThemes { get; set; } = new();
 
+        /// <summary>
+        /// Опознаватели видов, убранных из списков выбора. Здесь, а не в самом виде:
+        /// спрятать можно и встроенный, а ему записать это некуда.
+        /// </summary>
+        public List<string> HiddenReadingThemeIds { get; set; } = new();
+
+        /// <summary>
+        /// Порядок видов в списках — как их разложил человек. Здесь по той же
+        /// причине, что и спрятанные: переставлять можно и встроенные, а их порядок
+        /// задан программой и в самом виде не хранится.
+        ///
+        /// Вид, которого в списке нет (появился в рукописи, пришёл из чужого
+        /// проекта), встаёт в конец, не сбивая остальных.
+        /// </summary>
+        public List<string> ReadingThemeOrder { get; set; } = new();
+
         // ── Чтение ────────────────────────────────────────────────────────
         // Личные предпочтения читателя, а не свойства рукописи. Живут здесь, а не в
         // сессии проекта: человек, привыкший читать лентой, ждёт ленту в любом
@@ -119,6 +135,9 @@ namespace Writersword.Modules.TextEditor.Models.Settings
 
         /// <summary>Ступень размера текста при чтении.</summary>
         public int ReadingFontStep { get; set; }
+
+        /// <summary>Гарнитура чтения. Пусто — как в документе.</summary>
+        public string? ReadingFontFamily { get; set; }
 
         // ── Вид рабочей области при правке ────────────────────────────────
         // Живут здесь, а не в документе: цвет листа за письмом — про глаза
@@ -236,6 +255,35 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             { "Devanagari", "Mangal"          },
             { "Thai",       "Tahoma"          }
         };
+
+        /// <summary>
+        /// Полная копия набора настроек.
+        ///
+        /// Нужна тем, кто собирает набор заново из полей окна: в окне живёт лишь
+        /// часть настроек, а всё остальное — виды чтения, вид листа при правке,
+        /// подача, цвет каретки — заводится в других местах программы. Собранный с
+        /// нуля набор молча стирал это всё; копия сохраняет.
+        ///
+        /// Списки и словари копируются своими экземплярами: общий список означал бы,
+        /// что правка копии меняет исходный набор.
+        /// </summary>
+        public TextEditorSettings Clone()
+        {
+            var copy = (TextEditorSettings)MemberwiseClone();
+
+            copy.AutoReplaceRules = new List<AutoReplaceRule>(AutoReplaceRules);
+            copy.ScriptFontMap = new Dictionary<string, string>(ScriptFontMap);
+
+            copy.ReadingThemes = new List<ReadingTheme>(ReadingThemes.Count);
+            foreach (var theme in ReadingThemes) copy.ReadingThemes.Add(theme.Clone());
+
+            copy.HiddenReadingThemeIds = new List<string>(HiddenReadingThemeIds);
+            copy.ReadingThemeOrder = new List<string>(ReadingThemeOrder);
+
+            copy.EditorTheme = EditorTheme?.Clone();
+
+            return copy;
+        }
 
         /// <summary>
         /// Создаёт набор встроенных правил автозамены по умолчанию.

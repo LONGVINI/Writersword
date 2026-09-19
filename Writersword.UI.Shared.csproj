@@ -42,6 +42,7 @@
 	<ItemGroup>
 		<Compile Include="Src\Infrastructure\Behaviours\ClickOutsideBehavior.cs" />
 		<Compile Include="Src\Infrastructure\Behaviours\FocusOnVisibleBehavior.cs" />
+		<Compile Include="Src\Infrastructure\Behaviours\SliderJumpBehavior.cs" />
 		<Compile Include="Src\Infrastructure\Behaviours\TooltipBehavior.cs" />
 		<Compile Include="Src\Infrastructure\Controls\ItalicCaretTextBox.cs" />
 		<Compile Include="Src\Infrastructure\Controls\HintMark.cs" />

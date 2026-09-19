@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
@@ -501,7 +501,8 @@
                                         </Flyout>
                                     </Button.Flyout>
                                     <StackPanel Orientation="Horizontal" Spacing="1">
-                                        <TextBox Text="{Binding CurrentFontSizeText}"
+                                        <TextBox Text="{Binding CurrentFontSizeText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                 KeyDown="OnFontSizeInputKeyDown"
                                                  Classes="FontSizeInput"/>
                                         <PathIcon Data="M7 10l5 5 5-5z" Width="8" Height="8"
                                                   Foreground="{DynamicResource TextMutedBrush}"/>

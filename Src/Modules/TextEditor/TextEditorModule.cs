@@ -361,7 +361,7 @@ namespace Writersword.Modules.TextEditor
 
             // Модуль поднялся, но своих данных так и не получил, и пользователь
             // в нём ничего не написал. Отдавать пустой документ в этом состоянии
-            // нельзя: он уходит в кеш и в ZIP как полноценные данные и затирает
+            // нельзя: он уходит в кеш и в проект как полноценные данные и затирает
             // сохранённый текст. Возврат null включает защиту в ProjectWorkflow —
             // значение модуля берётся из файла и остаётся нетронутым.
             // Появившийся текст запоминается навсегда: иначе намеренная очистка
@@ -572,7 +572,7 @@ namespace Writersword.Modules.TextEditor
                 try
                 {
                     var cacheService = CoreServices
-                        .GetService<Writersword.Core.Interfaces.Services.IZipCacheService>();
+                        .GetService<Writersword.Core.Interfaces.Services.IProjectCacheService>();
                     var cached = cacheService?.GetModuleCustomData(projectPath!, moduleType);
                     var cachedDocument = (PrepareCustomData(cached) as PreparedDocumentData)?.Document;
                     CollectImageNames(cachedDocument, live);
@@ -809,8 +809,9 @@ namespace Writersword.Modules.TextEditor
                 }
             }
 
-            foreach (var theme in ReadingThemesInPlay())
-                Note(theme.FontFamily, $"Вид чтения «{theme.Name}»");
+            // Гарнитура чтения живёт в настройках чтения, а не в виде: вид держит
+            // цвета, бумагу и поле, а начертание — поправка под глаза читателя.
+            Note(_viewModel?.DocumentViewModel?.Reading.FontFamily, "Чтение");
 
             foreach (var pair in seen)
                 yield return (pair.Key, pair.Value);
@@ -879,11 +880,12 @@ namespace Writersword.Modules.TextEditor
         private IEnumerable<Writersword.Core.Models.Project.ProjectAssetRef> ThemeAssets(
             ReadingTheme theme)
         {
-            foreach (var (reference, what) in new[]
-                     {
-                         (theme.ImagePath, "бумага"),
-                         (theme.BackdropImagePath, "фон")
-                     })
+            // Картинок у вида может быть сколько угодно: и бумага, и поле — наборы.
+            var refs = new List<(string? Reference, string What)>();
+            foreach (var one in theme.ImagePaths) refs.Add((one, "бумага"));
+            foreach (var one in theme.BackdropImagePaths) refs.Add((one, "фон"));
+
+            foreach (var (reference, what) in refs)
             {
                 if (string.IsNullOrWhiteSpace(reference)) continue;
 
@@ -923,19 +925,16 @@ namespace Writersword.Modules.TextEditor
 
             foreach (var theme in ReadingThemesInPlay())
             {
-                var paper = ReadingAssets.EnsureInProject(theme.ImagePath);
-                if (!string.Equals(paper, theme.ImagePath, StringComparison.Ordinal))
+                // Все картинки вида разом — и бумага, и поле, сколько бы их ни было.
+                int moved = 0;
+                theme.MapImageReferences(reference =>
                 {
-                    theme.ImagePath = paper;
-                    embedded++;
-                }
+                    var inProject = ReadingAssets.EnsureInProject(reference);
+                    if (!string.Equals(inProject, reference, StringComparison.Ordinal)) moved++;
+                    return inProject;
+                });
 
-                var backdrop = ReadingAssets.EnsureInProject(theme.BackdropImagePath);
-                if (!string.Equals(backdrop, theme.BackdropImagePath, StringComparison.Ordinal))
-                {
-                    theme.BackdropImagePath = backdrop;
-                    embedded++;
-                }
+                embedded += moved;
             }
 
             if (embedded > 0)
@@ -998,10 +997,11 @@ namespace Writersword.Modules.TextEditor
         {
             if (theme is null) return;
 
-            if (ReadingAssets.IsProjectRef(theme.ImagePath))
-                live.Add(System.IO.Path.GetFileName(theme.ImagePath!));
-            if (ReadingAssets.IsProjectRef(theme.BackdropImagePath))
-                live.Add(System.IO.Path.GetFileName(theme.BackdropImagePath!));
+            foreach (var reference in theme.AllImages)
+            {
+                if (ReadingAssets.IsProjectRef(reference))
+                    live.Add(System.IO.Path.GetFileName(reference));
+            }
         }
 
         /// <summary>
@@ -1021,7 +1021,7 @@ namespace Writersword.Modules.TextEditor
             try
             {
                 var cacheService = CoreServices
-                    .GetService<Writersword.Core.Interfaces.Services.IZipCacheService>();
+                    .GetService<Writersword.Core.Interfaces.Services.IProjectCacheService>();
                 var cached = cacheService?.GetModuleCustomData(projectPath!, moduleType);
                 var document = (PrepareCustomData(cached) as PreparedDocumentData)?.Document;
 
@@ -1769,8 +1769,18 @@ namespace Writersword.Modules.TextEditor
         public Type SettingsType => typeof(TextEditorSettings);
 
         public object GetDefaultSettings() => _hardcodedDefaults;
-        public object GetSettings() => _globalSettingsVm?.GetSettings() ?? _globalSettings;
-        public object GetLocalSettings() => _localSettingsVm?.GetSettings() ?? _localSettings;
+        // Правки окна настроек ложатся на живой набор, а не на тот, с которым окно
+        // открылось: между открытием и «ОК» человек мог завести вид, переставить
+        // список или спрятать лишнее — всё это живёт в этом же наборе.
+        public object GetSettings()
+            => _globalSettingsVm is null
+                ? _globalSettings
+                : _globalSettingsVm.ApplyTo(_globalSettings.Clone());
+
+        public object GetLocalSettings()
+            => _localSettingsVm is null
+                ? _localSettings
+                : _localSettingsVm.ApplyTo(_localSettings.Clone());
 
         public void ApplySettings(object settings)
         {
@@ -1834,7 +1844,7 @@ namespace Writersword.Modules.TextEditor
         public void PromoteLocalToGlobal()
         {
             if (_localSettingsVm is null) return;
-            var settings = _localSettingsVm.GetSettings();
+            var settings = _localSettingsVm.ApplyTo(_localSettings.Clone());
             _globalSettings = settings;
             _settingsService.SaveModuleSettings(moduleType, settings);
             _settingsService.Save();
@@ -2051,7 +2061,10 @@ namespace Writersword.Modules.TextEditor
             to.ReadingShowPageNumbers = from.ReadingShowPageNumbers;
             to.ReadingScaleContent = from.ReadingScaleContent;
             to.ReadingFontStep = from.ReadingFontStep;
+            to.ReadingFontFamily = from.ReadingFontFamily;
             to.ReadingThemes = from.ReadingThemes;
+            to.HiddenReadingThemeIds = from.HiddenReadingThemeIds;
+            to.ReadingThemeOrder = from.ReadingThemeOrder;
         }
 
         /// <summary>

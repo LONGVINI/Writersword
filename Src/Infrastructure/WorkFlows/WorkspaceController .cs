@@ -175,7 +175,7 @@ namespace Writersword.Infrastructure.Workspace
             var allModulesNow = _tab.ModuleContext.GetAllModules();
             if (allModulesNow.Count > 0 && willCreateNewModules)
             {
-                var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+                var cacheService = App.Services.GetRequiredService<IProjectCacheService>();
 
                 // Удаляем устаревший кеш чтобы отложенные загрузки новых модулей
                 // читали project.ModulesData, а не файл с данными на 10 секунд старше.
@@ -231,7 +231,7 @@ namespace Writersword.Infrastructure.Workspace
             if (pendingCachePath != null && pendingCacheProjectId != null)
             {
                 var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
-                var cacheServiceForSave = App.Services.GetRequiredService<IZipCacheService>();
+                var cacheServiceForSave = App.Services.GetRequiredService<IProjectCacheService>();
                 var modulesToCollect = allModulesNow;
                 var path = pendingCachePath;
                 var pid = pendingCacheProjectId;

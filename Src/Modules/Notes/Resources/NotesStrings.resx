@@ -117,16 +117,175 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="Action_CopyPage" xml:space="preserve">
+    <value>As text</value>
+  </data>
+  <data name="Action_Dismiss" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Action_DuplicatePage" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="Action_NewPage" xml:space="preserve">
+    <value>New</value>
+  </data>
+  <data name="Action_PageDown" xml:space="preserve">
+    <value>Down</value>
+  </data>
+  <data name="Action_PageUp" xml:space="preserve">
+    <value>Up</value>
+  </data>
+  <data name="Action_RemovePage" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Action_TogglePages" xml:space="preserve">
+    <value>Panel</value>
+  </data>
+  <data name="Action_Undo" xml:space="preserve">
+    <value>Undo</value>
+  </data>
+  <data name="Block_Bullet" xml:space="preserve">
+    <value>Bullets</value>
+  </data>
+  <data name="Block_Checklist" xml:space="preserve">
+    <value>Task</value>
+  </data>
+  <data name="Block_Code" xml:space="preserve">
+    <value>Code</value>
+  </data>
+  <data name="Block_Divider" xml:space="preserve">
+    <value>Rule</value>
+  </data>
+  <data name="Block_Heading1" xml:space="preserve">
+    <value>Heading 1</value>
+  </data>
+  <data name="Block_Heading2" xml:space="preserve">
+    <value>Heading 2</value>
+  </data>
+  <data name="Block_Heading3" xml:space="preserve">
+    <value>Heading 3</value>
+  </data>
+  <data name="Block_Numbered" xml:space="preserve">
+    <value>Numbers</value>
+  </data>
+  <data name="Block_Paragraph" xml:space="preserve">
+    <value>Plain</value>
+  </data>
+  <data name="Block_Quote" xml:space="preserve">
+    <value>Quote</value>
+  </data>
   <data name="Description" xml:space="preserve">
     <value>Quick notes and reminders</value>
-    <comment>Module description</comment>
   </data>
   <data name="DisplayName" xml:space="preserve">
     <value>Notes</value>
-    <comment>Module name in menu</comment>
+  </data>
+  <data name="Group_Inline" xml:space="preserve">
+    <value>Selection</value>
+  </data>
+  <data name="Group_Line" xml:space="preserve">
+    <value>Line</value>
+  </data>
+  <data name="Group_Lists" xml:space="preserve">
+    <value>Lists</value>
+  </data>
+  <data name="Group_Pages" xml:space="preserve">
+    <value>Pages</value>
+  </data>
+  <data name="Hint_Blocks" xml:space="preserve">
+    <value># heading · ## subheading · - list · 1. numbering · - [ ] task · &gt; quote · ``` code · --- rule</value>
+  </data>
+  <data name="Hint_Header" xml:space="preserve">
+    <value>Just type. Markup is applied as you type:</value>
+  </data>
+  <data name="Hint_Inline" xml:space="preserve">
+    <value>**bold** · *italic* · ~~strike~~ · `code` · ==mark==</value>
+  </data>
+  <data name="Inline_Bold" xml:space="preserve">
+    <value>Bold</value>
+  </data>
+  <data name="Inline_Code" xml:space="preserve">
+    <value>Code</value>
+  </data>
+  <data name="Inline_Italic" xml:space="preserve">
+    <value>Italic</value>
+  </data>
+  <data name="Inline_Mark" xml:space="preserve">
+    <value>Mark</value>
+  </data>
+  <data name="Inline_Strike" xml:space="preserve">
+    <value>Strike</value>
+  </data>
+  <data name="Line_Down" xml:space="preserve">
+    <value>Down</value>
+  </data>
+  <data name="Line_Highlight" xml:space="preserve">
+    <value>Highlight</value>
+  </data>
+  <data name="Line_Remove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="Line_Strike" xml:space="preserve">
+    <value>Strike</value>
+  </data>
+  <data name="Line_Up" xml:space="preserve">
+    <value>Up</value>
+  </data>
+  <data name="Page_CopyTitle" xml:space="preserve">
+    <value>{0} — copy</value>
+  </data>
+  <data name="Page_DefaultTitle" xml:space="preserve">
+    <value>Notes</value>
+  </data>
+  <data name="Page_NewTitle" xml:space="preserve">
+    <value>Page {0}</value>
+  </data>
+  <data name="Page_Tasks" xml:space="preserve">
+    <value>Tasks: {0} of {1}</value>
+  </data>
+  <data name="Page_TitleWatermark" xml:space="preserve">
+    <value>Page title</value>
+  </data>
+  <data name="Page_Untitled" xml:space="preserve">
+    <value>Untitled page</value>
+  </data>
+  <data name="Page_UpdatedAt" xml:space="preserve">
+    <value>Edited {0:dd.MM.yyyy HH:mm}</value>
+  </data>
+  <data name="Pages_FoundCount" xml:space="preserve">
+    <value>Found {0} of {1}</value>
+  </data>
+  <data name="Pages_Header" xml:space="preserve">
+    <value>Pages</value>
+  </data>
+  <data name="Pages_SearchWatermark" xml:space="preserve">
+    <value>Search pages</value>
+  </data>
+  <data name="Pages_TotalCount" xml:space="preserve">
+    <value>Pages: {0}</value>
   </data>
   <data name="Title" xml:space="preserve">
     <value>Quick Notes</value>
-    <comment>Module title displayed in header</comment>
+  </data>
+  <data name="Undo_BlockRemoved" xml:space="preserve">
+    <value>Line deleted</value>
+  </data>
+  <data name="Undo_PageRemoved" xml:space="preserve">
+    <value>Page “{0}” deleted</value>
+  </data>
+  <data name="Undo_PageRemovedShort" xml:space="preserve">
+    <value>Page deletion</value>
+  </data>
+  <data name="Group_Styles" xml:space="preserve">
+    <value>Styles</value>
+  </data>
+  <data name="Inline_Bold_Letter" xml:space="preserve">
+    <value>B</value>
+  </data>
+  <data name="Inline_Italic_Letter" xml:space="preserve">
+    <value>I</value>
+  </data>
+  <data name="Inline_Strike_Letter" xml:space="preserve">
+    <value>S</value>
   </data>
 </root>

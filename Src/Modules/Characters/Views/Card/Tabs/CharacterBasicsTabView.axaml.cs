@@ -16,6 +16,7 @@ using Writersword.Modules.Characters.ViewModels;
 using Writersword.Modules.Characters.ViewModels.Tabs;
 using Writersword.Modules.Characters.Views;
 using Writersword.Modules.Characters.Views.Avatars;
+using Writersword.Modules.Characters.Models;
 
 namespace Writersword.Modules.Characters.Views.Card.Tabs
 {
@@ -343,6 +344,7 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
                 return await CharacterAvatarPickerWindow.ShowAsync(
                     window, vm.AvatarService, vm.CharacterId);
             };
+
         }
 
         // Enter в поле имени под аватаром: имя сохраняется немедленно, в обход
@@ -624,9 +626,9 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
             if (sender is not Control c || c.DataContext is not Writersword.Modules.Characters.Models.CharacterLabel label) return;
             if (DataContext is not CharacterBasicsTabViewModel vm) return;
 
-            // Вид метки общий: правка уходит и в реестр проекта, и всем, у
-            // кого эта метка стоит, — поэтому карточки списка перерисовываются
-            // всегда, а не по галке, которой больше нет.
+            // Вид метки общий всегда — признака «применить ко всем» у
+            // редактора больше нет: правишь «Ранен» здесь, он меняется у всех,
+            // у кого стоит. Поэтому и строки списка перечитываются всегда.
             FindLabelEditor()?.ShowFor(label, updated =>
             {
                 vm.UpsertLabel(updated, asGlobal: true);
@@ -635,31 +637,17 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
             e.Handled = true;
         }
 
-        // Кнопка «Добавить метку» ведёт не в редактор, а в список меток
-        // проекта: поставить уже заведённую — один щелчок. Редактор
-        // открывается оттуда последней строкой, когда нужной метки ещё нет.
+        // Кнопка «Добавить метку» — создание через полный редактор.
         private void OnAddLabelClick(object? sender, RoutedEventArgs e)
         {
-            e.Handled = true;
             if (DataContext is not CharacterBasicsTabViewModel vm) return;
-            if (sender is not Control anchor) return;
 
-            LabelPicker.ShowAt(
-                anchor,
-                vm.PickableLabels(),
-                pick: label =>
-                {
-                    vm.AddKnownLabel(label);
-                    RefreshListLabels();
-                },
-                create: () => FindLabelEditor()?.ShowFor(
-                    null,
-                    created =>
-                    {
-                        vm.UpsertLabel(created, asGlobal: true);
-                        RefreshListLabels();
-                    },
-                    LabelPicker.PendingName));
+            FindLabelEditor()?.ShowFor(null, created =>
+            {
+                vm.UpsertLabel(created, asGlobal: true);
+                RefreshListLabels();
+            });
+            e.Handled = true;
         }
 
         // Стрелки порядка в чипе: влево/вправо на одну позицию.
@@ -1090,6 +1078,60 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
 
             this.FindControl<Button>("AttachAnketaButton")?.Flyout?.Hide();
             vm.AttachAnketa(anketa.Id);
+        }
+
+        /// <summary>
+        /// Шаблон из того же списка: подключает все свои анкеты разом.
+        /// Уже подключённые остаются на местах — шаблон добавляет
+        /// недостающие разделы, а не пересобирает карточку заново.
+        /// </summary>
+        private void OnApplyTemplateClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+
+            if (sender is not Control c) return;
+            if (c.DataContext is not Writersword.Modules.Characters.Models.CharacterTemplate template) return;
+            if (DataContext is not CharacterBasicsTabViewModel vm) return;
+
+            this.FindControl<Button>("AttachAnketaButton")?.Flyout?.Hide();
+            vm.ApplyTemplate(template.Id);
+        }
+
+        /// <summary>
+        /// Клик по кругляшку шкалы выставляет значение. Обработчик, а не
+        /// команда с параметром: каст типа вьюмодели внутри шаблона
+        /// разрешается в рантайме и роняет вью.
+        ///
+        /// Переехал сюда вместе с полями анкет: они показываются в «Общем»,
+        /// а прежняя вкладка параметров осталась только хранилищем значений.
+        /// </summary>
+        private void OnScaleDotClick(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not Control c) return;
+            if (c.DataContext is not CharacterScaleDotViewModel dot) return;
+
+            // Владелец кругляшка — параметр: у списка точек DataContext строки
+            // списка полей.
+            FindParameterOwner(c)?.SetFromDot(dot.Value);
+            e.Handled = true;
+        }
+
+        private static CharacterParameterItemViewModel? FindParameterOwner(Control start)
+        {
+            var current = start.Parent;
+            while (current is not null)
+            {
+                if (current.DataContext is CharacterParameterItemViewModel item) return item;
+                current = current.Parent;
+            }
+            return null;
+        }
+
+        /// <summary>Забыть недавние. Сами анкеты и подключённое остаются.</summary>
+        private void OnClearRecentAnketasClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            (DataContext as CharacterBasicsTabViewModel)?.ClearRecentAnketas();
         }
 
         // Крестик на чипе набора: набор перестаёт числиться в составе карточки,

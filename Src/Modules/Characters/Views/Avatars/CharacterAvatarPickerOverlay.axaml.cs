@@ -181,7 +181,7 @@ namespace Writersword.Modules.Characters.Views.Avatars
             var crops = await CropStoredAsync(_currentAvatarRef);
             if (crops == null) return;
 
-            _selectedAvatarRef = CharacterAvatarRef.Combine(_currentAvatarRef, crops.Circle, crops.Strip);
+            _selectedAvatarRef = CharacterAvatarRef.Apply(_currentAvatarRef, crops);
             CloseOverlay();
         }
 
@@ -251,7 +251,9 @@ namespace Writersword.Modules.Characters.Views.Avatars
                     CharacterAvatarRef.CropOf(avatarRef),
                     null,
                     _cardContext,
-                    CharacterAvatarRef.StripCropOf(avatarRef));
+                    CharacterAvatarRef.StripCropOf(avatarRef),
+                    false,
+                    CharacterAvatarRef.RotationOf(avatarRef));
             }
             catch (Exception ex)
             {

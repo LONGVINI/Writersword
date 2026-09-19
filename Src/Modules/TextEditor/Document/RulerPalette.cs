@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using SkiaSharp;
 using Writersword.Modules.TextEditor.ViewModels.Components;
 
@@ -50,6 +50,12 @@ namespace Writersword.Modules.TextEditor.Document
         public SKColor Border { get; init; }
         public SKColor MarginHandle { get; init; }
 
+        /// <summary>Позиция табуляции, поставленная человеком.</summary>
+        public SKColor TabMarker { get; init; }
+
+        /// <summary>Засечка шага табуляции по умолчанию — та же краска, но слабее.</summary>
+        public SKColor TabMarkerFaint { get; init; }
+
         /// <summary>Прежние тона: ими линейка рисуется, пока вид не назначен.</summary>
         public static RulerPalette Default { get; } = new()
         {
@@ -66,8 +72,13 @@ namespace Writersword.Modules.TextEditor.Document
             LabelMuted = new SKColor(0x88, 0x88, 0x88),
             LabelNegative = new SKColor(0x99, 0x44, 0x44),
             Border = new SKColor(0xCC, 0xCC, 0xCC),
-            MarginHandle = new SKColor(0x88, 0x88, 0x88)
+            MarginHandle = new SKColor(0x88, 0x88, 0x88),
+            TabMarker = DefaultTabMarker,
+            TabMarkerFaint = DefaultTabMarker.WithAlpha(0x66)
         };
+
+        /// <summary>Прежний бирюзовый: им табуляция рисуется, пока вид не задал свой.</summary>
+        private static readonly SKColor DefaultTabMarker = new(0x0E, 0x7A, 0x7A);
 
         /// <summary>
         /// Палитра линейки для текущего вида. Вид не назначен — прежние тона.
@@ -79,11 +90,12 @@ namespace Writersword.Modules.TextEditor.Document
             var paper = Parse(vm.ThemeSheetHex, Default.Sheet);
             var ink = Parse(vm.ThemeInkHex, Default.Label);
             var field = Parse(vm.ThemeFieldHex, Default.OutsidePage);
+            var tab = Parse(vm.ThemeTabHex, DefaultTabMarker);
 
-            return FromTheme(paper, field, ink);
+            return FromTheme(paper, field, ink, tab);
         }
 
-        private static RulerPalette FromTheme(SKColor paper, SKColor field, SKColor ink)
+        private static RulerPalette FromTheme(SKColor paper, SKColor field, SKColor ink, SKColor tab)
         {
             // Зона полей отличается от текстовой заметно, но остаётся бумагой:
             // на линейке она показывает край листа, а не другой лист.
@@ -114,7 +126,10 @@ namespace Writersword.Modules.TextEditor.Document
                     : new SKColor(0x99, 0x44, 0x44), 0.75),
 
                 Border = ink.WithAlpha(0x3C),
-                MarginHandle = ink.WithAlpha(0x7A)
+                MarginHandle = ink.WithAlpha(0x7A),
+
+                TabMarker = tab,
+                TabMarkerFaint = tab.WithAlpha(0x66)
             };
         }
 

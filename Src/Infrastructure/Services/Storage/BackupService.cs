@@ -52,10 +52,10 @@ namespace Writersword.Infrastructure.Services.Storage
             new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// Кеш переопределений пути, прочитанных из архивов проектов.
+        /// Кеш переопределений пути, прочитанных из файлов проектов.
         /// GetStoragePath вызывается в том числе из привязки в окне настроек,
         /// то есть с UI-потока и многократно. Без кеша каждое обращение
-        /// открывало бы ZIP проекта под общим файловым шлюзом, и интерфейс
+        /// открывало бы базу проекта под общим файловым шлюзом, и интерфейс
         /// замирал бы на время фонового сохранения.
         /// </summary>
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _overrideCache =

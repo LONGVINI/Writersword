@@ -858,14 +858,14 @@ namespace Writersword.Views
                     // Кеш пишется только когда есть что спасать. Безусловная запись при
                     // каждом закрытии складывала в .wsasd то, что вернули живые модули,
                     // включая пустой документ модуля, который своих данных не получил.
-                    // При следующем запуске такой кеш оказывается новее ZIP, проходит
+                    // При следующем запуске такой кеш оказывается новее проекта, проходит
                     // сравнение как «данные идентичны» и подставляется вместо проекта.
                     bool hasUnsaved = await projectWorkflow.HasUnsavedChanges(activeTab);
 
                     if (hasUnsaved)
                     {
                         var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
-                        var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+                        var cacheService = App.Services.GetRequiredService<IProjectCacheService>();
 
                         var activeModules = vm.GetActiveModules();
                         var (customData, sessionData) = stateCollector.CollectAllData(activeModules);
@@ -941,7 +941,7 @@ namespace Writersword.Views
                 {
                     if (!string.IsNullOrEmpty(tab.FilePath))
                     {
-                        var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+                        var cacheService = App.Services.GetRequiredService<IProjectCacheService>();
                         // Task.Run: DeleteCache вызывает _fileLock.Wait() на UI-потоке.
                         // Если фоновый авто-сейв держит лок — дедлок при закрытии.
                         await Task.Run(() => cacheService.DeleteCache(tab.FilePath));
@@ -968,7 +968,7 @@ namespace Writersword.Views
             }
 
             // Финальная чистка кешей. Идёт последней — после всех записей .wsasd
-            // при закрытии. Кеш, совпадающий с ZIP, ничего не восстанавливает, но
+            // при закрытии. Кеш, совпадающий с проектом, ничего не восстанавливает, но
             // при следующем запуске становится источником данных вместо проекта:
             // allData в SaveDocumentAsync стартует именно с него.
             // Здесь, а не в ShutdownRequested: событие поднимает TryShutdown, а

@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="using:Writersword.Styles.UserControls"
              xmlns:infra="using:Writersword.Infrastructure.Controls"
@@ -266,6 +266,92 @@
 			</Setter>
 		</Style>
 
+		<!-- Полоса прокрутки.
+
+		     Своя, а не из темы: та живёт ниткой в два пиксела и раздувается под
+		     указателем, подменяя дорожку серой плашкой. Пока её не поймаешь — не
+		     видно, где стоишь, а поймав, получаешь прыжок ширины под курсором.
+		     Здесь бегунок сразу толстый и один и тот же всегда, дорожка прозрачна, а
+		     место под него отведено в вёрстке — наезжать на поля ему не надо. -->
+		<Style Selector="ScrollBar:vertical">
+			<Setter Property="Width"      Value="10"/>
+			<Setter Property="MinWidth"   Value="10"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Template">
+				<ControlTemplate>
+					<Grid Background="Transparent">
+						<Track Name="PART_Track"
+						       Orientation="Vertical"
+						       IsDirectionReversed="True"
+						       Minimum="{TemplateBinding Minimum}"
+						       Maximum="{TemplateBinding Maximum}"
+						       ViewportSize="{TemplateBinding ViewportSize}"
+						       Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+							<Track.DecreaseButton>
+								<RepeatButton Name="PART_PageUpButton" Focusable="False">
+									<RepeatButton.Template>
+										<ControlTemplate><Border Background="Transparent"/></ControlTemplate>
+									</RepeatButton.Template>
+								</RepeatButton>
+							</Track.DecreaseButton>
+							<Track.IncreaseButton>
+								<RepeatButton Name="PART_PageDownButton" Focusable="False">
+									<RepeatButton.Template>
+										<ControlTemplate><Border Background="Transparent"/></ControlTemplate>
+									</RepeatButton.Template>
+								</RepeatButton>
+							</Track.IncreaseButton>
+							<Thumb Name="thumb" MinHeight="28">
+								<Thumb.Template>
+									<ControlTemplate>
+										<Border Width="8" Margin="1 0" CornerRadius="4"
+										        Background="{DynamicResource BorderDefaultBrush}"/>
+									</ControlTemplate>
+								</Thumb.Template>
+							</Thumb>
+						</Track>
+					</Grid>
+				</ControlTemplate>
+			</Setter>
+		</Style>
+
+		<Style Selector="ScrollBar:vertical /template/ Thumb:pointerover /template/ Border">
+			<Setter Property="Background" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+
+		<!-- Общая панель окна: в неё убрано всё, что стоит между шапкой и нижней
+		     строкой. Прежде список видов и колонка полей висели в окне порознь, и на
+		     невысоком окне это читалось как оборванная вёрстка: карточки просто
+		     кончались у нижнего края, ничем не подхваченные. -->
+		<Style Selector="Border.shell">
+			<Setter Property="Background"      Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="CornerRadius"    Value="12"/>
+			<Setter Property="Padding"         Value="10"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+		</Style>
+
+		<!-- Заголовок-переключатель примера: обычная строка, а не кнопка на вид.
+		     Нажимается вся ширина, чтобы не целиться в стрелку. -->
+		<Style Selector="Button.previewToggle">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Cursor" Value="Hand"/>
+		</Style>
+
+		<Style Selector="Button.previewToggle:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+
+		<Style Selector="Button.previewToggle:pointerover PathIcon">
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+
+		<Style Selector="Button.previewToggle PathIcon">
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+
 	</UserControl.Styles>
 
 	<Grid>
@@ -273,9 +359,15 @@
 		     настройку текст мешает разглядеть то, что настраиваешь. -->
 		<Border x:Name="Scrim" Background="#E0000000"/>
 
-		<!-- Окно непрозрачно целиком: фон берётся у темы сплошным цветом. -->
-		<Border HorizontalAlignment="Center" VerticalAlignment="Center"
-		        Margin="24" Width="760" MaxHeight="640"
+		<!-- Окно непрозрачно целиком: фон берётся у темы сплошным цветом.
+
+		     По высоте оно тянется во весь свободный рост и упирается только в
+		     потолок: полей у вида много, и при жёстких шестистах точках нижние
+		     карточки уходили под обрез в любом окне, даже развёрнутом на весь
+		     экран. Отступ в 24 точки остаётся с каждой стороны, поэтому в тесном
+		     окне рамка не срезается, а окно просто становится ниже. -->
+		<Border HorizontalAlignment="Center" VerticalAlignment="Stretch"
+		        Margin="24" Width="760" MaxHeight="980" MinHeight="320"
 		        Background="{DynamicResource BgAppBrush}"
 		        BorderBrush="{DynamicResource BorderDefaultBrush}"
 		        BorderThickness="1" CornerRadius="14" Padding="18">
@@ -303,7 +395,8 @@
 					<Button Grid.Column="2" x:Name="OkBtn" Classes="DialogAccent" Content="Готово"/>
 				</Grid>
 
-				<Grid ColumnDefinitions="248 14 *">
+				<Border Classes="shell">
+				<Grid ColumnDefinitions="240 12 *">
 
 					<!-- ── Список видов ─────────────────────────────────── -->
 					<Border Grid.Column="0" Classes="card" Padding="8">
@@ -312,7 +405,7 @@
 								<TextBlock Grid.Column="0" Classes="cardTitle" Text="Виды"/>
 								<Button Grid.Column="1" x:Name="AddBtn" Classes="mini" Padding="8 3"
 								        behaviours:TooltipBehavior.Tip="Создать вид"
-								        behaviours:TooltipBehavior.Description="Новый вид создаётся копией выбранного — от знакомой точки настраивать проще, чем от белого листа.">
+								        behaviours:TooltipBehavior.Description="Новый вид создаётся копией выбранного — от знакомой точки настраивать проще, чем от белого листа">
 									<StackPanel Orientation="Horizontal" Spacing="4">
 										<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" Width="12" Height="12"/>
 										<TextBlock Text="Создать" FontSize="11"/>
@@ -321,8 +414,9 @@
 							</Grid>
 
 							<ScrollViewer VerticalScrollBarVisibility="Auto"
+							              AllowAutoHide="False"
 							              HorizontalScrollBarVisibility="Disabled">
-								<ItemsControl x:Name="ThemeList" Margin="0 0 8 0">
+								<ItemsControl x:Name="ThemeList" Margin="0 0 12 0">
 									<ItemsControl.ItemTemplate>
 										<DataTemplate>
 											<Border Classes="themeRow"
@@ -343,20 +437,31 @@
 														           Foreground="{Binding InkBrush}"/>
 													</Border>
 
-													<StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
-														<TextBlock Text="{Binding Name}" FontSize="12"
-														           Foreground="{DynamicResource TextPrimaryBrush}"
-														           TextTrimming="CharacterEllipsis"/>
-														<TextBlock Text="{Binding ScopeText}" FontSize="10"
-														           Foreground="{DynamicResource TextMutedBrush}"/>
-													</StackPanel>
+													<TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
+													           VerticalAlignment="Center"
+													           Foreground="{DynamicResource TextPrimaryBrush}"
+													           TextTrimming="CharacterEllipsis"/>
 
-													<Border Grid.Column="2" Classes="scopeBadge"
-													        IsVisible="{Binding IsBuiltIn}"
-													        Background="{DynamicResource BgSurfaceBrush}">
-														<TextBlock Text="встроенный" FontSize="9"
-														           Foreground="{DynamicResource TextMutedBrush}"/>
-													</Border>
+													<!-- Где вид сохранён — значками, теми же, что у наборов
+													     аватарок: замок у встроенного, папка у приложенного к
+													     рукописи, глобус у общего для всех проектов. Вид может
+													     лежать сразу в двух местах — тогда и значка два. -->
+													<StackPanel Grid.Column="2" Orientation="Horizontal"
+													            Spacing="4" VerticalAlignment="Center"
+													            behaviours:TooltipBehavior.Tip="{Binding ScopeHint}">
+														<PathIcon Width="13" Height="13"
+														          IsVisible="{Binding IsBuiltIn}"
+														          Foreground="{DynamicResource TextMutedBrush}"
+														          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10z"/>
+														<PathIcon Width="13" Height="13"
+														          IsVisible="{Binding IsLocalScope}"
+														          Foreground="{DynamicResource SectionProjectFgBrush}"
+														          Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+														<PathIcon Width="13" Height="13"
+														          IsVisible="{Binding IsGlobalScope}"
+														          Foreground="{DynamicResource SectionGlobalFgBrush}"
+														          Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+													</StackPanel>
 												</Grid>
 											</Border>
 										</DataTemplate>
@@ -377,14 +482,44 @@
 						     цвет листа, картинка бумаги, буквы, свет поверх всего. -->
 						<Border DockPanel.Dock="Bottom" Classes="card" Margin="0 10 0 0">
 							<StackPanel Spacing="8">
-								<StackPanel Orientation="Horizontal" Spacing="6">
-									<TextBlock Classes="cardTitle" Text="Пример"/>
-								</StackPanel>
+								<!-- Заголовок сворачивает пример. Полей у вида много, и на невысоком
+								     окне бумага съедает треть места; убрал — и список полей стал
+								     длиннее ровно на её высоту. Прячется скольжением, а не рывком:
+								     мгновенно исчезнувшая панель читается как поломка вёрстки. -->
+								<Button x:Name="PreviewToggleBtn" Classes="previewToggle"
+								        HorizontalAlignment="Stretch"
+								        HorizontalContentAlignment="Stretch"
+								        behaviours:TooltipBehavior.Tip="Свернуть пример"
+								        behaviours:TooltipBehavior.Description="Бумага уезжает вниз, освобождая место под поля. Развернуть — тем же щелчком">
+									<Grid ColumnDefinitions="Auto * Auto">
+										<TextBlock Grid.Column="0" Classes="cardTitle" Text="Пример"/>
+										<PathIcon Grid.Column="2" x:Name="PreviewChevron"
+										          Width="9" Height="9"
+										          VerticalAlignment="Center"
+										          RenderTransformOrigin="50%,50%"
+										          Data="M7 10l5 5 5-5z">
+											<PathIcon.Transitions>
+												<Transitions>
+													<TransformOperationsTransition Property="RenderTransform"
+													                               Duration="0:0:0.18"
+													                               Easing="CubicEaseOut"/>
+												</Transitions>
+											</PathIcon.Transitions>
+										</PathIcon>
+									</Grid>
+								</Button>
 
 								<Border x:Name="PreviewFrame" Height="118" CornerRadius="8"
 								        ClipToBounds="True"
 								        BorderBrush="{DynamicResource BorderSubtleBrush}"
 								        BorderThickness="1">
+									<Border.Transitions>
+										<Transitions>
+											<DoubleTransition Property="Height" Duration="0:0:0.20"
+											                  Easing="CubicEaseOut"/>
+											<DoubleTransition Property="Opacity" Duration="0:0:0.14"/>
+										</Transitions>
+									</Border.Transitions>
 									<Grid>
 										<!-- Поле вокруг книги. На настоящем экране его больше, чем
 										     самой бумаги, и пример без него показывал вид наполовину:
@@ -423,8 +558,9 @@
 						</Border>
 
 						<ScrollViewer VerticalScrollBarVisibility="Auto"
+						              AllowAutoHide="False"
 						              HorizontalScrollBarVisibility="Disabled">
-							<StackPanel Spacing="10" Margin="0 0 14 0">
+							<StackPanel Spacing="10" Margin="0 0 16 2">
 
 								<!-- Имя и область -->
 								<Border Classes="card">
@@ -433,13 +569,13 @@
 											<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Название"/>
 											<Button Grid.Column="3" x:Name="DuplicateBtn" Classes="iconAction"
 											        behaviours:TooltipBehavior.Tip="Дублировать вид"
-											        behaviours:TooltipBehavior.Description="Копия под новым именем. Встроенный вид иначе не изменить — его копию править можно.">
+											        behaviours:TooltipBehavior.Description="Копия под новым именем. Встроенный вид иначе не изменить — его копию править можно">
 												<PathIcon Width="13" Height="13"
 												          Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
 											</Button>
 											<Button Grid.Column="4" x:Name="DeleteBtn" Classes="iconAction danger"
 											        behaviours:TooltipBehavior.Tip="Удалить вид"
-											        behaviours:TooltipBehavior.Description="Убирает вид из обеих областей. Встроенные виды удалить нельзя.">
+											        behaviours:TooltipBehavior.Description="Убирает вид из обеих областей. Встроенные виды удалить нельзя">
 												<PathIcon Width="13" Height="13"
 												          Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
 											</Button>
@@ -478,7 +614,7 @@
 										</StackPanel>
 
 										<Grid ColumnDefinitions="Auto Auto Auto * Auto Auto Auto"
-										      RowDefinitions="Auto"
+										      RowDefinitions="Auto Auto"
 										      ColumnSpacing="8" RowSpacing="10">
 											<TextBlock Grid.Row="0" Grid.Column="0" Classes="FieldLabel" Text="Лист"/>
 											<ui:ColorPickerButton Grid.Row="0" Grid.Column="1" x:Name="SheetColorBtn"
@@ -488,21 +624,21 @@
 											<ui:ColorPickerButton Grid.Row="0" Grid.Column="5" x:Name="InkColorBtn"
 											                      Width="26" Height="26"
 											                      VerticalAlignment="Center"/>
+
 										</Grid>
 									</StackPanel>
 								</Border>
 
-								<!-- Шрифт и свет -->
+								<!-- Свет. Гарнитуры здесь нет намеренно: вид один и тот же за
+								     письмом и за чтением, и держит он только то, что не доедет
+								     до печати — цвета, бумагу, поле. Начертание чтения живёт в
+								     ленте чтения, рядом со ступенью размера: это поправка под
+								     глаза, а не оформление книги. -->
 								<Border Classes="card">
 									<StackPanel Spacing="10">
 										<StackPanel Orientation="Horizontal" Spacing="6">
-											<TextBlock Classes="cardTitle" Text="Шрифт и свет"/>
+											<TextBlock Classes="cardTitle" Text="Свет"/>
 										</StackPanel>
-
-										<Grid ColumnDefinitions="Auto *" ColumnSpacing="8">
-											<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Шрифт"/>
-											<ComboBox Grid.Column="1" x:Name="FontCombo" Classes="Field"/>
-										</Grid>
 
 										<Grid ColumnDefinitions="Auto Auto * Auto" ColumnSpacing="8" RowDefinitions="Auto Auto Auto" RowSpacing="6">
 											<TextBlock Grid.Row="0" Grid.Column="0" Classes="FieldLabel" Text="Яркость"/>
@@ -548,17 +684,29 @@
 											        Content="От бумаги"/>
 										</Grid>
 
-										<StackPanel Orientation="Horizontal" Spacing="6">
-											<CheckBox x:Name="BackUseImageCheck" FontSize="12"
-											          Content="Использовать картинку"/>
-										</StackPanel>
-
+										<!-- Картинки поля. Набор, а не одна: собирается он так же,
+										     как у бумаги, но на экране показывается первая — разным
+										     картинкам на одном поле взяться неоткуда. Щелчок по
+										     плитке делает её первой. -->
 										<Grid ColumnDefinitions="* Auto Auto" ColumnSpacing="6">
-											<TextBox Grid.Column="0" x:Name="BackImagePathBox" Classes="Field"
-											         PlaceholderText="картинка фона не выбрана"/>
-											<Button Grid.Column="1" x:Name="BackBrowseBtn" Classes="mini" Content="Выбрать…"/>
-											<Button Grid.Column="2" x:Name="BackClearImageBtn" Classes="mini" Content="Убрать"/>
+											<TextBlock Grid.Column="0" x:Name="BackGalleryHint" Classes="Hint"
+											           VerticalAlignment="Center"
+											           Text="Картинка не выбрана — поле заливается цветом."/>
+											<Button Grid.Column="1" x:Name="BackBrowseBtn" Classes="iconAction"
+											        behaviours:TooltipBehavior.Tip="Добавить картинки"
+											        behaviours:TooltipBehavior.Description="Выбрать файлы с диска — можно сразу несколько. Копии лягут в вид и уедут туда же, куда и он">
+												<PathIcon Width="13" Height="13"
+												          Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+											</Button>
+											<Button Grid.Column="2" x:Name="BackClearImageBtn" Classes="iconAction danger"
+											        behaviours:TooltipBehavior.Tip="Убрать все картинки"
+											        behaviours:TooltipBehavior.Description="Набор очищается целиком, заливка вида остаётся">
+												<PathIcon Width="13" Height="13"
+												          Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+											</Button>
 										</Grid>
+
+										<WrapPanel x:Name="BackGallery" Orientation="Horizontal"/>
 
 										<Grid ColumnDefinitions="Auto Auto Auto * Auto" ColumnSpacing="8">
 											<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Как лечь"/>
@@ -580,11 +728,37 @@
 											<TextBlock Classes="cardTitle" Text="Картинка бумаги"/>
 										</StackPanel>
 
+										<!-- Картинки бумаги. Их может быть сколько угодно: листы в
+										     книге разные, и набор для того и заведён. Щелчок по
+										     плитке ставит её первой, крестик убирает. -->
 										<Grid ColumnDefinitions="* Auto Auto" ColumnSpacing="6">
-											<TextBox Grid.Column="0" x:Name="ImagePathBox" Classes="Field"
-											         PlaceholderText="файл не выбран"/>
-											<Button Grid.Column="1" x:Name="BrowseBtn" Classes="mini" Content="Выбрать…"/>
-											<Button Grid.Column="2" x:Name="ClearImageBtn" Classes="mini" Content="Убрать"/>
+											<TextBlock Grid.Column="0" x:Name="PaperGalleryHint" Classes="Hint"
+											           VerticalAlignment="Center"
+											           Text="Картинок нет — лист заливается цветом."/>
+											<Button Grid.Column="1" x:Name="BrowseBtn" Classes="iconAction"
+											        behaviours:TooltipBehavior.Tip="Добавить картинки"
+											        behaviours:TooltipBehavior.Description="Выбрать файлы с диска — можно сразу несколько. Копии лягут в вид: захочется другой набор — проще завести копию вида, чем раскладывать картинки по папкам">
+												<PathIcon Width="13" Height="13"
+												          Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+											</Button>
+											<Button Grid.Column="2" x:Name="ClearImageBtn" Classes="iconAction danger"
+											        behaviours:TooltipBehavior.Tip="Убрать все картинки"
+											        behaviours:TooltipBehavior.Description="Набор очищается целиком, цвет листа остаётся">
+												<PathIcon Width="13" Height="13"
+												          Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+											</Button>
+										</Grid>
+
+										<WrapPanel x:Name="PaperGallery" Orientation="Horizontal"/>
+
+										<Grid ColumnDefinitions="Auto Auto *" ColumnSpacing="8"
+										      x:Name="PaperFlowRow">
+											<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Показывать"/>
+											<infra:HintMark Grid.Column="1" VerticalAlignment="Center"
+											                behaviours:TooltipBehavior.Tip="Как разбирать набор"
+											                behaviours:TooltipBehavior.Description="Одну — всегда первая картинка набора. По очереди — каждый следующий лист берёт следующую, по кругу. Вразнобой — лист берёт свою картинку по жребию, но всегда одну и ту же: один и тот же лист обязан выглядеть одинаково, сколько бы раз к нему ни вернулись"/>
+											<ComboBox Grid.Column="2" x:Name="PaperFlowCombo"
+											          MinWidth="150" FontSize="12"/>
 										</Grid>
 
 										<TextBlock x:Name="ImageInfoText" Classes="Hint"
@@ -594,7 +768,7 @@
 											<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Плотность"/>
 											<infra:HintMark Grid.Column="1" VerticalAlignment="Center"
 											                behaviours:TooltipBehavior.Tip="Плотность картинки"
-											                behaviours:TooltipBehavior.Description="Насколько картинка перекрывает цвет листа. Для текстуры бумаги обычно хватает трети — иначе она спорит с текстом."/>
+											                behaviours:TooltipBehavior.Description="Насколько картинка перекрывает цвет листа. Для текстуры бумаги обычно хватает трети — иначе она спорит с текстом"/>
 											<Slider Grid.Column="2" x:Name="OpacitySlider" Classes="Neat"
 											        Minimum="0" Maximum="100"/>
 											<TextBlock Grid.Column="3" x:Name="OpacityValue" Classes="FieldLabel"
@@ -606,8 +780,72 @@
 											          Content="Замостить вместо растягивания"/>
 											<infra:HintMark VerticalAlignment="Center"
 											                behaviours:TooltipBehavior.Tip="Замостить"
-											                behaviours:TooltipBehavior.Description="Картинка повторяется в своём размере вместо растягивания на весь лист. Для мелкой текстуры — единственный годный способ: растянутая мелкая картинка превращается в мыло."/>
+											                behaviours:TooltipBehavior.Description="Картинка повторяется в своём размере вместо растягивания на весь лист. Для мелкой текстуры — единственный годный способ: растянутая мелкая картинка превращается в мыло"/>
 										</StackPanel>
+									</StackPanel>
+								</Border>
+
+								<!-- Только при правке.
+								     Отдельным разделом внизу, потому что всё в нём про рабочее
+								     место, а не про книгу: в чтении нет ни каретки, ни линейки,
+								     ни позиций табуляции, и ни один из этих цветов туда не
+								     доедет. Пусто в поле — цвет выводится из бумаги и чернил,
+								     как и раньше; кнопка рядом возвращает вывод обратно. -->
+								<Border Classes="card">
+									<StackPanel Spacing="10">
+										<StackPanel Orientation="Horizontal" Spacing="6">
+											<TextBlock Classes="cardTitle" Text="Только при правке"/>
+										</StackPanel>
+
+										<TextBlock Classes="Hint"
+										           Text="Каретка, линейка и позиции табуляции. В чтении ничего этого нет — на книгу цвета не влияют."/>
+
+										<Grid ColumnDefinitions="Auto Auto Auto *"
+										      RowDefinitions="Auto Auto Auto Auto Auto"
+										      ColumnSpacing="8" RowSpacing="8">
+											<TextBlock Grid.Row="0" Grid.Column="0" Classes="FieldLabel" Text="Каретка"/>
+											<ui:ColorPickerButton Grid.Row="0" Grid.Column="1" x:Name="CaretColorBtn"
+											                      Width="26" Height="26"
+											                      VerticalAlignment="Center"/>
+											<Button Grid.Row="0" Grid.Column="2" x:Name="CaretResetBtn" Classes="mini"
+											        Padding="8 3" Content="Как текст"
+											        VerticalAlignment="Center"/>
+
+											<TextBlock Grid.Row="1" Grid.Column="0" Classes="FieldLabel" Text="Полоса линейки"/>
+											<ui:ColorPickerButton Grid.Row="1" Grid.Column="1" x:Name="RulerSheetColorBtn"
+											                      Width="26" Height="26"
+											                      VerticalAlignment="Center"/>
+											<Button Grid.Row="1" Grid.Column="2" x:Name="RulerSheetResetBtn" Classes="mini"
+											        Padding="8 3" Content="Как бумага"
+											        VerticalAlignment="Center"/>
+
+											<TextBlock Grid.Row="2" Grid.Column="0" Classes="FieldLabel" Text="Деления и цифры"/>
+											<ui:ColorPickerButton Grid.Row="2" Grid.Column="1" x:Name="RulerInkColorBtn"
+											                      Width="26" Height="26"
+											                      VerticalAlignment="Center"/>
+											<Button Grid.Row="2" Grid.Column="2" x:Name="RulerInkResetBtn" Classes="mini"
+											        Padding="8 3" Content="Как текст"
+											        VerticalAlignment="Center"/>
+
+											<TextBlock Grid.Row="3" Grid.Column="0" Classes="FieldLabel" Text="За краем листа"/>
+											<ui:ColorPickerButton Grid.Row="3" Grid.Column="1" x:Name="RulerFieldColorBtn"
+											                      Width="26" Height="26"
+											                      VerticalAlignment="Center"/>
+											<Button Grid.Row="3" Grid.Column="2" x:Name="RulerFieldResetBtn" Classes="mini"
+											        Padding="8 3" Content="Как поле"
+											        VerticalAlignment="Center"/>
+
+											<TextBlock Grid.Row="4" Grid.Column="0" Classes="FieldLabel" Text="Табуляция"/>
+											<ui:ColorPickerButton Grid.Row="4" Grid.Column="1" x:Name="TabMarkColorBtn"
+											                      Width="26" Height="26"
+											                      VerticalAlignment="Center"/>
+											<Button Grid.Row="4" Grid.Column="2" x:Name="TabMarkResetBtn" Classes="mini"
+											        Padding="8 3" Content="Обычный"
+											        VerticalAlignment="Center"/>
+										</Grid>
+
+										<TextBlock Classes="Hint"
+										           Text="Табуляция — засечки на линейке и квадрат в её углу, которым выбирают тип позиции."/>
 									</StackPanel>
 								</Border>
 
@@ -615,6 +853,7 @@
 						</ScrollViewer>
 					</DockPanel>
 				</Grid>
+				</Border>
 			</DockPanel>
 		</Border>
 	</Grid>

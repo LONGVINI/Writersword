@@ -410,30 +410,17 @@
 								</ItemsRepeater>
 							</StackPanel>
 
-							<!-- Аватарки, лежащие в самом проекте -->
-							<StackPanel IsVisible="{Binding HasProjectAvatars}">
-								<Border Classes="sectionHeader">
-									<StackPanel Orientation="Horizontal" Spacing="8">
-										<TextBlock Classes="sectionTitle"
-										           Text="{x:Static res:CharactersStrings.AvatarPicker_InProject}"/>
-										<Border Classes="scopeChip local">
-											<TextBlock Classes="scopeChipText" Text="в проекте"/>
-										</Border>
-									</StackPanel>
-								</Border>
-								<ItemsRepeater ItemsSource="{Binding VisibleProjectAvatars}"
-								              ItemTemplate="{StaticResource AvatarTileTemplate}"
-								              Margin="17,4,17,10">
-									<ItemsRepeater.Layout>
-										<UniformGridLayout Orientation="Horizontal"
-										                   MinItemWidth="70"
-										                   MinItemHeight="70"
-										                   MinColumnSpacing="0"
-										                   MinRowSpacing="0"
-										                   ItemsStretch="None"/>
-									</ItemsRepeater.Layout>
-								</ItemsRepeater>
-							</StackPanel>
+							<!-- Раздела «В проекте» здесь больше нет. Он показывал архив
+							     проекта — всё, что когда-либо в него уложили, — и почти
+							     целиком повторял «Недавние»: картинка попадает в архив ровно
+							     тогда, когда её ставят, то есть тогда же, когда она встаёт
+							     первой в недавних.
+							
+							     Загрузить ту же картинку заново не страшно: перед сохранением
+							     служба ищет её по содержимому среди всего, что уже лежит
+							     (FindStoredByContent), и при совпадении берёт найденную, а не
+							     заводит вторую. Двадцать раз выбранный один и тот же файл —
+							     это по-прежнему один файл в хранилище. -->
 
 							<!-- Папки: локальные, глобальные, встроенные.
 							     Область подписана значком — как у палитр. -->

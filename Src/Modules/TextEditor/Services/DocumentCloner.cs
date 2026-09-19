@@ -36,7 +36,8 @@ namespace Writersword.Modules.TextEditor.Services
                 Styles = new List<DocumentStyle>(source.Styles.Count),
                 Sections = new List<SectionModel>(source.Sections.Count),
                 Annotations = new List<InlineAnnotation>(source.Annotations.Count),
-                DocumentAutoReplaceRules = CloneAutoReplaceRules(source.DocumentAutoReplaceRules)
+                DocumentAutoReplaceRules = CloneAutoReplaceRules(source.DocumentAutoReplaceRules),
+                TableOfContents = CloneTableOfContents(source.TableOfContents)
             };
 
             foreach (var style in source.Styles)
@@ -49,6 +50,25 @@ namespace Writersword.Modules.TextEditor.Services
                 clone.Annotations.Add(CloneAnnotation(annotation));
 
             return clone;
+        }
+
+        /// <summary>
+        /// Настройки оглавлений рукописи.
+        ///
+        /// Без этой копии снимок терял их молча: строки оглавления уносили с собой
+        /// TocOwnerId и после открытия файла выглядели оглавлением, а настроек с таким
+        /// опознавателем в документе не было. Оттого лента и не показывала свою вкладку
+        /// над вставленным списком — каретка стояла в оглавлении, которого для программы
+        /// уже не существовало.
+        /// </summary>
+        private static List<Models.Toc.TocSettings>? CloneTableOfContents(
+            List<Models.Toc.TocSettings>? source)
+        {
+            if (source is null) return null;
+
+            var copy = new List<Models.Toc.TocSettings>(source.Count);
+            foreach (var toc in source) copy.Add(toc.Clone());
+            return copy;
         }
 
         private static TextEditorPageSettings ClonePageSettings(TextEditorPageSettings source)

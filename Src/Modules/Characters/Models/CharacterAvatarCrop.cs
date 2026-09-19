@@ -60,6 +60,37 @@ namespace Writersword.Modules.Characters.Models
         public double RelativeAspect => Height <= 0.0 ? 1.0 : Width / Height;
 
         /// <summary>
+        /// Кадр после поворота картинки на четверть по часовой стрелке.
+        ///
+        /// Перестановкой чисел это не обходится: доли считаются от сторон
+        /// картинки, а стороны при повороте меняются местами, и начало отсчёта
+        /// по одной из осей переворачивается.
+        /// </summary>
+        public CharacterAvatarCrop RotateCw()
+            => new(1.0 - Y - Height, X, Height, Width);
+
+        /// <summary>Кадр после поворота картинки на четверть против часовой.</summary>
+        public CharacterAvatarCrop RotateCcw()
+            => new(Y, 1.0 - X - Width, Height, Width);
+
+        /// <summary>
+        /// Тот же кусок картинки, но в долях исходного файла, а не повёрнутой
+        /// копии.
+        ///
+        /// Кадр снимают с того, что видно на экране, то есть с уже повёрнутой
+        /// картинки. Вырезать же его приходится из файла, который никто не
+        /// переписывал, — значит поворот надо отмотать назад.
+        /// </summary>
+        public CharacterAvatarCrop ToSourceSpace(int rotation)
+        {
+            var steps = ((rotation / 90) % 4 + 4) % 4;
+
+            var result = this;
+            for (var i = 0; i < steps; i++) result = result.RotateCcw();
+            return result;
+        }
+
+        /// <summary>
         /// Кадр в пикселях исходной картинки. Стороны не меньше одного пикселя:
         /// нулевая ширина или высота уронила бы создание битмапа.
         /// </summary>

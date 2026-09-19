@@ -7,6 +7,7 @@ namespace Writersword.Modules.Characters.Models
     ///     project:portrait.png
     ///     project:portrait.png|crop=0.05,0.1,0.4,0.4
     ///     project:portrait.png|crop=0.05,0.1,0.4,0.4|strip=0,0.2,1,0.4
+    ///     project:portrait.png|crop=0.05,0.1,0.4,0.4|rot=90
     ///
     /// Кадров два, потому что карточка показывает аватарку двумя разными
     /// способами. Кружку нужен квадрат вокруг лица, полоске — широкая полоса,
@@ -30,6 +31,9 @@ namespace Writersword.Modules.Characters.Models
 
         /// <summary>Метка кадра полоски, вместе с разделителем.</summary>
         public const string StripMarker = "|strip=";
+
+        /// <summary>Метка поворота картинки, вместе с разделителем.</summary>
+        public const string RotationMarker = "|rot=";
 
         /// <summary>
         /// Адрес файла без кадров. Обрезается по первому разделителю, а не по
@@ -87,6 +91,44 @@ namespace Writersword.Modules.Characters.Models
         }
 
         /// <summary>
+        /// Поворот, приведённый к одному из четырёх положений: 0, 90, 180 или
+        /// 270 градусов. Любое другое число приводится к ближайшему из них по
+        /// четвертям — промежуточные углы пришлось бы рисовать с полями по
+        /// краям, которых в исходнике нет.
+        /// </summary>
+        public static int NormalizeRotation(int degrees)
+        {
+            var steps = ((degrees / 90) % 4 + 4) % 4;
+            return steps * 90;
+        }
+
+        /// <summary>
+        /// Поворот картинки в градусах. Ноль — поворота нет или запись
+        /// испорчена: картинка показывается как лежит в файле.
+        ///
+        /// Поворот принадлежит картинке целиком, а не отдельному кадру: оба
+        /// кадра снимают уже с повёрнутой, и разный поворот у кружка и полоски
+        /// означал бы две разные картинки на одной карточке.
+        /// </summary>
+        public static int RotationOf(string? avatarRef)
+        {
+            var payload = PayloadOf(avatarRef, RotationMarker);
+            if (payload is null) return 0;
+
+            return int.TryParse(
+                payload.Trim(),
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var degrees)
+                ? NormalizeRotation(degrees)
+                : 0;
+        }
+
+        /// <summary>Заменить поворот, оставив адрес и оба кадра.</summary>
+        public static string? WithRotation(string? avatarRef, int rotation)
+            => Combine(BaseOf(avatarRef), CropOf(avatarRef), StripCropOf(avatarRef), rotation);
+
+        /// <summary>
         /// Кадр под нужный вид карточки. Полоска без своего кадра берёт кадр
         /// кружка — иначе смена вида аватара внезапно показывала бы картинку
         /// целиком там, где её уже подрезали.
@@ -110,6 +152,18 @@ namespace Writersword.Modules.Characters.Models
             => Combine(baseRef, crop, null);
 
         /// <summary>
+        /// Приложить к ссылке результат окна обрезки — оба кадра и поворот.
+        ///
+        /// Отдельный метод, а не ещё одна перегрузка Combine: вызов с одним
+        /// null на месте второго довода иначе перестал бы выбирать между
+        /// кадром и парой кадров.
+        /// </summary>
+        public static string? Apply(string? baseRef, CharacterAvatarCropPair? crops)
+            => crops is null
+                ? Combine(baseRef, null, null, RotationOf(baseRef))
+                : Combine(baseRef, crops.Circle, crops.Strip, crops.Rotation);
+
+        /// <summary>
         /// Собрать ссылку с обоими кадрами. Кадр полоски не пишется, когда он
         /// совпадает с кадром кружка: полоска и так берёт кружковый, а вторая
         /// запись того же значения разошлась бы с первой при следующей правке.
@@ -118,6 +172,21 @@ namespace Writersword.Modules.Characters.Models
             string? baseRef,
             CharacterAvatarCrop? crop,
             CharacterAvatarCrop? stripCrop)
+            => Combine(baseRef, crop, stripCrop, RotationOf(baseRef));
+
+        /// <summary>
+        /// Собрать ссылку с кадрами и поворотом. Поворот задан отдельно, а не
+        /// вычитан из baseRef: адрес сюда приходит и после переезда картинки в
+        /// другое хранилище, где прежних частей ссылки уже нет.
+        ///
+        /// Нулевой поворот не пишется по той же причине, что и полный кадр: две
+        /// записи одного смысла разошлись бы при сравнении ссылок.
+        /// </summary>
+        public static string? Combine(
+            string? baseRef,
+            CharacterAvatarCrop? crop,
+            CharacterAvatarCrop? stripCrop,
+            int rotation)
         {
             if (string.IsNullOrEmpty(baseRef)) return baseRef;
 
@@ -132,6 +201,11 @@ namespace Writersword.Modules.Characters.Models
                 || (crop is null ? stripCrop.IsFull : stripCrop.Equals(crop));
             if (!stripMatchesCrop) result += StripMarker + stripCrop;
 
+            var turn = NormalizeRotation(rotation);
+            if (turn != 0)
+                result += RotationMarker
+                    + turn.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
             return result;
         }
 
@@ -140,7 +214,7 @@ namespace Writersword.Modules.Characters.Models
         /// Combine в том, что уже заданный кадр полоски отсюда не теряется.
         /// </summary>
         public static string? WithCrop(string? avatarRef, CharacterAvatarCrop? crop)
-            => Combine(BaseOf(avatarRef), crop, StripCropOf(avatarRef));
+            => Combine(BaseOf(avatarRef), crop, StripCropOf(avatarRef), RotationOf(avatarRef));
 
         /// <summary>Ссылки указывают на один файл, кадры при этом могут отличаться.</summary>
         public static bool SameFile(string? left, string? right)
@@ -160,9 +234,18 @@ namespace Writersword.Modules.Characters.Models
     public sealed class CharacterAvatarCropPair
     {
         public CharacterAvatarCropPair(CharacterAvatarCrop? circle, CharacterAvatarCrop? strip)
+            : this(circle, strip, 0)
+        {
+        }
+
+        public CharacterAvatarCropPair(
+            CharacterAvatarCrop? circle,
+            CharacterAvatarCrop? strip,
+            int rotation)
         {
             Circle = circle;
             Strip = strip;
+            Rotation = CharacterAvatarRef.NormalizeRotation(rotation);
         }
 
         /// <summary>Кадр для кружка и мелкой плитки.</summary>
@@ -170,5 +253,11 @@ namespace Writersword.Modules.Characters.Models
 
         /// <summary>Кадр для полоски. null — полоска берёт кадр кружка.</summary>
         public CharacterAvatarCrop? Strip { get; }
+
+        /// <summary>
+        /// Поворот картинки в градусах: 0, 90, 180 или 270. Общий для обоих
+        /// кадров — оба сняты уже с повёрнутой картинки.
+        /// </summary>
+        public int Rotation { get; }
     }
 }

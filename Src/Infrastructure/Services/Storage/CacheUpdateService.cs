@@ -16,15 +16,15 @@ namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Сервис фонового кеширования состояния модулей.
-    /// Периодически сохраняет данные модулей в .wsasd файл (ZIP архив).
-    /// Сохраняет только если данные отличаются от сохранённого ZIP файла.
+    /// Периодически сохраняет данные модулей в базу .wsasd рядом с проектом.
+    /// Сохраняет только если данные отличаются от сохранённого файла проекта.
     /// Ключ данных модуля — moduleType, не InstanceId.
     /// SemaphoreSlim гарантирует что одновременно выполняется не более одной операции кеширования.
     /// </summary>
     public class CacheUpdateService : ICacheUpdateService, IDisposable
     {
         private readonly ILogger<CacheUpdateService> _logger;
-        private readonly IZipCacheService _cacheService;
+        private readonly IProjectCacheService _cacheService;
         private readonly IModuleStateCollectorService _stateCollector;
         private readonly IDataComparisonService _comparisonService;
         private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
@@ -38,7 +38,7 @@ namespace Writersword.Infrastructure.Services.Storage
         public event EventHandler? CacheSaved;
 
         public CacheUpdateService(
-            IZipCacheService cacheService,
+            IProjectCacheService cacheService,
             IModuleStateCollectorService stateCollector,
             IDataComparisonService comparisonService)
         {
@@ -129,7 +129,7 @@ namespace Writersword.Infrastructure.Services.Storage
 
         /// <summary>
         /// Выполнить обновление кеша.
-        /// Сохраняет только если данные отличаются от сохранённого ZIP файла.
+        /// Сохраняет только если данные отличаются от сохранённого файла проекта.
         /// </summary>
         private async Task PerformCacheUpdateAsync()
         {
@@ -250,7 +250,7 @@ namespace Writersword.Infrastructure.Services.Storage
 
                     if (!dataChanged)
                     {
-                        _logger.LogDebug("No changes from ZIP, skipping");
+                        _logger.LogDebug("No changes from project file, skipping");
                         return;
                     }
                 }

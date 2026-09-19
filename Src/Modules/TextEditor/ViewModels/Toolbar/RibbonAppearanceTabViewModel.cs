@@ -1,4 +1,4 @@
-using Avalonia.Threading;
+﻿using Avalonia.Threading;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -27,6 +27,14 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// </summary>
         IReadOnlyList<ReadingTheme> ReadingThemes();
 
+        /// <summary>
+        /// Виды для списка выбора: всё, кроме спрятанных. Вид с указанным
+        /// опознавателем остаётся в списке даже спрятанным — это тот, что выбран
+        /// сейчас, и показывать имя, которого нет в списке, нельзя.
+        /// </summary>
+        IReadOnlyList<ReadingTheme> VisibleReadingThemes(string? keepId);
+
+
         /// <summary>Правка видна сразу: цвет листа, свет, картинка позади страниц.</summary>
         void ApplyEditorViewVisual();
 
@@ -41,9 +49,6 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// с уже созданной копией выбранного.
         /// </summary>
         void CreateReadingTheme();
-
-        /// <summary>Выбрать картинку, которая ляжет позади страниц.</summary>
-        void PickBackdropImage();
 
         /// <summary>Убрать картинку из-под страниц.</summary>
         void ClearBackdropImage();
@@ -178,7 +183,6 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 SelectedThemeItem = item;
             });
             ResetLightCommand = ReactiveCommand.Create(ResetLight);
-            PickBackdropCommand = ReactiveCommand.Create(() => _host.PickBackdropImage());
             ClearBackdropCommand = ReactiveCommand.Create(() => _host.ClearBackdropImage());
 
             RebuildThemeItems();
@@ -253,7 +257,6 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// </summary>
         public ICommand SelectThemeCommand { get; }
         public ICommand ResetLightCommand { get; }
-        public ICommand PickBackdropCommand { get; }
         public ICommand ClearBackdropCommand { get; }
 
         private EditorViewSettings? V => _host.EditorView;
@@ -331,7 +334,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 ThemeItems.Clear();
                 ThemeItems.Add(new EditorThemeItem(null, NoneThemeLabel, isNone: true));
 
-                foreach (var theme in _host.ReadingThemes())
+                foreach (var theme in _host.VisibleReadingThemes(V?.ThemeId))
                     ThemeItems.Add(new EditorThemeItem(theme, theme.Name));
             }
             finally
@@ -462,35 +465,15 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         public ObservableCollection<BackdropFitItem> BackdropFits { get; }
 
-        /// <summary>Картинка выбрана — значит есть чем управлять.</summary>
-        public bool HasBackdropImage
-            => Active is { } t && !string.IsNullOrWhiteSpace(t.BackdropImagePath);
-
-        /// <summary>Картинка лежит позади страниц.</summary>
-        public bool BackdropImageOn
-        {
-            get => Active is { UseBackdropImage: true } t
-                   && !string.IsNullOrWhiteSpace(t.BackdropImagePath);
-            set
-            {
-                if (_suspend || Active is not { } theme) return;
-                if (theme.UseBackdropImage == value) return;
-
-                // Включать нечего, пока картинка не выбрана: тумблер в этом случае
-                // сразу и открывает выбор — иначе он щёлкает вхолостую.
-                if (value && string.IsNullOrWhiteSpace(theme.BackdropImagePath))
-                {
-                    this.RaisePropertyChanged();
-                    _host.PickBackdropImage();
-                    return;
-                }
-
-                theme.UseBackdropImage = value;
-                this.RaisePropertyChanged();
-                Apply(persist: true);
-                SyncCustomThemeItem();
-            }
-        }
+        /// <summary>
+        /// Картинка выбрана — значит есть чем управлять.
+        ///
+        /// Отдельного тумблера «показывать картинку» больше нет: картинка либо
+        /// выбрана, либо нет, и второе состояние про то же самое было лишним — оно
+        /// оставляло вид с выбранной, но невидимой картинкой, о которой нигде не
+        /// сказано. Убрать её теперь можно только одним способом — убрать.
+        /// </summary>
+        public bool HasBackdropImage => Active is { HasBackdropImage: true };
 
         public BackdropFitItem? SelectedBackdropFit
         {
@@ -739,7 +722,6 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             this.RaisePropertyChanged(nameof(ContrastText));
             this.RaisePropertyChanged(nameof(WarmthText));
             this.RaisePropertyChanged(nameof(HasBackdropImage));
-            this.RaisePropertyChanged(nameof(BackdropImageOn));
             this.RaisePropertyChanged(nameof(SelectedBackdropFit));
             this.RaisePropertyChanged(nameof(BackdropOpacity));
             this.RaisePropertyChanged(nameof(BackdropOpacityText));

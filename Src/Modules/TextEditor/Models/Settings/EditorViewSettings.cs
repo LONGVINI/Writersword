@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text.Json.Serialization;
 
 namespace Writersword.Modules.TextEditor.Models.Settings
@@ -58,9 +58,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// <summary>Позади страниц лежит картинка.</summary>
         [JsonIgnore]
         public bool HasBackdropImage
-            => ThemeEnabled
-               && Active is { UseBackdropImage: true }
-               && !string.IsNullOrWhiteSpace(Active.BackdropImagePath);
+            => ThemeEnabled && Active is { HasBackdropImage: true };
 
         /// <summary>Ставит вид в работу: копия его значений становится рабочей.</summary>
         public void ApplyTheme(ReadingTheme theme)

@@ -574,7 +574,7 @@ namespace Writersword.ViewModels.Settings
                 // Точка текущего состояния — откат должен быть обратим.
                 await _backupService.CreateSnapshotAsync(_projectPath, BackupTrigger.BeforeRestore);
 
-                // Открытый ZIP держит файл: замена через File.Move иначе упрётся
+                // Открытая база держит файл: замена через File.Move иначе упрётся
                 // в «file is being used by another process».
                 tab?.Context?.CloseStorage();
 

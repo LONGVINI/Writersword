@@ -396,7 +396,8 @@ namespace Writersword.Modules.Characters.Views.Inspector
                     null,
                     cardContext,
                     CharacterAvatarRef.StripCropOf(avatarRef),
-                    openOnStrip);
+                    openOnStrip,
+                    CharacterAvatarRef.RotationOf(avatarRef));
             }
             catch (Exception ex)
             {
@@ -433,7 +434,9 @@ namespace Writersword.Modules.Characters.Views.Inspector
                     CharacterAvatarRef.CropOf(avatarRef),
                     null,
                     null,
-                    CharacterAvatarRef.StripCropOf(avatarRef));
+                    CharacterAvatarRef.StripCropOf(avatarRef),
+                    false,
+                    CharacterAvatarRef.RotationOf(avatarRef));
             }
             catch (Exception ex)
             {

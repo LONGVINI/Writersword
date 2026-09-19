@@ -714,6 +714,13 @@ namespace Writersword.Modules.TextEditor.Document
         private string? _paginationProbeSignature;
 
         /// <summary>
+        /// Снимать ли пробу вёрстки. Выключена: проба нужна при разборе расхождений с
+        /// внешним редактором, а в обычной работе она пишется на каждую пересборку
+        /// раскладки и топит журнал так, что рядом ничего не видно.
+        /// </summary>
+        private static readonly bool PaginationProbeEnabled = false;
+
+        /// <summary>
         /// Пишет в журнал всё, от чего зависит разбивка на страницы: лист, поля,
         /// раскладку строк по всему документу и — главное — сколько места остаётся
         /// незанятым внизу страниц. Пустой остаток и есть разница с внешним
@@ -727,6 +734,8 @@ namespace Writersword.Modules.TextEditor.Document
             float ml, float mt, float mr, float mb,
             float textWidthPt)
         {
+            if (!PaginationProbeEnabled) return;
+
             try
             {
                 if (pages.Count == 0 || layouts.Count == 0) return;

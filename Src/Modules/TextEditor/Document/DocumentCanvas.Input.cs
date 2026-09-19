@@ -194,6 +194,18 @@ namespace Writersword.Modules.TextEditor.Document
             }
             (xPt, yPt) = VisualToLogicalPt(xPt, yPt, _gesturePage);
 
+            // ── Закладка оглавления ──────────────────────────────────────
+            // Она нарисована над блоком, в стороне от текста, и проверяется раньше всего
+            // остального: под ней может лежать нижняя строка предыдущего абзаца, и та
+            // перехватила бы нажатие на себя. Точка берётся до привязки к листу —
+            // закладка могла быть нарисована на соседней странице разворота.
+            if (TocChipPointerPressed(
+                    (float)(pt.X / zoom * PxToPt), (float)(pt.Y / zoom * PxToPt)))
+            {
+                e.Handled = true;
+                return;
+            }
+
             // ── Проверяем ручки таблицы ПЕРВЫМИ ─────────────────────────
             // В read-only (режим сравнения) ручки не работают: ширины колонок
             // и позиция таблицы — часть данных документа.
@@ -473,6 +485,15 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             var (pi, ci) = HitTest(pt);
+
+            // Ctrl+щелчок по строке оглавления — переход к главе. Проверяется до того,
+            // как нажатие переставит каретку: уводить её сюда незачем, человек просил
+            // уйти отсюда.
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && TocFollowLink(pi))
+            {
+                e.Handled = true;
+                return;
+            }
 
             // Определяем: это ячейка таблицы?
             bool wasInCell = IsInCell(_caretPara);
@@ -929,14 +950,26 @@ namespace Writersword.Modules.TextEditor.Document
             // ── Курсор при наведении на ручки ─────────────────────────────
             if (!_isSelecting)
             {
-                var handleHit = HitTestTableHandle(xPt, yPt);
-                Cursor = handleHit.Type switch
+                // Рука над закладкой блока и над строкой оглавления с зажатым Ctrl:
+                // о переходе по строке иначе никак не догадаться, а закладка без руки
+                // читается как подпись, а не как кнопка.
+                if (TocHandCursorWanted(
+                        e, rawPt,
+                        (float)(rawPt.X / zoom * PxToPt), (float)(rawPt.Y / zoom * PxToPt)))
                 {
-                    TableHandleType.RowResize => new Cursor(StandardCursorType.SizeNorthSouth),
-                    TableHandleType.ColResize or TableHandleType.TableMove
-                        => new Cursor(StandardCursorType.SizeWestEast),
-                    _ => new Cursor(StandardCursorType.Ibeam)
-                };
+                    Cursor = new Cursor(StandardCursorType.Hand);
+                }
+                else
+                {
+                    var handleHit = HitTestTableHandle(xPt, yPt);
+                    Cursor = handleHit.Type switch
+                    {
+                        TableHandleType.RowResize => new Cursor(StandardCursorType.SizeNorthSouth),
+                        TableHandleType.ColResize or TableHandleType.TableMove
+                            => new Cursor(StandardCursorType.SizeWestEast),
+                        _ => new Cursor(StandardCursorType.Ibeam)
+                    };
+                }
             }
 
             if (!_isSelecting) return;
@@ -1770,14 +1803,17 @@ namespace Writersword.Modules.TextEditor.Document
                 ExitImageCropMode(apply: false);
                 MoveCaretToImage(_selectedImage);
 
-                // Снимок документа, а не гранулярная команда свойств: удаление
-                // меняет состав блоков, и вернуть по значениям одного блока нечего —
-                // блока в документе уже нет.
-                BeginEdit("Удаление изображения");
-                DocVm?.RemoveImage(_selectedImage);
+                var doomed = _selectedImage;
                 _selectedImage = null;
+
+                if (!TryOperationalRemoveImage(doomed, "Удаление изображения"))
+                {
+                    BeginEdit("Удаление изображения");
+                    DocVm?.RemoveImage(doomed);
+                    CommitEdit();
+                }
+
                 ImageSelectionChanged?.Invoke(false);
-                CommitEdit();
                 e.Handled = true;
                 return;
             }
@@ -1827,6 +1863,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             bool shft = e.KeyModifiers == KeyModifiers.Shift;
             bool ctrl = e.KeyModifiers == KeyModifiers.Control;
+            bool alt = e.KeyModifiers == KeyModifiers.Alt;
 
             // Tab: навигация по ячейкам
             if (e.Key == Key.Tab && IsInCell(_caretPara))
@@ -1890,6 +1927,13 @@ namespace Writersword.Modules.TextEditor.Document
                 case Key.Back: ExecuteDeleteBackSmart(); e.Handled = true; break;
                 case Key.Delete: ExecuteDeleteForwardSmart(); e.Handled = true; break;
                 case Key.Enter: ExecuteNewParagraphSmart(); e.Handled = true; break;
+
+                // Возврат на место, откуда прыгнули по ссылке. Alt со стрелками — то же
+                // сочетание, что в браузере: его знают все, в отличие от вордовского
+                // Shift+F5, который стоит ниже вторым для мышечной памяти.
+                case Key.Left when alt: ExecuteNavigateBack(); e.Handled = true; break;
+                case Key.Right when alt: ExecuteNavigateForward(); e.Handled = true; break;
+                case Key.F5 when shft: ExecuteNavigateBack(); e.Handled = true; break;
 
                 case Key.Left: ExecuteNavLeft(shft); e.Handled = true; break;
                 case Key.Right: ExecuteNavRight(shft); e.Handled = true; break;
@@ -2268,49 +2312,12 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
-            // Быстрый путь: нет выделения и есть лёгкий стек операций.
-            // Каждая запись undo хранит только позицию и текст вместо полного JSON документа.
-            if (TextUndoStack != null && !HasSel())
-            {
-                var pvm = GetVmAt(_caretPara);
-                if (pvm is null) return;
+            // Быстрый путь: запись undo хранит позицию и текст вместо полного JSON
+            // документа. Ввод поверх выделения тоже идёт здесь — удаление и вставка
+            // складываются в один шаг составной командой.
+            if (TryOperationalInsertText(text)) return;
 
-                string t = pvm.PlainText ?? "";
-                int pos = Clamp(_caretChar, 0, t.Length);
-
-                pvm.Model.SpliceText(pos, pos, text);
-                pvm.RefreshPlainTextFromModel();
-                _caretChar = pos + text.Length;
-
-                var cmd = new Writersword.Modules.TextEditor.Commands.InsertTextCommand(
-                    pvm.Model.Id, pos, text);
-
-                // Callback восстанавливает каретку и обновляет VM после Undo/Redo.
-                cmd.RestoreCaretCallback = (paraId, charPos) =>
-                {
-                    for (int i = 0; i < _layouts.Count; i++)
-                    {
-                        if (_layouts[i].Cell is null && _layouts[i].Vm?.Model?.Id == paraId)
-                        {
-                            _caretPara = i;
-                            _caretChar = charPos;
-                            _layouts[i].Vm?.RefreshPlainTextFromModel();
-                            break;
-                        }
-                    }
-                    SnapCaretToCorrectSlice();
-                    SyncSel();
-                    ResetCaret();
-                    InvalidateFull();
-                };
-
-                PushTextCommand(cmd);
-                UpdatePreferredX();
-                SyncSel(); ResetCaret();
-                return;
-            }
-
-            // Legacy путь: есть выделение или TextUndoStack не установлен.
+            // Общий путь: лёгкого стека нет, либо выделение таким шагом не описывается.
             BeginEdit("Type text");
             DeleteSelection();
 
@@ -2326,6 +2333,96 @@ namespace Writersword.Modules.TextEditor.Document
             CommitEdit();
             UpdatePreferredX();
             SyncSel(); ResetCaret();
+        }
+
+        /// <summary>
+        /// Снимает картинку без снимка рукописи.
+        ///
+        /// Шаг отмены держит саму картинку живым объектом и место, из которого она
+        /// вынута. Прежде здесь брался снимок всей книги — на том основании, что
+        /// удаление меняет состав блоков и возвращать по значениям нечего. Возвращать
+        /// есть что: сам блок, если его подержать.
+        /// </summary>
+        /// <returns>false — быстрый путь не подошёл, вызывающий уходит на снимок.</returns>
+        private bool TryOperationalRemoveImage(ImageBlock? image, string description)
+        {
+            if (image is null) return false;
+            if (DocVm is null || TextUndoStack is null) return false;
+
+            var removed = DocVm.TakeImageOut(image);
+            if (removed is null) return false;
+
+            PushTextCommand(new Commands.RemoveImageCommand(DocVm, removed, description));
+            return true;
+        }
+
+        /// <summary>
+        /// Вставляет текст в поток документа без снимка рукописи.
+        ///
+        /// Выделение под кареткой снимается тем же нажатием, и оба действия уходят в
+        /// стек одним шагом: человек нажал одну клавишу и отменять ждёт одним Ctrl+Z.
+        /// </summary>
+        /// <returns>false — быстрый путь не подошёл, вызывающий уходит на снимок.</returns>
+        private bool TryOperationalInsertText(string text)
+        {
+            if (TextUndoStack is null || DocVm is null) return false;
+            if (IsInCell(_caretPara)) return false;
+
+            Commands.ITextCommand? deleteStep = null;
+
+            if (HasSel())
+            {
+                deleteStep = BuildOperationalDeleteSelection();
+                if (deleteStep is null) return false;
+            }
+
+            // Абзац берётся после снятия выделения: оно могло увести каретку в другой.
+            var pvm = GetVmAt(_caretPara);
+
+            if (pvm?.Model is null)
+            {
+                if (deleteStep is not null)
+                {
+                    deleteStep.Revert(DocVm.Document);
+                    RebuildLayouts();
+                    InvalidateFull();
+                }
+
+                return false;
+            }
+
+            string t = pvm.PlainText ?? string.Empty;
+            int pos = Clamp(_caretChar, 0, t.Length);
+
+            pvm.Model.SpliceText(pos, pos, text);
+            pvm.RefreshPlainTextFromModel();
+            _caretChar = pos + text.Length;
+
+            var insertStep = new Commands.InsertTextCommand(pvm.Model.Id, pos, text)
+            {
+                RestoreCaretCallback = RestoreCaretToParagraphLight
+            };
+
+            if (deleteStep is null)
+            {
+                PushTextCommand(insertStep);
+            }
+            else
+            {
+                PushTextCommand(new Commands.CompositeCommand(
+                    "Замена выделения",
+                    new System.Collections.Generic.List<Commands.ITextCommand>
+                    {
+                        deleteStep, insertStep
+                    }));
+
+                InvalidateFull();
+            }
+
+            UpdatePreferredX();
+            SyncSel(); ResetCaret();
+
+            return true;
         }
 
         private void CellInsertText(string text)
@@ -2373,12 +2470,14 @@ namespace Writersword.Modules.TextEditor.Document
             if (IsEditingBlocked) return;
             _caretLineHint = -1;
 
-            // Диапазон ячеек очищается только когда он реально есть. Поднятый флаг
-            // без выделенных ячеек больше не съедает нажатие: он сбрасывается, и
-            // удаление идёт обычным путём.
+            // Backspace по выделенным ячейкам сносит строение таблицы, а не содержимое:
+            // вся таблица — уходит таблица, целые строки — уходят строки, столбцы —
+            // столбцы. Содержимое опустошает Delete, и это разные клавиши не по
+            // случайности, а как в Word. Поднятый флаг без выделенных ячеек нажатие
+            // больше не съедает: он просто сбрасывается.
             if (_isCellRangeSelecting && _tableSelections.Count > 0)
             {
-                ClearCellRangeSelection();
+                DeleteCellRangeStructural();
                 return;
             }
             _isCellRangeSelecting = false;
@@ -2469,12 +2568,35 @@ namespace Writersword.Modules.TextEditor.Document
                 int index = section.Blocks.IndexOf(cell.Table);
                 if (index < 0) continue;
 
-                BeginEdit("Абзац перед таблицей");
                 var para = new ParagraphBlock();
-                section.Blocks.Insert(index, para);
-                CommitEdit();
 
-                DocVm!.RebuildParagraphViewModelsPublic();
+                // Правка состоит из одного блока, и шаг отмены её так и описывает:
+                // абзац живым объектом плюс место в потоке. Снимок всей рукописи здесь
+                // был не нужен никогда.
+                //
+                // Быстрый путь берётся только для первого раздела: по нему построен
+                // список абзацев, и вставка в чужой раздел разошлась бы с ним.
+                bool operational = TextUndoStack is not null
+                                   && document.Sections.Count > 0
+                                   && ReferenceEquals(section, document.Sections[0]);
+
+                if (operational && DocVm!.InsertFlowParagraph(para, index))
+                {
+                    PushTextCommand(new Commands.InsertParagraphCommand(
+                        DocVm, para, index, "Абзац перед таблицей")
+                    {
+                        RestoreCaretCallback = RestoreCaretToParagraphLight
+                    });
+                }
+                else
+                {
+                    BeginEdit("Абзац перед таблицей");
+                    section.Blocks.Insert(index, para);
+                    CommitEdit();
+
+                    DocVm!.RebuildParagraphViewModelsPublic();
+                }
+
                 InvalidateCellLayoutCaches();
                 _cellVmCache.Clear();
                 RebuildLayouts();
@@ -2898,6 +3020,106 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         // ── Публичные команды ─────────────────────────────────────────────
+        /// <summary>
+        /// Операционно удаляет выделение — без снимка всей рукописи.
+        ///
+        /// Один вход на все три случая: выделение внутри абзаца уходит на точечное
+        /// удаление диапазона, выделение через несколько абзацев — на шаг, помнящий
+        /// снятые абзацы. Случаи, которые ни тем ни другим не описываются, отдаются
+        /// снимку: выделение в ячейке таблицы, выделенные таблицы, картинки в потоке
+        /// выделения и блоки другого рода между абзацами.
+        /// </summary>
+        /// <returns>false — быстрый путь не подошёл, вызывающий уходит на снимок.</returns>
+        private bool OperationalDeleteSelection()
+        {
+            var cmd = BuildOperationalDeleteSelection();
+            if (cmd is null) return false;
+
+            PushTextCommand(cmd);
+            return true;
+        }
+
+        /// <summary>
+        /// То же удаление, но шаг отмены не кладётся в стек, а отдаётся вызывающему.
+        ///
+        /// Нужно правкам, которые удалением не кончаются: ввод текста и Enter поверх
+        /// выделения — это два действия одним нажатием, и отменяться они обязаны
+        /// вместе, одним шагом. Вызывающий складывает полученный шаг с остальными в
+        /// составную команду и кладёт в стек уже её.
+        ///
+        /// Правка к этому мигу уже сделана — шаг описывает её, а не назначает.
+        /// </summary>
+        /// <returns>null — быстрый путь не подошёл, вызывающий уходит на снимок.</returns>
+        private Commands.ITextCommand? BuildOperationalDeleteSelection()
+        {
+            if (DocVm is null || UndoStack is null) return null;
+            if (!HasSel()) return null;
+            if (_tableSelections.Count > 0) return null;
+
+            var (sp, sc, ep, ec) = NormalizeSelection();
+            if (IsInCell(sp) || IsInCell(ep)) return null;
+
+            if (sp == ep)
+                return BuildOperationalDeleteRange(sp, sc, ec, caretAfterRevert: ec);
+
+            // Картинки, через которые прошло выделение, удаляются вместе с текстом.
+            // Шаг отмены их возврат не описывает, поэтому такой случай — на снимок.
+            if (ImagesInTextSelection().Count > 0) return null;
+
+            var sVm = GetVmAt(sp);
+            var eVm = GetVmAt(ep);
+            if (sVm?.Model is null || eVm?.Model is null) return null;
+            if (ReferenceEquals(sVm, eVm)) return null;
+
+            int from = Clamp(sc, 0, sVm.PlainText?.Length ?? 0);
+            int to = Clamp(ec, 0, eVm.PlainText?.Length ?? 0);
+
+            var span = DocVm.RemoveTextSpan(sVm.Model, from, eVm.Model, to);
+            if (span is null) return null;
+
+            var cmd = new Commands.DeleteTextSpanCommand(DocVm, span, "Удаление выделения")
+            {
+                RestoreCaretCallback = RestoreCaretToParagraph
+            };
+
+            // Каретка ставится по опознавателю абзаца, а не по номеру слайса: снятие
+            // сдвинуло раскладку, и прежний номер означает уже другое место.
+            RestoreCaretToParagraph(sVm.Model.Id, from);
+
+            return cmd;
+        }
+
+        /// <summary>
+        /// Ставит каретку на абзац по опознавателю — после отката или повтора.
+        ///
+        /// По опознавателю, а не по номеру: номера слайсов после возврата трёхсот абзацев
+        /// означают уже другие места, а опознаватель абзаца переживает и снятие, и возврат.
+        /// </summary>
+        private void RestoreCaretToParagraph(Guid paraId, int charPos)
+        {
+            for (int i = 0; i < _layouts.Count; i++)
+            {
+                if (_layouts[i].Cell is not null) continue;
+                if (_layouts[i].Vm?.Model?.Id != paraId) continue;
+
+                _caretPara = i;
+                _caretChar = charPos;
+                _caretLineHint = -1;
+                break;
+            }
+
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            SyncSel();
+
+            // Список выделенных абзацев держал те вью-модели, которых больше нет. Не
+            // почистив его, следующая правка форматирования ушла бы в мёртвые объекты.
+            UpdateSelectionContext();
+
+            ResetCaret();
+            InvalidateFull();
+        }
+
         // Операционно удаляет диапазон [from, to) в одном абзаце (layout-слайс layoutIdx).
         // Пишет DeleteTextCommand в лёгкий текстовый стек — Undo/Redo идут точечно, без
         // снапшота и полного пересбора документа. caretAfterRevert — позиция каретки после
@@ -2906,17 +3128,31 @@ namespace Writersword.Modules.TextEditor.Document
         // пустой диапазон) — вызывающий тогда уходит на снапшотный путь.
         private bool OperationalDeleteRange(int layoutIdx, int from, int to, int caretAfterRevert)
         {
-            if (TextUndoStack is null || DocVm is null) return false;
-            if (layoutIdx < 0 || layoutIdx >= _layouts.Count) return false;
-            if (_layouts[layoutIdx].Cell is not null) return false;
+            var cmd = BuildOperationalDeleteRange(layoutIdx, from, to, caretAfterRevert);
+            if (cmd is null) return false;
+
+            PushTextCommand(cmd);
+            UpdatePreferredX();
+            SyncSel(); ResetCaret();
+            return true;
+        }
+
+        // То же удаление диапазона, но шаг отмены отдаётся вызывающему, а не кладётся в
+        // стек: правка поверх выделения складывает его с вставкой в один шаг.
+        private Commands.ITextCommand? BuildOperationalDeleteRange(
+            int layoutIdx, int from, int to, int caretAfterRevert)
+        {
+            if (TextUndoStack is null || DocVm is null) return null;
+            if (layoutIdx < 0 || layoutIdx >= _layouts.Count) return null;
+            if (_layouts[layoutIdx].Cell is not null) return null;
 
             var vm = _layouts[layoutIdx].Vm;
-            if (vm?.Model is null) return false;
+            if (vm?.Model is null) return null;
 
             string t = vm.PlainText ?? "";
             int f = Clamp(from, 0, t.Length);
             int tt = Clamp(to, 0, t.Length);
-            if (tt <= f) return false;
+            if (tt <= f) return null;
 
             var cmd = new Writersword.Modules.TextEditor.Commands.DeleteTextCommand(
                 vm.Model.Id, f, tt - f, caretAfterRevert: caretAfterRevert);
@@ -2925,28 +3161,31 @@ namespace Writersword.Modules.TextEditor.Document
             _caretPara = layoutIdx;
             _caretChar = f;
 
-            cmd.RestoreCaretCallback = (paraId, charPos) =>
-            {
-                for (int i = 0; i < _layouts.Count; i++)
-                {
-                    if (_layouts[i].Cell is null && _layouts[i].Vm?.Model?.Id == paraId)
-                    {
-                        _caretPara = i;
-                        _caretChar = charPos;
-                        _layouts[i].Vm?.RefreshPlainTextFromModel();
-                        break;
-                    }
-                }
-                SnapCaretToCorrectSlice();
-                SyncSel();
-                ResetCaret();
-                InvalidateFull();
-            };
+            cmd.RestoreCaretCallback = RestoreCaretToParagraphLight;
 
-            PushTextCommand(cmd);
-            UpdatePreferredX();
-            SyncSel(); ResetCaret();
-            return true;
+            return cmd;
+        }
+
+        // Возврат каретки после отката или повтора точечной правки текста. Отличается от
+        // RestoreCaretToParagraph тем, что не трогает список выделенных абзацев: состав
+        // абзацев такая правка не меняет, и чистить там нечего.
+        private void RestoreCaretToParagraphLight(Guid paraId, int charPos)
+        {
+            for (int i = 0; i < _layouts.Count; i++)
+            {
+                if (_layouts[i].Cell is null && _layouts[i].Vm?.Model?.Id == paraId)
+                {
+                    _caretPara = i;
+                    _caretChar = charPos;
+                    _layouts[i].Vm?.RefreshPlainTextFromModel();
+                    break;
+                }
+            }
+
+            SnapCaretToCorrectSlice();
+            SyncSel();
+            ResetCaret();
+            InvalidateFull();
         }
 
         /// <summary>
@@ -2977,22 +3216,30 @@ namespace Writersword.Modules.TextEditor.Document
             // (пересоздаёт все ViewModel и раскладку), из-за чего Ctrl+Z/Ctrl+Y тормозят на
             // больших файлах. Структурные случаи (многоабзацное/табличное выделение, слияние
             // абзацев, якоря таблиц и разрывов) остаются на снапшотном пути ниже.
-            if (HasSel() && _tableSelections.Count == 0)
+            if (HasSel())
             {
-                var (sp, sc, ep, ec) = NormalizeSelection();
-                if (sp == ep && !IsInCell(sp)
-                    && OperationalDeleteRange(sp, sc, ec, caretAfterRevert: ec))
-                    return;
+                if (OperationalDeleteSelection()) return;
             }
-            else if (!HasSel() && !IsInCell(_caretPara) && _caretChar > 0 && text.Length > 0
+            else if (!IsInCell(_caretPara) && _caretChar > 0 && text.Length > 0
                 && OperationalDeleteRange(_caretPara, _caretChar - 1, _caretChar,
                     caretAfterRevert: _caretChar))
             {
                 return;
             }
+            else if (_caretChar == 0 && TryOperationalMergeWithPrevious(pvm))
+            {
+                return;
+            }
 
             BeginEdit("Delete");
-            if (HasSel()) { DeleteSelection(); CommitEdit(); ResetCaret(); InvalidateFull(); return; }
+            if (HasSel())
+            {
+                DeleteSelection();
+                CommitEdit();
+                ResetCaret();
+                InvalidateFull();
+                return;
+            }
             if (_caretChar > 0 && text.Length > 0)
             {
                 int p = Clamp(_caretChar, 1, text.Length);
@@ -3050,22 +3297,30 @@ namespace Writersword.Modules.TextEditor.Document
             // Операционное удаление (лёгкий текстовый стек, без снапшота всего документа) —
             // выделение в пределах одного абзаца и посимвольный Delete справа. Структурные
             // случаи остаются на снапшотном пути ниже.
-            if (HasSel() && _tableSelections.Count == 0)
+            if (HasSel())
             {
-                var (sp, sc, ep, ec) = NormalizeSelection();
-                if (sp == ep && !IsInCell(sp)
-                    && OperationalDeleteRange(sp, sc, ec, caretAfterRevert: ec))
-                    return;
+                if (OperationalDeleteSelection()) return;
             }
-            else if (!HasSel() && !IsInCell(_caretPara) && _caretChar < text.Length
+            else if (!IsInCell(_caretPara) && _caretChar < text.Length
                 && OperationalDeleteRange(_caretPara, _caretChar, _caretChar + 1,
                     caretAfterRevert: _caretChar))
             {
                 return;
             }
+            else if (_caretChar >= text.Length && TryOperationalMergeWithNext(pvm))
+            {
+                return;
+            }
 
             BeginEdit("Delete");
-            if (HasSel()) { DeleteSelection(); CommitEdit(); ResetCaret(); InvalidateFull(); return; }
+            if (HasSel())
+            {
+                DeleteSelection();
+                CommitEdit();
+                ResetCaret();
+                InvalidateFull();
+                return;
+            }
             if (_caretChar < text.Length)
             {
                 int p = Clamp(_caretChar, 0, text.Length - 1);
@@ -3134,6 +3389,11 @@ namespace Writersword.Modules.TextEditor.Document
         {
             var pvm = GetVmAt(_caretPara);
             if (pvm is null) return;
+
+            // Частый случай — Enter без выделения — идёт лёгким шагом отмены, без снимка
+            // рукописи. Всё остальное остаётся на общем пути ниже.
+            if (!exitList && TryOperationalNewParagraph(pvm)) return;
+
             BeginEdit("New paragraph");
             DeleteSelection();
             string text = pvm.PlainText ?? "";
@@ -3202,6 +3462,267 @@ namespace Writersword.Modules.TextEditor.Document
             // Каретка перешла на новый абзац — обновляем активный абзац и контекст форматирования,
             // иначе команды абзаца (интервалы, выравнивание и т.д.) применялись бы к прежнему.
             FireCaretFormatContext();
+        }
+
+        /// <summary>
+        /// Делит абзац без снимка рукописи.
+        ///
+        /// Снимок сериализует весь документ в JSON дважды на каждое нажатие Enter, а при
+        /// откате пересоздаёт вью-модели всех абзацев и обнуляет кэш раскладок. На книге
+        /// в три сотни страниц это заметная пауза на каждую новую строку — и она же
+        /// делала невыносимой правку внутри оглавления, где Enter жмут часто.
+        ///
+        /// Enter поверх выделения тоже идёт здесь: удаление и деление складываются в один
+        /// шаг отмены составной командой, потому что нажатие было одно и отменяется оно
+        /// тоже одним. На общий путь уходит то, что лёгким шагом не описывается: ячейка
+        /// таблицы, выход из списка, пустой элемент списка.
+        /// </summary>
+        /// <returns>false — быстрый путь не подошёл, вызывающий уходит на снимок.</returns>
+        private bool TryOperationalNewParagraph(ParagraphViewModel pvm)
+        {
+            if (DocVm is null || UndoStack is null) return false;
+            if (IsInCell(_caretPara)) return false;
+            if (pvm.Model is null) return false;
+
+            Commands.ITextCommand? deleteStep = null;
+
+            if (HasSel())
+            {
+                deleteStep = BuildOperationalDeleteSelection();
+                if (deleteStep is null) return false;
+
+                // Выделение снято, каретка стоит на его месте — делится тот абзац, в
+                // котором она осталась, а не тот, что был под ней до удаления.
+                var after = GetVmAt(_caretPara);
+
+                if (after?.Model is null)
+                {
+                    deleteStep.Revert(DocVm.Document);
+                    RebuildLayouts();
+                    InvalidateFull();
+                    return false;
+                }
+
+                pvm = after;
+            }
+
+            var splitStep = BuildOperationalSplit(pvm);
+
+            if (splitStep is null)
+            {
+                // Удаление сделано, а деление не вышло. Возвращаем снятое и уходим на
+                // общий путь: правка, сделанная наполовину и без шага отмены, хуже
+                // медленной.
+                if (deleteStep is not null)
+                {
+                    deleteStep.Revert(DocVm.Document);
+                    RebuildLayouts();
+                    InvalidateFull();
+                }
+
+                return false;
+            }
+
+            if (deleteStep is null)
+            {
+                PushTextCommand(splitStep);
+            }
+            else
+            {
+                PushTextCommand(new Commands.CompositeCommand(
+                    "Замена выделения",
+                    new System.Collections.Generic.List<Commands.ITextCommand>
+                    {
+                        deleteStep, splitStep
+                    }));
+            }
+
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            SyncSel(); ResetCaret(); InvalidateFull();
+
+            // Каретка перешла на новый абзац — обновляем активный абзац и контекст
+            // форматирования, иначе команды абзаца применялись бы к прежнему.
+            FireCaretFormatContext();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Делит абзац и отдаёт шаг отмены вызывающему, не кладя его в стек.
+        ///
+        /// Правка к этому мигу уже сделана: шаг её описывает, а не назначает.
+        /// </summary>
+        /// <returns>null — случай не для лёгкого шага.</returns>
+        private Commands.ITextCommand? BuildOperationalSplit(ParagraphViewModel pvm)
+        {
+            if (DocVm is null) return null;
+            if (pvm.Model is null) return null;
+
+            // Enter на пустом элементе списка ничего не делит — он снимает маркер.
+            // Случай не про деление, и лёгким шагом не описывается.
+            if (string.IsNullOrEmpty(pvm.PlainText) && pvm.Model.ListProperties is not null)
+                return null;
+
+            string text = pvm.PlainText ?? string.Empty;
+            int cp = Clamp(_caretChar, 0, text.Length);
+
+            // Форматирование рана в точке каретки — чтобы новый абзац продолжал шрифт и
+            // начертание, даже если деление делается в конце строки (новый абзац пустой).
+            var caretRunProps = GetRunPropertiesAt(pvm.Model, cp);
+
+            int plainLen = pvm.Model.GetPlainText().Length;
+            int cutPos = Clamp(cp, 0, plainLen);
+
+            // Содержимое абзаца снимается ДО правки: по нему откат возвращает его целиком,
+            // с форматированием каждого знака и картинками в строке.
+            var cellsBefore = pvm.Model.ToCharCells();
+
+            // Забираем хвост абзаца вместе с форматированием каждого рана и удаляем его из
+            // исходного. Перенос ранами, а не строкой: иначе разнобойное форматирование
+            // хвоста сбрасывалось бы на одно, хотя текст не трогали.
+            var tailRuns = DocumentModelHelper.DeleteRange(pvm.Model, cutPos, plainLen - cutPos);
+            pvm.RefreshPlainTextFromModel();
+
+            var newVm = DocVm.AddParagraphAfter(pvm);
+            if (newVm is null) return null;
+
+            if (tailRuns.Length > 0)
+                DocumentModelHelper.RestoreRuns(newVm.Model, 0, tailRuns);
+            newVm.RefreshPlainTextFromModel();
+
+            // Если новый абзац пуст (Enter в конце строки) — переносим форматирование
+            // каретки в его пустой ран, чтобы последующий ввод шёл тем же шрифтом.
+            if (string.IsNullOrEmpty(newVm.PlainText) && caretRunProps is not null
+                && newVm.Model.Chunks.Count > 0 && newVm.Model.Chunks[0].Runs.Count > 0)
+                newVm.Model.Chunks[0].Runs[0].Properties = caretRunProps.Clone();
+
+            var span = new DocumentViewModel.SplitParagraphSpan
+            {
+                FirstParaId = pvm.Model.Id,
+                WholeCells = cellsBefore,
+                TailBlock = newVm.Model,
+                At = cutPos
+            };
+
+            var cmd = new Commands.SplitParagraphSpanCommand(DocVm, span, "Деление абзаца")
+            {
+                RestoreCaretCallback = RestoreCaretToParagraph
+            };
+
+            _rebuildCts.Cancel();
+            _rebuildCts = new System.Threading.CancellationTokenSource();
+            RebuildLayouts();
+
+            for (int i = 0; i < _layouts.Count; i++)
+                if (_layouts[i].Vm == newVm) { _caretPara = i; _caretChar = 0; break; }
+
+            return cmd;
+        }
+
+        /// <summary>
+        /// Сливает абзац с предыдущим без снимка рукописи — Backspace в начале строки.
+        ///
+        /// Случаи, у которых Backspace в начале абзаца означает не слияние, сюда не
+        /// попадают и уходят на общий путь: элемент списка (первым нажатием снимается
+        /// маркер), якорь разрыва страницы, якоря таблицы. Абзацы, между которыми в
+        /// потоке стоит таблица или картинка, отсеивает сама модель: в списке абзацев
+        /// они выглядят соседями, а в потоке ими не являются.
+        /// </summary>
+        /// <returns>false — быстрый путь не подошёл, вызывающий уходит на снимок.</returns>
+        private bool TryOperationalMergeWithPrevious(ParagraphViewModel pvm)
+        {
+            if (DocVm is null || UndoStack is null) return false;
+            if (HasSel()) return false;
+            if (_caretChar != 0 || _caretPara <= 0) return false;
+            if (IsInCell(_caretPara)) return false;
+            if (pvm.Model is null) return false;
+
+            // Элемент списка: Backspace снимает маркер, а не сливает абзацы.
+            if (pvm.Model.ListProperties is not null) return false;
+
+            string text = pvm.PlainText ?? string.Empty;
+
+            if (string.IsNullOrEmpty(text) && IsBreakAnchor(pvm.Model)) return false;
+            if (IsBlockAfterTable(pvm.Model)) return false;
+            if (string.IsNullOrEmpty(text) && IsBlockBeforeTable(pvm.Model)
+                && GetVmAt(_caretPara - 1) is null) return false;
+
+            var prev = GetVmAt(_caretPara - 1);
+            if (prev?.Model is null) return false;
+            if (IsInCell(_caretPara - 1)) return false;
+            if (ReferenceEquals(prev.Model, pvm.Model)) return false;
+
+            return ApplyOperationalMerge(prev.Model, pvm.Model);
+        }
+
+        /// <summary>
+        /// Сливает со следующим абзацем без снимка рукописи — Delete в конце строки.
+        ///
+        /// Пустой абзац перед элементом списка сюда не попадает: там Delete ещё и
+        /// принимает форматирование списка, а это смена свойств абзаца, которую шаг
+        /// слияния не описывает. Якоря таблицы и разрыва — тоже мимо.
+        /// </summary>
+        /// <returns>false — быстрый путь не подошёл, вызывающий уходит на снимок.</returns>
+        private bool TryOperationalMergeWithNext(ParagraphViewModel pvm)
+        {
+            if (DocVm is null || UndoStack is null) return false;
+            if (HasSel()) return false;
+            if (IsInCell(_caretPara)) return false;
+            if (pvm.Model is null) return false;
+            if (_caretPara >= _layouts.Count - 1) return false;
+
+            string text = pvm.PlainText ?? string.Empty;
+            if (_caretChar < text.Length) return false;
+
+            // Якоря таблицы Delete не трогает: правый — единственное место, откуда пишут
+            // после таблицы, а к левому нельзя присоединять то, что стоит за таблицей.
+            if (string.IsNullOrEmpty(text) && IsBlockAfterTable(pvm.Model)) return false;
+            if (string.IsNullOrEmpty(text) && IsBlockBeforeTable(pvm.Model)) return false;
+
+            var next = GetVmAt(_caretPara + 1);
+            if (next?.Model is null) return false;
+            if (IsInCell(_caretPara + 1)) return false;
+            if (ReferenceEquals(next.Model, pvm.Model)) return false;
+
+            string nextText = next.PlainText ?? string.Empty;
+
+            // Якорь разрыва страницы снимается вместе с разрывом — это не слияние.
+            if (string.IsNullOrEmpty(nextText) && IsBreakAnchor(next.Model)) return false;
+
+            // Правый якорь таблицы ниже: слить его с текущим абзацем нельзя.
+            if (string.IsNullOrEmpty(nextText) && IsBlockAfterTable(next.Model)) return false;
+
+            // Пустой абзац над списком принимает его форматирование — смена свойств,
+            // а не текста.
+            if (string.IsNullOrEmpty(text) && next.Model.ListProperties is not null) return false;
+
+            return ApplyOperationalMerge(pvm.Model, next.Model);
+        }
+
+        /// <summary>
+        /// Общая часть обоих слияний: сама правка, шаг отмены и каретка на шве.
+        ///
+        /// Каретка встаёт ровно на стык — там, где кончился первый абзац. Это то же
+        /// место, куда её ставит Word, и то же, куда смотрит человек: он видел границу
+        /// абзацев и убрал её.
+        /// </summary>
+        private bool ApplyOperationalMerge(ParagraphBlock first, ParagraphBlock tail)
+        {
+            if (DocVm is null) return false;
+
+            var span = DocVm.MergeParagraphs(first, tail);
+            if (span is null) return false;
+
+            var cmd = new Commands.MergeParagraphSpanCommand(DocVm, span, "Слияние абзацев")
+            {
+                RestoreCaretCallback = RestoreCaretToParagraph
+            };
+
+            PushUndoCommand(cmd);
+            RestoreCaretToParagraph(span.FirstParaId, span.At);
+
+            return true;
         }
 
         // Снимает список с абзаца и убирает авто-отступ уровня, если он был выставлен
@@ -3401,9 +3922,22 @@ namespace Writersword.Modules.TextEditor.Document
         public void ExecuteSelectAll()
         {
             if (_layouts.Count == 0) return;
-            _selStartPara = 0; _selStartChar = 0;
-            _selEndPara = _layouts.Count - 1;
-            _selEndChar = GetVmAt(_layouts.Count - 1)?.PlainText?.Length ?? 0;
+
+            // Концы выделения обязаны лежать в потоке, а не в ячейке таблицы. Последний
+            // слайс раскладки вполне может принадлежать клетке — если рукопись кончается
+            // таблицей. Такой конец ломал удаление целиком: оно берёт либо абзацы потока,
+            // либо ячейку, а выделение «от начала книги до клетки» не подходило ни под
+            // одну ветку, и Ctrl+A с последующим Delete не делал ровным счётом ничего.
+            int first = 0;
+            while (first < _layouts.Count && _layouts[first].Cell is not null) first++;
+            if (first >= _layouts.Count) return;
+
+            int last = _layouts.Count - 1;
+            while (last > first && _layouts[last].Cell is not null) last--;
+
+            _selStartPara = first; _selStartChar = 0;
+            _selEndPara = last;
+            _selEndChar = GetVmAt(last)?.PlainText?.Length ?? 0;
             _caretPara = _selEndPara; _caretChar = _selEndChar;
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
@@ -3418,6 +3952,12 @@ namespace Writersword.Modules.TextEditor.Document
         public void ExecuteUndo()
         {
             if (IsEditingBlocked) return;
+
+            // Фантомный возврат. Человек прыгнул по ссылке и с тех пор ничего не правил —
+            // значит отменять нечего, а вернуться он хочет именно сюда. Первое нажатие
+            // возвращает на прежнее место и рукопись не трогает; второе уже обычная
+            // отмена. Напечатал букву — фантома нет, и первое же нажатие отменяет её.
+            if (TryPhantomReturn()) return;
 
             // Откатываем строго в хронологическом порядке: какой стек трогать, решает _undoOrder.
             //
@@ -3451,6 +3991,11 @@ namespace Writersword.Modules.TextEditor.Document
         public void ExecuteRedo()
         {
             if (IsEditingBlocked) return;
+
+            // Симметрично фантомному возврату: Ctrl+Z увёл обратно, Ctrl+Y возвращает
+            // туда, откуда увёл. Иначе пара клавиш несимметрична — человек нажимает
+            // «вернуть» и получает не то, что отменил.
+            if (TryPhantomForward()) return;
 
             // Симметрично откату: запись порядка, оставшаяся без команды, пропускается,
             // а в порядок отмены возвращается только состоявшийся повтор.
@@ -3546,6 +4091,12 @@ namespace Writersword.Modules.TextEditor.Document
         private void RefreshAfterSnapshotCommand()
         {
             RefreshAfterTableCommand();
+
+            // Место правки ставится здесь, а не в обработчике команды: RefreshAfterTableCommand
+            // выше пересобирает раскладку и схлопывает выделение через SyncSel. Раньше него
+            // возвращать нечего — слайсы ещё от прежнего состояния документа.
+            ApplyPendingRestorePlace();
+
             // Снапшот мог вернуть поля страницы/настройки — уведомляем VM, чтобы линейка синхронилась.
             DocVm?.RaiseDocumentRestored();
         }
@@ -3706,6 +4257,22 @@ namespace Writersword.Modules.TextEditor.Document
         private void DeleteSelectedTablesAndText()
         {
             if (DocVm is null) return;
+
+            // Куда вернуть каретку — решается до правки, пока места ещё на местах.
+            // Номер слайса её не переживает: рукопись после снятия короче, и прежний
+            // номер указывает уже в пустоту. Опознаватель абзаца переживает.
+            ParagraphBlock? anchorPara = null;
+            int anchorChar = 0;
+            if (HasSel())
+            {
+                var (anchorSlice, anchorFrom, _, _) = NormalizeSelection();
+                if (!IsInCell(anchorSlice))
+                {
+                    anchorPara = GetVmAt(anchorSlice)?.Model;
+                    anchorChar = anchorFrom;
+                }
+            }
+
             BeginEdit("Delete");
 
             var blocks = DocVm.Document.Sections[0].Blocks;
@@ -3727,9 +4294,22 @@ namespace Writersword.Modules.TextEditor.Document
             _cellVmCache.Clear();
             InvalidateCellLayoutCaches();
             DocVm.RebuildParagraphViewModelsPublic();
+            RebuildLayouts();
+
+            // Каретка встаёт туда, где выделение начиналось, — на границу правки. Это
+            // и есть место, куда человек смотрел, и в Word после удаления она там же.
+            if (anchorPara is not null)
+            {
+                RestoreCaretToParagraph(anchorPara.Id, anchorChar);
+                return;
+            }
+
+            // Запасной путь — когда якорного абзаца нет: выделение начиналось в ячейке
+            // или его не было вовсе. Ограничитель считается по уже пересобранной
+            // раскладке: раньше он брался до пересборки, а значит не ограничивал ничего,
+            // и каретка оставалась за пределами списка слайсов — то есть в конце книги.
             _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
             _caretChar = 0;
-            RebuildLayouts();
             SyncSel();
             ResetCaret();
             InvalidateFull();

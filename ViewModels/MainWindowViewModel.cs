@@ -51,7 +51,7 @@ namespace Writersword.ViewModels
         private readonly IHotKeyService _hotKeyService;
         private readonly IWorkModeConfigurationService _workModeConfigService;
         private readonly DockFactory _dockFactory;
-        private readonly IZipCacheService _cacheService;
+        private readonly IProjectCacheService _cacheService;
         private readonly ICacheUpdateService _cacheUpdateService;
 
         private string _title = "Writersword";
@@ -95,7 +95,7 @@ namespace Writersword.ViewModels
             IProjectService projectService,
             IHotKeyService hotKeyService,
             IWorkModeConfigurationService workModeConfigService,
-            IZipCacheService cacheService,
+            IProjectCacheService cacheService,
             DockFactory dockFactory)
         {
             _logger = App.Services.GetService<ILogger<MainWindowViewModel>>()!;
@@ -267,7 +267,7 @@ namespace Writersword.ViewModels
                 // Инфраструктура (ITabSnapshotPresenter) сохранена на будущее.
 
                 // Сохранение workspace.json предыдущей вкладки НЕ ожидается: SaveWorkspaceAsync
-                // собирает конфигурацию и перезаписывает ZIP-архив проекта, и await этой
+                // собирает конфигурацию и записывает её в файл проекта, и await этой
                 // операции задерживал активацию новой вкладки на всё время записи файла
                 // (для больших проектов — секунды). Сохранение идёт параллельно активации:
                 // сбор конфигурации читает UI-состояние через диспетчер, запись файла

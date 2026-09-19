@@ -162,6 +162,17 @@ namespace Writersword.Modules.Characters.ViewModels
                 this.RaisePropertyChanged(nameof(IsTab1Active));
                 this.RaisePropertyChanged(nameof(IsTab2Active));
                 this.RaisePropertyChanged(nameof(IsTab3Active));
+
+                // Возврат на вкладку редактора — повод перечитать персонажа.
+                //
+                // Карточка строится один раз, при выборе персонажа, и дальше
+                // живёт снимком: вкладки только переключают видимость, данных
+                // не трогая. Пока человек ходил по списку, он мог сменить у
+                // того же персонажа важность, цвет, аватарку или метки — и,
+                // вернувшись, видел прежнее. Хуже того, ближайшее сохранение
+                // карточки записывало этот прежний снимок поверх правок: то
+                // есть важность, выставленная в списке, молча откатывалась.
+                if (_mainTabIndex == 1) SelectedCharacterCard?.Reload();
             }
         }
         public bool IsTab0Active => _mainTabIndex == 0;
@@ -1329,6 +1340,12 @@ namespace Writersword.Modules.Characters.ViewModels
             if (card != null && card.CharacterId == characterId)
             {
                 card.BasicsTab.ApplyAvatarSilently(value);
+
+                // Строка списка и панель показывают того же персонажа, что и
+                // открытая карточка: без этого portrait в них оставался бы
+                // прежним до перевыбора.
+                FindListItem(characterId)?.SyncAvatarRef(value);
+                _inspector?.RefreshAvatar();
                 return;
             }
 
@@ -1341,6 +1358,12 @@ namespace Writersword.Modules.Characters.ViewModels
             _characterService.Update(target);
 
             FindListItem(characterId)?.ApplyAvatarRef(value);
+
+            // Правая панель читает картинку у строки списка и об её смене сама
+            // не узнаёт. Через поле, а не через свойство Inspector: то заводит
+            // панель при первом обращении, а отмена аватарки — не повод
+            // строить панель, которую никто не открывал.
+            _inspector?.RefreshAvatar();
         }
 
         private void OnCardSaved(string characterId)
@@ -1391,6 +1414,14 @@ namespace Writersword.Modules.Characters.ViewModels
             if (item.AvatarRing != character.AvatarRing) item.AvatarRing = character.AvatarRing;
             if (item.GroupBookmark != character.GroupBookmark) item.GroupBookmark = character.GroupBookmark;
             if (item.IsCollective != character.IsCollective) item.IsCollective = character.IsCollective;
+
+            // Важность, толщина рамки и вид аватара переносятся тихо: строка
+            // показывает пришедшее из модели, но обратно его не пишет — она
+            // эту правку не делала, и лишний шаг в истории отмены здесь
+            // взяться не должен.
+            item.SyncImportance(character.ImportanceLevel);
+            item.SyncFrameThickness(character.FrameThickness);
+            item.SyncAvatarStrip(character.AvatarStrip);
         }
 
         /// <summary>
@@ -1623,6 +1654,8 @@ namespace Writersword.Modules.Characters.ViewModels
 
             var relCount = _relationshipService.GetAllForCharacter(character.Id).Count;
             var item = new CharacterListItemViewModel(character, relCount, false, _avatarService);
+            BindCharacterItemCallbacks(item);
+
             var owningFolder = _folders.FirstOrDefault(f => f.CharacterIds.Contains(character.Id));
             if (owningFolder != null)
                 item.SearchFolderColor = owningFolder.Color;
@@ -1782,6 +1815,13 @@ namespace Writersword.Modules.Characters.ViewModels
                     var c = all[j];
                     var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
                     var item = new CharacterListItemViewModel(c, relCount, false, _avatarService);
+
+                    // Строки результата поиска — такие же строки, их правят
+                    // тем же способом. Без колбэков смена цвета, важности или
+                    // толщины рамки на них молча пропадала: в модель уходить
+                    // было нечему.
+                    BindCharacterItemCallbacks(item);
+
                     if (folderColorById.TryGetValue(c.Id, out var folderColor))
                         item.SearchFolderColor = folderColor;
                     item.MatchedName = ResolveMatchedName(c);

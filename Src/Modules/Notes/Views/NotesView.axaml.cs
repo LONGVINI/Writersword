@@ -1,107 +1,152 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
-using Avalonia.Media;
-using AvaloniaEdit.Document;
-using AvaloniaEdit.Rendering;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading.Tasks;
 using Writersword.Modules.Notes.Models;
 using Writersword.Modules.Notes.ViewModels;
 
 namespace Writersword.Modules.Notes.Views
 {
+    /// <summary>
+    /// Представление модуля заметок.
+    ///
+    /// Здесь нет правил работы с текстом — они целиком в модели представления.
+    /// Задача этого кода одна: перевести нажатие или щелчок в вызов модели и
+    /// вернуть каретку туда, куда указал результат вызова.
+    /// </summary>
     public partial class NotesView : UserControl
     {
-        private const double CompactWidth = 560;
-        private const string DividerText = "────────────────────────";
-        private readonly Dictionary<NotePageViewModel, PageEditorState> _pageEditors = new();
-        private NotesViewModel? _subscribedViewModel;
-        private NotePageViewModel? _activePage;
-        private PendingChange? _pendingChange;
-        private Guid? _pressedChecklist;
-        private bool _isUpdatingEditor;
+        /// <summary>Сколько плашка отмены держится на экране.</summary>
+        private static readonly TimeSpan UndoMessageLifetime = TimeSpan.FromSeconds(7);
+
+        private readonly DispatcherTimer _undoMessageTimer;
+        private NotesViewModel? _subscribed;
 
         public NotesView()
         {
             InitializeComponent();
-            Editor.TextArea.TextView.LineTransformers.Add(new NotesLineTransformer(this));
-            Editor.TextArea.Caret.PositionChanged += OnCaretPositionChanged;
 
-            // Обработка выполняется до стандартных команд TextArea, иначе Enter
-            // успевает изменить документ до преобразования блочной разметки.
-            Editor.AddHandler(KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
-            Editor.AddHandler(PointerPressedEvent, OnEditorPointerPressed, RoutingStrategies.Tunnel);
-            Editor.AddHandler(PointerReleasedEvent, OnEditorPointerReleased, RoutingStrategies.Tunnel);
-            Editor.PointerCaptureLost += (_, _) => _pressedChecklist = null;
+            // Нажатия разбираются на погружении, до поля ввода. Backspace и
+            // Delete поле обрабатывает само и помечает нажатие обработанным —
+            // на всплытии они сюда уже не приходят.
+            BlocksHost.AddHandler(KeyDownEvent, OnBlocksKeyDown, RoutingStrategies.Tunnel);
+            AddHandler(KeyDownEvent, OnViewKeyDown, RoutingStrategies.Tunnel);
+
+            _undoMessageTimer = new DispatcherTimer { Interval = UndoMessageLifetime };
+            _undoMessageTimer.Tick += OnUndoMessageTimerTick;
+
             DataContextChanged += OnDataContextChanged;
             SizeChanged += OnSizeChanged;
-            AttachedToVisualTree += (_, _) => SubscribeViewModel();
-            DetachedFromVisualTree += (_, _) => UnsubscribeViewModel();
+            DetachedFromVisualTree += OnDetached;
         }
 
         private NotesViewModel? ViewModel => DataContext as NotesViewModel;
 
-        private void SubscribeViewModel()
-        {
-            if (_subscribedViewModel == ViewModel)
-                return;
-            UnsubscribeViewModel();
-            _subscribedViewModel = ViewModel;
-            if (_subscribedViewModel != null)
-                _subscribedViewModel.PropertyChanged += OnViewModelPropertyChanged;
-            LoadSelectedPage();
-        }
-
-        private void UnsubscribeViewModel()
-        {
-            if (_subscribedViewModel != null)
-                _subscribedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
-            _subscribedViewModel = null;
-        }
+        // ── Жизненный цикл ────────────────────────────────────────────────
 
         private void OnDataContextChanged(object? sender, EventArgs e)
         {
-            SaveEditorPosition();
-            UnsubscribeViewModel();
-            _pageEditors.Clear();
-            _activePage = null;
-            SubscribeViewModel();
-            if (ViewModel == null)
-                LoadSelectedPage();
-            else if (Bounds.Width > 0)
-                ViewModel.IsCompact = Bounds.Width < CompactWidth;
+            if (_subscribed != null)
+                _subscribed.PropertyChanged -= OnViewModelPropertyChanged;
+
+            _subscribed = ViewModel;
+            if (_subscribed != null)
+            {
+                _subscribed.PropertyChanged += OnViewModelPropertyChanged;
+                if (Bounds.Width > 0)
+                    _subscribed.IsCompact = Bounds.Width < NotesViewModel.CompactWidth;
+            }
+
+            _undoMessageTimer.Stop();
         }
 
-        private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        private void OnDetached(object? sender, VisualTreeAttachmentEventArgs e)
         {
-            if (e.PropertyName == nameof(NotesViewModel.SelectedPage))
-                LoadSelectedPage();
+            _undoMessageTimer.Stop();
         }
 
         private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
         {
-            // Плавающая панель использует собственную ширину, а не ширину окна.
-            if (ViewModel != null)
-                ViewModel.IsCompact = e.NewSize.Width < CompactWidth;
+            // Модуль может стоять и в доке, и в плавающем окне: узкий он или
+            // широкий, решает его собственная ширина, а не ширина окна.
+            if (ViewModel is { } vm)
+                vm.IsCompact = e.NewSize.Width < NotesViewModel.CompactWidth;
+        }
+
+        private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(NotesViewModel.HasUndoMessage))
+                return;
+
+            _undoMessageTimer.Stop();
+            if (ViewModel?.HasUndoMessage == true)
+                _undoMessageTimer.Start();
+        }
+
+        private void OnUndoMessageTimerTick(object? sender, EventArgs e)
+        {
+            _undoMessageTimer.Stop();
+            ViewModel?.DismissUndoMessage();
+        }
+
+        // ── Лента ─────────────────────────────────────────────────────────
+
+        private void OnTogglePagesClick(object? sender, RoutedEventArgs e)
+        {
+            if (ViewModel is { } vm)
+                vm.IsPagePanelOpen = !vm.IsPagePanelOpen;
         }
 
         private void OnAddPageClick(object? sender, RoutedEventArgs e)
         {
-            if (ViewModel?.IsReadOnly != false)
-                return;
-            ViewModel.AddPage();
-            Editor.Focus();
+            if (ViewModel?.AddPage() is { } page)
+                FocusBlock(new NoteCaret(page.Blocks[0], 0));
         }
 
-        private void OnTogglePagesClick(object? sender, RoutedEventArgs e)
+        private void OnDuplicatePageClick(object? sender, RoutedEventArgs e)
         {
-            if (ViewModel != null)
-                ViewModel.IsPagePanelOpen = !ViewModel.IsPagePanelOpen;
+            if (ViewModel?.DuplicateSelectedPage() is { } page && page.Blocks.Count > 0)
+                FocusBlock(new NoteCaret(page.Blocks[0], 0));
         }
+
+        private void OnRemovePageClick(object? sender, RoutedEventArgs e) =>
+            ViewModel?.RemoveSelectedPage();
+
+        private void OnCopyPageClick(object? sender, RoutedEventArgs e)
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            var text = ViewModel?.SelectedPageAsText();
+            if (clipboard == null || string.IsNullOrEmpty(text))
+                return;
+
+            _ = CopyAsync(clipboard, text);
+        }
+
+        private static async Task CopyAsync(IClipboard clipboard, string text)
+        {
+            try
+            {
+                await clipboard.SetTextAsync(text);
+            }
+            catch (Exception)
+            {
+                // Буфер обмена держит другое приложение. Повторить нажатие
+                // человеку проще, чем читать сообщение об этом.
+            }
+        }
+
+        private void OnMovePageUpClick(object? sender, RoutedEventArgs e) =>
+            ViewModel?.MoveSelectedPage(-1);
+
+        private void OnMovePageDownClick(object? sender, RoutedEventArgs e) =>
+            ViewModel?.MoveSelectedPage(1);
 
         private void OnBlockTypeClick(object? sender, RoutedEventArgs e)
         {
@@ -109,449 +154,386 @@ namespace Writersword.Modules.Notes.Views
                 !Enum.TryParse<NoteBlockType>(tag, out var type) || !Enum.IsDefined(type))
                 return;
 
-            EditSelectedBlock(blocks =>
-            {
-                var block = blocks[0];
-                // Разделитель добавляется после непустого текста, чтобы команда
-                // не скрывала содержимое существующего абзаца.
-                if (type == NoteBlockType.Divider && block.Type != type && block.Text.Length > 0)
-                {
-                    blocks.Add(new NoteBlock { Type = NoteBlockType.Divider });
-                    return GetDisplayText(block).Length + Environment.NewLine.Length + DividerText.Length;
-                }
-                block.Type = type;
-                if (type != NoteBlockType.Checklist)
-                    block.IsChecked = false;
-                return null;
-            });
+            ViewModel?.SetSelectedBlockType(type);
+            EnsureFocus();
         }
 
-        private void OnStrikeClick(object? sender, RoutedEventArgs e) => EditSelectedBlock(blocks =>
+        private void OnWrapClick(object? sender, RoutedEventArgs e)
         {
-            blocks[0].IsStruckThrough = !blocks[0].IsStruckThrough;
-            return null;
-        });
-
-        private void OnHighlightClick(object? sender, RoutedEventArgs e) => EditSelectedBlock(blocks =>
-        {
-            blocks[0].IsHighlighted = !blocks[0].IsHighlighted;
-            return null;
-        });
-
-        private void EditSelectedBlock(Func<List<NoteBlock>, int?> edit)
-        {
-            if (ViewModel?.SelectedPage is not { } page || ViewModel.IsReadOnly || ViewModel.SelectedBlock == null)
+            if (sender is not Control { Tag: string marker } || marker.Length == 0)
                 return;
-            var index = page.Blocks.IndexOf(ViewModel.SelectedBlock);
-            if (index >= 0)
-                EditBlock(index, edit);
-            Editor.Focus();
+
+            var vm = ViewModel;
+            if (vm?.SelectedBlock is not { } block)
+                return;
+
+            // Лента ввод не забирает, поэтому выделение в поле строки живо и
+            // его можно взять прямо оттуда.
+            var box = FindEditor(block);
+            var start = box?.SelectionStart ?? block.Text.Length;
+            var end = box?.SelectionEnd ?? block.Text.Length;
+
+            if (vm.WrapSelection(block, start, end, marker) is { } target)
+                FocusBlock(target);
         }
 
-        private void OnEditorKeyDown(object? sender, KeyEventArgs e)
+        private void OnStrikeClick(object? sender, RoutedEventArgs e)
         {
-            if (_activePage == null || ViewModel?.IsReadOnly != false ||
-                !Editor.TextArea.Selection.IsEmpty || e.KeyModifiers != KeyModifiers.None)
+            ViewModel?.ToggleSelectedStrikeThrough();
+            EnsureFocus();
+        }
+
+        private void OnHighlightClick(object? sender, RoutedEventArgs e)
+        {
+            ViewModel?.ToggleSelectedHighlight();
+            EnsureFocus();
+        }
+
+        private void OnMoveBlockUpClick(object? sender, RoutedEventArgs e)
+        {
+            var vm = ViewModel;
+            if (vm?.SelectedBlock is not { } block)
+                return;
+            vm.MoveBlock(block, -1);
+            FocusBlock(new NoteCaret(block, block.Text.Length));
+        }
+
+        private void OnMoveBlockDownClick(object? sender, RoutedEventArgs e)
+        {
+            var vm = ViewModel;
+            if (vm?.SelectedBlock is not { } block)
+                return;
+            vm.MoveBlock(block, 1);
+            FocusBlock(new NoteCaret(block, block.Text.Length));
+        }
+
+        private void OnRemoveBlockClick(object? sender, RoutedEventArgs e)
+        {
+            if (ViewModel?.RemoveBlock(ViewModel.SelectedBlock) is { } target)
+                FocusBlock(target);
+        }
+
+        private void OnUndoClick(object? sender, RoutedEventArgs e) => ViewModel?.Undo();
+
+        private void OnDismissUndoClick(object? sender, RoutedEventArgs e) =>
+            ViewModel?.DismissUndoMessage();
+
+        private void OnPanelResize(object? sender, VectorEventArgs e)
+        {
+            if (ViewModel is { } vm)
+                vm.PagePanelWidth += e.Vector.X;
+        }
+
+        // ── Строки ────────────────────────────────────────────────────────
+
+        // Аргументы объявлены базовым типом события, а не типом получения
+        // ввода: обработчику нужен только источник, а имя частного типа
+        // разнится от версии к версии Avalonia.
+        /// <summary>
+        /// Щелчок по пустому месту полотна ставит каретку в конец текста.
+        /// Так полотно ведёт себя как одно поле: промахнуться мимо строки и
+        /// не попасть никуда — нельзя.
+        /// </summary>
+        private void OnCanvasPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            // Щелчок по самой строке разбирает её поле ввода — сюда он
+            // доходит всплытием, и перехватывать его не нужно.
+            if (e.Source is Visual source &&
+                source.GetSelfAndVisualAncestors().Any(visual => visual is TextBox or CheckBox))
                 return;
 
-            var line = Editor.Document.GetLineByOffset(Editor.CaretOffset);
-            var index = line.LineNumber - 1;
-            var block = _activePage.Blocks[index];
-            if (e.Key == Key.Enter)
-            {
-                var contentOffset = Math.Clamp(Editor.CaretOffset - line.Offset - GetPrefix(block).Length, 0, block.Text.Length);
-                var isAtEnd = Editor.CaretOffset == line.EndOffset;
-                EditBlock(index, blocks =>
-                {
-                    var current = blocks[0];
-                    if (current.Text.Length == 0 && current.Type is NoteBlockType.Bullet or NoteBlockType.Checklist)
-                    {
-                        current.Type = NoteBlockType.Paragraph;
-                        current.IsChecked = false;
-                        return 0;
-                    }
+            var vm = ViewModel;
+            if (vm?.SelectedPage is not { } page || vm.IsReadOnly)
+                return;
 
-                    if (current.Type == NoteBlockType.Paragraph && isAtEnd &&
-                        TryParseShortcut(current.Text, out var type, out var text))
-                    {
-                        current.Type = type;
-                        current.Text = text;
-                        contentOffset = text.Length;
-                    }
-                    var next = new NoteBlock
-                    {
-                        Type = current.Type is NoteBlockType.Bullet or NoteBlockType.Checklist
-                            ? current.Type : NoteBlockType.Paragraph,
-                        Text = current.Text[contentOffset..]
-                    };
-                    current.Text = current.Text[..contentOffset];
-                    blocks.Add(next);
-                    return GetDisplayText(current).Length + Environment.NewLine.Length + GetPrefix(next).Length;
-                });
-                e.Handled = true;
+            var last = page.Blocks.LastOrDefault();
+            if (last is { HasText: true })
+            {
+                FocusBlock(new NoteCaret(last, last.Text.Length));
+                return;
             }
-            else if (e.Key == Key.Back && Editor.CaretOffset <= line.Offset + GetPrefix(block).Length &&
-                     block.Type is NoteBlockType.Bullet or NoteBlockType.Checklist or NoteBlockType.Quote)
-            {
-                EditBlock(index, blocks =>
-                {
-                    blocks[0].Type = NoteBlockType.Paragraph;
-                    blocks[0].IsChecked = false;
-                    return 0;
-                });
-                e.Handled = true;
-            }
+
+            // Последняя строка — черта, писать в неё нечего: заводим новую.
+            if (vm.AppendParagraph() is { } appended)
+                FocusBlock(appended);
         }
 
-        private void OnEditorPointerPressed(object? sender, PointerPressedEventArgs e)
+        /// <summary>
+        /// Enter в заголовке страницы уводит ввод в первую строку — то же
+        /// движение, что и в любом бланке.
+        /// </summary>
+        private void OnTitleKeyDown(object? sender, KeyEventArgs e)
         {
-            _pressedChecklist = null;
-            if (ViewModel?.IsReadOnly != false || e.KeyModifiers != KeyModifiers.None || e.ClickCount != 1 ||
-                !e.GetCurrentPoint(Editor).Properties.IsLeftButtonPressed)
+            if (e.Key != Key.Enter || e.KeyModifiers != KeyModifiers.None)
                 return;
-            var block = HitChecklist(e.GetPosition(Editor.TextArea.TextView));
-            if (block == null)
+
+            var vm = ViewModel;
+            if (vm?.SelectedPage?.Blocks.FirstOrDefault(block => block.HasText) is not { } first)
                 return;
-            _pressedChecklist = block.Id;
-            e.Pointer.Capture(Editor);
-            Editor.Focus();
+
+            FocusBlock(new NoteCaret(first, first.Text.Length));
             e.Handled = true;
         }
 
-        private void OnEditorPointerReleased(object? sender, PointerReleasedEventArgs e)
+        private void OnBlockGotFocus(object? sender, RoutedEventArgs e)
         {
-            var pressedId = _pressedChecklist;
-            if (pressedId == null)
+            if (sender is not Control { DataContext: NoteBlockViewModel block })
                 return;
-            _pressedChecklist = null;
-            e.Pointer.Capture(null);
+
+            ViewModel?.SelectBlock(block);
+            block.IsEditing = true;
+        }
+
+        private void OnBlockLostFocus(object? sender, RoutedEventArgs e)
+        {
+            if (sender is Control { DataContext: NoteBlockViewModel block })
+                block.IsEditing = false;
+        }
+
+        /// <summary>
+        /// Выбрать строку щелчком по ней.
+        /// Нужно только разделителю: текста у него нет, поля ввода тоже, и
+        /// без этого его нельзя было бы ни выделить, ни убрать кнопкой ленты.
+        /// Остальные строки выбираются сами — вводом в своё поле.
+        /// </summary>
+        private void OnRowPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (sender is Control { DataContext: NoteBlockViewModel { IsDivider: true } block })
+                ViewModel?.SelectBlock(block);
+        }
+
+        private void OnViewKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Z || e.KeyModifiers != KeyModifiers.Control)
+                return;
+
+            // В поле ввода Ctrl+Z отменяет набранный текст средствами самого
+            // поля. Своя история модуля туда не вмешивается: иначе одно
+            // нажатие откатывало бы и букву, и удаление страницы разом.
+            if (e.Source is TextBox)
+                return;
+
+            var vm = ViewModel;
+            if (vm == null || !vm.CanUndo)
+                return;
+
+            vm.Undo();
             e.Handled = true;
-            if (ViewModel?.IsReadOnly != false || e.InitialPressMouseButton != MouseButton.Left ||
-                e.KeyModifiers != KeyModifiers.None || _activePage == null)
-                return;
-            var block = HitChecklist(e.GetPosition(Editor.TextArea.TextView));
-            if (block?.Id != pressedId)
-                return;
-            EditBlock(_activePage.Blocks.IndexOf(block), blocks =>
-            {
-                blocks[0].IsChecked = !blocks[0].IsChecked;
-                return null;
-            });
         }
 
-        private NoteBlockViewModel? HitChecklist(Point position)
+        private void OnBlocksKeyDown(object? sender, KeyEventArgs e)
         {
-            var textView = Editor.TextArea.TextView;
-            if (!new Rect(textView.Bounds.Size).Contains(position))
-                return null;
-            textView.EnsureVisualLines();
-            var documentPosition = position + textView.ScrollOffset;
-            var hit = textView.GetPositionFloor(documentPosition);
-            if (hit is not { Column: 1 } location || GetBlockForLine(location.Line) is not { IsChecklist: true } block)
-                return null;
-            // Проверяется прямоугольник первого символа, включая смещение прокрутки.
-            // Каретка и перенос продолжения строки не определяют попадание в чекбокс.
-            var start = textView.GetVisualPosition(new AvaloniaEdit.TextViewPosition(location.Line, 1), VisualYPosition.LineTop);
-            var end = textView.GetVisualPosition(new AvaloniaEdit.TextViewPosition(location.Line, 2), VisualYPosition.LineBottom);
-            return new Rect(start, end).Contains(documentPosition) ? block : null;
-        }
-
-        private void EditBlock(int index, Func<List<NoteBlock>, int?> edit)
-        {
-            if (_activePage == null || ViewModel?.IsReadOnly != false || index < 0)
+            var vm = ViewModel;
+            if (vm == null || vm.IsReadOnly)
                 return;
-            var page = _activePage;
-            var before = new[] { page.Blocks[index].ToModel() };
-            var after = new List<NoteBlock> { page.Blocks[index].ToModel() };
-            var requestedCaret = edit(after);
-            var line = Editor.Document.GetLineByNumber(index + 1);
-            var offset = line.Offset;
-            var oldLength = line.Length;
-            var text = string.Join(Environment.NewLine, after.Select(GetDisplayText));
-            var caret = Editor.CaretOffset;
-            var selectionStart = Editor.SelectionStart;
-            var selectionEnd = selectionStart + Editor.SelectionLength;
-            var oldPrefix = GetPrefix(before[0]).Length;
-            var newPrefix = GetPrefix(after[0]).Length;
+            if (e.Source is not TextBox box || box.DataContext is not NoteBlockViewModel block)
+                return;
 
-            int MapPosition(int position)
+            var caret = Math.Clamp(box.CaretIndex, 0, block.Text.Length);
+            var selectionStart = Math.Clamp(Math.Min(box.SelectionStart, box.SelectionEnd), 0, block.Text.Length);
+            var selectionEnd = Math.Clamp(Math.Max(box.SelectionStart, box.SelectionEnd), 0, block.Text.Length);
+            var hasSelection = selectionEnd > selectionStart;
+
+            if (e.Key == Key.Enter && e.KeyModifiers == KeyModifiers.None)
             {
-                if (position < offset)
-                    return position;
-                if (position > offset + oldLength)
-                    return position + text.Length - oldLength;
-                return offset + newPrefix + Math.Clamp(position - offset - oldPrefix, 0, after[0].Text.Length);
+                // Выделенный кусок при переводе строки заменяется переводом —
+                // так же, как в любом поле ввода.
+                if (hasSelection)
+                {
+                    block.Text = block.Text.Remove(selectionStart, selectionEnd - selectionStart);
+                    caret = selectionStart;
+                }
+
+                FocusBlock(vm.SplitBlock(block, caret));
+                e.Handled = true;
+                return;
             }
 
-            _isUpdatingEditor = true;
+            if (e.Key == Key.Space && e.KeyModifiers == KeyModifiers.None && !hasSelection)
+            {
+                if (vm.TryApplyShortcut(block, caret, out var afterShortcut))
+                {
+                    FocusBlock(afterShortcut);
+                    e.Handled = true;
+                }
+
+                return;
+            }
+
+            if (e.Key == Key.Back && e.KeyModifiers == KeyModifiers.None && !hasSelection && caret == 0)
+            {
+                if (vm.MergeWithPrevious(block) is { } merged)
+                {
+                    FocusBlock(merged);
+                    e.Handled = true;
+                }
+
+                return;
+            }
+
+            if (e.Key == Key.Delete && e.KeyModifiers == KeyModifiers.None &&
+                !hasSelection && caret == block.Text.Length)
+            {
+                if (vm.MergeWithNext(block) is { } joined)
+                {
+                    FocusBlock(joined);
+                    e.Handled = true;
+                }
+
+                return;
+            }
+
+            if (e.Key is Key.Up or Key.Down && e.KeyModifiers == KeyModifiers.Alt)
+            {
+                vm.MoveBlock(block, e.Key == Key.Up ? -1 : 1);
+                FocusBlock(new NoteCaret(block, caret));
+                e.Handled = true;
+                return;
+            }
+
+            // Переход на соседнюю строку — только с краёв текста: внутри
+            // строки стрелки водят каретку по перенесённым строкам сами.
+            if (e.Key == Key.Up && e.KeyModifiers == KeyModifiers.None && caret == 0)
+            {
+                if (vm.StepBlock(block, -1, int.MaxValue) is { } previous)
+                {
+                    FocusBlock(previous);
+                    e.Handled = true;
+                }
+
+                return;
+            }
+
+            if (e.Key == Key.Down && e.KeyModifiers == KeyModifiers.None && caret == block.Text.Length)
+            {
+                if (vm.StepBlock(block, 1, 0) is { } next)
+                {
+                    FocusBlock(next);
+                    e.Handled = true;
+                }
+
+                return;
+            }
+
+            if (e.KeyModifiers == KeyModifiers.Control && e.Key is Key.B or Key.I or Key.E)
+            {
+                var marker = e.Key switch
+                {
+                    Key.B => "**",
+                    Key.I => "*",
+                    _ => "`"
+                };
+
+                if (vm.WrapSelection(block, selectionStart, selectionEnd, marker) is { } wrapped)
+                {
+                    FocusBlock(wrapped);
+                    e.Handled = true;
+                }
+
+                return;
+            }
+
+            if (e.Key == Key.V && e.KeyModifiers == KeyModifiers.Control)
+            {
+                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (clipboard == null)
+                    return;
+
+                // Вставка разбирается модулем: многострочный текст ложится
+                // строками, а не одной кашей с переводами внутри строки.
+                e.Handled = true;
+                _ = PasteAsync(clipboard, block, caret, selectionStart, selectionEnd);
+            }
+        }
+
+        private async Task PasteAsync(
+            IClipboard clipboard, NoteBlockViewModel block, int caret, int selectionStart, int selectionEnd)
+        {
+            string? text;
             try
             {
-                using (Editor.Document.RunUpdate())
-                {
-                    ReplaceBlocks(page, index, 1, after);
-                    if (Editor.Document.GetText(offset, oldLength) != text)
-                        Editor.Document.Replace(offset, oldLength, text);
-                    // Состояние модели находится в той же группе Undo, что и текст.
-                    // Для выделения/зачёркивания группа содержит только эту операцию.
-                    Editor.Document.UndoStack.Push(new BlockChangeOperation(this, page, index, before, after.ToArray()));
-                    if (requestedCaret is { } target)
-                    {
-                        Editor.Select(offset + target, 0);
-                        Editor.CaretOffset = offset + target;
-                    }
-                    else
-                    {
-                        var start = MapPosition(selectionStart);
-                        var end = MapPosition(selectionEnd);
-                        Editor.Select(start, end - start);
-                        Editor.CaretOffset = MapPosition(caret);
-                    }
-                }
+                text = await clipboard.TryGetTextAsync();
             }
-            finally
+            catch (Exception)
             {
-                _isUpdatingEditor = false;
-            }
-            RefreshPresentation();
-        }
-
-        private void OnDocumentChanging(object? sender, DocumentChangeEventArgs e)
-        {
-            _pendingChange = null;
-            if (_isUpdatingEditor || _activePage == null || !Editor.Document.UndoStack.AcceptChanges)
+                // Буфер обмена держит другое приложение. Молчаливый отказ
+                // здесь уместнее сообщения: человек просто нажмёт ещё раз.
                 return;
-            var first = Editor.Document.GetLineByOffset(e.Offset);
-            var last = Editor.Document.GetLineByOffset(e.Offset + e.RemovalLength);
-            var index = first.LineNumber - 1;
-            var count = last.LineNumber - first.LineNumber + 1;
-            _pendingChange = new PendingChange(index, Editor.Document.LineCount,
-                _activePage.Blocks.Skip(index).Take(count).Select(block => block.ToModel()).ToArray(),
-                e.Offset > first.Offset,
-                e.Offset + e.RemovalLength < last.EndOffset || e.Offset + e.RemovalLength == last.Offset);
-        }
+            }
 
-        private void OnDocumentChanged(object? sender, DocumentChangeEventArgs e)
-        {
-            var change = _pendingChange;
-            _pendingChange = null;
-            if (_isUpdatingEditor || _activePage == null || change == null || !Editor.Document.UndoStack.AcceptChanges)
+            var vm = ViewModel;
+            if (vm == null || vm.IsReadOnly || string.IsNullOrEmpty(text))
                 return;
 
-            // Границы берутся из DocumentChangeEventArgs до изменения документа.
-            // Строки вне изменённого диапазона сохраняют свои блоки и оформление.
-            var count = change.Before.Length + Editor.Document.LineCount - change.LineCount;
-            var after = new List<NoteBlock>(count);
-            var moveFirstToEnd = !change.HasPrefix && change.HasSuffix && count > 1 && change.Before.Length == 1;
-            for (var i = 0; i < count; i++)
+            if (selectionEnd > selectionStart && selectionEnd <= block.Text.Length)
             {
-                NoteBlock block;
-                if ((i == count - 1 && change.HasSuffix && (change.Before.Length > 1 || moveFirstToEnd)) &&
-                    (count > 1 || !change.HasPrefix))
-                    block = new NoteBlockViewModel(change.Before[^1]).ToModel();
-                else if (i == 0 && !moveFirstToEnd)
-                    block = new NoteBlockViewModel(change.Before[0]).ToModel();
-                else
-                    block = new NoteBlock();
-                var line = Editor.Document.GetLineByNumber(change.Index + i + 1);
-                ReadDisplayText(block, Editor.Document.GetText(line));
-                after.Add(block);
+                block.Text = block.Text.Remove(selectionStart, selectionEnd - selectionStart);
+                caret = selectionStart;
             }
-            ReplaceBlocks(_activePage, change.Index, change.Before.Length, after);
-            Editor.Document.UndoStack.Push(new BlockChangeOperation(this, _activePage, change.Index, change.Before, after.ToArray()));
+
+            if (vm.PasteText(block, caret, text) is { } target)
+                FocusBlock(target);
         }
 
-        private static void ReadDisplayText(NoteBlock block, string text)
+        // ── Ввод и каретка ────────────────────────────────────────────────
+
+        /// <summary>
+        /// Перевести ввод в строку и поставить каретку.
+        /// Поле строки появляется в дереве не раньше следующего прохода
+        /// разметки, поэтому переход откладывается до её завершения.
+        /// </summary>
+        private void FocusBlock(NoteCaret target)
         {
-            if (block.Type == NoteBlockType.Divider)
+            var vm = ViewModel;
+            if (vm == null)
+                return;
+
+            vm.SelectBlock(target.Block);
+            Dispatcher.UIThread.Post(() =>
             {
-                if (text == GetDisplayText(block))
+                var box = FindEditor(target.Block);
+                if (box == null)
                     return;
-                // Изменённая строка разделителя становится текстом. Ни один
-                // введённый символ не отбрасывается при сохранении или смене страницы.
-                block.Type = NoteBlockType.Paragraph;
-                block.IsChecked = false;
-            }
-            var prefix = GetPrefix(block);
-            if (prefix.Length > 0 && text.StartsWith(prefix, StringComparison.Ordinal))
-                block.Text = text[prefix.Length..];
-            else
-            {
-                if (prefix.Length > 0)
-                {
-                    block.Type = NoteBlockType.Paragraph;
-                    block.IsChecked = false;
-                }
-                block.Text = text;
-            }
+
+                box.BringIntoView();
+                box.Focus();
+                box.CaretIndex = Math.Clamp(target.Caret, 0, box.Text?.Length ?? 0);
+            }, DispatcherPriority.Loaded);
         }
 
-        private static void ReplaceBlocks(NotePageViewModel page, int index, int count, IEnumerable<NoteBlock> blocks)
+        /// <summary>
+        /// Вернуть ввод в выбранную строку после нажатия в ленте.
+        /// Кнопки ленты ввод не забирают, поэтому обычно возвращать нечего;
+        /// исключение — превращение строки в разделитель: поле исчезает
+        /// вместе с текстом, и ввод переходит на соседнюю строку.
+        /// </summary>
+        private void EnsureFocus()
         {
-            var replacements = blocks.Select(block => new NoteBlockViewModel(block)).ToArray();
-            for (var i = 0; i < count; i++)
-                page.Blocks.RemoveAt(index);
-            for (var i = 0; i < replacements.Length; i++)
-                page.Blocks.Insert(index + i, replacements[i]);
-            page.UpdatedAtUtc = DateTime.UtcNow;
-        }
-
-        private void OnDocumentTextChanged(object? sender, EventArgs e)
-        {
-            if (!_isUpdatingEditor)
-                RefreshPresentation();
-        }
-
-        private void OnCaretPositionChanged(object? sender, EventArgs e)
-        {
-            if (!_isUpdatingEditor && _activePage != null && ViewModel?.SelectedPage == _activePage)
-                ViewModel.SelectBlock(GetBlockForLine(Editor.TextArea.Caret.Line));
-        }
-
-        private void RefreshPresentation()
-        {
-            OnCaretPositionChanged(this, EventArgs.Empty);
-            Editor.TextArea.TextView.Redraw();
-        }
-
-        private void SaveEditorPosition()
-        {
-            if (_activePage == null || !_pageEditors.TryGetValue(_activePage, out var state))
+            var vm = ViewModel;
+            if (vm?.SelectedBlock is not { } block)
                 return;
-            state.CaretOffset = Editor.CaretOffset;
-            state.SelectionStart = Editor.SelectionStart;
-            state.SelectionLength = Editor.SelectionLength;
-        }
 
-        private void LoadSelectedPage()
-        {
-            SaveEditorPosition();
-            Editor.Document.Changing -= OnDocumentChanging;
-            Editor.Document.Changed -= OnDocumentChanged;
-            Editor.Document.TextChanged -= OnDocumentTextChanged;
-            _pendingChange = null;
-            _pressedChecklist = null;
-            _activePage = ViewModel?.SelectedPage;
-            foreach (var oldPage in _pageEditors.Keys.Where(page => ViewModel?.Pages.Contains(page) != true).ToArray())
-                _pageEditors.Remove(oldPage);
-
-            _isUpdatingEditor = true;
-            try
+            if (block.IsDivider)
             {
-                if (_activePage == null)
-                    Editor.Document = new TextDocument();
-                else
-                {
-                    // У каждой страницы свой TextDocument и UndoStack. Переход между
-                    // страницами не является редактированием и не смешивает историю.
-                    if (!_pageEditors.TryGetValue(_activePage, out var state))
-                    {
-                        state = new PageEditorState(new TextDocument(string.Join(Environment.NewLine,
-                            _activePage.Blocks.Select(block => GetDisplayText(block.ToModel())))));
-                        _pageEditors.Add(_activePage, state);
-                    }
-                    Editor.Document = state.Document;
-                    Editor.Select(state.SelectionStart, state.SelectionLength);
-                    Editor.CaretOffset = state.CaretOffset;
-                }
-                Editor.Document.Changing += OnDocumentChanging;
-                Editor.Document.Changed += OnDocumentChanged;
-                Editor.Document.TextChanged += OnDocumentTextChanged;
+                var neighbour = vm.StepBlock(block, 1, 0) ?? vm.StepBlock(block, -1, int.MaxValue);
+                if (neighbour is { } target)
+                    FocusBlock(target);
+                return;
             }
-            finally
-            {
-                _isUpdatingEditor = false;
-            }
-            RefreshPresentation();
+
+            var box = FindEditor(block);
+            if (box is { IsFocused: false })
+                FocusBlock(new NoteCaret(block, block.Text.Length));
         }
 
-        private NoteBlockViewModel? GetBlockForLine(int lineNumber)
-        {
-            var blocks = _activePage?.Blocks;
-            var index = lineNumber - 1;
-            return blocks != null && index >= 0 && index < blocks.Count ? blocks[index] : null;
-        }
-
-        private IBrush? FindBrush(string resourceKey) =>
-            this.TryFindResource(resourceKey, out var value) ? value as IBrush : null;
-
-        private static string GetDisplayText(NoteBlock block) =>
-            block.Type == NoteBlockType.Divider && block.Text.Length == 0 ? DividerText : GetPrefix(block) + block.Text;
-
-        private static string GetPrefix(NoteBlockViewModel block) => GetPrefix(block.Type, block.IsChecked);
-        private static string GetPrefix(NoteBlock block) => GetPrefix(block.Type, block.IsChecked);
-        private static string GetPrefix(NoteBlockType type, bool isChecked) => type switch
-        {
-            NoteBlockType.Bullet => "• ",
-            NoteBlockType.Checklist => isChecked ? "☑ " : "☐ ",
-            NoteBlockType.Quote => "│ ",
-            _ => string.Empty
-        };
-
-        private static bool TryParseShortcut(string text, out NoteBlockType type, out string content)
-        {
-            var trimmed = text.TrimStart();
-            var result = trimmed switch
-            {
-                "---" => (NoteBlockType.Divider, string.Empty),
-                var value when value.StartsWith("- [ ] ", StringComparison.Ordinal) => (NoteBlockType.Checklist, value[6..]),
-                var value when value.StartsWith("### ", StringComparison.Ordinal) => (NoteBlockType.Heading3, value[4..]),
-                var value when value.StartsWith("## ", StringComparison.Ordinal) => (NoteBlockType.Heading2, value[3..]),
-                var value when value.StartsWith("# ", StringComparison.Ordinal) => (NoteBlockType.Heading1, value[2..]),
-                var value when value.StartsWith("- ", StringComparison.Ordinal) => (NoteBlockType.Bullet, value[2..]),
-                var value when value.StartsWith("> ", StringComparison.Ordinal) => (NoteBlockType.Quote, value[2..]),
-                _ => (NoteBlockType.Paragraph, text)
-            };
-            type = result.Item1;
-            content = result.Item2;
-            return type != NoteBlockType.Paragraph;
-        }
-
-        private sealed record PendingChange(int Index, int LineCount, NoteBlock[] Before, bool HasPrefix, bool HasSuffix);
-
-        private sealed class PageEditorState(TextDocument document)
-        {
-            public TextDocument Document { get; } = document;
-            public int CaretOffset { get; set; }
-            public int SelectionStart { get; set; }
-            public int SelectionLength { get; set; }
-        }
-
-        private sealed class BlockChangeOperation(NotesView owner, NotePageViewModel page, int index,
-            NoteBlock[] before, NoteBlock[] after) : IUndoableOperation
-        {
-            public void Undo() => Restore(after.Length, before);
-            public void Redo() => Restore(before.Length, after);
-
-            private void Restore(int count, NoteBlock[] blocks)
-            {
-                ReplaceBlocks(page, index, count, blocks);
-                if (owner._activePage == page)
-                    owner.RefreshPresentation();
-            }
-        }
-
-        private sealed class NotesLineTransformer(NotesView owner) : DocumentColorizingTransformer
-        {
-            protected override void ColorizeLine(DocumentLine line)
-            {
-                var block = owner.GetBlockForLine(line.LineNumber);
-                if (block == null || line.Length == 0)
-                    return;
-                ChangeLinePart(line.Offset, line.EndOffset, element =>
-                {
-                    if (block.IsHeading)
-                    {
-                        element.TextRunProperties.SetFontRenderingEmSize(block.EditorFontSize);
-                        element.TextRunProperties.SetTypeface(new Typeface(owner.Editor.FontFamily, FontStyle.Normal, FontWeight.SemiBold));
-                    }
-                    if (block.IsHighlighted && owner.FindBrush("AccentSubtleBrush") is { } highlight)
-                        element.TextRunProperties.SetBackgroundBrush(highlight);
-                    if (block.IsVisuallyStruck)
-                        element.TextRunProperties.SetTextDecorations(TextDecorations.Strikethrough);
-                    if (block.Type is NoteBlockType.Quote or NoteBlockType.Divider && owner.FindBrush("TextMutedBrush") is { } muted)
-                        element.TextRunProperties.SetForegroundBrush(muted);
-                });
-            }
-        }
+        /// <summary>
+        /// Найти поле ввода строки.
+        /// Поиск идёт по содержимому, а не по имени: строк на странице много,
+        /// имя в шаблоне у всех одно, и различает их именно модель строки.
+        /// </summary>
+        private TextBox? FindEditor(NoteBlockViewModel block) =>
+            BlocksHost.GetVisualDescendants()
+                .OfType<TextBox>()
+                .FirstOrDefault(box => ReferenceEquals(box.DataContext, block));
     }
 }

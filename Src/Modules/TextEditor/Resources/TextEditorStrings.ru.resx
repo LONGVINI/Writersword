@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <!-- 
     Microsoft ResX Schema 
@@ -1084,52 +1084,64 @@
     <value>Обновить</value>
   </data>
   <data name="Toc_Update_Tip" xml:space="preserve">
-    <value>Пересобрать список по нынешним заголовкам и номерам страниц.</value>
+    <value>Пересобрать список по нынешним заголовкам и номерам страниц</value>
+  </data>
+  <data name="Toc_UpdatePages" xml:space="preserve">
+    <value>Номера</value>
+  </data>
+  <data name="Toc_UpdatePages_Tip" xml:space="preserve">
+    <value>Обновить только номера страниц. Названия строк остаются как есть — вместе с вашими правками в них</value>
   </data>
   <data name="Toc_Insert" xml:space="preserve">
     <value>Вставить</value>
   </data>
   <data name="Toc_Insert_Tip" xml:space="preserve">
-    <value>Вставить ещё одно оглавление на место каретки.</value>
+    <value>Вставить ещё одно оглавление на место каретки</value>
   </data>
   <data name="Toc_GoTo" xml:space="preserve">
     <value>Перейти</value>
   </data>
   <data name="Toc_GoTo_Tip" xml:space="preserve">
-    <value>Уйти к главе, на которую указывает строка под кареткой.</value>
+    <value>Уйти к главе, на которую указывает строка под кареткой</value>
   </data>
   <data name="Toc_Remove" xml:space="preserve">
     <value>Убрать</value>
   </data>
   <data name="Toc_Remove_Tip" xml:space="preserve">
-    <value>Убрать это оглавление из рукописи.</value>
+    <value>Убрать это оглавление из рукописи</value>
   </data>
   <data name="Toc_LevelsAll" xml:space="preserve">
     <value>Все</value>
   </data>
   <data name="Toc_Levels1_Tip" xml:space="preserve">
-    <value>Только главы.</value>
+    <value>Только главы</value>
   </data>
   <data name="Toc_Levels3_Tip" xml:space="preserve">
-    <value>Главы и два уровня под ними.</value>
+    <value>Главы и два уровня под ними</value>
   </data>
   <data name="Toc_Levels5_Tip" xml:space="preserve">
-    <value>До пятого уровня.</value>
+    <value>До пятого уровня</value>
   </data>
   <data name="Toc_Levels9_Tip" xml:space="preserve">
-    <value>Все девять уровней.</value>
+    <value>Все девять уровней</value>
   </data>
   <data name="Toc_MinLevel" xml:space="preserve">
     <value>С уровня</value>
   </data>
   <data name="Toc_MinLevel_Tip" xml:space="preserve">
-    <value>Самый верхний уровень заголовков, попадающих в список.</value>
+    <value>Самый верхний уровень заголовков, попадающих в список</value>
   </data>
   <data name="Toc_LevelIndent" xml:space="preserve">
     <value>Отступ</value>
   </data>
   <data name="Toc_LevelIndent_Tip" xml:space="preserve">
-    <value>Шаг сдвига строки на один уровень, в пунктах.</value>
+    <value>Шаг сдвига строки на один уровень, в пунктах</value>
+  </data>
+  <data name="Toc_LeaderDensity" xml:space="preserve">
+    <value>Плотность</value>
+  </data>
+  <data name="Toc_LeaderDensity_Tip" xml:space="preserve">
+    <value>Насколько густо стоят знаки заполнителя. 100% — обычный шаг, 200% — вдвое гуще</value>
   </data>
   <data name="Toc_Leader_Dots" xml:space="preserve">
     <value>Точками</value>
@@ -1159,19 +1171,19 @@
     <value>Само обновлять</value>
   </data>
   <data name="Toc_AutoUpdate_Tip" xml:space="preserve">
-    <value>Обновлять номера страниц, когда книга перекомпонована.</value>
+    <value>Обновлять номера страниц, когда книга перекомпонована</value>
   </data>
   <data name="Toc_Title_Tip" xml:space="preserve">
-    <value>Название над списком. Пусто — название по умолчанию.</value>
+    <value>Название над списком. Пусто — название по умолчанию</value>
   </data>
   <data name="Toc_Title_Placeholder" xml:space="preserve">
     <value>Оглавление</value>
   </data>
   <data name="Toc_Style_Level_Tip" xml:space="preserve">
-    <value>Строки какого уровня оформляются.</value>
+    <value>Строки какого уровня оформляются</value>
   </data>
   <data name="Toc_Style_Size_Tip" xml:space="preserve">
-    <value>Кегль строк этого уровня.</value>
+    <value>Кегль строк этого уровня</value>
   </data>
   <data name="Toc_Style_Bold" xml:space="preserve">
     <value>Полужирный</value>
@@ -1183,6 +1195,6 @@
     <value>Сбросить</value>
   </data>
   <data name="Toc_Style_Reset_Tip" xml:space="preserve">
-    <value>Вернуть стилям оглавления встроенный вид.</value>
+    <value>Вернуть стилям оглавления встроенный вид</value>
   </data>
 </root>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Input;
@@ -894,11 +894,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             _fontPreviewActive = false;
 
-            if (commit && _fontFamily is not null)
-            {
-                _target.SetFontFamily(_fontFamily);
-            }
-            else if (!commit)
+            if (!commit)
             {
                 _fontFamily = _previewOriginalFont;
                 _fontFamilyText = _previewOriginalFont;
@@ -906,7 +902,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 this.RaisePropertyChanged(nameof(CurrentFontFamilyText));
             }
 
-            _target.EndFontPreview(commit);
+            // Гарнитуру применяет закрытие сеанса, и только оно. Раньше рядом стоял
+            // ещё и SetFontFamily: рукопись меняли оба, каждый писал свой шаг, и
+            // первый Ctrl+Z снимал второй из них — на экране при этом не менялось
+            // ничего, потому что первый уже поставил ту же гарнитуру.
+            _target.EndFontPreview(commit, commit ? _fontFamily : null);
             _previewOriginalFont = null;
         }
     }

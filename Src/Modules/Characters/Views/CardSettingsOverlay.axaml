@@ -54,6 +54,36 @@
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
+
+		<!-- Кнопки действий над аватаркой. Вид тот же, что у «Ко всем»
+		     справа в строках ниже: это соседи по одному окну, и выглядеть
+		     они должны одинаково. -->
+		<Style Selector="Button.cardAction">
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="Padding" Value="10,4"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Button.cardAction:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<!-- Разрушающее действие. Критический красный один на всё приложение
+		     и лежит под именем конфликта горячих клавиш — берём его, чтобы не
+		     заводить четвёртый оттенок красного. -->
+		<Style Selector="Button.cardAction.danger:pointerover /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.cardAction:disabled /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+		</Style>
 	</UserControl.Styles>
 
 	<Grid>
@@ -148,6 +178,35 @@
 						</StackPanel>
 					</Panel>
 				</Border>
+
+				<!-- Аватарка: кадр и снятие. Стоят здесь, а не кнопками вокруг
+				     самого портрета в карточке: там вокруг кружка уже сидели
+				     цвет и шестерёнка, и ещё две кнопки превращали портрет в
+				     пульт. Правки видны в превью сразу, а к персонажу уходят
+				     по OK — как и всё остальное в этом окне.
+
+				     Пока картинки нет, обе гаснут, но не пропадают: спрятанные
+				     означали бы, что кадрирования и снятия у персонажа не
+				     существует вовсе. -->
+				<Grid ColumnDefinitions="*,Auto">
+					<TextBlock Grid.Column="0" Text="Аватарка" FontSize="13"
+					           Foreground="{DynamicResource TextPrimaryBrush}"
+					           VerticalAlignment="Center"/>
+					<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+						<Button Classes="cardAction"
+						        Content="Кадрировать"
+						        Click="OnCropAvatarClick"
+						        IsEnabled="{Binding HasAvatar}"
+						        behaviours:TooltipBehavior.Tip="Кадрировать"
+						        behaviours:TooltipBehavior.Description="Выбрать свой кадр этой картинки. Окно откроется на той форме, что выбрана здесь же — кружок или полоска. Файл не копируется: кадр запомнится только этому персонажу"/>
+						<Button Classes="cardAction danger"
+						        Content="Убрать"
+						        Click="OnClearAvatarClick"
+						        IsEnabled="{Binding HasAvatar}"
+						        behaviours:TooltipBehavior.Tip="Убрать аватарку"
+						        behaviours:TooltipBehavior.Description="Персонаж вернётся к буквенной заглушке. Картинка остаётся в папке — её можно поставить снова. «Отмена» вернёт всё как было, а после OK возвращает Ctrl+Z"/>
+					</StackPanel>
+				</Grid>
 
 				<!-- Вид аватара: кружок или полоска на всю ширину -->
 				<Grid ColumnDefinitions="*,Auto">

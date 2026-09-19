@@ -145,6 +145,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         private string? _themeSheetHex;
         private string? _themeInkHex;
         private string? _themeFieldHex;
+        private string? _themeTabHex;
 
         // ── Вид рабочей области ───────────────────────────────────────────
         // Линейка стоит вплотную к листу и обязана меняться вместе с ним: светлая
@@ -181,14 +182,30 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         }
 
         /// <summary>
+        /// Цвет позиций табуляции (HEX): засечки на шкале и квадрат в углу линеек.
+        /// Пусто — прежний бирюзовый.
+        /// </summary>
+        public string? ThemeTabHex
+        {
+            get => _themeTabHex;
+            private set => this.RaiseAndSetIfChanged(ref _themeTabHex, value);
+        }
+
+        /// <summary>
         /// Ставит линейке цвета листа. Пустой вызов (active = false) возвращает
         /// прежние серые тона.
         /// </summary>
         public void ApplyTheme(bool active, string? sheetHex, string? inkHex, string? fieldHex)
+            => ApplyTheme(active, sheetHex, inkHex, fieldHex, null);
+
+        /// <summary>То же, но с цветом позиций табуляции.</summary>
+        public void ApplyTheme(
+            bool active, string? sheetHex, string? inkHex, string? fieldHex, string? tabHex)
         {
             ThemeSheetHex = sheetHex;
             ThemeInkHex = inkHex;
             ThemeFieldHex = fieldHex;
+            ThemeTabHex = tabHex;
 
             // Признак ставится последним: по нему линейка решает, брать ли цвета, и
             // выставленный раньше них он вызвал бы перерисовку старыми.

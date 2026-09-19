@@ -1,9 +1,8 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels"
              xmlns:toolbar="using:Writersword.Modules.TextEditor.Views.Toolbar"
              xmlns:reading="using:Writersword.Modules.TextEditor.Views.Reading"
-             xmlns:backdrops="using:Writersword.Modules.TextEditor.Views.Backdrops"
              xmlns:statusbar="using:Writersword.Modules.TextEditor.Views.StatusBar"
              xmlns:doc="using:Writersword.Modules.TextEditor.Document"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
@@ -46,12 +45,6 @@
 		<reading:ReadingThemeOverlay x:Name="ThemeOverlay"
 		                             Grid.Row="0" Grid.RowSpan="3"
 		                             ZIndex="213"/>
-
-		<!-- Окно фонов: папки и плитки. Слоем выше видов чтения — открывается
-		     поверх них, если человек пришёл сюда из окна видов. -->
-		<backdrops:BackdropPickerOverlay x:Name="BackdropOverlay"
-		                                 Grid.Row="0" Grid.RowSpan="3"
-		                                 ZIndex="216"/>
 
 		<!-- Окно «Статистика» — поверх всего модуля. Слой выше списка гарнитур:
 		     оно открывается из строки состояния и из горячей клавиши, и уходить

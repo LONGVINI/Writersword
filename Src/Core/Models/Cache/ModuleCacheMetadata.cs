@@ -6,7 +6,7 @@ namespace Writersword.Core.Models.Cache
 {
     /// <summary>
     /// Метаданные кеша проекта
-    /// Хранятся в cache.json внутри .writersword.wsasd (ZIP архив)
+    /// Хранятся в таблице meta базы .writersword.wsasd
     /// </summary>
     public class ModuleCacheMetadata
     {

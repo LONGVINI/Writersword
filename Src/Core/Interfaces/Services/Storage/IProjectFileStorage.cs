@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Writersword.Core.Interfaces.Services
 {
     /// <summary>
-    /// Интерфейс для работы с файлами внутри проекта (ZIP архива)
+    /// Интерфейс для работы с файлами внутри проекта (база SQLite)
     /// Модули используют этот интерфейс через DocumentContext
     /// </summary>
     public interface IProjectFileStorage : IDisposable

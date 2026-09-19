@@ -199,7 +199,7 @@ namespace Writersword.ViewModels
 
         /// <summary>
         /// Сохранить в кеш асинхронно
-        /// Сохраняет только если данные отличаются от сохранённого ZIP файла
+        /// Сохраняет только если данные отличаются от сохранённого файла проекта
         /// Ключ — moduleType
         /// </summary>
         public async Task SaveToCacheAsync(Func<IEnumerable<IModule>> getActiveModules)
@@ -207,7 +207,7 @@ namespace Writersword.ViewModels
             try
             {
                 var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
-                var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+                var cacheService = App.Services.GetRequiredService<IProjectCacheService>();
                 var projectService = App.Services.GetRequiredService<IProjectService>();
 
                 var activeModules = getActiveModules().ToList();
@@ -232,7 +232,7 @@ namespace Writersword.ViewModels
                 {
                     // Сравнение в фоне и КАНОНИЧЕСКОЕ (через IHashService: объект,
                     // JObject и JSON-строка с одинаковым содержимым дают один хеш).
-                    // Наивное сравнение Equals(объект, строка-из-ZIP) всегда давало
+                    // Наивное сравнение Equals(объект, строка-из-проекта) всегда давало
                     // «изменилось» для модулей, возвращающих объекты (Characters),
                     // кеш писался при каждом переключении вкладки без единой правки,
                     // и при следующем открытии вкладка попадала в режим восстановления.
@@ -266,7 +266,7 @@ namespace Writersword.ViewModels
                     if (dataChanged)
                     {
                         await cacheService.SaveCacheAsync(FilePath!, _project.Id, customData, sessionData);
-                        _logger.LogDebug("Cache saved (differs from ZIP)");
+                        _logger.LogDebug("Cache saved (differs from project file)");
                     }
                     else
                     {

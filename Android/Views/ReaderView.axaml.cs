@@ -326,7 +326,7 @@ namespace Writersword.Mobile.Views
 
             try
             {
-                foreach (var path in storage.GetFiles(ProjectFonts.ZipFolder))
+                foreach (var path in storage.GetFiles(ProjectFonts.FontsFolder))
                 {
                     var data = storage.ReadFile(path);
                     if (data is not { Length: > 0 }) continue;

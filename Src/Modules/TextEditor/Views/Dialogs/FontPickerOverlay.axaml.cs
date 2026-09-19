@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
@@ -51,6 +52,15 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
         private TextBlock _emptyLabel = null!;
         private ListBox _fontList = null!;
 
+        /// <summary>
+        /// Строки списка. Живая коллекция, а не готовый список: перетаскивание
+        /// переставляет строку на месте, и список обязан узнать об этом сам.
+        /// </summary>
+        private ObservableCollection<FontEntry>? _items;
+
+        /// <summary>Сколько строк в разделе закреплённых — за него перетаскивание не выходит.</summary>
+        private int _pinnedCount;
+
         private IReadOnlyList<string> _allFonts = Array.Empty<string>();
         private Action<string>? _preview;
         private string? _current;
@@ -72,8 +82,16 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _searchBox.TextChanged += OnSearchTextChanged;
             _searchBox.KeyDown += OnSearchKeyDown;
             _fontList.SelectionChanged += OnSelectionChanged;
+
+            // Нажатие перехватывается на погружении: пункт списка помечает событие
+            // обработанным, выбирая себя, и до обычного обработчика оно уже не доходит —
+            // перетаскивание не начиналось вовсе. Движение и отпускание пункт не трогает,
+            // им хватает обычной подписки.
+            _fontList.AddHandler(PointerPressedEvent, OnListPointerPressed, RoutingStrategies.Tunnel);
+
             _fontList.PointerMoved += OnListPointerMoved;
             _fontList.PointerReleased += OnListPointerReleased;
+            _fontList.PointerCaptureLost += OnListCaptureLost;
             _fontList.KeyDown += OnListKeyDown;
         }
 
@@ -196,11 +214,16 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             // списком не сообщает ничего.
             bool grouped = pinned.Count > 0 || recent.Count > 0;
 
-            var items = new List<FontEntry>(pinned.Count + recent.Count + all.Count);
-            AppendSection(items, pinned, grouped ? SectionPinned : null, pinnedSet);
-            AppendSection(items, recent, grouped ? SectionRecent : null, pinnedSet);
-            AppendSection(items, all, grouped ? SectionAll : null, pinnedSet);
+            var items = new ObservableCollection<FontEntry>();
+            AppendSection(items, pinned, grouped ? SectionPinned : null, pinnedSet, inPinnedSection: true);
+            AppendSection(items, recent, grouped ? SectionRecent : null, pinnedSet, inPinnedSection: false);
+            AppendSection(items, all, grouped ? SectionAll : null, pinnedSet, inPinnedSection: false);
 
+            // Сколько строк занимает раздел закреплённых. Перетаскивание не выпускает
+            // строку за эту границу: порядок есть только здесь.
+            _pinnedCount = pinned.Count;
+
+            _items = items;
             _fontList.ItemsSource = items;
             _fontList.IsVisible = items.Count > 0;
             _emptyLabel.IsVisible = items.Count == 0;
@@ -216,13 +239,15 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             query.Length == 0 || family.Contains(query, StringComparison.OrdinalIgnoreCase);
 
         private static void AppendSection(
-            List<FontEntry> items,
+            ObservableCollection<FontEntry> items,
             List<string> names,
             string? title,
-            HashSet<string> pinnedSet)
+            HashSet<string> pinnedSet,
+            bool inPinnedSection)
         {
             for (int i = 0; i < names.Count; i++)
-                items.Add(new FontEntry(names[i], pinnedSet.Contains(names[i]), i == 0 ? title : null));
+                items.Add(new FontEntry(
+                    names[i], pinnedSet.Contains(names[i]), i == 0 ? title : null, inPinnedSection));
         }
 
         private void ScrollToSelected()
@@ -239,19 +264,174 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
         // ── Закрепление ───────────────────────────────────────────────────
 
         /// <summary>
-        /// Звёздочка. Закрепление переносит гарнитуру в верхний раздел, поэтому
-        /// список пересобирается, а выделение уезжает туда же вслед за ней.
+        /// Звёздочка. Зажигается на месте, список при этом не двигается.
+        ///
+        /// Раньше закрепление пересобирало разделы и прокручивало к выделенной строке,
+        /// а строка эта только что уехала наверх, в раздел закреплённых, — человека
+        /// выбрасывало к началу списка из того места, где он смотрел шрифты. Теперь
+        /// разделы перестраиваются при следующем открытии: наверху лежит то, что
+        /// закреплено, а звезда загорается там, куда её поставили.
+        ///
+        /// Строк одной гарнитуры в списке может быть две — в закреплённых и среди
+        /// всех, — и звезда меняется у обеих: это один и тот же шрифт.
         /// </summary>
         private void OnPinClick(object? sender, RoutedEventArgs e)
         {
             if (sender is not Button button || button.DataContext is not FontEntry entry)
                 return;
 
-            FontUsage.TogglePin(entry.Name);
-            RebuildItems();
-            ScrollToSelected();
+            bool pinned = FontUsage.TogglePin(entry.Name);
+
+            if (_items is not null)
+            {
+                foreach (var row in _items)
+                    if (string.Equals(row.Name, entry.Name, StringComparison.OrdinalIgnoreCase))
+                        row.IsPinned = pinned;
+            }
+            else
+            {
+                entry.IsPinned = pinned;
+            }
 
             e.Handled = true;
+        }
+
+        // ── Перестановка закреплённых ─────────────────────────────────────
+        // Порядок закреплённых человек задаёт сам: он ставит звёздочки в том порядке,
+        // в каком ему удобно их видеть, а потом перетаскивает строки. Порядок есть
+        // только здесь — полный перечень идёт по алфавиту, недавние по времени.
+        //
+        // Строка переезжает под указателем сразу, без полупрозрачного двойника и линии
+        // вставки: закреплённых у человека три-четыре, и на таком списке они мешают.
+
+        /// <summary>Строка, которую тащат. null — перетаскивания нет.</summary>
+        private FontEntry? _dragEntry;
+
+        private double _dragStartY;
+
+        /// <summary>
+        /// Порог сдвинулся, и нажатие стало перетаскиванием. По этому же признаку
+        /// отпускание не выбирает гарнитуру: человек переставлял строку, а не выбирал
+        /// шрифт, и применить её к рукописи было бы неожиданностью.
+        /// </summary>
+        private bool _dragging;
+
+        private const double DragThresholdPx = 5.0;
+
+        private void OnListPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            _dragEntry = null;
+            _dragging = false;
+
+            if (e.GetCurrentPoint(_fontList).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
+                return;
+
+            // Звёздочка тащить не должна: по ней жмут, а не таскают.
+            if (IsInsideStar(e.Source)) return;
+
+            if (EntryFromSource(e.Source) is not { InPinnedSection: true } entry) return;
+            if (_pinnedCount <= 1) return;
+
+            _dragEntry = entry;
+            _dragStartY = e.GetPosition(_fontList).Y;
+        }
+
+        private void OnListCaptureLost(object? sender, PointerCaptureLostEventArgs e) => EndDrag();
+
+        private void EndDrag()
+        {
+            if (_dragEntry is not null) _dragEntry.IsDragging = false;
+
+            _dragEntry = null;
+            _dragging = false;
+        }
+
+        /// <summary>Нажатие пришлось на звёздочку или на то, что внутри неё.</summary>
+        private static bool IsInsideStar(object? source)
+        {
+            for (var visual = source as Visual; visual is not null; visual = visual.GetVisualParent())
+            {
+                if (visual is Button button && button.Classes.Contains("Star")) return true;
+                if (visual is ListBox) break;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Тащит строку по разделу закреплённых. Возвращает true, если перестановка
+        /// идёт: вызывающий тогда не показывает предпросмотр — рукопись под мышью
+        /// перекладываться на каждую строку не должна.
+        /// </summary>
+        private bool DragPinnedRow(PointerEventArgs e)
+        {
+            if (_dragEntry is null || _items is null) return false;
+
+            if (!e.GetCurrentPoint(_fontList).Properties.IsLeftButtonPressed)
+            {
+                EndDrag();
+                return false;
+            }
+
+            double y = e.GetPosition(_fontList).Y;
+
+            if (!_dragging)
+            {
+                if (Math.Abs(y - _dragStartY) < DragThresholdPx) return false;
+                _dragging = true;
+
+                // Строка приподнимается: без этого перестановка выглядит как рябь —
+                // строки меняются местами, и непонятно, какую из них держат.
+                _dragEntry.IsDragging = true;
+            }
+
+            int from = _items.IndexOf(_dragEntry);
+            if (from < 0 || from >= _pinnedCount)
+            {
+                EndDrag();
+                return false;
+            }
+
+            if (EntryFromSource(e.Source) is not { } over) return true;
+
+            int to = _items.IndexOf(over);
+
+            // За раздел закреплённых строка не выходит: ниже начинаются разделы, где
+            // порядка нет, и место в них ничего не значит.
+            if (to < 0 || to >= _pinnedCount) return true;
+            if (to == from) return true;
+
+            _items.Move(from, to);
+            RefreshPinnedSectionTitle();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Заголовок раздела живёт у его первой строки. После перестановки первой
+        /// становится другая — заголовок переезжает к ней, иначе он остался бы висеть
+        /// посреди списка.
+        /// </summary>
+        private void RefreshPinnedSectionTitle()
+        {
+            if (_items is null || _pinnedCount <= 0) return;
+
+            string? title = _items[0].SectionTitle ?? SectionPinned;
+
+            for (int i = 0; i < _pinnedCount && i < _items.Count; i++)
+                _items[i].SectionTitle = i == 0 ? title : null;
+        }
+
+        /// <summary>Записывает новый порядок закреплённых.</summary>
+        private void CommitPinnedOrder()
+        {
+            if (_items is null || _pinnedCount <= 0) return;
+
+            var order = new List<string>(_pinnedCount);
+            for (int i = 0; i < _pinnedCount && i < _items.Count; i++)
+                order.Add(_items[i].Name);
+
+            FontUsage.SetPinnedOrder(order);
         }
 
         // ── Предпросмотр ──────────────────────────────────────────────────
@@ -301,13 +481,30 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
 
         private void OnListPointerMoved(object? sender, PointerEventArgs e)
         {
+            // Идёт перестановка закреплённых — предпросмотр молчит: под мышью проезжают
+            // чужие строки, и перекладывать рукопись на каждую значит мигать ею.
+            if (DragPinnedRow(e)) return;
+
             if (EntryFromSource(e.Source) is { } entry)
                 SchedulePreview(entry.Name);
         }
 
         private void OnListPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
+            bool wasDragging = _dragging;
+            if (wasDragging) CommitPinnedOrder();
+            EndDrag();
+
             if (e.InitialPressMouseButton != MouseButton.Left) return;
+
+            // Перетаскивание гарнитуру не выбирает: человек переставлял строку, а не
+            // выбирал шрифт, и применить её к рукописи было бы неожиданностью.
+            if (wasDragging)
+            {
+                e.Handled = true;
+                return;
+            }
+
             if (EntryFromSource(e.Source) is not { } entry) return;
 
             Complete(entry.Name);
@@ -418,7 +615,10 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             StopPreviewTimer();
 
             IsVisible = false;
+            EndDrag();
             _fontList.ItemsSource = null;
+            _items = null;
+            _pinnedCount = 0;
             _allFonts = Array.Empty<string>();
             _preview = null;
             _current = null;

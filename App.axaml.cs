@@ -253,7 +253,7 @@ namespace Writersword
             services.AddTransient<IWorkspaceAutoSaveService, WorkspaceAutoSaveService>();
             services.AddSingleton<IWorkspaceConfigService, WorkspaceConfigService>();
             services.AddSingleton<IHashService, HashService>();
-            services.AddSingleton<IZipCacheService, ZipCacheService>();
+            services.AddSingleton<IProjectCacheService, SqliteCacheService>();
             services.AddSingleton<ICacheUpdateService, CacheUpdateService>();
             services.AddSingleton<IAutoSaveService, AutoSaveService>();
             services.AddSingleton<IDataComparisonService, DataComparisonService>();
@@ -532,7 +532,7 @@ namespace Writersword
 
                     // Кеш .wsasd — страховка от падения, а не хранилище. После штатного
                     // закрытия совпадающий с проектом кеш остаётся лежать и при следующем
-                    // запуске подставляется вместо ZIP: allData в SaveDocumentAsync
+                    // запуске подставляется вместо проекта: allData в SaveDocumentAsync
                     // стартует именно с него. Поэтому чистим здесь.
                     // Ожидание синхронное: ShutdownRequested не поддерживает await, а
                     // после выхода из обработчика приложение уже закрывается. Работа

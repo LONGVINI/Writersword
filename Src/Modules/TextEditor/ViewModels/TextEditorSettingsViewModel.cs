@@ -1,4 +1,4 @@
-using ReactiveUI;
+﻿using ReactiveUI;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -41,6 +41,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
     public sealed class TextEditorSettingsViewModel : ReactiveObject
     {
+        // Набор, из которого окно открылось. В окно вынесена лишь часть настроек, и
+        // всё остальное берётся отсюда — иначе оно потерялось бы при первом же «ОК».
+        private readonly TextEditorSettings _base;
+
         public SettingsFieldContext Context { get; }
 
         public SettingValue<string> FontFamily { get; }
@@ -131,6 +135,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             TextEditorSettings global)
         {
             Context = SettingsFieldContext.Global;
+            _base = global;
 
             FontFamily = new SettingValue<string>(hardcoded.FontFamily, global.FontFamily);
             FontSize = new SettingValue<double>(hardcoded.FontSize, global.FontSize);
@@ -160,6 +165,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             TextEditorSettings current)
         {
             Context = SettingsFieldContext.Local;
+            _base = current;
 
             FontFamily = new SettingValue<string>(hardcoded.FontFamily, global.FontFamily, current.FontFamily);
             FontSize = new SettingValue<double>(hardcoded.FontSize, global.FontSize, current.FontSize);
@@ -234,24 +240,46 @@ namespace Writersword.Modules.TextEditor.ViewModels
             return col;
         }
 
-        public TextEditorSettings GetSettings() => new()
+        /// <summary>
+        /// Набор настроек по состоянию окна.
+        ///
+        /// За основу берётся тот набор, из которого окно открывалось, и в него
+        /// кладутся правки. Раньше набор собирался с нуля, и всё, чего в окне нет,
+        /// возвращалось к заводскому: виды чтения пропадали из списка, вид листа при
+        /// правке слетал на белый, подача чтения — на разворот, цвет каретки — на
+        /// стандартный. Достаточно было один раз заглянуть в настройки.
+        /// </summary>
+        public TextEditorSettings GetSettings() => ApplyTo(_base.Clone());
+
+        /// <summary>
+        /// Накладывает правки окна на переданный набор и возвращает его.
+        ///
+        /// Нужно тем, кто спрашивает настройки позже, чем окно открылось: снимок,
+        /// с которым окно завелось, к тому времени успевает устареть — виды чтения,
+        /// их порядок и спрятанные правятся в других местах программы. Собранный от
+        /// снимка набор возвращал всё это к тому, что было при открытии окна, и
+        /// заведённый после вид пропадал при выходе.
+        /// </summary>
+        public TextEditorSettings ApplyTo(TextEditorSettings settings)
         {
-            FontFamily = FontFamily.Value,
-            FontSize = FontSize.Value,
-            SpellCheckEnabled = SpellCheckEnabled.Value,
-            DefaultLanguage = DefaultLanguage.Value,
-            ShowSpellErrors = ShowSpellErrors.Value,
-            AutoReplaceEnabled = AutoReplaceEnabled.Value,
-            ShowRuler = ShowRuler.Value,
-            ShowFormattingMarks = ShowFormattingMarks.Value,
-            DefaultViewMode = DefaultViewMode.Value,
-            DefaultZoom = DefaultZoom.Value,
-            AutoSaveIntervalSeconds = AutoSaveIntervalSeconds.Value,
-            MonitorSizeInches = MonitorSizeInches.Value,
-            BreakOnHyphen = BreakOnHyphen.Value,
-            SubstituteMissingGlyphs = SubstituteMissingGlyphs.Value,
-            SubstituteFontFamily = SubstituteFontFamily.Value,
-            ScriptFontMap = ScriptFonts.ToDictionary(e => e.ScriptKey, e => e.FontFamily)
-        };
+            settings.FontFamily = FontFamily.Value;
+            settings.FontSize = FontSize.Value;
+            settings.SpellCheckEnabled = SpellCheckEnabled.Value;
+            settings.DefaultLanguage = DefaultLanguage.Value;
+            settings.ShowSpellErrors = ShowSpellErrors.Value;
+            settings.AutoReplaceEnabled = AutoReplaceEnabled.Value;
+            settings.ShowRuler = ShowRuler.Value;
+            settings.ShowFormattingMarks = ShowFormattingMarks.Value;
+            settings.DefaultViewMode = DefaultViewMode.Value;
+            settings.DefaultZoom = DefaultZoom.Value;
+            settings.AutoSaveIntervalSeconds = AutoSaveIntervalSeconds.Value;
+            settings.MonitorSizeInches = MonitorSizeInches.Value;
+            settings.BreakOnHyphen = BreakOnHyphen.Value;
+            settings.SubstituteMissingGlyphs = SubstituteMissingGlyphs.Value;
+            settings.SubstituteFontFamily = SubstituteFontFamily.Value;
+            settings.ScriptFontMap = ScriptFonts.ToDictionary(e => e.ScriptKey, e => e.FontFamily);
+
+            return settings;
+        }
     }
 }

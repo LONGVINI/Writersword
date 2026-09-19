@@ -340,14 +340,10 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
 
         public ObservableCollection<CharacterAvatarPickerItemViewModel> RecentAvatars { get; } = new();
         public ObservableCollection<CharacterAvatarPickerItemViewModel> VisibleRecentAvatars { get; } = new();
-        public ObservableCollection<CharacterAvatarPickerItemViewModel> ProjectAvatars { get; } = new();
-        public ObservableCollection<CharacterAvatarPickerItemViewModel> VisibleProjectAvatars { get; } = new();
         public ObservableCollection<CharacterAvatarPackSectionViewModel> Packs { get; } = new();
         public ObservableCollection<CharacterAvatarPackSectionViewModel> VisiblePacks { get; } = new();
 
         public bool HasRecentAvatars => VisibleRecentAvatars.Any();
-        public bool HasProjectAvatars => VisibleProjectAvatars.Any();
-        public bool HasNoProjectAvatars => !VisibleProjectAvatars.Any();
         public bool HasPacks => Packs.Any();
 
         public string RecentsTitle => CharacterAvatarPackSectionViewModel
@@ -420,13 +416,10 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
         public void Refresh()
         {
             foreach (var p in Packs) p.Dispose();
-            foreach (var i in ProjectAvatars) i.Dispose();
             foreach (var i in RecentAvatars) i.Dispose();
 
             RecentAvatars.Clear();
             VisibleRecentAvatars.Clear();
-            ProjectAvatars.Clear();
-            VisibleProjectAvatars.Clear();
             Packs.Clear();
             VisiblePacks.Clear();
 
@@ -439,13 +432,12 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
                     onCrop: CropStoredAsync,
                     isRecent: true));
 
-            foreach (var item in _avatarService.GetProjectAvatars())
-                ProjectAvatars.Add(new CharacterAvatarPickerItemViewModel(
-                    item, _avatarService,
-                    onSelect: SelectAvatar,
-                    onDelete: DeleteStored,
-                    onCopyToLibrary: CopyToLibraryAsync,
-                    onCrop: CropStoredAsync));
+            // Раздела «В проекте» в окне больше нет: он повторял «Недавние»
+            // почти целиком — картинка ложится в архив проекта ровно тогда,
+            // когда её ставят, то есть тогда же, когда она встаёт первой в
+            // недавних. Сам архив никуда не делся, он и держит проект
+            // самодостаточным; просто отдельной полкой его больше не
+            // показывают.
 
             foreach (var pack in _avatarService.GetAllPacks())
             {
@@ -465,8 +457,6 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
         private void RaiseSectionFlags()
         {
             this.RaisePropertyChanged(nameof(HasRecentAvatars));
-            this.RaisePropertyChanged(nameof(HasProjectAvatars));
-            this.RaisePropertyChanged(nameof(HasNoProjectAvatars));
             this.RaisePropertyChanged(nameof(HasPacks));
         }
 
@@ -541,19 +531,8 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             var crops = await RequestCropForRef(avatarRef);
             if (crops == null) return;
 
-            var combined = CharacterAvatarRef.Combine(avatarRef, crops.Circle, crops.Strip);
+            var combined = CharacterAvatarRef.Apply(avatarRef, crops);
             if (combined != null) SelectAvatar(combined);
-        }
-
-        private async Task CopyToLibraryAsync(string projectRef)
-        {
-            var libRef = await _avatarService.CopyProjectAvatarToLibraryAsync(projectRef);
-            if (libRef != null)
-            {
-                StatusMessage = CharactersStrings.ResourceManager
-                    .GetString("AvatarPicker_SavedToLibrary") ?? "Сохранено в библиотеку.";
-                Refresh();
-            }
         }
 
         /// <summary>
@@ -599,7 +578,7 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
                     .Localized("AvatarPicker_Reused", "Такая картинка уже есть — взята она.");
             }
 
-            var combined = CharacterAvatarRef.Combine(baseRef, crops.Circle, crops.Strip);
+            var combined = CharacterAvatarRef.Apply(baseRef, crops);
             if (combined != null) SelectAvatar(combined);
         }
 
@@ -628,11 +607,6 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             foreach (var item in RecentAvatars)
                 if (item.MatchesSearch(_searchQuery))
                     VisibleRecentAvatars.Add(item);
-
-            VisibleProjectAvatars.Clear();
-            foreach (var item in ProjectAvatars)
-                if (item.MatchesSearch(_searchQuery))
-                    VisibleProjectAvatars.Add(item);
 
             VisiblePacks.Clear();
             foreach (var pack in Packs)

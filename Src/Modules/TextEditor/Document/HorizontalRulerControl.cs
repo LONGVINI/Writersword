@@ -49,8 +49,8 @@ namespace Writersword.Modules.TextEditor.Document
         private static readonly SKColor ColorMarkerLeftEdge = new(0x22, 0x99, 0x55); // такой же зелёный — перетаскивает всю таблицу
         private static readonly SKColor ColorMarkerDragging = new(0xFF, 0x66, 0x00);
         private static readonly SKColor ColorGuideLine = new(0xFF, 0x66, 0x00, 0xAA);
-        private static readonly SKColor ColorMarkerTab = new(0x0E, 0x7A, 0x7A); // бирюзовый — позиция табуляции
-        private static readonly SKColor ColorMarkerTabDefault = new(0x0E, 0x7A, 0x7A, 0x66);
+        // Позиции табуляции — единственные маркеры, у которых цвет не смысловой, а
+        // оформительский: вид вправе задать свой, и тогда он приходит из палитры.
 
         // Палитра фона, делений и цифр. Пересобирается перед каждой отрисовкой:
         // вид листа меняется на ходу, и линейка обязана меняться вместе с ним.
@@ -396,7 +396,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (stepUnits > 0.01)
             {
                 using var defPaint = new SKPaint
-                { Color = ColorMarkerTabDefault, StrokeWidth = 1f, IsStroke = true, IsAntialias = false };
+                { Color = _palette.TabMarkerFaint, StrokeWidth = 1f, IsStroke = true, IsAntialias = false };
 
                 // Верхняя граница числа засечек нужна не для красоты: шаг приходит из
                 // документа и после неудачного импорта может оказаться крошечным, а
@@ -423,7 +423,7 @@ namespace Writersword.Modules.TextEditor.Document
                 bool isDragging = draggingIdx == i;
                 var color = isDragging
                     ? (discarding ? new SKColor(0x99, 0x99, 0x99, 0x99) : ColorMarkerDragging)
-                    : ColorMarkerTab;
+                    : _palette.TabMarker;
 
                 DrawTabGlyph(canvas, (float)xPx, h, marker.Alignment, marker.Leader, color);
 

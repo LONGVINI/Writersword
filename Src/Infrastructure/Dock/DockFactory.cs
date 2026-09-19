@@ -1750,7 +1750,7 @@ namespace Writersword.Infrastructure.Dock
 
         /// <summary>
         /// Асинхронный вариант отложенного прикрепления: тяжёлая загрузка данных модуля
-        /// (чтение ZIP-кеша, десериализация документа) выполняется на фоновом потоке
+        /// (чтение кеша, десериализация документа) выполняется на фоновом потоке
         /// внутри provideViewAsync, а UI-поток занят только созданием вьюмоделей и
         /// прикреплением вьюхи. Плейсхолдер ставится немедленно — переключение уходит
         /// в кадр без задержки.
@@ -1875,7 +1875,7 @@ namespace Writersword.Infrastructure.Dock
         }
 
         /// <summary>
-        /// Тело загрузки модуля. Чтение ZIP-кеша (дисковая операция) и десериализация
+        /// Тело загрузки модуля. Чтение кеша (дисковая операция) и десериализация
         /// данных модулей с поддержкой IPreparedDataModule выполняются на фоновом
         /// потоке — раньше весь путь (включая десериализацию целого документа) шёл
         /// на UI-потоке и замораживал интерфейс при первом открытии модуля в воркмоде.
@@ -1915,7 +1915,7 @@ namespace Writersword.Infrastructure.Dock
             var filePath = tab.FilePath;
             if (!string.IsNullOrEmpty(filePath))
             {
-                var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+                var cacheService = App.Services.GetRequiredService<IProjectCacheService>();
                 var projectId = project.Id;
                 var cacheResult = await Task.Run(() => cacheService.LoadCacheWithSession(filePath, projectId));
 

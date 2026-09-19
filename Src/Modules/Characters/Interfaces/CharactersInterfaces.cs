@@ -58,6 +58,20 @@ namespace Writersword.Modules.Characters.Interfaces
         /// не пропадает — удалять параметры можно поштучно и осознанно.
         /// </summary>
         void DetachAnketa(string characterId, string anketaId);
+
+        /// <summary>
+        /// Подключить к карточке все анкеты шаблона, которых на ней ещё нет.
+        /// Уже подключённые остаются на своих местах, а заполненные значения
+        /// не трогаются — шаблон добавляет разделы, а не переписывает работу.
+        /// Возвращает число подключённых анкет.
+        /// </summary>
+        int ApplyTemplate(string characterId, CharacterTemplate template);
+
+        /// <summary>
+        /// Переставить подключённую анкету выше или ниже. Порядок анкет — это
+        /// порядок разделов в карточке, и поля переставляются вслед за ними.
+        /// </summary>
+        void MoveAttachedAnketa(string characterId, string anketaId, int delta);
         void RandomizeParameters(string characterId);
 
         string? GetAvatarPath(string characterId);
@@ -115,5 +129,32 @@ namespace Writersword.Modules.Characters.Interfaces
         void RandomizeParameters(List<CharacterParameter> parameters);
 
         void LoadCustomAnketas(List<CharacterAnketa> anketas);
+
+        // ── Недавние ──────────────────────────────────────────────────────
+
+        IReadOnlyList<CharacterAnketa> GetRecentAnketas();
+        void RememberAnketa(string anketaId);
+        void ClearRecentAnketas();
+        IReadOnlyList<string> GetRecentAnketaIds();
+        void LoadRecentAnketas(List<string> ids);
+
+        // ── Шаблоны ───────────────────────────────────────────────────────
+        //
+        // Шаблон — список анкет под тип персонажа. Живёт здесь же, а не в
+        // своём сервисе: шаблон без анкет пуст по определению, и разводить
+        // их по разным хозяевам значило бы держать связь между двумя
+        // хранилищами вручную.
+
+        IReadOnlyList<CharacterTemplate> GetTemplates();
+        CharacterTemplate? GetTemplateById(string id);
+
+        CharacterTemplate CreateTemplate(string name);
+        void UpdateTemplate(CharacterTemplate template);
+        void DeleteTemplate(string id);
+
+        void LoadTemplates(List<CharacterTemplate> templates);
+
+        /// <summary>Пользовательские шаблоны — то, что уходит в файл проекта.</summary>
+        IReadOnlyList<CharacterTemplate> GetCustomTemplates();
     }
 }

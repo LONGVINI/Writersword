@@ -46,7 +46,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         public const string AppPrefix = "app:";
 
         /// <summary>Папка картинок вида внутри архива проекта.</summary>
-        private const string ZipFolder = "TextEditor/Reading";
+        private const string ReadingFolder = "TextEditor/Reading";
 
         /// <summary>Папка картинок вида в данных программы.</summary>
         private static string AppFolder => Path.Combine(
@@ -115,7 +115,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             {
                 if (IsProjectRef(reference))
                 {
-                    var inProject = $"{ZipFolder}/{NameOf(reference!)}";
+                    var inProject = $"{ReadingFolder}/{NameOf(reference!)}";
                     return ProjectSource is { } read
                         ? read(inProject)
                         : Context?.ReadFile(inProject);
@@ -146,7 +146,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             try
             {
                 if (IsProjectRef(reference))
-                    return Context?.FileExists($"{ZipFolder}/{NameOf(reference!)}") == true;
+                    return Context?.FileExists($"{ReadingFolder}/{NameOf(reference!)}") == true;
 
                 if (IsAppRef(reference))
                     return File.Exists(Path.Combine(AppFolder, NameOf(reference!)));
@@ -180,7 +180,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             if (bytes is null || bytes.Length == 0) return reference;
 
             var name = StoredName(bytes, reference!);
-            var path = $"{ZipFolder}/{name}";
+            var path = $"{ReadingFolder}/{name}";
 
             try
             {

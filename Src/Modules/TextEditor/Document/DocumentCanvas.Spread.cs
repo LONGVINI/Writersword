@@ -141,8 +141,34 @@ namespace Writersword.Modules.TextEditor.Document
         /// <summary>Есть ли предыдущий разворот.</summary>
         private bool SpreadHasPrev => _spreadLeftPage - SpreadStep >= 0;
 
+        // Разворот, о котором уже объявлено наружу, пока переход ещё идёт. Смена
+        // места в книге объявляется в начале перехода, а не в конце: лист падает
+        // почти полсекунды, и подпись со ��легунком, дожидавшиеся конца, отставали от
+        // бумаги на всё это время — переход выглядел как рывок после паузы.
+        private int _spreadAnnouncedLeft = -1;
+        private double _spreadAnnouncedMs;
+
         /// <summary>Номер первой страницы текущего разворота, начиная с единицы.</summary>
-        public int SpreadPageNumber => _spreadLeftPage + 1;
+        public int SpreadPageNumber
+            => (_spreadAnnouncedLeft >= 0 ? _spreadAnnouncedLeft : _spreadLeftPage) + 1;
+
+        /// <summary>
+        /// Сколько идёт объявленный переход, в миллисекундах. Ноль — перехода нет,
+        /// место сменилось сразу. По этому времени лента ведёт свой бегунок, и он
+        /// приходит к новой странице вместе с бумагой, а не раньше и не позже.
+        /// </summary>
+        public double SpreadTransitionMs => _spreadAnnouncedMs;
+
+        /// <summary>
+        /// Объявляет наружу разворот, к которому книга идёт, вместе с длительностью
+        /// перехода.
+        /// </summary>
+        private void AnnounceSpreadPage(int leftPage, double transitionMs)
+        {
+            _spreadAnnouncedLeft = Math.Clamp(leftPage, 0, Math.Max(0, _pages.Count - 1));
+            _spreadAnnouncedMs = Math.Max(0.0, transitionMs);
+            SpreadPageChanged?.Invoke();
+        }
 
         /// <summary>Всего страниц в книге.</summary>
         public int SpreadPageCount => _pages.Count;
@@ -275,6 +301,11 @@ namespace Writersword.Modules.TextEditor.Document
             _spreadReleaseStartTicks = DateTime.UtcNow.Ticks;
 
             StartSpreadTimer();
+
+            // Лист пошёл до конца — место в книге уже определено, и объявить о нём
+            // можно сейчас же. Подпись и бегунок идут вместе с бумагой.
+            if (commit && _spreadFlipTargetLeft >= 0)
+                AnnounceSpreadPage(_spreadFlipTargetLeft, _spreadReleaseMs);
         }
 
         /// <summary>Завершение переворота: разворот меняется, снимки освобождаются.</summary>
@@ -308,6 +339,9 @@ namespace Writersword.Modules.TextEditor.Document
             // нажатие. Остаются только соседние, остальные освобождаются.
             TrimSpreadCache();
 
+            _spreadAnnouncedLeft = -1;
+            _spreadAnnouncedMs = 0.0;
+
             if (committed)
             {
                 _spreadLabelPage = _spreadLeftPage;
@@ -327,6 +361,8 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void ResetSpreadState()
         {
+            _spreadAnnouncedLeft = -1;
+            _spreadAnnouncedMs = 0.0;
             _spreadFlipDir = 0;
             _spreadFlipTargetLeft = -1;
             _spreadFlipAngle = 0f;
@@ -423,11 +459,10 @@ namespace Writersword.Modules.TextEditor.Document
             var r = Reading;
             if (r is null) return "off";
 
-            var t = ActiveTheme;
             var ci = System.Globalization.CultureInfo.InvariantCulture;
 
             return string.Concat(
-                string.IsNullOrWhiteSpace(t?.FontFamily) ? "-" : t!.FontFamily,
+                string.IsNullOrWhiteSpace(r.FontFamily) ? "-" : r.FontFamily,
                 "|", r.FontScale.ToString("F3", ci),
                 "|", ReadingContentScale.ToString("F3", ci));
         }
@@ -521,6 +556,8 @@ namespace Writersword.Modules.TextEditor.Document
             CacheSpreadPage(to);
 
             StartSpreadTimer();
+
+            AnnounceSpreadPage(to, SingleSlideMs);
             return true;
         }
 
@@ -556,6 +593,9 @@ namespace Writersword.Modules.TextEditor.Document
             _singleSlideTo = -1;
             _singleSlideProgress = 0f;
             StopSpreadTimer();
+
+            _spreadAnnouncedLeft = -1;
+            _spreadAnnouncedMs = 0.0;
 
             if (to >= 0)
             {
@@ -719,6 +759,9 @@ namespace Writersword.Modules.TextEditor.Document
             if (!SpreadMode) return;
             int last = Math.Max(0, _pages.Count - 1);
             int target = SpreadLeftOf(Math.Clamp(pageIdx, 0, last));
+
+            _spreadAnnouncedLeft = -1;
+            _spreadAnnouncedMs = 0.0;
 
             // Просьба открыть то, что уже открыто, ничего не делает.
             //
@@ -898,7 +941,7 @@ namespace Writersword.Modules.TextEditor.Document
                 c.Clear(SKColors.Transparent);
                 c.Scale(snapScaleX, snapScaleY);
                 c.DrawRect(0, 0, page.WidthPt, page.HeightPt, PagePaint());
-                DrawReadingPaperImage(c, 0, 0, page.WidthPt, page.HeightPt);
+                DrawReadingPaperImage(c, 0, 0, page.WidthPt, page.HeightPt, pageIdx);
 
                 int savedOffscreen = _spreadOffscreenPagePlusOne;
                 _spreadOffscreenPagePlusOne = pageIdx + 1;
@@ -1186,32 +1229,49 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void DrawLeafPaper(SKCanvas canvas, int n)
         {
-            n = Math.Min(n, LeafStripsMax);
-            if (n < 1) return;
+            using var path = BuildLeafPath(n);
+            if (path.IsEmpty) return;
 
-            using var path = new SKPath();
+            // Только заливка, ровно по силуэту.
+            //
+            // Прежде силуэт обводился ещё и линией в экранный пиксель — бумага
+            // выходила за край листа на половину точки, чтобы сглаженная кромка полосы
+            // легла на неё, а не на пустоту. Кромка от этого и правда чистая, но сама
+            // обводка светлее всего, что лежит под краем листа: поверх тени сгиба и
+            // тёмного поля она читается как белая нитка, обведённая вокруг всей
+            // страницы, и видно её ровно в тот момент, когда лист берут рукой.
+            //
+            // Наружу теперь не выходит ничего, а кромку полос держит клип по этому же
+            // силуэту (см. DrawSpreadFlip): за его пределами полоса не рисуется вовсе,
+            // и просвечивать нечему.
+            using var paint = new SKPaint
+            {
+                Color = ReadingPaperColor(),
+                IsAntialias = true,
+                Style = SKPaintStyle.Fill
+            };
+
+            canvas.DrawPath(path, paint);
+        }
+
+        /// <summary>
+        /// Силуэт летящего листа: замкнутый путь по его верхней и нижней кромкам.
+        /// Один и тот же путь заливается бумагой и служит границей, за которую полосы
+        /// снимка не выходят.
+        /// </summary>
+        private SKPath BuildLeafPath(int n)
+        {
+            var path = new SKPath();
+
+            n = Math.Min(n, LeafStripsMax);
+            if (n < 1) return path;
+
             path.MoveTo(_leafTop[0]);
             for (int i = 1; i <= n; i++) path.LineTo(_leafTop[i]);
             for (int i = n; i >= 0; i--) path.LineTo(_leafBottom[i]);
             path.Close();
 
-            // Заливка с обводкой в один экранный пиксель: силуэт расширяется на
-            // половину точки в каждую сторону, и сглаженная кромка полосы ложится на
-            // бумагу, а не ровно на её границу — иначе на самом краю листа осталась бы
-            // та же полупрозрачная нитка, ради которой всё и делается.
-            float pxPerPt = PtToPx * (float)Math.Max(Zoom, 0.01);
-            float hairPt = pxPerPt > 0.01f ? 1f / pxPerPt : 0.75f;
-
-            using var paint = new SKPaint
-            {
-                Color = ReadingPaperColor(),
-                IsAntialias = true,
-                Style = SKPaintStyle.StrokeAndFill,
-                StrokeWidth = hairPt,
-                StrokeJoin = SKStrokeJoin.Round
-            };
-
-            canvas.DrawPath(path, paint);
+            return path;
         }
 
         /// <summary>
@@ -1596,6 +1656,15 @@ namespace Writersword.Modules.TextEditor.Document
             // У настоящего листа под текстом бумага, а не поле, — здесь так же.
             DrawLeafPaper(canvas, Strips);
 
+            // Полосы снимка режутся по тому же силуэту. Полосы шире листа намеренно —
+            // соседние заходят друг на друга, чтобы между ними не оставалось швов, — и
+            // у крайних этот запас выходил за край листа. Клип его снимает, и край
+            // страницы получается там, где ему положено, без обводки поверх тени.
+            using var leafClip = BuildLeafPath(Strips);
+
+            canvas.Save();
+            if (!leafClip.IsEmpty) canvas.ClipPath(leafClip, SKClipOperation.Intersect, true);
+
             // Снимки держатся под замком всё время, пока ими рисуют: освободить их
             // может поток правки, и между взятием ссылки и отрисовкой её хватило бы,
             // чтобы образ перестал существовать.
@@ -1616,6 +1685,8 @@ namespace Writersword.Modules.TextEditor.Document
                     widthPt, anchor.HeightPt,
                     frontSpineLeft, backSpineLeft, 1f);
             }
+
+            canvas.Restore();
         }
 
         /// <summary>

@@ -73,7 +73,7 @@ namespace Writersword.Infrastructure.Services.Storage
             return project;
         }
 
-        /// <summary>Загрузить проект из файла (ZIP архив)</summary>
+        /// <summary>Загрузить проект из файла (база SQLite)</summary>
         public async Task<ProjectFile?> LoadAsync(string filePath)
         {
             try
@@ -125,7 +125,7 @@ namespace Writersword.Infrastructure.Services.Storage
             }
         }
 
-        /// <summary>Сохранить проект в файл (ZIP архив)</summary>
+        /// <summary>Сохранить проект в файл (база SQLite)</summary>
         public async Task<bool> SaveAsync(ProjectFile project, string filePath)
         {
             try
@@ -140,7 +140,7 @@ namespace Writersword.Infrastructure.Services.Storage
 
                 if (!success)
                 {
-                    _logger.LogWarning("Failed to save to ZIP");
+                    _logger.LogWarning("Failed to save project file");
                     return false;
                 }
 

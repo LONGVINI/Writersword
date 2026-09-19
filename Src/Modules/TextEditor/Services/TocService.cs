@@ -225,10 +225,15 @@ namespace Writersword.Modules.TextEditor.Services
             var result = new List<ParagraphBlock>();
             if (settings is null) return result;
 
-            if (settings.ShowTitle && !string.IsNullOrWhiteSpace(title))
+            // Своё название списка старше присланного: присланное — это значение по
+            // умолчанию, а в настройках лежит то, что человек вписал сам. Без этого
+            // пересборка стирала его название и возвращала «Оглавление».
+            string headingText = string.IsNullOrWhiteSpace(settings.Title) ? title : settings.Title;
+
+            if (settings.ShowTitle && !string.IsNullOrWhiteSpace(headingText))
             {
                 var head = new ParagraphBlock();
-                head.SetPlainText(title);
+                head.SetPlainText(headingText);
                 head.Properties.StyleName = "TocTitle";
                 head.Properties.Alignment = TextAlignment.Center;
                 head.Properties.TocOwnerId = settings.Id;
@@ -344,16 +349,30 @@ namespace Writersword.Modules.TextEditor.Services
         ///
         /// Существующие стили не трогаются: человек мог их править под себя.
         /// </summary>
-        public static void EnsureBuiltInStyles(DocumentModel doc)
+        /// <returns>
+        /// true — список стилей пополнился, и об этом нужно уведомить полотно.
+        ///
+        /// Ответ здесь не для порядка. Уведомление о смене стилей заставляет полотно
+        /// собрать резолвер заново и вычистить кэш раскладки ЦЕЛИКОМ — то есть
+        /// переверстать всю книгу. На рукописи в три тысячи абзацев это около секунды,
+        /// и раньше эта секунда уходила на каждое нажатие в ленте оглавления, хотя
+        /// добавлять было нечего: стили давно на месте.
+        /// </returns>
+        public static bool EnsureBuiltInStyles(DocumentModel doc)
         {
-            if (doc is null) return;
+            if (doc is null) return false;
             doc.Styles ??= new List<DocumentStyle>();
+
+            bool added = false;
 
             foreach (var builtIn in DocumentStyle.CreateBuiltInStyles())
             {
                 if (doc.FindStyle(builtIn.Name) is not null) continue;
                 doc.Styles.Add(builtIn);
+                added = true;
             }
+
+            return added;
         }
 
         /// <summary>
@@ -406,19 +425,50 @@ namespace Writersword.Modules.TextEditor.Services
             if (textChanged)
                 entry.SpliceText(headLength, raw.Length, tail);
 
-            double indent = settings.IndentByLevel
-                ? Math.Max(props.TocEntryLevel - settings.MinLevel, 0) * settings.LevelIndentPt
-                : 0;
-
-            bool tabsChanged = ApplyEntryTabStop(props, settings, indent, textWidthPt, withPage);
+            // Отступы берутся у самой строки, а не считаются по её уровню: их двигает
+            // человек стрелками на линейке, и правая отметка обязана уехать вместе с
+            // ними. Считая по уровню, проход по номерам страниц возвращал бы отметку на
+            // место при каждом пересчёте, то есть молча отменял правку линейкой.
+            bool tabsChanged = ApplyEntryTabStop(props, settings, IndentOf(props), textWidthPt, withPage);
 
             return textChanged || tabsChanged;
         }
 
         /// <summary>
+        /// Пересчитывает позицию табуляции строки по её нынешним отступам.
+        ///
+        /// Нужен отдельно от построения списка: отступы строки человек двигает сам —
+        /// стрелками на линейке, — и правая отметка, к которой прижат номер страницы,
+        /// обязана уехать следом. Иначе номера остаются на прежнем месте, а названия
+        /// из-под них уходят.
+        ///
+        /// Текст строки здесь не трогается вовсе — только её позиции табуляции.
+        /// </summary>
+        /// <returns>true — позиции табуляции изменились.</returns>
+        public static bool RefreshEntryTabStop(
+            ParagraphProperties props, TocSettings settings, double textWidthPt)
+        {
+            if (props is null || settings is null) return false;
+            if (props.TocOwnerId != settings.Id) return false;
+
+            // Название над списком номера не носит, значит и отметки ему не надо.
+            if (props.TocEntryLevel <= 0) return false;
+
+            return ApplyEntryTabStop(
+                props, settings, IndentOf(props), textWidthPt, settings.ShowPageNumbers);
+        }
+
+        /// <summary>
+        /// Насколько текстовая область строки уже листа: левый отступ плюс правый.
+        /// Именно на эту величину отъезжает правая отметка.
+        /// </summary>
+        private static double IndentOf(ParagraphProperties props)
+            => (props.LeftIndent ?? 0) + (props.RightIndent ?? 0);
+
+        /// <summary>
         /// Позиция табуляции строки: правая отметка у границы текстовой области, с
-        /// заполнителем из настроек. Без номера страницы отметка снимается — иначе за
-        /// названием остаётся дорожка точек в никуда.
+        /// заполнителем и его плотностью из настроек. Без номера страницы отметка
+        /// снимается — иначе за названием остаётся дорожка точек в никуда.
         /// </summary>
         /// <returns>true — позиции табуляции изменились.</returns>
         private static bool ApplyEntryTabStop(
@@ -439,11 +489,14 @@ namespace Writersword.Modules.TextEditor.Services
                 ? TabLeaderStyle.None
                 : (TabLeaderStyle)(int)settings.Leader;
 
+            double density = settings.LeaderDensity;
+
             var existing = props.TabStops;
             if (existing is { Count: 1 }
                 && Math.Abs(existing[0].PositionPt - stopPt) < 0.01
                 && existing[0].Alignment == TabAlignment.Right
-                && existing[0].Leader == leader)
+                && existing[0].Leader == leader
+                && Math.Abs(existing[0].LeaderDensity - density) < 0.001)
                 return false;
 
             props.TabStops = new List<TabStop>
@@ -452,7 +505,8 @@ namespace Writersword.Modules.TextEditor.Services
                 {
                     PositionPt = stopPt,
                     Alignment = TabAlignment.Right,
-                    Leader = leader
+                    Leader = leader,
+                    LeaderDensity = density
                 }
             };
 

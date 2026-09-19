@@ -30,12 +30,12 @@ namespace Writersword.Modules.Characters.Services
         // иначе SVG попал бы в выбор аватарок, где его нечем показать.
         private static readonly string[] AllowedIconExtensions =
             { ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".ico", ".svg" };
-        private const string ZipAvatarsFolder = "Characters/assets/avatars";
+        private const string ProjectAvatarsFolder = "Characters/assets/avatars";
 
-        // Локальные паки живут в архиве проекта рядом с проектными аватарками,
+        // Локальные паки живут внутри проекта рядом с проектными аватарками,
         // но в своей папке: выборка проектных аватарок ищет по префиксу
         // "Characters/assets/avatars/", и папка паков под него не подпадает.
-        private const string ZipPacksFolder = "Characters/assets/avatarpacks";
+        private const string ProjectPacksFolder = "Characters/assets/avatarpacks";
         private const string PackMetaFileName = "pack.json";
 
         // Порядок папок в списках. Лежит одним файлом рядом с папками
@@ -76,7 +76,7 @@ namespace Writersword.Modules.Characters.Services
         private readonly List<string> _registeredDirectories = new();
 
         // Кэш байтов аватарок по ссылке. Убирает повторные открытия большого
-        // проектного zip при отрисовке (миниатюры пикера, карточки) — основная
+        // проекта при отрисовке (миниатюры пикера, карточки) — основная
         // причина залипаний UI на крупных проектах. Ссылки уникальны и неизменяемы.
         //
         // Ключом идёт адрес файла без кадра: кадр живёт в ссылке персонажа и на
@@ -214,7 +214,7 @@ namespace Writersword.Modules.Characters.Services
                 // «в проекте», поиск по содержимому выдавал ссылку на пустоту,
                 // и эта мёртвая ссылка уходила в проект.
                 await Task.Run(() =>
-                    _context.WriteFile($"{ZipAvatarsFolder}/{uniqueName}", imageData));
+                    _context.WriteFile($"{ProjectAvatarsFolder}/{uniqueName}", imageData));
                 CacheBytes(avatarRef, imageData);
                 RememberHash(avatarRef, imageData);
                 _logger.Debug("Project avatar saved: {Name}", uniqueName);
@@ -263,7 +263,7 @@ namespace Writersword.Modules.Characters.Services
                     // Порядок тот же, что и в SaveToProjectAsync: сначала запись,
                     // и только потом кеш — иначе кеш подтверждает несуществующий файл.
                     await Task.Run(() =>
-                        _context.WriteFile($"{ZipPacksFolder}/{packId}/{localName}", imageData));
+                        _context.WriteFile($"{ProjectPacksFolder}/{packId}/{localName}", imageData));
                     CacheBytes(localRef, imageData);
                     RememberHash(localRef, imageData);
                     return localRef;
@@ -562,7 +562,8 @@ namespace Writersword.Modules.Characters.Services
             return CharacterAvatarRef.Combine(
                 stored,
                 CharacterAvatarRef.CropOf(avatarRef),
-                CharacterAvatarRef.StripCropOf(avatarRef));
+                CharacterAvatarRef.StripCropOf(avatarRef),
+                CharacterAvatarRef.RotationOf(avatarRef));
         }
 
         /// <summary>
@@ -610,13 +611,13 @@ namespace Writersword.Modules.Characters.Services
                     // Допускаем как корректную ссылку project:имя.png, так и старую
                     // битую project:Characters/assets/avatars/имя.png — берём имя файла.
                     var name = Path.GetFileName(avatarRef["project:".Length..]);
-                    return _context?.ReadFile($"{ZipAvatarsFolder}/{name}");
+                    return _context?.ReadFile($"{ProjectAvatarsFolder}/{name}");
                 }
                 if (avatarRef.StartsWith("lpack:"))
                 {
                     var parts = avatarRef["lpack:".Length..].Split(':', 2);
                     if (parts.Length == 2)
-                        return _context?.ReadFile($"{ZipPacksFolder}/{parts[0]}/{Path.GetFileName(parts[1])}");
+                        return _context?.ReadFile($"{ProjectPacksFolder}/{parts[0]}/{Path.GetFileName(parts[1])}");
                     return null;
                 }
                 if (avatarRef.StartsWith("lib:"))
@@ -764,6 +765,12 @@ namespace Writersword.Modules.Characters.Services
             // Кадров у ссылки два: свой кружку и свой полоске. Какой брать,
             // решает не ссылка, а то, чем её сейчас показывают.
             var crop = CharacterAvatarRef.CropFor(avatarRef, forStrip);
+
+            // Поворот у ссылки один на оба кадра: оба сняты уже с повёрнутой
+            // картинки, и разный поворот у кружка и полоски означал бы две
+            // разные картинки на одной карточке.
+            var rotation = CharacterAvatarRef.RotationOf(avatarRef);
+
             var bytes = LoadAvatarBytes(avatarRef);
             if (bytes == null) return null;
 
@@ -784,9 +791,13 @@ namespace Writersword.Modules.Characters.Services
                     try
                     {
                         using var scaledMs = new MemoryStream(bytes);
-                        return size.Value.Width >= size.Value.Height
+                        var scaled = size.Value.Width >= size.Value.Height
                             ? Bitmap.DecodeToWidth(scaledMs, maxSide, BitmapInterpolationMode.HighQuality)
                             : Bitmap.DecodeToHeight(scaledMs, maxSide, BitmapInterpolationMode.HighQuality);
+
+                        // Поворот идёт после уменьшения: сторонам он их не
+                        // меняет, а повёрнутых точек тут вчетверо меньше.
+                        return ApplyRotation(scaled, rotation);
                     }
                     catch (Exception ex)
                     {
@@ -807,13 +818,20 @@ namespace Writersword.Modules.Characters.Services
                 // уменьшив сначала, мы вырезали бы кадр из уже потерянных точек.
                 if (crop != null && !crop.IsFull)
                 {
-                    var cropped = CropBitmap(bitmap, crop);
+                    // Кадр снят с повёрнутой картинки, а режем мы из файла,
+                    // который никто не переписывал: поворот отматывается назад,
+                    // и в исходнике вырезается тот же самый кусок. Порядок
+                    // выгоден и по работе — поворачивать остаётся вырезанное, а
+                    // не всю фотографию целиком.
+                    var cropped = CropBitmap(bitmap, crop.ToSourceSpace(rotation));
                     if (cropped != null)
                     {
                         bitmap.Dispose();
                         bitmap = cropped;
                     }
                 }
+
+                bitmap = ApplyRotation(bitmap, rotation);
 
                 var w = bitmap.PixelSize.Width;
                 var h = bitmap.PixelSize.Height;
@@ -829,6 +847,24 @@ namespace Writersword.Modules.Characters.Services
                 return scaled;
             }
             catch (Exception ex) { _logger.Error(ex, "LoadBitmap failed for {Ref}", avatarRef); return null; }
+        }
+
+        /// <summary>
+        /// Повернуть картинку, отпустив исходную.
+        ///
+        /// Ноль градусов и неудавшийся поворот возвращают ту же картинку:
+        /// показать аватарку неповёрнутой хуже, чем повёрнутой, но куда лучше,
+        /// чем не показать вовсе.
+        /// </summary>
+        private static Bitmap ApplyRotation(Bitmap bitmap, int rotation)
+        {
+            if (CharacterAvatarRef.NormalizeRotation(rotation) == 0) return bitmap;
+
+            var rotated = AvatarImageRotation.Rotate(bitmap, rotation);
+            if (rotated == null) return bitmap;
+
+            bitmap.Dispose();
+            return rotated;
         }
 
         /// <summary>
@@ -1013,12 +1049,12 @@ namespace Writersword.Modules.Characters.Services
             try
             {
                 if (baseRef.StartsWith("project:"))
-                    _context?.DeleteFile($"{ZipAvatarsFolder}/{Path.GetFileName(baseRef["project:".Length..])}");
+                    _context?.DeleteFile($"{ProjectAvatarsFolder}/{Path.GetFileName(baseRef["project:".Length..])}");
                 else if (baseRef.StartsWith("lpack:"))
                 {
                     var parts = baseRef["lpack:".Length..].Split(':', 2);
                     if (parts.Length == 2)
-                        _context?.DeleteFile($"{ZipPacksFolder}/{parts[0]}/{Path.GetFileName(parts[1])}");
+                        _context?.DeleteFile($"{ProjectPacksFolder}/{parts[0]}/{Path.GetFileName(parts[1])}");
                 }
                 else if (baseRef.StartsWith("lib:"))
                 {
@@ -1054,12 +1090,12 @@ namespace Writersword.Modules.Characters.Services
             if (_context == null) return Array.Empty<CharacterAvatarItem>();
             try
             {
-                return _context.GetFiles(ZipAvatarsFolder)
+                return _context.GetFiles(ProjectAvatarsFolder)
                     .Where(f => AllowedExtensions.Contains(
                         Path.GetExtension(f).ToLowerInvariant()))
                     .Select(f =>
                     {
-                        // GetFiles возвращает полный путь внутри zip; ссылка project:
+                        // GetFiles возвращает полный путь внутри проекта; ссылка project:
                         // должна содержать только имя файла, иначе LoadAvatarBytes
                         // повторно приклеит папку и файл не найдётся.
                         var fileName = Path.GetFileName(f);
@@ -1265,10 +1301,10 @@ namespace Writersword.Modules.Characters.Services
             {
                 // GetFiles отдаёт всё поддерево одним списком — раскладываем
                 // по пакам сами, по первому сегменту после папки паков.
-                var prefix = ZipPacksFolder + "/";
+                var prefix = ProjectPacksFolder + "/";
                 var byPack = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
-                foreach (var full in _context.GetFiles(ZipPacksFolder))
+                foreach (var full in _context.GetFiles(ProjectPacksFolder))
                 {
                     var normalized = full.Replace('\\', '/');
                     if (!normalized.StartsWith(prefix, StringComparison.Ordinal)) continue;
@@ -1294,7 +1330,7 @@ namespace Writersword.Modules.Characters.Services
                     var pack = ReadLocalPackMeta(packId) ?? new CharacterAvatarPackInfo { Id = packId };
                     pack.Id = packId;
                     pack.Source = CharacterAvatarPackSource.UserLocal;
-                    pack.FolderPath = $"{ZipPacksFolder}/{packId}";
+                    pack.FolderPath = $"{ProjectPacksFolder}/{packId}";
                     pack.Items = files
                         .Where(f => AllowedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
                         .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
@@ -1324,7 +1360,7 @@ namespace Writersword.Modules.Characters.Services
         {
             try
             {
-                var bytes = _context?.ReadFile($"{ZipPacksFolder}/{packId}/{PackMetaFileName}");
+                var bytes = _context?.ReadFile($"{ProjectPacksFolder}/{packId}/{PackMetaFileName}");
                 if (bytes == null || bytes.Length == 0) return null;
                 return JsonSerializer.Deserialize<CharacterAvatarPackInfo>(
                     Encoding.UTF8.GetString(bytes));
@@ -1344,7 +1380,7 @@ namespace Writersword.Modules.Characters.Services
                 var json = JsonSerializer.Serialize(
                     pack, new JsonSerializerOptions { WriteIndented = true });
                 _context.WriteFile(
-                    $"{ZipPacksFolder}/{pack.Id}/{PackMetaFileName}",
+                    $"{ProjectPacksFolder}/{pack.Id}/{PackMetaFileName}",
                     Encoding.UTF8.GetBytes(json));
                 _context.FlushStorage();
             }
@@ -1357,7 +1393,7 @@ namespace Writersword.Modules.Characters.Services
             var wo = Path.GetFileNameWithoutExtension(name);
             var ext = Path.GetExtension(name).ToLowerInvariant();
             var c = name; int n = 1;
-            while (_context.FileExists($"{ZipPacksFolder}/{packId}/{c}"))
+            while (_context.FileExists($"{ProjectPacksFolder}/{packId}/{c}"))
                 c = $"{wo} ({n++}){ext}";
             return c;
         }
@@ -1436,7 +1472,7 @@ namespace Writersword.Modules.Characters.Services
                 Id = id,
                 Name = name,
                 Source = CharacterAvatarPackSource.UserLocal,
-                FolderPath = $"{ZipPacksFolder}/{id}"
+                FolderPath = $"{ProjectPacksFolder}/{id}"
             };
             WriteLocalPackMeta(pack);
             RememberNewPack(id);
@@ -1465,7 +1501,7 @@ namespace Writersword.Modules.Characters.Services
                     var local = ReadLocalPackMeta(packId) ?? new CharacterAvatarPackInfo();
                     local.Id = packId;
                     local.Source = CharacterAvatarPackSource.UserLocal;
-                    local.FolderPath = $"{ZipPacksFolder}/{packId}";
+                    local.FolderPath = $"{ProjectPacksFolder}/{packId}";
                     if (name != null) local.Name = name;
                     local.IconFileName = iconFileName;
                     WriteLocalPackMeta(local);
@@ -1558,7 +1594,7 @@ namespace Writersword.Modules.Characters.Services
                     var local = ReadLocalPackMeta(packId) ?? new CharacterAvatarPackInfo();
                     local.Id = packId;
                     local.Source = CharacterAvatarPackSource.UserLocal;
-                    local.FolderPath = $"{ZipPacksFolder}/{packId}";
+                    local.FolderPath = $"{ProjectPacksFolder}/{packId}";
                     local.Order = order;
                     WriteLocalPackMeta(local);
                     return;
@@ -1599,8 +1635,8 @@ namespace Writersword.Modules.Characters.Services
             if (_context == null) return;
             try
             {
-                var prefix = $"{ZipPacksFolder}/{packId}/";
-                var files = _context.GetFiles($"{ZipPacksFolder}/{packId}").ToList();
+                var prefix = $"{ProjectPacksFolder}/{packId}/";
+                var files = _context.GetFiles($"{ProjectPacksFolder}/{packId}").ToList();
                 foreach (var full in files)
                 {
                     EvictCachedBytes($"lpack:{packId}:{Path.GetFileName(full)}");
@@ -1663,7 +1699,7 @@ namespace Writersword.Modules.Characters.Services
                     Id = packId,
                     Name = name,
                     Source = CharacterAvatarPackSource.UserLocal,
-                    FolderPath = $"{ZipPacksFolder}/{packId}"
+                    FolderPath = $"{ProjectPacksFolder}/{packId}"
                 };
                 WriteLocalPackMeta(local);
                 RememberNewPack(packId);
@@ -1935,7 +1971,7 @@ namespace Writersword.Modules.Characters.Services
         {
             try
             {
-                // Локальный пак лежит в архиве проекта: собираем zip из его
+                // Локальный пак лежит внутри проекта: собираем zip из его
                 // содержимого, а не копируем папку с диска — папки нет.
                 if (IsLocalPackId(packId))
                 {
@@ -2190,7 +2226,7 @@ namespace Writersword.Modules.Characters.Services
             var wo = Path.GetFileNameWithoutExtension(name);
             var ext = Path.GetExtension(name).ToLowerInvariant();
             var c = name; int n = 1;
-            while (_context.FileExists($"{ZipAvatarsFolder}/{c}"))
+            while (_context.FileExists($"{ProjectAvatarsFolder}/{c}"))
                 c = $"{wo} ({n++}){ext}";
             return c;
         }

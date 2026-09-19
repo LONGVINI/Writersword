@@ -49,6 +49,11 @@
 			<Setter Property="VerticalAlignment" Value="Center"/>
 		</Style>
 		<Style Selector="Button.seg">
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Foreground" Duration="0:0:0.2"/>
+				</Transitions>
+			</Setter>
 			<Setter Property="Padding" Value="14,4"/>
 			<Setter Property="MinWidth" Value="86"/>
 			<Setter Property="MinHeight" Value="0"/>
@@ -71,12 +76,73 @@
 		<Style Selector="Button.seg:not(.active):pointerover /template/ ContentPresenter">
 			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
 		</Style>
+		<!-- Выбранный сегмент только светлеет буквами: подложку под ним
+		     рисует бегунок, который переезжает с кнопки на кнопку.
+
+		     Жирность здесь не меняется намеренно. От неё надпись становится
+		     шире, соседняя кнопка сдвигается, и бегунок едет к цели, которая
+		     во время переезда сама уползает. -->
 		<Style Selector="Button.seg.active">
 			<Setter Property="Foreground" Value="White"/>
-			<Setter Property="FontWeight" Value="SemiBold"/>
 		</Style>
-		<Style Selector="Button.seg.active /template/ ContentPresenter">
+
+		<!-- Бегунок выбранного сегмента. Ширину и сдвиг ставит код по
+		     границам самой кнопки: надписи разной длины, и делить дорожку
+		     пополам значило бы промахиваться мимо той, что длиннее. -->
+		<Style Selector="Border.segThumb">
+			<Setter Property="CornerRadius" Value="999"/>
 			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="HorizontalAlignment" Value="Left"/>
+			<Setter Property="VerticalAlignment" Value="Stretch"/>
+			<Setter Property="IsHitTestVisible" Value="False"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<TransformOperationsTransition Property="RenderTransform"
+					                               Duration="0:0:0.22" Easing="CubicEaseOut"/>
+					<DoubleTransition Property="Width"
+					                  Duration="0:0:0.22" Easing="CubicEaseOut"/>
+				</Transitions>
+			</Setter>
+		</Style>
+
+		<!-- Круглая кнопка-значок. Тот же вид, что у кнопок в управлении
+		     папками аватарок: 28 точек, обводка в полторы, прозрачная
+		     середина. -->
+		<Style Selector="Button.iconBtn">
+			<Setter Property="Width" Value="28"/>
+			<Setter Property="Height" Value="28"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.iconBtn /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1.5"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Background" Duration="0:0:0.15"/>
+					<BrushTransition Property="BorderBrush" Duration="0:0:0.15"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Button.iconBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Кнопка-значок во включённом состоянии: обводка и значок берут
+		     цвет подсветки, чтобы состояние читалось с одного взгляда. -->
+		<Style Selector="Button.iconBtn.on">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.iconBtn.on /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
 		<!-- Подпись над коробкой превью. -->
@@ -150,18 +216,25 @@
 						     всегда обрезан не туда. Правится тот, что выбран
 						     здесь; второй всё это время виден в превью справа. -->
 						<Border Classes="segTrack" HorizontalAlignment="Center">
-							<StackPanel Orientation="Horizontal" Spacing="2">
-								<Button x:Name="ModeCircleButton" Classes="seg"
-								        Content="Кадр кружка"
-								        Click="OnModeCircleClick"
-								        behaviours:TooltipBehavior.Tip="Кадр для кружка"
-								        behaviours:TooltipBehavior.Description="Квадрат. Из него берут картинку кружок на карточке и мелкая плитка в списках"/>
-								<Button x:Name="ModeStripButton" Classes="seg"
-								        Content="Кадр полоски"
-								        Click="OnModeStripClick"
-								        behaviours:TooltipBehavior.Tip="Кадр для полоски"
-								        behaviours:TooltipBehavior.Description="Широкая полоса по пропорциям цветной зоны карточки. Пока свой кадр не задан, полоска берёт кадр кружка"/>
-							</StackPanel>
+							<Panel>
+								<!-- Бегунок объявлен раньше кнопок: на панели
+								     позже объявленное рисуется поверх, а
+								     подложка обязана быть под буквами. -->
+								<Border x:Name="SegThumb" Classes="segThumb" IsVisible="False"/>
+
+								<StackPanel x:Name="SegButtons" Orientation="Horizontal" Spacing="2">
+									<Button x:Name="ModeCircleButton" Classes="seg"
+									        Content="Кадр кружка"
+									        Click="OnModeCircleClick"
+									        behaviours:TooltipBehavior.Tip="Кадр для кружка"
+									        behaviours:TooltipBehavior.Description="Квадрат. Из него берут картинку кружок на карточке и мелкая плитка в списках"/>
+									<Button x:Name="ModeStripButton" Classes="seg"
+									        Content="Кадр полоски"
+									        Click="OnModeStripClick"
+									        behaviours:TooltipBehavior.Tip="Кадр для полоски"
+									        behaviours:TooltipBehavior.Description="Широкая полоса по пропорциям цветной зоны карточки. Пока свой кадр не задан, полоска берёт кадр кружка"/>
+								</StackPanel>
+							</Panel>
 						</Border>
 
 						<!-- Полотно кадра. Размер постоянный: вся геометрия
@@ -191,15 +264,41 @@
 									<Image x:Name="SourceImage" IsHitTestVisible="False"/>
 								</Canvas>
 
-								<!-- Затемнение вне кадра: четыре полосы вокруг
-								     рамки. Одним прямоугольником с дыркой это
-								     не выразить без геометрии, а полосы точно
-								     повторяют любую форму кадра. -->
-								<Canvas x:Name="ShadeCanvas" IsHitTestVisible="False">
-									<Border x:Name="ShadeTop" Background="#99000000"/>
-									<Border x:Name="ShadeBottom" Background="#99000000"/>
-									<Border x:Name="ShadeLeft" Background="#99000000"/>
-									<Border x:Name="ShadeRight" Background="#99000000"/>
+								<!-- Затемнение вне кадра: одна фигура с дыркой
+								     по кадру, геометрию ей считает код.
+
+								     Раньше здесь стояли четыре полосы вокруг
+								     рамки. Стыковались они по дробной
+								     координате — сторона кадра у полоски
+								     нацело не делится, — и растеризация клала
+								     полупрозрачный чёрный на стыковую строку
+								     дважды. Вдоль верхнего и нижнего края
+								     кадра, слева и справа от него, оставались
+								     тёмные чёрточки: там, где боковая полоса
+								     встречалась с верхней и нижней. Одна
+								     фигура этого не умеет по построению. -->
+								<Path x:Name="ShadePath"
+								      Fill="#99000000"
+								      IsHitTestVisible="False"
+								      HorizontalAlignment="Left"
+								      VerticalAlignment="Top"/>
+
+								<!-- Направляющие внутри кадра: центральные оси
+								     или сетка по третям. Объявлены до рамки,
+								     чтобы белая рамка шла поверх них — линии
+								     помогают выровнять лицо, а не спорить с
+								     границей кадра.
+
+								     Четыре полосы на оба вида: осям хватает
+								     первой пары, сетке нужны обе. Отдельной
+								     канвы на каждый вид не заводим — полосы
+								     всё равно переставляются кодом при каждой
+								     отрисовке. -->
+								<Canvas x:Name="GuideCanvas" IsHitTestVisible="False">
+									<Border x:Name="GuideV1" Background="#4DFFFFFF" IsVisible="False"/>
+									<Border x:Name="GuideV2" Background="#4DFFFFFF" IsVisible="False"/>
+									<Border x:Name="GuideH1" Background="#4DFFFFFF" IsVisible="False"/>
+									<Border x:Name="GuideH2" Background="#4DFFFFFF" IsVisible="False"/>
 								</Canvas>
 
 								<Canvas x:Name="FrameCanvas" IsHitTestVisible="False">
@@ -240,22 +339,91 @@
 						     не была: она означала «не выбираю, пусть карточка
 						     берёт середину сама», то есть отказ от обрезки в
 						     окне обрезки. -->
-						<StackPanel Orientation="Horizontal" Spacing="8"
-						            Width="420"
-						            HorizontalAlignment="Center">
-							<TextBlock Text="Масштаб" FontSize="11"
+						<!-- Сетка, а не стопка: ползунок забирает то, что
+						     осталось от подписи, поля и кнопок, и ряд держится
+						     в своих 420 точках при любой ширине надписей. -->
+						<Grid Width="420" HorizontalAlignment="Center"
+						      ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto"
+						      ColumnSpacing="8">
+							<TextBlock Grid.Column="0" Text="Масштаб" FontSize="11"
 							           VerticalAlignment="Center"
 							           Foreground="{DynamicResource TextSecondaryBrush}"/>
-							<Slider x:Name="ZoomSlider"
-							        Minimum="1" Maximum="6" Value="1"
-							        Width="200" VerticalAlignment="Center"
+
+							<!-- Границы ползунка ставит код: они зависят от
+							     сторон картинки и рамки. Числа здесь — только
+							     до первого показа. -->
+							<Slider Grid.Column="1" x:Name="ZoomSlider"
+							        Minimum="100" Maximum="600" Value="100"
+							        VerticalAlignment="Center"
 							        ValueChanged="OnZoomSliderChanged"/>
-							<Button Content="Сбросить" Click="OnResetClick"
-							        Padding="10,5" FontSize="11"
+
+							<!-- Масштаб числом: точка картинки на точку экрана
+							     — это сто процентов. Мера не зависит ни от
+							     рамки, ни от поворота, поэтому одно и то же
+							     число всегда означает одно и то же.
+
+							     Поле нужно не для удобства, а чтобы снять
+							     потолок: у ползунка он привычный, в шесть раз
+							     от вписанного в рамку, а здесь можно набрать
+							     столько, сколько в картинке есть точек. -->
+							<StackPanel Grid.Column="2" Orientation="Horizontal"
+							            Spacing="3" VerticalAlignment="Center">
+								<NumericUpDown x:Name="ZoomBox"
+								               Width="62"
+								               ShowButtonSpinner="False"
+								               Increment="10"
+								               FormatString="0"
+								               Minimum="1" Maximum="10000" Value="100"
+								               ValueChanged="OnZoomBoxChanged"
+								               behaviours:TooltipBehavior.Tip="Масштаб в процентах"
+								               behaviours:TooltipBehavior.Description="Сто процентов — точка картинки на точку экрана. Ползунок ограничен привычным пределом, здесь его нет"/>
+								<TextBlock Text="%" FontSize="11"
+								           VerticalAlignment="Center"
+								           Foreground="{DynamicResource TextSecondaryBrush}"/>
+							</StackPanel>
+
+							<Button Grid.Column="3" Content="Сбросить" Click="OnResetClick"
 							        VerticalAlignment="Center"
 							        behaviours:TooltipBehavior.Tip="Вернуть кадр"
 							        behaviours:TooltipBehavior.Description="Масштаб становится наименьшим, кадр встаёт по центру картинки"/>
-						</StackPanel>
+
+							<!-- Поворот. Стоит в одном ряду с масштабом, потому
+							     что делает то же самое — правит саму картинку
+							     под неподвижной рамкой, а не кадр.
+
+							     Одна кнопка, а не две: четверть за нажатие,
+							     четыре нажатия возвращают на место, и обратная
+							     кнопка сэкономила бы два нажатия из трёх раз в
+							     жизни. Поворот запоминается в ссылке рядом с
+							     кадрами и принадлежит персонажу — тот же файл у
+							     другого персонажа остаётся как лежал. -->
+							<Button Grid.Column="4" x:Name="RotateButton" Classes="iconBtn"
+							        Click="OnRotateClick"
+							        VerticalAlignment="Center"
+							        behaviours:TooltipBehavior.Tip="Повернуть"
+							        behaviours:TooltipBehavior.Description="Четверть оборота по часовой стрелке за нажатие. Кадр поворачивается вместе с картинкой и остаётся на том же её месте">
+								<PathIcon Width="14" Height="14"
+								          Data="M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11c-.17-1.39-.72-2.73-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.17 2.74-.71 3.9-1.61l-1.44-1.44c-.75.54-1.59.89-2.46 1.03zm3.89-2.42l1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z"/>
+							</Button>
+
+							<!-- Направляющие. Одна кнопка на три состояния:
+							     сначала центральные оси, потом сетка по третям,
+							     потом ничего. Оси ставят лицо по середине
+							     кружка, сетка — по правилу третей у полоски;
+							     нужны они по очереди, а не вместе, поэтому и
+							     кнопка одна.
+
+							     Линии только подсказка кадрирующему: в ссылку
+							     они не уезжают и на картинке не остаются. -->
+							<Button Grid.Column="5" x:Name="GuidesButton" Classes="iconBtn"
+							        Click="OnGuidesClick"
+							        VerticalAlignment="Center"
+							        behaviours:TooltipBehavior.Tip="Направляющие"
+							        behaviours:TooltipBehavior.Description="Нажатие переключает: центральные оси, сетка по третям, ничего. Линии видны только здесь и в картинку не попадают">
+								<PathIcon Width="14" Height="14"
+								          Data="F1 M2,8.5 H22 V9.5 H2 Z M2,14.5 H22 V15.5 H2 Z M8.5,2 H9.5 V22 H8.5 Z M14.5,2 H15.5 V22 H14.5 Z"/>
+							</Button>
+						</Grid>
 
 						</StackPanel>
 

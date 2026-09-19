@@ -242,19 +242,29 @@ namespace Writersword.Modules.TextEditor.Document
             });
         }
 
-        private void EndFontPreviewSession(bool commit)
+        private void EndFontPreviewSession(bool commit, string? chosenFont)
         {
-            _logger.Information("[FONT] End: commit={C} previewFont={F} targets={T}",
-                commit, _previewFont, _previewTargets.Count);
+            _logger.Information("[FONT] End: commit={C} chosen={Ch} previewFont={F} targets={T}",
+                commit, chosenFont, _previewFont, _previewTargets.Count);
             // Режим сравнения (read-only): коммит запрещён — ветка отмены ниже
             // восстановит исходные раскладки, модель не изменится.
             if (commit && IsEditingBlocked) commit = false;
 
             if (commit)
             {
-                var font = _previewFont;
+                // Выбор из списка главнее показанного предпросмотра: список закрывается
+                // и по набранному руками имени, которого предпросмотр не видел.
+                var font = string.IsNullOrWhiteSpace(chosenFont) ? _previewFont : chosenFont;
+
                 // Снимок целей до очистки сессии.
                 var targets = _previewTargets.ToList();
+
+                // Сеанса могло не быть вовсе (список открылся, когда предпросмотр не
+                // строился) — цели считаются сейчас. Иначе выбранная гарнитура не
+                // применялась бы ни здесь, ни где-то ещё: другого места у неё нет.
+                if (targets.Count == 0 && !string.IsNullOrEmpty(font))
+                    BuildPreviewTargets(targets);
+
                 // Убираем preview-раскладки из кэша — модель сейчас изменится, восстанавливать
                 // исходные не нужно.
                 foreach (var vm in _previewSavedLayouts.Keys)
@@ -358,6 +368,8 @@ namespace Writersword.Modules.TextEditor.Document
             }
             if (cmds.Count == 0)
             {
+                // Форматировать нечего: пустой абзац или пустое выделение. Свойство
+                // ставится «ожидающим» через снапшотный путь — он один это умеет.
                 DocVm.SetFontFamily(font);
                 return;
             }

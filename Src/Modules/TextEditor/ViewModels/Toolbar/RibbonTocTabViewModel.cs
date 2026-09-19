@@ -21,6 +21,17 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// <summary>Пересобрать оглавление после правки его настроек.</summary>
         void RebuildActiveToc();
 
+        /// <summary>
+        /// Проставить строкам свежие номера страниц, не пересобирая список.
+        ///
+        /// Нужно отдельно от пересборки, потому что последствия у них разные.
+        /// Пересборка сносит строки и создаёт их заново из заголовков: всё, что
+        /// человек в них поправил руками — дописал пояснение, убрал лишнее слово,
+        /// выделил название части, — исчезает. Обновление номеров трогает в строке
+        /// только то, что стоит после табуляции.
+        /// </summary>
+        void RefreshActiveTocPageNumbers();
+
         /// <summary>Убрать оглавление из рукописи.</summary>
         void RemoveActiveToc();
 
@@ -96,6 +107,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             _host = host;
 
             UpdateCommand = ReactiveCommand.Create(() => _host.RebuildActiveToc());
+            UpdatePagesCommand = ReactiveCommand.Create(() => _host.RefreshActiveTocPageNumbers());
             InsertCommand = ReactiveCommand.Create(() => _host.InsertToc());
             RemoveCommand = ReactiveCommand.Create(() => _host.RemoveActiveToc());
             GoToTargetCommand = ReactiveCommand.Create(() => _host.GoToTocTarget());
@@ -121,6 +133,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         // ── Команды ───────────────────────────────────────────────────────
 
         public ICommand UpdateCommand { get; }
+
+        /// <summary>Обновить только номера страниц, не трогая названия строк.</summary>
+        public ICommand UpdatePagesCommand { get; }
         public ICommand InsertCommand { get; }
         public ICommand RemoveCommand { get; }
 
@@ -237,6 +252,28 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             {
                 double clamped = value < 0 ? 0 : (value > 144 ? 144 : value);
                 Apply(toc => toc.LevelIndentPt = clamped);
+            }
+        }
+
+        /// <summary>
+        /// Плотность заполнителя в процентах: сто — обычный шаг, двести — вдвое гуще.
+        ///
+        /// В ленте проценты, в настройках множитель. Проценты понятнее у поля, которое
+        /// крутят на глаз: «сто пятьдесят» читается как «в полтора раза гуще», а «1,5»
+        /// сначала требует догадаться, от чего эта половина.
+        /// </summary>
+        public double LeaderDensityPercent
+        {
+            get
+            {
+                double density = Toc?.LeaderDensity ?? 1.0;
+                if (density <= 0) density = 1.0;
+                return density * 100.0;
+            }
+            set
+            {
+                double clamped = value < 25 ? 25 : (value > 400 ? 400 : value);
+                Apply(toc => toc.LeaderDensity = clamped / 100.0);
             }
         }
 
@@ -501,6 +538,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 this.RaisePropertyChanged(nameof(MaxLevel));
                 this.RaisePropertyChanged(nameof(LevelIndentPt));
                 this.RaisePropertyChanged(nameof(LevelsText));
+
+                this.RaisePropertyChanged(nameof(LeaderDensityPercent));
 
                 this.RaisePropertyChanged(nameof(IsLeaderNone));
                 this.RaisePropertyChanged(nameof(IsLeaderDots));

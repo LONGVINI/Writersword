@@ -74,7 +74,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
                 var crops = await RequestCropForCard(current!, target.AvatarStrip, target);
                 if (crops is null) return;
 
-                var combined = CharacterAvatarRef.Combine(current, crops.Circle, crops.Strip);
+                var combined = CharacterAvatarRef.Apply(current, crops);
                 if (!string.IsNullOrEmpty(combined)) PickQuickAvatar(combined!);
             });
 
@@ -183,6 +183,21 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
         /// то, чего на карточке не видно.
         /// </summary>
         public bool ShowRingRow => _owner.SelectedCards.Any(x => !x.AvatarStrip);
+
+        /// <summary>
+        /// Аватарку поменяли снаружи — отменой, повтором или из самой
+        /// карточки. Панель показывает картинку выбранной строки списка, но об
+        /// изменениях в ней сама не узнаёт: строка ей не хозяин, а источник
+        /// значения. Поэтому правая колонка и оставалась с прежним портретом
+        /// после Ctrl+Z, хотя в карточках он уже вернулся.
+        /// </summary>
+        public void RefreshAvatar()
+        {
+            this.RaisePropertyChanged(nameof(AvatarBitmap));
+            this.RaisePropertyChanged(nameof(FallbackIcon));
+            this.RaisePropertyChanged(nameof(CanCropAvatar));
+            this.RaisePropertyChanged(nameof(CanClearAvatar));
+        }
 
         /// <summary>
         /// Список сменился снаружи: перевыбрали карточки, или их пересобрали

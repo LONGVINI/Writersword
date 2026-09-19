@@ -108,6 +108,14 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             CharacterParameterType.Text => CharactersStrings.Param_AddText,
             CharacterParameterType.StateList => CharactersStrings.Param_AddStateList,
             CharacterParameterType.Boolean => CharactersStrings.Param_AddBoolean,
+
+            // Новые типы подписаны прямо здесь, а не строкой из ресурсов:
+            // ресурсы правятся сразу в трёх файлах (resx, ru.resx и
+            // сгенерированный Designer), и разъехавшийся между ними ключ
+            // ломает сборку молча. Появится перевод — переедут и эти.
+            CharacterParameterType.Number => "Число",
+            CharacterParameterType.LongText => "Описание",
+            CharacterParameterType.MultiChoice => "Несколько вариантов",
             _ => string.Empty
         };
 
@@ -138,6 +146,15 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public bool ShowChoice => IsApplicable && _model.Type == CharacterParameterType.StateList;
         public bool ShowYesNo => IsApplicable && _model.Type == CharacterParameterType.Boolean;
 
+        /// <summary>Свободное число: поле в одну строку, без шкалы и краёв.</summary>
+        public bool ShowNumber => IsApplicable && _model.Type == CharacterParameterType.Number;
+
+        /// <summary>Описание: то же текстовое значение, но поле высокое.</summary>
+        public bool ShowLongText => IsApplicable && _model.Type == CharacterParameterType.LongText;
+
+        /// <summary>Несколько вариантов: список галок вместо выпадающего списка.</summary>
+        public bool ShowMultiChoice => IsApplicable && _model.Type == CharacterParameterType.MultiChoice;
+
         private void RaiseEditorVisibility()
         {
             this.RaisePropertyChanged(nameof(IsApplicable));
@@ -146,6 +163,9 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             this.RaisePropertyChanged(nameof(ShowText));
             this.RaisePropertyChanged(nameof(ShowChoice));
             this.RaisePropertyChanged(nameof(ShowYesNo));
+            this.RaisePropertyChanged(nameof(ShowNumber));
+            this.RaisePropertyChanged(nameof(ShowLongText));
+            this.RaisePropertyChanged(nameof(ShowMultiChoice));
         }
 
         // ── Шкала ────────────────────────────────────────────────────────
@@ -282,5 +302,129 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         }
 
         public string BoolCaption => _model.BoolValue ? _model.TrueLabel : _model.FalseLabel;
+
+        // ── Свободное число ──────────────────────────────────────────────
+        //
+        // Через строку, а не через double: пустое поле должно оставаться
+        // пустым. Привязка к числу подставила бы в него ноль, и «рост не
+        // указан» стало бы «рост нулевой» — разные утверждения, как и с
+        // отметкой «неприменимо» выше.
+
+        public string NumberText
+        {
+            get => _model.IsNotApplicable || !_model.HasNumber
+                ? string.Empty
+                : _model.NumericValue.ToString("0.###", CultureInfo.CurrentCulture);
+            set
+            {
+                var text = (value ?? string.Empty).Trim();
+
+                if (text.Length == 0)
+                {
+                    if (!_model.HasNumber) return;
+                    _model.HasNumber = false;
+                    _model.NumericValue = 0;
+                    this.RaisePropertyChanged();
+                    Edited?.Invoke();
+                    return;
+                }
+
+                // Запятая и точка равноправны: раскладка одна, а привычка
+                // у каждого своя.
+                text = text.Replace(',', '.');
+                if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    // Не число — поле возвращается к прежнему значению, а не
+                    // молча обнуляется.
+                    this.RaisePropertyChanged();
+                    return;
+                }
+
+                if (_model.HasNumber && Math.Abs(_model.NumericValue - parsed) < double.Epsilon) return;
+
+                _model.HasNumber = true;
+                _model.NumericValue = parsed;
+                this.RaisePropertyChanged();
+                Edited?.Invoke();
+            }
+        }
+
+        // ── Несколько вариантов ──────────────────────────────────────────
+
+        private ObservableCollection<CharacterChoiceOptionViewModel>? _options;
+
+        /// <summary>
+        /// Варианты с галками. Собираются лениво: у поля другого типа их нет
+        /// вовсе, а список параметров бывает длинным.
+        /// </summary>
+        public ObservableCollection<CharacterChoiceOptionViewModel> Options
+        {
+            get
+            {
+                if (_options != null) return _options;
+
+                _options = new ObservableCollection<CharacterChoiceOptionViewModel>();
+                foreach (var state in _model.States)
+                {
+                    var option = new CharacterChoiceOptionViewModel(
+                        state,
+                        _model.SelectedStates.Contains(state),
+                        ToggleOption);
+                    _options.Add(option);
+                }
+
+                return _options;
+            }
+        }
+
+        private void ToggleOption(string state, bool selected)
+        {
+            if (selected)
+            {
+                if (_model.SelectedStates.Contains(state)) return;
+                _model.SelectedStates.Add(state);
+            }
+            else
+            {
+                if (!_model.SelectedStates.Remove(state)) return;
+            }
+
+            this.RaisePropertyChanged(nameof(SelectedStatesCaption));
+            Edited?.Invoke();
+        }
+
+        /// <summary>Отмеченное одной строкой — для свёрнутого вида и сравнения.</summary>
+        public string SelectedStatesCaption => string.Join(", ", _model.SelectedStates);
+    }
+
+    /// <summary>
+    /// Один вариант в поле с несколькими ответами. Своя вью-модель, а не
+    /// голая строка: галке нужно состояние, а списку — знать, что её
+    /// переключили.
+    /// </summary>
+    public class CharacterChoiceOptionViewModel : ReactiveObject
+    {
+        private readonly Action<string, bool> _toggle;
+
+        public CharacterChoiceOptionViewModel(string name, bool isSelected, Action<string, bool> toggle)
+        {
+            Name = name;
+            _isSelected = isSelected;
+            _toggle = toggle;
+        }
+
+        public string Name { get; }
+
+        private bool _isSelected;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected == value) return;
+                this.RaiseAndSetIfChanged(ref _isSelected, value);
+                _toggle(Name, value);
+            }
+        }
     }
 }

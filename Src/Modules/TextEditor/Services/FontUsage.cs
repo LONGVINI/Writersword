@@ -114,6 +114,79 @@ namespace Writersword.Modules.TextEditor.Services
         }
 
         /// <summary>
+        /// Переставить закреплённую гарнитуру на новое место в списке.
+        ///
+        /// Порядок закреплённых человек задаёт сам — перетаскиванием строки, — и это
+        /// единственный список, где порядок вообще есть: полный перечень идёт по
+        /// алфавиту, недавние по времени, и переставлять в них нечего.
+        /// </summary>
+        /// <param name="family">Гарнитура, которую переставляют.</param>
+        /// <param name="newIndex">Куда её поставить. Выходящее за список место прижимается к краю.</param>
+        /// <returns>true — порядок изменился и записан.</returns>
+        public static bool MovePinned(string family, int newIndex)
+        {
+            if (string.IsNullOrWhiteSpace(family)) return false;
+
+            lock (_lock)
+            {
+                EnsureLoaded();
+
+                int at = _state!.Pinned.FindIndex(
+                    f => string.Equals(f, family, StringComparison.OrdinalIgnoreCase));
+
+                if (at < 0) return false;
+
+                int target = newIndex < 0 ? 0 : newIndex;
+                if (target >= _state.Pinned.Count) target = _state.Pinned.Count - 1;
+                if (target == at) return false;
+
+                string moved = _state.Pinned[at];
+                _state.Pinned.RemoveAt(at);
+                _state.Pinned.Insert(target, moved);
+
+                Save();
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Записать порядок закреплённых целиком.
+        ///
+        /// Имена, которых в закреплённых нет, отбрасываются, а пропущенные остаются на
+        /// своих местах в хвосте: список на экране мог быть отфильтрован поиском, и
+        /// принимать его за весь набор значило бы молча снять закрепление со всего, что
+        /// в поиск не попало.
+        /// </summary>
+        public static void SetPinnedOrder(IReadOnlyList<string> order)
+        {
+            if (order is null) return;
+
+            lock (_lock)
+            {
+                EnsureLoaded();
+
+                var known = new List<string>(_state!.Pinned);
+                var result = new List<string>(known.Count);
+
+                foreach (string name in order)
+                {
+                    int at = known.FindIndex(
+                        f => string.Equals(f, name, StringComparison.OrdinalIgnoreCase));
+
+                    if (at < 0) continue;
+
+                    result.Add(known[at]);
+                    known.RemoveAt(at);
+                }
+
+                result.AddRange(known);
+
+                _state.Pinned = result;
+                Save();
+            }
+        }
+
+        /// <summary>
         /// Отметить гарнитуру использованной. Она встаёт первой среди недавних.
         /// </summary>
         public static void NoteUsed(string family)

@@ -37,9 +37,9 @@ namespace Writersword.Modules.TextEditor.Services
     {
         private static readonly ILogger _logger = Log.ForContext(typeof(ProjectFonts));
 
-        /// <summary>Папка шрифтов в архиве проекта. Общая, а не редакторская:
+        /// <summary>Папка шрифтов внутри проекта. Общая, а не редакторская:
         /// шрифт может понадобиться не только рукописи.</summary>
-        public const string ZipFolder = "Assets/Fonts";
+        public const string FontsFolder = "Assets/Fonts";
 
         private static readonly object _lock = new();
 
@@ -173,7 +173,7 @@ namespace Writersword.Modules.TextEditor.Services
 
                 try
                 {
-                    foreach (var path in context.GetFiles(ZipFolder).ToList())
+                    foreach (var path in context.GetFiles(FontsFolder).ToList())
                     {
                         var bytes = context.ReadFile(path);
                         if (bytes is null || bytes.Length == 0) continue;
@@ -447,7 +447,7 @@ namespace Writersword.Modules.TextEditor.Services
                     if (bytes.Length == 0) continue;
 
                     var name = StoredName(bytes);
-                    var path = $"{ZipFolder}/{name}";
+                    var path = $"{FontsFolder}/{name}";
 
                     if (context.FileExists(path)) continue;
 
@@ -504,7 +504,7 @@ namespace Writersword.Modules.TextEditor.Services
 
                     foreach (var face in faces)
                     {
-                        var bytes = context.ReadFile($"{ZipFolder}/{face.FileName}");
+                        var bytes = context.ReadFile($"{FontsFolder}/{face.FileName}");
                         if (bytes is null || bytes.Length == 0) continue;
 
                         var name = Sanitize(family!) + ExtensionOf(bytes);

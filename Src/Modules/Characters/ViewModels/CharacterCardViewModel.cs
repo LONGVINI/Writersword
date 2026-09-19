@@ -78,6 +78,11 @@ namespace Writersword.Modules.Characters.ViewModels
 
             // Групповые обращения ссылаются на папки проекта: список папок
             // приходит снаружи, потому что карточка о них не знает.
+            // Поля анкет показываются в «Общем», а хранятся во вкладке
+            // параметров: порознь вкладки друг о друге не знают, и связать их
+            // может только карточка, которая создала обе.
+            BasicsTab.AttachParameters(ParametersTab);
+
             BasicsTab.SetAddressFolders(folders ?? System.Linq.Enumerable.Empty<CharacterFolder>());
 
             // Состав карточки задаётся в «Общем» — это свойство ядра. Поля
@@ -86,7 +91,13 @@ namespace Writersword.Modules.Characters.ViewModels
             BasicsTab.AnketasChanged += () =>
             {
                 var updated = _characterService.GetById(CharacterId);
-                if (updated != null) ParametersTab.ReloadFromModel(updated);
+                if (updated == null) return;
+
+                ParametersTab.ReloadFromModel(updated);
+
+                // Значения пересобраны заново — разделы в «Общем» держат
+                // ссылки на прежние и показывали бы выброшенное.
+                BasicsTab.RebuildSections();
             };
 
             // Автосохранение карточки: кнопки Save в шапке больше нет, правки
@@ -122,6 +133,25 @@ namespace Writersword.Modules.Characters.ViewModels
                     h => collection.CollectionChanged += h,
                     h => collection.CollectionChanged -= h)
                 .Select(_ => Unit.Default);
+
+        /// <summary>
+        /// Перечитать персонажа из хранилища. Зовётся при возврате на вкладку
+        /// редактора: карточка живёт снимком, сделанным в момент открытия, и
+        /// правки, сделанные тем временем в списке или в боковой панели, до
+        /// неё сами не доходят.
+        ///
+        /// Перечитывается вкладка «Основное» — то, что правят снаружи
+        /// карточки: имя, цвет, аватарка, важность, метки. Остальные вкладки
+        /// снаружи никто не трогает.
+        /// </summary>
+        public void Reload()
+        {
+            BasicsTab.ReloadFromStorage();
+
+            this.RaisePropertyChanged(nameof(DisplayName));
+            this.RaisePropertyChanged(nameof(Color));
+            this.RaisePropertyChanged(nameof(IsCollective));
+        }
 
         private void Save()
         {

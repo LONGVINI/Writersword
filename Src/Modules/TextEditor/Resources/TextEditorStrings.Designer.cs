@@ -166,9 +166,13 @@ namespace Writersword.Modules.TextEditor.Resources
         public static string Toc_Group_Main => ResourceManager.GetString("Toc_Group_Main", _culture)!;
         public static string Toc_Group_Levels => ResourceManager.GetString("Toc_Group_Levels", _culture)!;
         public static string Toc_Group_Line => ResourceManager.GetString("Toc_Group_Line", _culture)!;
+        public static string Toc_LeaderDensity => ResourceManager.GetString("Toc_LeaderDensity", _culture)!;
+        public static string Toc_LeaderDensity_Tip => ResourceManager.GetString("Toc_LeaderDensity_Tip", _culture)!;
         public static string Toc_Group_Source => ResourceManager.GetString("Toc_Group_Source", _culture)!;
         public static string Toc_Update => ResourceManager.GetString("Toc_Update", _culture)!;
         public static string Toc_Update_Tip => ResourceManager.GetString("Toc_Update_Tip", _culture)!;
+        public static string Toc_UpdatePages => ResourceManager.GetString("Toc_UpdatePages", _culture)!;
+        public static string Toc_UpdatePages_Tip => ResourceManager.GetString("Toc_UpdatePages_Tip", _culture)!;
         public static string Toc_GoTo => ResourceManager.GetString("Toc_GoTo", _culture)!;
         public static string Toc_GoTo_Tip => ResourceManager.GetString("Toc_GoTo_Tip", _culture)!;
         public static string Toc_Remove => ResourceManager.GetString("Toc_Remove", _culture)!;

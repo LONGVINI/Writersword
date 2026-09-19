@@ -196,6 +196,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         /// <inheritdoc/>
+        public void RefreshActiveTocPageNumbers()
+        {
+            if (ActiveToc is null) return;
+
+            DocumentViewModel?.RefreshTocPageNumbers();
+        }
+
+        /// <inheritdoc/>
         public void RemoveActiveToc()
         {
             var toc = ActiveToc;
@@ -321,6 +329,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         /// <summary>Обновляет подпись страниц. Зовёт канвас после листания.</summary>
         public void UpdateSpreadPageLabel(int firstPage, int totalPages)
+            => UpdateSpreadPageLabel(firstPage, totalPages, 0.0);
+
+        /// <summary>
+        /// То же, но с длительностью идущего перехода: книга объявляет о смене места
+        /// в начале переворота, и лента ведёт бегунок ровно столько же.
+        /// </summary>
+        public void UpdateSpreadPageLabel(int firstPage, int totalPages, double transitionMs)
         {
             if (totalPages <= 0)
             {
@@ -331,7 +346,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Поле ввода и ползунок берут состояние отсюда же: место в книге одно, и
             // хранить его в двух местах значит однажды их рассогласовать.
-            ReadingRibbon.SetPageState(firstPage, totalPages);
+            ReadingRibbon.SetPageState(firstPage, totalPages, transitionMs);
 
             int second = Math.Min(firstPage + 1, totalPages);
             bool pair = ReadingRibbon.Flow == Models.Settings.ReadingFlow.Spread && second > firstPage;
@@ -384,6 +399,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             target.FontStep = Math.Clamp(Settings.ReadingFontStep,
                 Models.Settings.ReadingSettings.MinFontStep,
                 Models.Settings.ReadingSettings.MaxFontStep);
+            target.FontFamily = Settings.ReadingFontFamily;
         }
 
         /// <summary>
@@ -404,6 +420,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Settings.ReadingShowPageNumbers = r.ShowPageNumbers;
             Settings.ReadingScaleContent = r.ScaleContent;
             Settings.ReadingFontStep = r.FontStep;
+            Settings.ReadingFontFamily = r.FontFamily;
 
             GlobalSettingsChanged?.Invoke(Settings);
         }
@@ -435,6 +452,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             target.FontStep = Math.Clamp(restored.FontStep,
                 Models.Settings.ReadingSettings.MinFontStep,
                 Models.Settings.ReadingSettings.MaxFontStep);
+            target.FontFamily = restored.FontFamily;
             target.Zoom = Math.Clamp(restored.Zoom,
                 Models.Settings.ReadingSettings.MinZoom,
                 Models.Settings.ReadingSettings.MaxZoom);
@@ -502,7 +520,64 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 byId[copy.Id] = copy;
             }
 
-            return result;
+            // Спрятанные помечаются в самом конце: где вид спрятан, помнят настройки
+            // программы, а не он сам, и относится это одинаково и к встроенным, и к
+            // заведённым руками.
+            var hidden = Settings.HiddenReadingThemeIds;
+            if (hidden is { Count: > 0 })
+                foreach (var theme in result)
+                    if (hidden.Contains(theme.Id)) theme.IsHidden = true;
+
+            return SortByStoredOrder(result);
+        }
+
+        /// <summary>
+        /// Раскладывает виды так, как их разложил человек. Незнакомые — те, что
+        /// появились после последней правки списка, — идут следом, в своём порядке.
+        /// </summary>
+        private System.Collections.Generic.List<Models.Settings.ReadingTheme> SortByStoredOrder(
+            System.Collections.Generic.List<Models.Settings.ReadingTheme> themes)
+        {
+            var order = Settings.ReadingThemeOrder;
+            if (order is not { Count: > 0 }) return themes;
+
+            var rank = new System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < order.Count; i++)
+                if (!string.IsNullOrWhiteSpace(order[i])) rank.TryAdd(order[i], i);
+
+            var known = new System.Collections.Generic.List<Models.Settings.ReadingTheme>(themes.Count);
+            var rest = new System.Collections.Generic.List<Models.Settings.ReadingTheme>();
+
+            foreach (var theme in themes)
+            {
+                if (rank.ContainsKey(theme.Id)) known.Add(theme);
+                else rest.Add(theme);
+            }
+
+            known.Sort((a, b) => rank[a.Id].CompareTo(rank[b.Id]));
+            known.AddRange(rest);
+
+            return known;
+        }
+
+        /// <summary>
+        /// Виды для списков выбора: всё, кроме спрятанных. Выбранный сейчас остаётся
+        /// в списке даже спрятанным — иначе лента показывала бы имя, которого в её
+        /// собственном списке нет.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<Models.Settings.ReadingTheme> VisibleReadingThemes(
+            string? keepId)
+        {
+            var all = ReadingThemes();
+            var result = new System.Collections.Generic.List<Models.Settings.ReadingTheme>(all.Count);
+
+            foreach (var theme in all)
+                if (!theme.IsHidden || string.Equals(theme.Id, keepId, StringComparison.Ordinal))
+                    result.Add(theme);
+
+            // Спрятали всё до единого — списку остаётся показать всё: пустой список
+            // выбора хуже лишних строк в нём.
+            return result.Count > 0 ? result : all;
         }
 
         /// <summary>Вид по опознавателю. Не нашёлся — встроенный кремовый.</summary>
@@ -533,9 +608,36 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var forDocument = new System.Collections.Generic.List<Models.Settings.ReadingTheme>();
             var forGlobal = new System.Collections.Generic.List<Models.Settings.ReadingTheme>();
 
+            // Спрятанные — отдельным списком: он один на все виды, включая
+            // встроенные, которым записать это некуда.
+            var hidden = new System.Collections.Generic.List<string>();
+            foreach (var theme in themes)
+                if (theme.IsHidden && !string.IsNullOrWhiteSpace(theme.Id))
+                    hidden.Add(theme.Id);
+
+            Settings.HiddenReadingThemeIds = hidden;
+
+            // Порядок — как в окне: списки выбора обязаны показывать виды в том же
+            // ряду, в каком человек их разложил, включая встроенные.
+            var order = new System.Collections.Generic.List<string>(themes.Count);
+            foreach (var theme in themes)
+                if (!string.IsNullOrWhiteSpace(theme.Id)) order.Add(theme.Id);
+
+            Settings.ReadingThemeOrder = order;
+
             foreach (var theme in themes)
             {
                 if (theme.IsBuiltIn) continue;
+
+                // Вид без области пропал бы молча: он не пишется ни в документ, ни в
+                // настройки программы, а человек его только что настраивал. По замыслу
+                // такого не бывает — область ставится при заведении вида и всегда одна
+                // из двух, — но цена ошибки здесь потеря работы, а не лишняя запись.
+                if (!theme.InDocument && !theme.IsGlobal)
+                {
+                    theme.InDocument = true;
+                    theme.IsGlobal = true;
+                }
 
                 // Картинки вида укладываются по своим хранилищам прямо здесь,
                 // и у каждой области своё.
@@ -555,20 +657,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 if (theme.InDocument)
                 {
                     var inDocument = theme.Clone();
-                    inDocument.ImagePath =
-                        Models.Settings.ReadingAssets.EnsureInProject(inDocument.ImagePath);
-                    inDocument.BackdropImagePath =
-                        Models.Settings.ReadingAssets.EnsureInProject(inDocument.BackdropImagePath);
+                    inDocument.MapImageReferences(
+                        Models.Settings.ReadingAssets.EnsureInProject);
                     forDocument.Add(inDocument);
                 }
 
                 if (theme.IsGlobal)
                 {
                     var everywhere = theme.Clone();
-                    everywhere.ImagePath =
-                        Models.Settings.ReadingAssets.EnsureInAppStore(everywhere.ImagePath);
-                    everywhere.BackdropImagePath =
-                        Models.Settings.ReadingAssets.EnsureInAppStore(everywhere.BackdropImagePath);
+                    everywhere.MapImageReferences(
+                        Models.Settings.ReadingAssets.EnsureInAppStore);
                     forGlobal.Add(everywhere);
                 }
             }
@@ -634,51 +732,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// <summary>Просьба открыть окно видов сразу на новом виде. Исполняет вью.</summary>
         public Action? ReadingThemeCreateRequested { get; set; }
 
-        /// <summary>
-        /// Открывает библиотеку фонов для поля вокруг книги. Библиотека одна и та же,
-        /// что и у фона рабочей области: заготовки, свои папки и свои файлы — заводить
-        /// для чтения второй такой же склад незачем.
-        /// </summary>
-        public void PickReadingBackdropImage() => ReadingBackdropImageRequested?.Invoke();
-
-        /// <summary>Просьба показать библиотеку фонов для чтения. Исполняет вью.</summary>
-        public Action? ReadingBackdropImageRequested { get; set; }
-
-        /// <summary>Адрес картинки поля у вида чтения — окну фонов, чтобы отметить её.</summary>
-        public string? ReadingBackdropReference => Reading?.Active?.BackdropImagePath;
-
-        /// <summary>
-        /// Кладёт выбранную картинку в поле вокруг книги. Путь уже уложен в хранилище
-        /// вида — сюда приходит его адрес, а не имя файла на диске.
-        /// </summary>
-        public void SetReadingBackdropImage(string reference)
-        {
-            if (string.IsNullOrWhiteSpace(reference)) return;
-            if (Reading?.Active is not { } theme) return;
-
-            theme.BackdropImagePath = reference;
-
-            // Выбранная картинка сама по себе ничего не покажет, пока она не включена:
-            // человек выбирал её именно затем, чтобы увидеть.
-            theme.UseBackdropImage = true;
-
-            ApplyReadingVisual();
-            PersistReadingPreferences();
-            ReadingRibbon.RefreshAll();
-        }
-
-        /// <summary>Убирает картинку из поля вокруг книги.</summary>
-        public void ClearReadingBackdropImage()
-        {
-            if (Reading?.Active is not { } theme) return;
-
-            theme.UseBackdropImage = false;
-            theme.BackdropImagePath = null;
-
-            ApplyReadingVisual();
-            PersistReadingPreferences();
-            ReadingRibbon.RefreshAll();
-        }
+        // Отдельной библиотеки фонов больше нет: картинки поля и бумаги живут в виде,
+        // и выбирают их в окне видов — там же, где всё остальное его оформление.
 
         /// <summary>
         /// Общие настройки модуля изменились и их пора сохранить. Модуль знает, куда
@@ -726,11 +781,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (EditorView is not { ThemeEnabled: true } v) return null;
             if (v.Active is not { } theme) return null;
-            if (!theme.UseBackdropImage) return null;
-            if (string.IsNullOrWhiteSpace(theme.BackdropImagePath)) return null;
+            if (theme.BackdropImageFor() is not { Length: > 0 } backdropRef) return null;
 
             return (Models.Settings.ReadingTheme.FieldColorHex(theme),
-                    theme.BackdropImagePath,
+                    backdropRef,
                     theme.BackdropImageFit,
                     Math.Clamp(theme.BackdropImageOpacity, 0.0, 1.0));
         }
@@ -756,11 +810,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 return;
             }
 
+            // Свои цвета линейки старше выводимых: вид вправе назначить полосе,
+            // делениям и зоне полей что угодно, а пусто — берётся бумага, чернила и
+            // поле, как было.
+            static string? Pick(string? own, string? derived)
+                => string.IsNullOrWhiteSpace(own) ? derived : own;
+
             Ruler.ApplyTheme(
                 true,
-                theme.SheetColor,
-                theme.InkColor,
-                Models.Settings.ReadingTheme.FieldColorHex(theme));
+                Pick(theme.RulerSheetColor, theme.SheetColor),
+                Pick(theme.RulerInkColor, theme.InkColor),
+                Pick(theme.RulerFieldColor, Models.Settings.ReadingTheme.FieldColorHex(theme)),
+                theme.TabMarkColor);
         }
 
         /// <summary>
@@ -817,11 +878,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// открывает вью: модель модуля не знает ни про окна, ни про хранилище
         /// картинок вида.
         /// </summary>
-        public Action? BackdropImageRequested { get; set; }
-
-        /// <summary>Открывает выбор картинки фона.</summary>
-        public void PickBackdropImage() => BackdropImageRequested?.Invoke();
-
         /// <summary>
         /// Убирает картинку из-под страниц. Сам путь стирается вместе с признаком:
         /// выключенная картинка, о которой нигде не сказано, — это забытая
@@ -831,32 +887,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (EditorView?.Active is not { } theme) return;
 
-            theme.UseBackdropImage = false;
-            theme.BackdropImagePath = null;
-
-            ApplyEditorViewVisual();
-            PersistEditorViewPreferences();
-            Ribbon.Appearance.RefreshAll();
-        }
-
-        /// <summary>
-        /// Кладёт выбранную картинку под страницы. Путь уже уложен в хранилище
-        /// вида — сюда приходит его адрес, а не имя файла на диске.
-        /// </summary>
-        public void SetBackdropImage(string reference)
-        {
-            if (string.IsNullOrWhiteSpace(reference)) return;
-            if (EditorView is not { } v || v.Active is not { } theme) return;
-
-            theme.BackdropImagePath = reference;
-
-            // Выбранная картинка сама по себе ничего не покажет, пока она не
-            // включена: человек выбирал её именно затем, чтобы увидеть.
-            theme.UseBackdropImage = true;
-
-            // И вид применяется, если до сих пор стоял «Без вида»: иначе картинка
-            // ложится в копию, которую никто не рисует.
-            v.ThemeEnabled = true;
+            theme.BackdropImagePaths.Clear();
 
             ApplyEditorViewVisual();
             PersistEditorViewPreferences();
@@ -1412,6 +1443,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // рукописи могли быть приложены свои виды, и в прежнем списке их нет.
             Ribbon.Appearance.RebuildThemeItems();
             Ribbon.Appearance.RefreshAll();
+
+            // Лента чтения — тем же порядком. Свой список она строит в собственном
+            // конструкторе, а он отрабатывает раньше, чем сюда приходят настройки:
+            // виды, заведённые «везде», лежат именно в них, и до первой правки списка
+            // лента показывала одни встроенные. Человек видел, что его вид пропал, и
+            // возвращался он только после захода в окно видов — там список
+            // пересобирается.
+            ReadingRibbon.RefreshAll();
             ApplyRulerTheme();
             BackdropLayerChanged?.Invoke();
 
@@ -1530,6 +1569,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Settings = settings;
             MonitorSizeInches = settings.MonitorSizeInches;
             Ruler.Units = settings.RulerUnits;
+
+            // Виды чтения живут в этом же наборе: сменился набор — сменился и список.
+            Ribbon.Appearance.RebuildThemeItems();
+            Ribbon.Appearance.RefreshAll();
+            ReadingRibbon.RefreshAll();
 
             // Настройка задаёт разрешение показывать линейки, а окончательное решение
             // принимает режим: в чтении их нет, вертикальной нет и в потоковых режимах.
@@ -1756,15 +1800,31 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var docVm = DocumentViewModel;
             if (docVm is null) return;
 
-            docVm.SetTabStops(stops);
+            // Окно закрылось один раз — и шаг отмены на него один. Позиции абзаца и
+            // общий шаг документа ложатся в общий снимок: порознь они давали два
+            // Ctrl+Z на одно нажатие «ОК», а шаг по умолчанию не откатывался вовсе.
+            bool stepChanged = defaultStepPt > 1
+                && Math.Abs(docVm.Document.DefaultTabStopPt - defaultStepPt) > 0.01;
+
+            docVm.BeginParagraphFormatBatch();
+            try
+            {
+                docVm.SetTabStops(stops);
+
+                if (stepChanged)
+                {
+                    docVm.Document.DefaultTabStopPt = defaultStepPt;
+                    Ruler.DefaultTabStopMm = defaultStepPt * 25.4 / 72.0;
+                }
+            }
+            finally
+            {
+                docVm.EndParagraphFormatBatch();
+            }
+
             Ruler.SetTabStops(stops);
 
-            if (defaultStepPt > 1 && Math.Abs(docVm.Document.DefaultTabStopPt - defaultStepPt) > 0.01)
-            {
-                docVm.Document.DefaultTabStopPt = defaultStepPt;
-                Ruler.DefaultTabStopMm = defaultStepPt * 25.4 / 72.0;
-                docVm.RelayoutAll();
-            }
+            if (stepChanged) docVm.RelayoutAll();
         }
 
         private void OnRulerIndentMarkerChanged(RulerIndentMarkerType markerType, double valueMm)
@@ -2094,7 +2154,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetFontFamily(string f) => DocumentViewModel?.SetFontFamily(f);
         public void BeginFontPreview() => DocumentViewModel?.BeginFontPreview();
         public void PreviewFontFamily(string f) => DocumentViewModel?.PreviewFontFamily(f);
-        public void EndFontPreview(bool commit) => DocumentViewModel?.EndFontPreview(commit);
+        public void EndFontPreview(bool commit, string? fontFamily = null)
+            => DocumentViewModel?.EndFontPreview(commit, fontFamily);
         public void FocusEditor() => DocumentViewModel?.FocusEditor();
         public void SetFontSize(double s) => DocumentViewModel?.SetFontSize(s);
         public void IncreaseFontSize() => DocumentViewModel?.IncreaseFontSize();

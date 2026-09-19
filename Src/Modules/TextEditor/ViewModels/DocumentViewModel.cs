@@ -298,6 +298,30 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Action<TableBlock, string>? BeginTableUndoStepDelegate { get; set; }
         public Action? CommitTableUndoStepDelegate { get; set; }
 
+        /// <summary>
+        /// Кладёт в историю готовый шаг отмены. Нужен операциям, у которых свой, дешёвый
+        /// способ откатиться, — снятию оглавления прежде всего: ему довольно помнить
+        /// снятые абзацы, а снимок всей рукописи для них несоразмерен.
+        ///
+        /// Пара «начать — завершить» здесь не годится: она заводит снимок документа сама,
+        /// а нам нужно положить в тот же стек свою команду, чтобы Ctrl+Z шёл по общему
+        /// порядку и не путал, чья очередь откатываться.
+        /// </summary>
+        public Action<Writersword.Core.Interfaces.Modules.IUndoableCommand>?
+            PushUndoCommandDelegate { get; set; }
+
+        /// <summary>
+        /// Ставит каретку на абзац немедленно и без прокрутки, в отличие от
+        /// <see cref="GoToParagraph"/>, который откладывает переход до конца кадра и
+        /// довозит вид до места сам.
+        ///
+        /// Нужен отмене и повтору: полотно прокручивает вид к каретке сразу, как только
+        /// команда вернула управление, и к тому мигу каретка обязана стоять на новом
+        /// месте. Отложенный переход к этому моменту ещё не случился — и прокрутка шла по
+        /// номеру слайса от прежнего состава документа, то есть в никуда.
+        /// </summary>
+        public Action<int>? SetCaretToParagraphDelegate { get; set; }
+
         private void BeginUndoStep(string description) => BeginUndoStepDelegate?.Invoke(description);
         private void CommitUndoStep() => CommitUndoStepDelegate?.Invoke();
 
@@ -319,8 +343,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// </summary>
         public Func<System.Collections.Generic.Dictionary<Guid, int>>? GetBlockPageNumbersDelegate { get; set; }
 
-        /// <summary>Переход к абзацу по его месту в потоке документа. Ставит канвас.</summary>
-        public Action<int>? GoToParagraphDelegate { get; set; }
+        /// <summary>
+        /// Переход к абзацу по его месту в потоке документа. Ставит канвас.
+        /// Второй довод — класть ли прежнее место в историю прыжков.
+        /// </summary>
+        public Action<int, bool>? GoToParagraphDelegate { get; set; }
 
         /// <summary>
         /// Карта «абзац — номер страницы». Пустая, пока раскладка не построена: показывать
@@ -330,8 +357,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
             => GetBlockPageNumbersDelegate?.Invoke()
                ?? new System.Collections.Generic.Dictionary<Guid, int>();
 
-        /// <summary>Уводит рукопись к абзацу по его месту в потоке документа.</summary>
-        public void GoToParagraph(int paragraphIndex) => GoToParagraphDelegate?.Invoke(paragraphIndex);
+        /// <summary>
+        /// Уводит рукопись к абзацу по его месту в потоке документа. Прежнее место
+        /// кладётся в историю прыжков — оттуда его достаёт Alt+Влево.
+        /// </summary>
+        public void GoToParagraph(int paragraphIndex) => GoToParagraphDelegate?.Invoke(paragraphIndex, true);
+
+        /// <summary>
+        /// То же, но без записи в историю прыжков. Для возвратов каретки, которые
+        /// прыжком не являются: пересборка оглавления, отмена, повтор. Они ставят
+        /// каретку туда же, где человек и был, и в историю им не место.
+        /// </summary>
+        public void GoToParagraphKeepHistory(int paragraphIndex)
+            => GoToParagraphDelegate?.Invoke(paragraphIndex, false);
 
         /// <summary>
         /// Показать или убрать навигатор. Ставит модуль: панель принадлежит ему, а не
@@ -496,7 +534,20 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // Идёт массовая перестройка всех VM-абзацев (загрузка/undo/структурные операции).
         // Канвас в это время пропускает поабзацную инкрементальную раскладку — она
         // бессмысленна (следом идёт общий пересбор) и даёт O(n^2) на больших документах.
-        public bool IsBulkRebuilding { get; private set; }
+        //
+        // Счётчик, а не признак: операции вкладываются друг в друга — пересборка
+        // оглавления сносит старые строки и тут же вставляет новые, — и внутренний
+        // «выход» снял бы признак посреди внешней операции.
+        private int _bulkRebuildDepth;
+
+        public bool IsBulkRebuilding => _bulkRebuildDepth > 0;
+
+        private void BeginBulkRebuild() => _bulkRebuildDepth++;
+
+        private void EndBulkRebuild()
+        {
+            if (_bulkRebuildDepth > 0) _bulkRebuildDepth--;
+        }
 
         /// <summary>
         /// Устанавливается DocumentCanvas. Вызывается при изменении preview-шрифта.
@@ -507,7 +558,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // начала сессии, имя шрифта при наведении и завершение (коммит/отмена).
         public Action? BeginFontPreviewDelegate { get; set; }
         public Action<string>? PreviewFontFamilyDelegate { get; set; }
-        public Action<bool>? EndFontPreviewDelegate { get; set; }
+        public Action<bool, string?>? EndFontPreviewDelegate { get; set; }
 
         // Возврат клавиатурного фокуса редактору (канвасу) после работы с лентой.
         public Action? FocusEditorDelegate { get; set; }
@@ -675,6 +726,150 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             RebuildStyleNames();
             RebuildParagraphViewModels();
+
+            // Рукопись могла прийти из файла, записанного версией, которая теряла
+            // настройки оглавлений. Строки на месте, настроек нет — восстанавливаем по
+            // самим строкам, пока никто не успел их спросить.
+            RestoreLostTocSettings();
+        }
+
+        // ── Потерянные настройки оглавления ───────────────────────────────
+
+        /// <summary>
+        /// Восстанавливает настройки оглавлений по самим строкам рукописи.
+        ///
+        /// Снимок документа какое-то время терял список настроек, а строки сохранял: после
+        /// открытия такого файла оглавление было на листе, но для программы не существовало.
+        /// Лента не показывала свою вкладку, «Обновить» молчал, а отметки табуляции
+        /// оставались там, где их застала последняя правка, — номера страниц расходились
+        /// по строкам вкривь и вкось.
+        ///
+        /// Восстановленное не угадывается: уровни, заголовок, заполнитель и его плотность
+        /// читаются из самих строк. Домысливать приходится только сдвиг по уровням, и тот
+        /// считается по фактическим отступам.
+        /// </summary>
+        private void RestoreLostTocSettings()
+        {
+            if (_document.Sections.Count == 0) return;
+
+            foreach (var block in _document.Sections[0].Blocks)
+            {
+                if (block is not ParagraphBlock para) continue;
+                if (para.Properties.TocOwnerId is not System.Guid owner) continue;
+
+                EnsureTocSettings(owner);
+            }
+        }
+
+        /// <summary>
+        /// Настройки оглавления по опознавателю. Потерянные восстанавливаются по строкам,
+        /// поэтому null не возвращается никогда: раз строка носит опознаватель, оглавление
+        /// в рукописи есть.
+        /// </summary>
+        public Models.Toc.TocSettings TocSettingsFor(System.Guid ownerId)
+            => EnsureTocSettings(ownerId);
+
+        private Models.Toc.TocSettings EnsureTocSettings(System.Guid ownerId)
+        {
+            _document.TableOfContents ??= new System.Collections.Generic.List<Models.Toc.TocSettings>();
+
+            foreach (var toc in _document.TableOfContents)
+                if (toc.Id == ownerId) return toc;
+
+            var restored = new Models.Toc.TocSettings { Id = ownerId };
+            _document.TableOfContents.Add(restored);
+
+            if (_document.Sections.Count == 0) return restored;
+
+            int minLevel = int.MaxValue;
+            int maxLevel = 0;
+            bool sawTitle = false;
+            bool sawPages = false;
+            bool leaderTaken = false;
+
+            double minLevelIndent = 0;
+            double deeperIndent = 0;
+            int deeperLevel = 0;
+
+            foreach (var block in _document.Sections[0].Blocks)
+            {
+                if (block is not ParagraphBlock para) continue;
+
+                var props = para.Properties;
+                if (props.TocOwnerId != ownerId) continue;
+
+                if (props.TocEntryLevel <= 0)
+                {
+                    sawTitle = true;
+                    string title = para.GetPlainText();
+                    if (!string.IsNullOrWhiteSpace(title)) restored.Title = title;
+                    continue;
+                }
+
+                int level = props.TocEntryLevel;
+                if (level < minLevel)
+                {
+                    minLevel = level;
+                    minLevelIndent = props.LeftIndent ?? 0;
+                }
+                if (level > maxLevel) maxLevel = level;
+
+                if (level > minLevel && deeperLevel == 0)
+                {
+                    deeperLevel = level;
+                    deeperIndent = props.LeftIndent ?? 0;
+                }
+
+                if (props.TabStops is not { Count: > 0 }) continue;
+
+                sawPages = true;
+
+                if (leaderTaken) continue;
+                leaderTaken = true;
+
+                var stop = props.TabStops[0];
+                restored.Leader = (Models.Toc.TocLeader)(int)stop.Leader;
+                if (stop.LeaderDensity > 0) restored.LeaderDensity = stop.LeaderDensity;
+            }
+
+            if (maxLevel <= 0) return restored;
+
+            restored.MinLevel = minLevel;
+            restored.MaxLevel = maxLevel;
+            restored.ShowTitle = sawTitle;
+            restored.ShowPageNumbers = sawPages;
+
+            // Шаг сдвига — по двум настоящим строкам разных уровней. Одинаковые отступы
+            // означают, что сдвиг выключен: человек мог снять его галочкой или свести
+            // строки стрелками линейки, и восстанавливать его против воли незачем.
+            if (deeperLevel > minLevel)
+            {
+                double step = (deeperIndent - minLevelIndent) / (deeperLevel - minLevel);
+                if (step > 0.5)
+                {
+                    restored.IndentByLevel = true;
+                    restored.LevelIndentPt = step;
+                }
+                else
+                {
+                    restored.IndentByLevel = false;
+                }
+            }
+
+            // Отметки табуляции могли застыть на прежних отступах: пока настроек не было,
+            // переставить их было некому. Сейчас настройки есть — ставим числа на место,
+            // не трогая ни текста строк, ни их отступов.
+            double textWidthPt = TocService.TextWidthPt(_document);
+
+            foreach (var block in _document.Sections[0].Blocks)
+            {
+                if (block is not ParagraphBlock para) continue;
+                if (para.Properties.TocOwnerId != ownerId) continue;
+
+                TocService.RefreshEntryTabStop(para.Properties, restored, textWidthPt);
+            }
+
+            return restored;
         }
 
         // ── Активный параграф ─────────────────────────────────────────────
@@ -883,12 +1078,29 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // новый разрыв. Это совпадает с поведением Word.
             newBlock.Properties.PageBreakBefore = false;
 
-            // Принадлежность к оглавлению не наследуется: Enter в конце его строки даёт
-            // обычный абзац рукописи, а не ещё одну строку оглавления, которую следующая
-            // пересборка всё равно снесёт. По той же причине не наследуется и ручная
-            // пометка «взять в оглавление» — её ставят конкретному абзацу.
-            newBlock.Properties.TocOwnerId = null;
-            newBlock.Properties.TocEntryLevel = 0;
+            int modelIndex = section.Blocks.IndexOf(after.Model);
+
+            // Принадлежность к оглавлению наследуется, пока абзац остаётся внутри блока.
+            //
+            // Enter посреди оглавления делит строку, и обе половины обязаны остаться его
+            // частью. Иначе между ними вставал чужой абзац, блок разваливался надвое — с
+            // двумя закладками на листе и двумя диапазонами пересборки, — хотя человек
+            // ничего не делил и остался в том же оглавлении.
+            //
+            // Enter в конце последней строки, наоборот, выводит в рукопись: это
+            // единственный способ выйти из оглавления вниз, и терять его нельзя.
+            bool staysInToc = after.Model.Properties.TocOwnerId is System.Guid tocOwner
+                              && FollowedBySameToc(section, modelIndex, tocOwner);
+
+            if (!staysInToc)
+            {
+                newBlock.Properties.TocOwnerId = null;
+                newBlock.Properties.TocEntryLevel = 0;
+            }
+
+            // Ссылка на главу не наследуется никогда: она принадлежит конкретной строке, и
+            // копия увела бы по новой строке в ту же главу. Ручная пометка «взять в
+            // оглавление» не наследуется по той же причине — её ставят конкретному абзацу.
             newBlock.Properties.TocTargetBlockId = null;
             newBlock.Properties.IncludeInToc = false;
 
@@ -901,7 +1113,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 newBlock.ListProperties = lp;
             }
 
-            int modelIndex = section.Blocks.IndexOf(after.Model);
             if (modelIndex < 0) section.Blocks.Add(newBlock);
             else section.Blocks.Insert(modelIndex + 1, newBlock);
 
@@ -910,6 +1121,31 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Paragraphs.Insert(vmIndex + 1, newVm);
 
             return newVm;
+        }
+
+        /// <summary>
+        /// За блоком идёт строка того же оглавления.
+        ///
+        /// По этому и решается, остаётся ли новый абзац внутри блока оглавления: пока
+        /// ниже есть своя строка, каретка стоит в середине списка, и разрывать его
+        /// нечем. Как только своих строк ниже нет, Enter выводит в рукопись.
+        ///
+        /// Смотрится первый же абзац ниже, а не весь остаток документа: строки
+        /// оглавления идут подряд, и этого достаточно — тем же правилом пересборка
+        /// ищет диапазон блока (TocService.FindRange).
+        /// </summary>
+        private static bool FollowedBySameToc(
+            SectionModel section, int blockIndex, System.Guid ownerId)
+        {
+            if (blockIndex < 0) return false;
+
+            for (int i = blockIndex + 1; i < section.Blocks.Count; i++)
+            {
+                if (section.Blocks[i] is not ParagraphBlock next) continue;
+                return next.Properties.TocOwnerId == ownerId;
+            }
+
+            return false;
         }
 
         public ParagraphViewModel? DeleteParagraph(ParagraphViewModel target)
@@ -926,6 +1162,439 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var focusVm = Paragraphs[focusIndex];
             focusVm.RequestFocus();
             return focusVm;
+        }
+
+        /// <summary>
+        /// Снимает подряд идущие абзацы одним заходом.
+        ///
+        /// Тот же результат, что от <see cref="DeleteParagraph"/>, вызванного по разу на
+        /// каждый абзац, но без трёх вещей, которые поштучное снятие делает зря и на
+        /// большом выделении делает мучительно долго.
+        ///
+        /// Первое: поиск абзаца перебором — и в списке вью-моделей, и в списке блоков.
+        /// На каждый снимаемый абзац два прохода по всей книге; на выделении в триста
+        /// строк это миллионы сравнений, на выделении во весь документ — квадрат.
+        /// Здесь место известно заранее, а блоки отсеиваются одним проходом.
+        ///
+        /// Второе: запрос фокуса. Поштучное снятие просит фокус на соседа после КАЖДОГО
+        /// абзаца, а запрос фокуса — это и поиск слайса перебором, и прокрутка к каретке.
+        /// Триста снятых строк означали триста прокруток, и человека по дороге таскало
+        /// по книге. Каретку ставит вызывающий, один раз и туда, куда следует.
+        ///
+        /// Третье: поабзацная пересборка раскладки. Снятие идёт под признаком массовой
+        /// перестройки — следом всё равно пересобирают всё.
+        /// </summary>
+        /// <returns>Сколько абзацев снято.</returns>
+        public int DeleteParagraphRange(int firstVmIndex, int count)
+        {
+            if (count <= 0) return 0;
+            if (firstVmIndex < 0 || firstVmIndex >= Paragraphs.Count) return 0;
+            if (_document.Sections.Count == 0) return 0;
+
+            if (firstVmIndex + count > Paragraphs.Count)
+                count = Paragraphs.Count - firstVmIndex;
+
+            // Хотя бы один абзац в рукописи остаётся: документ без абзацев невозможен.
+            if (Paragraphs.Count - count < 1) count = Paragraphs.Count - 1;
+            if (count <= 0) return 0;
+
+            var doomed = new System.Collections.Generic.HashSet<ParagraphBlock>();
+            for (int i = firstVmIndex; i < firstVmIndex + count; i++)
+                doomed.Add(Paragraphs[i].Model);
+
+            _document.Sections[0].Blocks.RemoveAll(
+                b => b is ParagraphBlock para && doomed.Contains(para));
+
+            BeginBulkRebuild();
+            try
+            {
+                for (int i = 0; i < count; i++)
+                    Paragraphs.RemoveAt(firstVmIndex);
+            }
+            finally
+            {
+                EndBulkRebuild();
+            }
+
+            return count;
+        }
+
+        // ── Снятие куска текста через несколько абзацев ────────────────────
+
+        /// <summary>
+        /// Всё, что нужно, чтобы вернуть снятый кусок текста на место.
+        ///
+        /// Хранит ровно затронутое: прежнее содержимое первого абзаца и сами снятые
+        /// абзацы живыми объектами. Ни копии рукописи, ни её текста в JSON — шаг отмены
+        /// весит столько, сколько весит удалённое, и ни байтом больше.
+        /// </summary>
+        public sealed class RemovedTextSpan
+        {
+            /// <summary>Абзац, в котором выделение началось. Он остаётся в рукописи.</summary>
+            public System.Guid FirstParaId { get; set; }
+
+            /// <summary>Его содержимое до правки — посимвольно, со всем форматированием.</summary>
+            public System.Collections.Generic.List<ParagraphBlock.CharCell> FirstCellsBefore { get; set; }
+                = new();
+
+            /// <summary>Снятые абзацы по порядку. Последний из них — тот, где выделение кончилось.</summary>
+            public System.Collections.Generic.List<ParagraphBlock> Blocks { get; set; } = new();
+
+            /// <summary>Откуда в первом абзаце начиналось выделение.</summary>
+            public int From { get; set; }
+
+            /// <summary>Где в последнем абзаце оно кончалось.</summary>
+            public int To { get; set; }
+        }
+
+        /// <summary>
+        /// Снимает кусок текста, идущий через несколько абзацев: хвост первого, абзацы
+        /// между ними целиком и голову последнего. Голова последнего абзаца при этом
+        /// прирастает к первому — ровно так же, как это делает обычное удаление.
+        /// </summary>
+        /// <returns>
+        /// Описание снятого — его держит шаг отмены. null означает «этот случай мне не по
+        /// зубам»: между абзацами выделения стоит таблица, картинка или разрыв. Вызывающий
+        /// по null уходит на общий путь со снимком документа.
+        /// </returns>
+        public RemovedTextSpan? RemoveTextSpan(ParagraphBlock first, int from, ParagraphBlock last, int to)
+        {
+            if (IsReadOnly || first is null || last is null) return null;
+            if (ReferenceEquals(first, last)) return null;
+            if (_document.Sections.Count == 0) return null;
+
+            var blocks = _document.Sections[0].Blocks;
+
+            int firstIdx = blocks.IndexOf(first);
+            int lastIdx = blocks.IndexOf(last);
+            if (firstIdx < 0 || lastIdx <= firstIdx) return null;
+
+            int firstVmIndex = CountParagraphsBefore(firstIdx);
+            int lastVmIndex = CountParagraphsBefore(lastIdx);
+            int count = lastVmIndex - firstVmIndex;
+            if (count <= 0) return null;
+
+            // Между первым и последним абзацем не должно быть блоков другого рода.
+            // Возврат вставляет снятые абзацы подряд, и таблица, стоявшая между ними,
+            // после отмены оказалась бы не там, где была. Такой случай честнее отдать
+            // общему пути, чем вернуть криво.
+            if (lastIdx - firstIdx != count) return null;
+
+            var span = new RemovedTextSpan
+            {
+                FirstParaId = first.Id,
+                From = from,
+                To = to,
+                FirstCellsBefore = first.ToCharCells()
+            };
+
+            for (int i = firstVmIndex + 1; i <= lastVmIndex && i < Paragraphs.Count; i++)
+                span.Blocks.Add(Paragraphs[i].Model);
+
+            if (span.Blocks.Count == 0) return null;
+
+            ApplyTextSpanMerge(first, from, last, to);
+
+            DeleteParagraphRange(firstVmIndex + 1, count);
+
+            RefreshParagraphAt(firstVmIndex);
+            RaiseStructureChanged();
+
+            return span;
+        }
+
+        /// <summary>Повторяет снятие того же куска — после отмены. Зовётся шагом отмены.</summary>
+        public RemovedTextSpan? RemoveTextSpan(RemovedTextSpan span)
+        {
+            if (span is null || span.Blocks.Count == 0) return null;
+
+            var first = FindParagraphBlock(span.FirstParaId);
+            var last = span.Blocks[span.Blocks.Count - 1];
+            if (first is null) return null;
+
+            return RemoveTextSpan(first, span.From, last, span.To);
+        }
+
+        /// <summary>
+        /// Возвращает снятый кусок на место. Зовётся шагом отмены и только им.
+        ///
+        /// Абзацы вставляются те же самые объекты, что были вынуты, а первому абзацу
+        /// возвращается его прежнее содержимое. Остальная рукопись не трогается вовсе:
+        /// её вью-модели живы, её раскладки лежат в кэше и переживают откат.
+        /// </summary>
+        public void RestoreTextSpan(RemovedTextSpan span)
+        {
+            if (span is null || span.Blocks.Count == 0) return;
+            if (_document.Sections.Count == 0) return;
+
+            var first = FindParagraphBlock(span.FirstParaId);
+            if (first is null) return;
+
+            var blocks = _document.Sections[0].Blocks;
+            int firstIdx = blocks.IndexOf(first);
+            if (firstIdx < 0) return;
+
+            InsertParagraphBlocks(firstIdx + 1, span.Blocks);
+
+            first.RebuildFromCharCells(span.FirstCellsBefore);
+            RefreshParagraphAt(CountParagraphsBefore(firstIdx));
+
+            RaiseStructureChanged();
+        }
+
+        /// <summary>
+        /// Пара соседних абзацев, которую можно привести к двум состояниям: слитому в
+        /// один абзац и разделённому надвое.
+        ///
+        /// Одним описанием пользуются и деление (Enter), и слияние (Backspace в начале
+        /// абзаца, Delete в конце): состояния у них одни и те же, отличается только то,
+        /// какое из них считается отменой. Хранится содержимое слитого абзаца и сам
+        /// отделённый абзац живым объектом — копии рукописи здесь нет, и шаг весит
+        /// столько, сколько весит один абзац.
+        /// </summary>
+        public sealed class SplitParagraphSpan
+        {
+            /// <summary>Первый абзац пары. Он остаётся в рукописи в обоих состояниях.</summary>
+            public System.Guid FirstParaId { get; set; }
+
+            /// <summary>
+            /// Содержимое абзаца в СЛИТОМ состоянии — посимвольно, со всем
+            /// форматированием и картинками в строке.
+            /// </summary>
+            public System.Collections.Generic.List<ParagraphBlock.CharCell> WholeCells { get; set; }
+                = new();
+
+            /// <summary>
+            /// Второй абзац пары. Пока пара слита, он вынут из рукописи и живёт в этом
+            /// шаге отмены.
+            /// </summary>
+            public ParagraphBlock? TailBlock { get; set; }
+
+            /// <summary>Место раздела: сколько знаков слитого абзаца принадлежит первому.</summary>
+            public int At { get; set; }
+        }
+
+        /// <summary>
+        /// Приводит пару к слитому состоянию: снимает второй абзац, а первому отдаёт
+        /// содержимое обоих.
+        ///
+        /// Остальная рукопись не трогается вовсе — её вью-модели живы, её раскладки
+        /// лежат в кэше и переход переживают.
+        /// </summary>
+        public bool ApplyParagraphUnion(SplitParagraphSpan span)
+        {
+            if (IsReadOnly) return false;
+            if (span?.TailBlock is null) return false;
+            if (_document.Sections.Count == 0) return false;
+
+            var first = FindParagraphBlock(span.FirstParaId);
+            if (first is null) return false;
+
+            var blocks = _document.Sections[0].Blocks;
+
+            int tailIdx = blocks.IndexOf(span.TailBlock);
+            if (tailIdx >= 0) RemoveParagraphBlocks(tailIdx, 1);
+
+            first.RebuildFromCharCells(span.WholeCells);
+
+            int firstIdx = blocks.IndexOf(first);
+            if (firstIdx >= 0) RefreshParagraphAt(CountParagraphsBefore(firstIdx));
+
+            RaiseStructureChanged();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Приводит пару к разделённому состоянию: обрезает первому абзацу хвост и
+        /// ставит следом второй.
+        ///
+        /// Хвост заново не собирается: второй абзац всё это время лежал в шаге отмены
+        /// целым, со своими ранами и свойствами.
+        /// </summary>
+        public bool ApplyParagraphDivision(SplitParagraphSpan span)
+        {
+            if (IsReadOnly) return false;
+            if (span?.TailBlock is null) return false;
+            if (_document.Sections.Count == 0) return false;
+
+            var first = FindParagraphBlock(span.FirstParaId);
+            if (first is null) return false;
+
+            var blocks = _document.Sections[0].Blocks;
+            int firstIdx = blocks.IndexOf(first);
+            if (firstIdx < 0) return false;
+
+            var cells = first.ToCharCells();
+            int cut = span.At < 0 ? 0 : (span.At > cells.Count ? cells.Count : span.At);
+            if (cells.Count > cut) cells.RemoveRange(cut, cells.Count - cut);
+            first.RebuildFromCharCells(cells);
+
+            InsertParagraphBlocks(
+                firstIdx + 1,
+                new System.Collections.Generic.List<ParagraphBlock> { span.TailBlock });
+
+            RefreshParagraphAt(CountParagraphsBefore(firstIdx));
+            RaiseStructureChanged();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Вставка, добавившая в поток несколько абзацев подряд.
+        ///
+        /// Так выглядит вставка многострочного текста из буфера: первому абзацу
+        /// достаётся часть вставленного, остальное ложится новыми абзацами следом.
+        /// Шаг хранит содержимое первого абзаца до и после правки и сами добавленные
+        /// абзацы живыми объектами — ровно столько, сколько весит вставленное.
+        /// </summary>
+        public sealed class InsertedParagraphsSpan
+        {
+            /// <summary>Абзац, в который вставляли. Он остаётся в рукописи.</summary>
+            public System.Guid FirstParaId { get; set; }
+
+            /// <summary>Его содержимое до вставки — посимвольно.</summary>
+            public System.Collections.Generic.List<ParagraphBlock.CharCell> FirstCellsBefore { get; set; }
+                = new();
+
+            /// <summary>Его содержимое после вставки.</summary>
+            public System.Collections.Generic.List<ParagraphBlock.CharCell> FirstCellsAfter { get; set; }
+                = new();
+
+            /// <summary>Добавленные абзацы по порядку. Пока шаг откачен, их держит он.</summary>
+            public System.Collections.Generic.List<ParagraphBlock> AddedBlocks { get; set; } = new();
+        }
+
+        /// <summary>Отменяет вставку: снимает добавленные абзацы и возвращает первому прежнее.</summary>
+        public bool RevertInsertedParagraphs(InsertedParagraphsSpan span)
+        {
+            if (span is null) return false;
+            if (_document.Sections.Count == 0) return false;
+
+            var first = FindParagraphBlock(span.FirstParaId);
+            if (first is null) return false;
+
+            var blocks = _document.Sections[0].Blocks;
+
+            // Каждый абзац ищется по своему месту: правки между вставкой и откатом
+            // могли сдвинуть их в потоке, и снимать по запомненным номерам значило бы
+            // снять чужое.
+            foreach (var added in span.AddedBlocks)
+            {
+                int at = blocks.IndexOf(added);
+                if (at >= 0) RemoveParagraphBlocks(at, 1);
+            }
+
+            first.RebuildFromCharCells(span.FirstCellsBefore);
+            RefreshParagraphByBlock(first);
+
+            RaiseStructureChanged();
+            return true;
+        }
+
+        /// <summary>Повторяет вставку: те же абзацы встают обратно за первым.</summary>
+        public bool ApplyInsertedParagraphs(InsertedParagraphsSpan span)
+        {
+            if (IsReadOnly || span is null) return false;
+            if (_document.Sections.Count == 0) return false;
+
+            var first = FindParagraphBlock(span.FirstParaId);
+            if (first is null) return false;
+
+            var blocks = _document.Sections[0].Blocks;
+            int firstIdx = blocks.IndexOf(first);
+            if (firstIdx < 0) return false;
+
+            first.RebuildFromCharCells(span.FirstCellsAfter);
+            RefreshParagraphByBlock(first);
+
+            if (span.AddedBlocks.Count > 0)
+                InsertParagraphBlocks(firstIdx + 1, span.AddedBlocks);
+
+            RaiseStructureChanged();
+            return true;
+        }
+
+        /// <summary>
+        /// Сливает два соседних абзаца в один и отдаёт описание пары для шага отмены.
+        ///
+        /// Абзацы обязаны стоять в потоке подряд. В списке абзацев соседями выглядят и
+        /// те, между которыми лежит таблица или картинка: блоки другого рода в него не
+        /// попадают. Возврат вставил бы снятый абзац не на своё место, поэтому такой
+        /// случай честнее отдать общему пути, чем вернуть криво.
+        /// </summary>
+        /// <returns>null — абзацы не подряд или не найдены; вызывающий уходит на снимок.</returns>
+        public SplitParagraphSpan? MergeParagraphs(ParagraphBlock first, ParagraphBlock tail)
+        {
+            if (IsReadOnly || first is null || tail is null) return null;
+            if (ReferenceEquals(first, tail)) return null;
+            if (_document.Sections.Count == 0) return null;
+
+            var blocks = _document.Sections[0].Blocks;
+
+            int firstIdx = blocks.IndexOf(first);
+            if (firstIdx < 0 || firstIdx + 1 >= blocks.Count) return null;
+            if (!ReferenceEquals(blocks[firstIdx + 1], tail)) return null;
+
+            // Содержимое переносится посимвольно, а не плоским текстом: так переезжают
+            // и форматирование каждого знака, и картинки в строке.
+            var whole = first.ToCharCells();
+            int at = whole.Count;
+            whole.AddRange(tail.ToCharCells());
+
+            var span = new SplitParagraphSpan
+            {
+                FirstParaId = first.Id,
+                WholeCells = new System.Collections.Generic.List<ParagraphBlock.CharCell>(whole),
+                TailBlock = tail,
+                At = at
+            };
+
+            first.RebuildFromCharCells(whole);
+
+            RemoveParagraphBlocks(firstIdx + 1, 1);
+
+            RefreshParagraphAt(CountParagraphsBefore(firstIdx));
+            RaiseStructureChanged();
+
+            return span;
+        }
+
+        /// <summary>
+        /// Склейка первого абзаца с хвостом последнего. Посимвольно, а не плоским
+        /// текстом: тот потерял бы и форматирование каждого знака, и картинки в строке.
+        /// </summary>
+        private static void ApplyTextSpanMerge(
+            ParagraphBlock first, int from, ParagraphBlock last, int to)
+        {
+            var merged = first.ToCharCells();
+            int cut = from < 0 ? 0 : (from > merged.Count ? merged.Count : from);
+            if (merged.Count > cut) merged.RemoveRange(cut, merged.Count - cut);
+
+            var tail = last.ToCharCells();
+            int drop = to < 0 ? 0 : (to > tail.Count ? tail.Count : to);
+            if (drop > 0) tail.RemoveRange(0, drop);
+
+            merged.AddRange(tail);
+            first.RebuildFromCharCells(merged);
+        }
+
+        /// <summary>Абзац рукописи по его опознавателю. null — такого в потоке нет.</summary>
+        private ParagraphBlock? FindParagraphBlock(System.Guid paraId)
+        {
+            if (_document.Sections.Count == 0) return null;
+
+            foreach (var block in _document.Sections[0].Blocks)
+                if (block is ParagraphBlock para && para.Id == paraId) return para;
+
+            return null;
+        }
+
+        /// <summary>Перечитывает текст вью-модели по её месту в списке абзацев.</summary>
+        private void RefreshParagraphAt(int vmIndex)
+        {
+            if (vmIndex < 0 || vmIndex >= Paragraphs.Count) return;
+            Paragraphs[vmIndex].RefreshPlainTextFromModel();
         }
 
         public void MergeParagraphWithPrevious(ParagraphViewModel target, string textToMerge)
@@ -1155,7 +1824,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void PreviewFontFamily(string font) => PreviewFontFamilyDelegate?.Invoke(font);
 
-        public void EndFontPreview(bool commit) => EndFontPreviewDelegate?.Invoke(commit);
+        public void EndFontPreview(bool commit, string? fontFamily = null)
+            => EndFontPreviewDelegate?.Invoke(commit, fontFamily);
 
         public void FocusEditor() => FocusEditorDelegate?.Invoke();
 
@@ -1326,9 +1996,39 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetSpaceAfter(double pt) => ApplyParaProperty(p => p.SpaceAfter = pt);
         public void ApplyStyle(string name) => ApplyParaProperty(p => p.StyleName = name);
 
-        public void SetLeftIndentPt(double pt) => ApplyParaProperty(p => p.LeftIndent = pt);
+        public void SetLeftIndentPt(double pt) => ApplyParaProperty(p =>
+        {
+            p.LeftIndent = pt;
+            RefreshTocEntryTabStop(p);
+        });
+
         public void SetFirstLineIndentPt(double pt) => ApplyParaProperty(p => p.FirstLineIndent = pt);
-        public void SetRightIndentPt(double pt) => ApplyParaProperty(p => p.RightIndent = pt);
+
+        public void SetRightIndentPt(double pt) => ApplyParaProperty(p =>
+        {
+            p.RightIndent = pt;
+            RefreshTocEntryTabStop(p);
+        });
+
+        /// <summary>
+        /// Двигает отметку табуляции строки оглавления следом за её отступами.
+        ///
+        /// Номер страницы прижат к отметке, а отметка стоит у правого края текста абзаца.
+        /// Пока она не ехала за отступами, оглавление нельзя было ни сузить, ни расширить
+        /// стрелками линейки: текст сдвигался, а числа оставались на прежнем месте — и
+        /// уходили за поле или повисали посреди строки.
+        ///
+        /// Обычного абзаца это не касается: у него нет TocOwnerId, и позиции табуляции
+        /// остаются там, куда их поставил человек.
+        /// </summary>
+        private void RefreshTocEntryTabStop(ParagraphProperties props)
+        {
+            if (props.TocOwnerId is not System.Guid owner) return;
+            if (props.TocEntryLevel <= 0) return;
+
+            TocService.RefreshEntryTabStop(
+                props, EnsureTocSettings(owner), TocService.TextWidthPt(_document));
+        }
 
         /// <summary>
         /// Записывает абзацу набор позиций табуляции целиком. Частичной правки здесь нет
@@ -1774,7 +2474,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (IsReadOnly) return;
             if (data is null || data.Length == 0) return;
 
-            // Файлы картинок хранятся внутри проекта (ZIP), доступ — через контекст активной вкладки.
+            // Файлы картинок хранятся внутри проекта, доступ — через контекст активной вкладки.
             var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
             if (ctx is null) return;
 
@@ -2087,7 +2787,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         /// <summary>
         /// Вставляет картинку из байтов, перенося свойства из шаблона. Байты пишутся
-        /// НОВЫМ файлом в ZIP ТЕКУЩЕГО проекта — поэтому работает и при копировании
+        /// НОВЫМ файлом в ТЕКУЩИЙ проект — поэтому работает и при копировании
         /// между проектами (файл переносится в целевой проект). Возвращает блок.
         /// </summary>
         public ImageBlock? InsertImageWithProps(byte[] data, ImageBlock template,
@@ -2177,6 +2877,246 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             StructureChanged?.Invoke();
             return copy;
+        }
+
+        /// <summary>Откуда картинка была снята — туда же её и возвращать.</summary>
+        public enum ImagePlace
+        {
+            /// <summary>Блок в потоке документа.</summary>
+            Block = 0,
+            /// <summary>Плавающий объект, лежащий поверх листа.</summary>
+            Floating = 1,
+            /// <summary>Картинка в строке: живёт символом внутри абзаца.</summary>
+            Inline = 2
+        }
+
+        /// <summary>
+        /// Всё, что нужно, чтобы вернуть снятую картинку на место.
+        ///
+        /// Сама картинка хранится живым объектом: из документа она вынута, и держит её
+        /// один шаг отмены. Для картинки в строке хранится ещё и прежнее содержимое
+        /// абзаца-хозяина: её символ стоял среди букв, и вернуть его иначе как вместе с
+        /// ними нельзя — форматирование соседей разъехалось бы.
+        /// </summary>
+        public sealed class RemovedImage
+        {
+            public ImageBlock? Image { get; set; }
+
+            public SectionModel? Section { get; set; }
+
+            public ImagePlace Place { get; set; }
+
+            /// <summary>Место в списке, из которого картинка вынута.</summary>
+            public int Index { get; set; }
+
+            /// <summary>Абзац-хозяин — только для картинки в строке.</summary>
+            public System.Guid OwnerParaId { get; set; }
+
+            /// <summary>Его содержимое до снятия — посимвольно.</summary>
+            public System.Collections.Generic.List<ParagraphBlock.CharCell> OwnerCellsBefore { get; set; }
+                = new();
+        }
+
+        /// <summary>
+        /// Снимает картинку с листа и отдаёт описание для шага отмены.
+        ///
+        /// Отличие от <see cref="RemoveImage"/> в одном: тот открывает снимок всей
+        /// рукописи, а здесь шаг весит саму картинку и, для картинки в строке, один
+        /// абзац.
+        /// </summary>
+        /// <returns>null — такой картинки в рукописи нет.</returns>
+        public RemovedImage? TakeImageOut(ImageBlock image)
+        {
+            if (IsReadOnly || image is null) return null;
+
+            var inlineSection = FindSectionOfInlineImage(image);
+            if (inlineSection is not null)
+            {
+                if (FindInlineImageOwner(image) is not { } found) return null;
+
+                var takenInline = new RemovedImage
+                {
+                    Image = image,
+                    Section = inlineSection,
+                    Place = ImagePlace.Inline,
+                    Index = inlineSection.InlineObjects.IndexOf(image),
+                    OwnerParaId = found.Para.Id,
+                    OwnerCellsBefore = found.Para.ToCharCells()
+                };
+
+                found.Para.SpliceText(found.CharIndex, found.CharIndex + 1, string.Empty);
+                inlineSection.InlineObjects.Remove(image);
+
+                RefreshParagraphByBlock(found.Para);
+                InlineObjectsChanged?.Invoke(found.Para);
+                StructureChanged?.Invoke();
+
+                return takenInline;
+            }
+
+            foreach (var section in _document.Sections)
+            {
+                int blockIdx = section.Blocks.IndexOf(image);
+                if (blockIdx >= 0)
+                {
+                    section.Blocks.RemoveAt(blockIdx);
+                    StructureChanged?.Invoke();
+
+                    return new RemovedImage
+                    {
+                        Image = image,
+                        Section = section,
+                        Place = ImagePlace.Block,
+                        Index = blockIdx
+                    };
+                }
+
+                int floatIdx = section.FloatingObjects.IndexOf(image);
+                if (floatIdx >= 0)
+                {
+                    section.FloatingObjects.RemoveAt(floatIdx);
+                    StructureChanged?.Invoke();
+
+                    return new RemovedImage
+                    {
+                        Image = image,
+                        Section = section,
+                        Place = ImagePlace.Floating,
+                        Index = floatIdx
+                    };
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>Возвращает снятую картинку туда, откуда её взяли.</summary>
+        public bool PutImageBack(RemovedImage removed)
+        {
+            if (removed?.Image is null || removed.Section is null) return false;
+
+            if (removed.Place == ImagePlace.Inline)
+            {
+                var owner = FindParagraphBlock(removed.OwnerParaId);
+                if (owner is null) return false;
+
+                removed.Section.InlineObjects.Insert(
+                    ClampIndex(removed.Index, removed.Section.InlineObjects.Count),
+                    removed.Image);
+
+                // Абзац возвращается целиком: символ картинки стоял среди букв, и
+                // вставить его отдельно значило бы угадывать, каким раном он был.
+                owner.RebuildFromCharCells(removed.OwnerCellsBefore);
+
+                RefreshParagraphByBlock(owner);
+                InlineObjectsChanged?.Invoke(owner);
+                StructureChanged?.Invoke();
+
+                return true;
+            }
+
+            if (removed.Place == ImagePlace.Floating)
+            {
+                removed.Section.FloatingObjects.Insert(
+                    ClampIndex(removed.Index, removed.Section.FloatingObjects.Count),
+                    removed.Image);
+            }
+            else
+            {
+                removed.Section.Blocks.Insert(
+                    ClampIndex(removed.Index, removed.Section.Blocks.Count),
+                    removed.Image);
+            }
+
+            StructureChanged?.Invoke();
+            return true;
+        }
+
+        private static int ClampIndex(int index, int count)
+            => index < 0 ? 0 : (index > count ? count : index);
+
+        /// <summary>
+        /// Абзац лежит в потоке документа, а не в ячейке таблицы или надписи.
+        ///
+        /// Спрашивают об этом шаги отмены: они ищут абзацы по потоку, и абзац ячейки для
+        /// них всё равно что чужой — вернуть в него содержимое они не смогут.
+        /// </summary>
+        public bool IsFlowParagraph(ParagraphBlock para)
+        {
+            if (para is null || _document.Sections.Count == 0) return false;
+
+            foreach (var block in _document.Sections[0].Blocks)
+                if (ReferenceEquals(block, para)) return true;
+
+            return false;
+        }
+
+        /// <summary>Перечитывает текст вью-модели по её блоку.</summary>
+        private void RefreshParagraphByBlock(ParagraphBlock para)
+        {
+            if (para is null) return;
+
+            foreach (var vm in Paragraphs)
+            {
+                if (!ReferenceEquals(vm.Model, para)) continue;
+                vm.RefreshPlainTextFromModel();
+                return;
+            }
+        }
+
+        /// <summary>
+        /// Возвращает абзацам их содержимое — посимвольно, со всем форматированием.
+        ///
+        /// Нужен шагам отмены, которые правят текст сразу нескольких абзацев и никакой
+        /// структуры не меняют: перенос картинки из строки в строку, например. Состав
+        /// блоков при этом прежний, и трогать его незачем.
+        /// </summary>
+        public bool ApplyParagraphCells(
+            System.Guid paraId,
+            System.Collections.Generic.IReadOnlyList<ParagraphBlock.CharCell> cells)
+        {
+            var para = FindParagraphBlock(paraId);
+            if (para is null) return false;
+
+            para.RebuildFromCharCells(cells);
+            RefreshParagraphByBlock(para);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Ставит готовый абзац в поток документа вместе с его вью-моделью.
+        /// Нужен шагам отмены, которые абзац добавляют: вставке перед таблицей и повтору.
+        /// </summary>
+        public bool InsertFlowParagraph(ParagraphBlock para, int blockIndex)
+        {
+            if (IsReadOnly || para is null) return false;
+            if (_document.Sections.Count == 0) return false;
+
+            var blocks = _document.Sections[0].Blocks;
+            int at = ClampIndex(blockIndex, blocks.Count);
+
+            InsertParagraphBlocks(
+                at, new System.Collections.Generic.List<ParagraphBlock> { para });
+
+            RaiseStructureChanged();
+            return true;
+        }
+
+        /// <summary>Снимает абзац из потока вместе с его вью-моделью.</summary>
+        public bool RemoveFlowParagraph(ParagraphBlock para)
+        {
+            if (IsReadOnly || para is null) return false;
+            if (_document.Sections.Count == 0) return false;
+
+            var blocks = _document.Sections[0].Blocks;
+            int at = blocks.IndexOf(para);
+            if (at < 0) return false;
+
+            RemoveParagraphBlocks(at, 1);
+            RaiseStructureChanged();
+
+            return true;
         }
 
         public void RemoveImage(ImageBlock image)
@@ -2440,7 +3380,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         /// <summary>
-        /// Кладёт файл картинки в хранилище проекта и возвращает его имя внутри ZIP.
+        /// Кладёт файл картинки в хранилище проекта и возвращает его имя внутри проекта.
         /// Тем же путём и в ту же папку, что и обычная вставка изображения: заливка
         /// фигуры картинкой хранится так же, как сама картинка документа.
         /// null — файла нет или хранилище недоступно.
@@ -2579,11 +3519,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Рукопись могла быть начата до появления стилей оглавления — дописываем их,
             // иначе строки сослались бы на несуществующий стиль и вышли обычным текстом.
-            TocService.EnsureBuiltInStyles(_document);
-
-            // Дописанные стили надо донести до раскладки: указатель имён у неё строится
-            // один раз, и о стиле, добавленном после, она сама не узнает.
-            RaiseStylesChanged();
+            //
+            // Уведомление шлётся только когда стили действительно дописаны: оно чистит
+            // кэш раскладки целиком и перевёрстывает всю книгу.
+            if (TocService.EnsureBuiltInStyles(_document))
+            {
+                // Дописанные стили надо донести до раскладки: указатель имён у неё строится
+                // один раз, и о стиле, добавленном после, она сама не узнает.
+                RaiseStylesChanged();
+            }
 
             var settings = new Models.Toc.TocSettings();
             var blocks = _document.Sections[0].Blocks;
@@ -2624,6 +3568,31 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // Номера страниц посчитаны по раскладке, которой оглавление ещё не сдвинуло.
             // Правда о страницах будет известна только после пересчёта — за ним следует
             // второй проход.
+            RequestTocPageNumbers(force: true);
+        }
+
+        /// <summary>
+        /// Проставляет строкам всех оглавлений свежие номера страниц, не пересобирая
+        /// списки.
+        ///
+        /// Отличие от <see cref="RebuildToc"/> в том, что уцелеет. Пересборка сносит
+        /// строки и создаёт их заново из заголовков рукописи: правки, сделанные в самих
+        /// строках, уходят вместе со строками. Проход по номерам меняет в строке только
+        /// то, что стоит после последней табуляции, — само число, — и не трогает ни
+        /// названия, ни их форматирование.
+        ///
+        /// Идёт по всем оглавлениям рукописи, включая те, которым самообновление
+        /// выключено: выключенное самообновление означает «номера обновляются только по
+        /// кнопке», и это она и есть.
+        ///
+        /// Работу делает не этот метод, а полотно: номера страниц знает только раскладка,
+        /// и спрашивать их можно лишь после того, как она пересобрана.
+        /// </summary>
+        public void RefreshTocPageNumbers()
+        {
+            if (IsReadOnly) return;
+            if (_document.TableOfContents is not { Count: > 0 }) return;
+
             RequestTocPageNumbers(force: true);
         }
 
@@ -2777,12 +3746,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Models.Toc.TocSettings? ActiveToc()
         {
             var ownerId = _activeParagraph?.Model.Properties.TocOwnerId;
-            if (ownerId is null || _document.TableOfContents is null) return null;
+            if (ownerId is null) return null;
 
-            foreach (var toc in _document.TableOfContents)
-                if (toc.Id == ownerId.Value) return toc;
-
-            return null;
+            // Настроек может не оказаться у рукописи, открытой из файла, записанного
+            // версией, которая их теряла. Строка при этом честно носит опознаватель —
+            // значит оглавление есть, и отвечать «нет» было бы неправдой.
+            return EnsureTocSettings(ownerId.Value);
         }
 
         /// <summary>
@@ -2826,8 +3795,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Рукопись, начатая до появления стилей оглавления, их не содержит, а правка
             // настроек — первый момент, когда это выясняется на уже вставленном списке.
-            TocService.EnsureBuiltInStyles(_document);
-            RaiseStylesChanged();
+            //
+            // Уведомление — только если стили правда дописаны. Оно чистит кэш раскладки
+            // целиком, и на книге в три тысячи абзацев каждое нажатие в ленте
+            // перевёрстывало всю рукопись: около секунды на смену вида полосок, хотя
+            // меняются несколько строк оглавления.
+            if (TocService.EnsureBuiltInStyles(_document)) RaiseStylesChanged();
 
             var headings = TocService.Collect(_document, settings, GetBlockPageNumbers());
 
@@ -2868,37 +3841,187 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var (start, count) = TocService.FindRange(_document, settings.Id);
             if (start < 0) return;
 
-            BeginUndoStep("Удаление оглавления");
+            var watch = System.Diagnostics.Stopwatch.StartNew();
 
             bool caretWasInside = TocCaretOffset(start, count) >= 0;
 
-            RemoveParagraphBlocks(start, count);
-            _document.TableOfContents?.Remove(settings);
+            // Строки запоминаются ДО снятия: шаг отмены держит именно их, и это всё, что
+            // ему нужно. Снимок целой рукописи сюда больше не ходит — он стоил на этом
+            // документе сотню миллисекунд на удалении и две секунды на откате.
+            var removed = CollectTocBlocks(start, count);
 
-            if (Paragraphs.Count == 0)
-            {
-                var empty = new ParagraphBlock();
-                _document.Sections[0].Blocks.Add(empty);
-                Paragraphs.Add(CreateParagraphViewModel(empty));
-            }
+            var filler = DropTocBlocks(start, count, settings);
+            long removeMs = watch.ElapsedMilliseconds;
 
-            CommitUndoStep();
+            PushUndoCommandDelegate?.Invoke(new Commands.TocRemoveCommand(
+                this, start, removed, settings, filler, "Удаление оглавления"));
+
+            long undoMs = watch.ElapsedMilliseconds - removeMs;
+
             RaiseStructureChanged();
+            long layoutMs = watch.ElapsedMilliseconds - removeMs - undoMs;
+
+            LastTocTiming =
+                $"строк {count}, снятие {removeMs} мс, шаг отмены {undoMs} мс, " +
+                $"пересбор {layoutMs} мс, всего {watch.ElapsedMilliseconds} мс";
 
             // Каретка стояла на снесённой строке: без переноса она указывает на
             // вью-модель, которой в документе больше нет. Место её то же — туда встал
             // текст, шедший за оглавлением.
-            if (caretWasInside)
-            {
-                int index = CountParagraphsBefore(start);
-                if (index >= Paragraphs.Count) index = Paragraphs.Count - 1;
+            if (caretWasInside) MoveCaretAfterTocRemoval(start, immediate: false);
+        }
 
-                if (index >= 0)
-                {
-                    GoToParagraph(index);
-                    SetActiveParagraph(Paragraphs[index]);
-                }
+        /// <summary>Абзацы оглавления одним списком — их запоминает шаг отмены.</summary>
+        private System.Collections.Generic.List<ParagraphBlock> CollectTocBlocks(
+            int blockIndex, int count)
+        {
+            var blocks = _document.Sections[0].Blocks;
+            var result = new System.Collections.Generic.List<ParagraphBlock>(count);
+
+            for (int i = blockIndex; i < blockIndex + count && i < blocks.Count; i++)
+                if (blocks[i] is ParagraphBlock para) result.Add(para);
+
+            return result;
+        }
+
+        /// <summary>
+        /// Снимает строки оглавления и его запись в настройках.
+        ///
+        /// Пустой абзац на месте снесённого оглавления не оставляется: человек просил
+        /// убрать оглавление, а не заменить его пустой строкой. Если оно было единственным
+        /// содержимым раздела, пустой абзац заводится — документ без абзацев невозможен,
+        /// и тогда он возвращается вызывающему: отмена обязана его убрать.
+        /// </summary>
+        private ParagraphBlock? DropTocBlocks(
+            int blockIndex, int count, Models.Toc.TocSettings settings)
+        {
+            RemoveParagraphBlocks(blockIndex, count);
+            _document.TableOfContents?.Remove(settings);
+
+            if (Paragraphs.Count > 0) return null;
+
+            var empty = new ParagraphBlock();
+            _document.Sections[0].Blocks.Add(empty);
+            Paragraphs.Add(CreateParagraphViewModel(empty));
+            return empty;
+        }
+
+        /// <summary>
+        /// Ставит каретку туда, где было снятое оглавление.
+        /// </summary>
+        /// <param name="immediate">
+        /// true — поставить каретку сейчас же, не откладывая и не прокручивая.
+        ///
+        /// Так надо отмене и повтору. После них полотно само доводит вид до каретки, и
+        /// делает это СРАЗУ, как только команда вернула управление. Отложенный переход к
+        /// этому моменту ещё не случился, каретка держит номер слайса от прежнего состава
+        /// документа — а в него только что вернулись или из него ушли триста абзацев. По
+        /// старому номеру полотно и прокручивало: человек нажимал Ctrl+Z и оказывался
+        /// неизвестно где.
+        ///
+        /// Живому удалению, наоборот, нужен обычный отложенный переход: там никто следом
+        /// не прокручивает, и довезти вид до места обязан он сам.
+        /// </param>
+        private void MoveCaretAfterTocRemoval(int blockIndex, bool immediate)
+        {
+            int index = CountParagraphsBefore(blockIndex);
+            if (index >= Paragraphs.Count) index = Paragraphs.Count - 1;
+            if (index < 0) return;
+
+            MoveCaretToParagraph(index, immediate);
+        }
+
+        /// <summary>
+        /// Уводит каретку на абзац по его месту в списке абзацев.
+        /// </summary>
+        /// <param name="immediate">
+        /// true — поставить её ещё и сейчас же, до возврата из метода.
+        ///
+        /// Отложенный переход нужен всегда: он приходит последним, после всех пересборок
+        /// раскладки, и только он может оставить за собой последнее слово о том, где
+        /// каретка. Немедленная постановка — вдобавок к нему, для отмены и повтора:
+        /// сразу после их возврата полотно прокручивает вид к каретке, и держать в этот
+        /// миг номер слайса от прежнего состава документа нельзя.
+        /// </param>
+        private void MoveCaretToParagraph(int paragraphIndex, bool immediate)
+        {
+            if (paragraphIndex < 0 || paragraphIndex >= Paragraphs.Count) return;
+
+            if (immediate) SetCaretToParagraphDelegate?.Invoke(paragraphIndex);
+
+            GoToParagraphKeepHistory(paragraphIndex);
+            SetActiveParagraph(Paragraphs[paragraphIndex]);
+        }
+
+        /// <summary>
+        /// Повтор снятия оглавления. Зовётся шагом отмены и только им.
+        ///
+        /// Место оглавления ищется заново, а не берётся из шага: к повтору документ стоит
+        /// ровно в том состоянии, в каком его оставила отмена, и искать по опознавателю
+        /// надёжнее, чем помнить номер блока.
+        /// </summary>
+        /// <returns>Пустой абзац, заведённый на месте оглавления, либо null.</returns>
+        public ParagraphBlock? DropTocBlocksForRedo(Models.Toc.TocSettings settings)
+        {
+            if (settings is null || _document.Sections.Count == 0) return null;
+
+            var (start, count) = TocService.FindRange(_document, settings.Id);
+            if (start < 0) return null;
+
+            var filler = DropTocBlocks(start, count, settings);
+
+            RaiseStructureChanged();
+            MoveCaretAfterTocRemoval(start, immediate: true);
+
+            return filler;
+        }
+
+        /// <summary>
+        /// Возвращает снятое оглавление на место. Зовётся шагом отмены и только им.
+        ///
+        /// Абзацы вставляются те же самые, что были вынуты, — со всеми правками, которые
+        /// человек успел в них внести. Вью-модели им заводятся новые, и только им:
+        /// остальные абзацы рукописи не пересоздаются, их раскладки остаются в кэше.
+        /// </summary>
+        public void RestoreTocBlocks(
+            int blockIndex,
+            System.Collections.Generic.List<ParagraphBlock> blocks,
+            Models.Toc.TocSettings settings,
+            ParagraphBlock? filler)
+        {
+            if (blocks is null || blocks.Count == 0) return;
+            if (_document.Sections.Count == 0) return;
+
+            var docBlocks = _document.Sections[0].Blocks;
+
+            // Пустой абзац, которым заняли опустевшую рукопись, уходит: его место
+            // занимает вернувшееся оглавление.
+            if (filler is not null)
+            {
+                int fillerAt = docBlocks.IndexOf(filler);
+                if (fillerAt >= 0) RemoveParagraphBlocks(fillerAt, 1);
             }
+
+            _document.TableOfContents ??=
+                new System.Collections.Generic.List<Models.Toc.TocSettings>();
+
+            bool known = false;
+            foreach (var toc in _document.TableOfContents)
+                if (toc.Id == settings.Id) { known = true; break; }
+
+            if (!known) _document.TableOfContents.Add(settings);
+
+            int at = blockIndex < 0 ? 0
+                : (blockIndex > docBlocks.Count ? docBlocks.Count : blockIndex);
+
+            InsertParagraphBlocks(at, blocks);
+
+            RaiseStructureChanged();
+
+            // Каретка встаёт на первую вернувшуюся строку — там, где была правка, которую
+            // отменили. Немедленно: полотно прокрутит вид к каретке сразу после возврата
+            // из этой команды, и ждать оно не станет.
+            MoveCaretToParagraph(CountParagraphsBefore(at), immediate: true);
         }
 
         /// <summary>
@@ -2916,8 +4039,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // Стили оглавления могли не дойти до рукописи: файл начат до их появления,
             // а список стилей при открытии не пополняется. Без них строки ссылаются на
             // несуществующее имя и выходят обычным текстом.
-            TocService.EnsureBuiltInStyles(_document);
-            RaiseStylesChanged();
+            //
+            // Уведомление — только если стили правда дописаны: оно чистит кэш раскладки
+            // целиком и перевёрстывает всю книгу.
+            if (TocService.EnsureBuiltInStyles(_document)) RaiseStylesChanged();
 
             bool changed = false;
             BeginUndoStep("Обновление оглавления");
@@ -3000,7 +4125,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             if (index < 0 || index >= Paragraphs.Count) return;
 
-            GoToParagraph(index);
+            GoToParagraphKeepHistory(index);
             SetActiveParagraph(Paragraphs[index]);
         }
 
@@ -3015,7 +4140,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 if (!ReferenceEquals(Paragraphs[i].Model, block)) continue;
 
-                GoToParagraph(i);
+                GoToParagraphKeepHistory(i);
                 SetActiveParagraph(Paragraphs[i]);
                 return;
             }
@@ -3039,11 +4164,40 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// самообновление. Так работает кнопка «Обновить».
         /// </param>
         /// <returns>true — хотя бы одна строка изменилась.</returns>
+        // Строки оглавления, которым проход только что сменил номер страницы. Канвас
+        // забирает список и чистит раскладки ровно у них.
+        //
+        // Без него оставался один выход — сбросить кэш раскладок целиком, а это значит
+        // прогнать через Skia каждый абзац книги ради полутора сотен изменившихся строк.
+        // Проход повторяется до трёх раз, и сброс обходился в три полных пересчёта.
+        private readonly System.Collections.Generic.List<ParagraphViewModel> _tocTouched = new();
+
+        /// <summary>
+        /// Забирает список строк, которым последний проход сменил номер. Список отдаётся
+        /// один раз: канвас уже почистил их раскладки, и второй раз чистить нечего.
+        /// </summary>
+        /// <summary>
+        /// Из чего сложилось время последней операции над оглавлением. Читает канвас и
+        /// кладёт в журнал: спорить о том, где уходит время, без замера бессмысленно, а
+        /// секундомер отсюда виден всем трём фазам — снимку отмены, снятию строк и
+        /// пересбору раскладки.
+        /// </summary>
+        public string? LastTocTiming { get; private set; }
+
+        public System.Collections.Generic.List<ParagraphViewModel> TakeTocTouched()
+        {
+            var result = new System.Collections.Generic.List<ParagraphViewModel>(_tocTouched);
+            _tocTouched.Clear();
+            return result;
+        }
+
         public bool ApplyTocPageNumbers(bool force = false)
         {
             if (IsReadOnly) return false;
             if (_document.TableOfContents is not { Count: > 0 }) return false;
             if (_document.Sections.Count == 0) return false;
+
+            _tocTouched.Clear();
 
             var pageMap = GetBlockPageNumbers();
             if (pageMap.Count == 0) return false;
@@ -3052,35 +4206,50 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var blocks = _document.Sections[0].Blocks;
             bool changed = false;
 
-            foreach (var settings in _document.TableOfContents)
+            // Смена номера в строке — это смена её текста, а на неё канвас отвечает
+            // поабзацным пересчётом: ищет строку в списке абзацев, перебирает все слайсы
+            // книги и верстает её заново. На каждую из полутора сотен строк. Следом всё
+            // равно идёт общий пересбор, поэтому поабзацный путь здесь только мешает.
+            BeginBulkRebuild();
+            try
             {
-                if (!force && !settings.AutoUpdate) continue;
-
-                var (start, count) = TocService.FindRange(_document, settings.Id);
-                if (start < 0) continue;
-
-                int vmIndex = CountParagraphsBefore(start);
-
-                for (int i = start; i < start + count && i < blocks.Count; i++)
+                foreach (var settings in _document.TableOfContents)
                 {
-                    if (blocks[i] is not ParagraphBlock entry) continue;
+                    if (!force && !settings.AutoUpdate) continue;
 
-                    int currentVmIndex = vmIndex;
-                    vmIndex++;
+                    var (start, count) = TocService.FindRange(_document, settings.Id);
+                    if (start < 0) continue;
 
-                    var targetId = entry.Properties.TocTargetBlockId;
-                    if (targetId is null) continue;
+                    int vmIndex = CountParagraphsBefore(start);
 
-                    pageMap.TryGetValue(targetId.Value, out int page);
+                    for (int i = start; i < start + count && i < blocks.Count; i++)
+                    {
+                        if (blocks[i] is not ParagraphBlock entry) continue;
 
-                    if (!TocService.ApplyPageNumber(entry, settings, page, textWidthPt))
-                        continue;
+                        int currentVmIndex = vmIndex;
+                        vmIndex++;
 
-                    changed = true;
+                        var targetId = entry.Properties.TocTargetBlockId;
+                        if (targetId is null) continue;
 
-                    if (currentVmIndex >= 0 && currentVmIndex < Paragraphs.Count)
-                        Paragraphs[currentVmIndex].RefreshPlainTextFromModel();
+                        pageMap.TryGetValue(targetId.Value, out int page);
+
+                        if (!TocService.ApplyPageNumber(entry, settings, page, textWidthPt))
+                            continue;
+
+                        changed = true;
+
+                        if (currentVmIndex < 0 || currentVmIndex >= Paragraphs.Count) continue;
+
+                        var pvm = Paragraphs[currentVmIndex];
+                        pvm.RefreshPlainTextFromModel();
+                        _tocTouched.Add(pvm);
+                    }
                 }
+            }
+            finally
+            {
+                EndBulkRebuild();
             }
 
             if (changed) RaiseContentModified();
@@ -3098,10 +4267,20 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var blocks = _document.Sections[0].Blocks;
             int vmIndex = CountParagraphsBefore(blockIndex);
 
-            for (int i = 0; i < paragraphs.Count; i++)
+            // Вставка идёт тем же скопом, что и снятие: канвас на каждую строку заводил
+            // бы её раскладку по отдельности, а следом всё равно пересобирает всё.
+            BeginBulkRebuild();
+            try
             {
-                blocks.Insert(blockIndex + i, paragraphs[i]);
-                Paragraphs.Insert(vmIndex + i, CreateParagraphViewModel(paragraphs[i]));
+                for (int i = 0; i < paragraphs.Count; i++)
+                {
+                    blocks.Insert(blockIndex + i, paragraphs[i]);
+                    Paragraphs.Insert(vmIndex + i, CreateParagraphViewModel(paragraphs[i]));
+                }
+            }
+            finally
+            {
+                EndBulkRebuild();
             }
         }
 
@@ -3113,12 +4292,25 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var blocks = _document.Sections[0].Blocks;
             int vmIndex = CountParagraphsBefore(blockIndex);
 
-            for (int i = 0; i < count && blockIndex < blocks.Count; i++)
+            // Снятие каждой строки — уведомление канвасу, а тот на каждое пересчитывает
+            // раскладку соседнего абзаца и перебирает все слайсы документа, отыскивая её.
+            // На оглавлении в полторы сотни строк это сотни проходов по всей книге, и
+            // удаление одним щелчком вставало намертво. Признак массовой перестройки
+            // отменяет поабзацный путь: следом всё равно идёт общий пересбор.
+            BeginBulkRebuild();
+            try
             {
-                if (blocks[blockIndex] is ParagraphBlock && vmIndex < Paragraphs.Count)
-                    Paragraphs.RemoveAt(vmIndex);
+                for (int i = 0; i < count && blockIndex < blocks.Count; i++)
+                {
+                    if (blocks[blockIndex] is ParagraphBlock && vmIndex < Paragraphs.Count)
+                        Paragraphs.RemoveAt(vmIndex);
 
-                blocks.RemoveAt(blockIndex);
+                    blocks.RemoveAt(blockIndex);
+                }
+            }
+            finally
+            {
+                EndBulkRebuild();
             }
         }
 
@@ -4506,7 +5698,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             NormalizeTableAnchors();
             NormalizeBreakAnchors();
-            IsBulkRebuilding = true;
+            BeginBulkRebuild();
             try
             {
                 Paragraphs.Clear();
@@ -4517,7 +5709,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
             finally
             {
-                IsBulkRebuilding = false;
+                EndBulkRebuild();
             }
         }
 

@@ -786,7 +786,9 @@ namespace Writersword.Modules.TextEditor.Document
 
             canvas.DrawRect(sheetXPt + 3f, 3f, sheetWPt, sheetHPt, _paintPageShadow);
             canvas.DrawRect(sheetXPt, 0f, sheetWPt, sheetHPt, PagePaint());
-            DrawReadingPaperImage(canvas, sheetXPt, 0f, sheetWPt, sheetHPt);
+            // Лента — одна сплошная бумага без листов, и картинка у неё первая из
+            // набора: чередовать не по чему.
+            DrawReadingPaperImage(canvas, sheetXPt, 0f, sheetWPt, sheetHPt, 0);
         }
 
         /// <summary>
@@ -901,7 +903,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                     // Своя картинка бумаги ложится поверх её цвета. Вида нет или
                     // картинка не задана — вызов ничего не рисует.
-                    DrawReadingPaperImage(canvas, page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt);
+                    DrawReadingPaperImage(canvas, page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, pi);
                 }
 
                 RenderPageContent(canvas, layouts, pages, tables, images, firstPage, lastPage, drawCaret);
@@ -960,7 +962,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 // Своя картинка бумаги ложится поверх её цвета: цвет остаётся видимым
                 // там, где картинка полупрозрачна или не закрывает лист целиком.
-                DrawReadingPaperImage(canvas, bgSheetX, bgY, bgSheetW, bgPage.HeightPt);
+                DrawReadingPaperImage(canvas, bgSheetX, bgY, bgSheetW, bgPage.HeightPt, pi);
             }
 
             for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
@@ -1708,7 +1710,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         // Загружает и кеширует декодированное изображение по имени файла внутри проекта.
         // Декодирование выполняется в фоновой задаче: при промахе кеша метод сразу возвращает
-        // null, не блокируя render-поток чтением ZIP и SKImage.FromEncodedData. Готовое
+        // null, не блокируя render-поток чтением проекта и SKImage.FromEncodedData. Готовое
         // изображение попадает в кеш, после чего запрашивается перерисовка и картинка
         // появляется на следующем кадре. За счёт этого при быстром скролле текст и лист
         // рисуются мгновенно, а изображения подгружаются постепенно.
@@ -1991,7 +1993,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 canvas.DrawRect(sheetX + 3f, 3f, sheetW, sheetH, _paintPageShadow);
                 canvas.DrawRect(sheetX, 0f, sheetW, sheetH, PagePaint());
-                DrawReadingPaperImage(canvas, sheetX, 0f, sheetW, sheetH);
+                DrawReadingPaperImage(canvas, sheetX, 0f, sheetW, sheetH, 0);
             }
             else if (EditorThemeActive)
             {
@@ -2001,7 +2003,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // мимо неё.
                 float sheetH = Math.Max(canvasHeightPt, 1f);
                 canvas.DrawRect(0f, 0f, canvasWPt, sheetH, PagePaint());
-                DrawReadingPaperImage(canvas, 0f, 0f, canvasWPt, sheetH);
+                DrawReadingPaperImage(canvas, 0f, 0f, canvasWPt, sheetH, 0);
             }
 
             float zoom2 = (float)Zoom;
@@ -2221,6 +2223,10 @@ namespace Writersword.Modules.TextEditor.Document
 
             var renderLayout = GetRenderLayout(pl, (float)(_canvasWidth * PxToPt));
 
+            // Подложка блока оглавления и закладка над ним — под текстом: поверх букв
+            // подложка забивала бы их собой.
+            DrawTocField(canvas, idx, pl, layouts, renderLayout, absX, absY);
+
             // Маркер списка: выступ = фактический левый край текста − позиция маркера (в pt).
             // Левый край берём из раскладки (renderLayout.LeftIndentPt), т.е. с учётом отступа,
             // выставленного линейкой/диалогом — тогда маркер держит выступ при любом отступе текста.
@@ -2314,7 +2320,25 @@ namespace Writersword.Modules.TextEditor.Document
         // обещание правки, которой здесь нет: ни ввода, ни выделения, ни постановки
         // каретки нажатием.
         private bool CaretDrawable =>
-            _caretVisible && !_zooming && !_caretIndexPending && !SpreadMode && !ReadingActive;
+            _caretVisible && CaretPlaceable;
+
+        /// <summary>
+        /// Каретка в этом виде рукописи бывает вообще — безотносительно того, в какой
+        /// фазе мигания она сейчас.
+        ///
+        /// Отделено от <see cref="CaretDrawable"/> ради оснастки, которая привязана к
+        /// месту каретки, но мигать вместе с ней не должна: подложка блока оглавления и
+        /// его закладка. Мигание — это фаза отрисовки самой палочки, а не признак того,
+        /// что каретка где-то стоит.
+        ///
+        /// Разница была видна так. Тик мигания перерисовывает не кадр, а одну палочку
+        /// поверх готового снимка, и подложка всё это время лежит запечённой в снимке —
+        /// в той фазе, в какой её застал последний полный рендер. Полный же рендер
+        /// случается, когда прокрутка уходит за край снимка. Отсюда и выходило:
+        /// прокрутил — подложка пропала, прокрутил ещё — вернулась.
+        /// </summary>
+        private bool CaretPlaceable =>
+            !_zooming && !_caretIndexPending && !SpreadMode && !ReadingActive;
 
         private void DrawCaretOnCanvas(
             SKCanvas canvas,
@@ -2843,6 +2867,15 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private SKColor ResolveCaretColor(SKTextLayout layout, int lineIndex, int pos)
         {
+            // Цвет каретки, заданный виду. Он старше общей настройки: вид назначают
+            // под конкретную бумагу, и каретка, подобранная к тёмному листу, обязана
+            // уйти вместе с ним, когда лист сменится на светлый.
+            //
+            // В чтении сюда не приходят: каретка там не рисуется вовсе (CaretDrawable).
+            if (ActiveTheme?.CaretColor is { Length: > 0 } themed
+                && SKColor.TryParse(themed, out var themedCaret))
+                return themedCaret;
+
             // Свой цвет каретки, если человек его задал на вкладке «Вид». Он старше цвета
             // текста: его и назначают тогда, когда каретка цвета текста плохо различима.
             if (DocVm?.CanvasSettings.CaretColor is { Length: > 0 } custom

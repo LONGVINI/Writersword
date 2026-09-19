@@ -1,4 +1,4 @@
-using Writersword.Core.Models.Print;
+﻿using Writersword.Core.Models.Print;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
 using Writersword.Modules.TextEditor.Models.Page;
@@ -40,7 +40,16 @@ namespace Writersword.Modules.TextEditor.Contracts
         void SetFontFamily(string fontFamily);
         void BeginFontPreview();
         void PreviewFontFamily(string fontFamily);
-        void EndFontPreview(bool commit);
+        /// <summary>
+        /// Закрывает сеанс предпросмотра гарнитуры. При commit выбранная гарнитура
+        /// применяется здесь — и только здесь: отдельного SetFontFamily рядом быть не
+        /// должно, иначе одна замена шрифта ложится в историю двумя шагами и первый
+        /// Ctrl+Z со стороны выглядит как «отмена не работает».
+        /// </summary>
+        /// <param name="fontFamily">
+        /// Выбранная гарнитура. null — взять ту, что показывал предпросмотр.
+        /// </param>
+        void EndFontPreview(bool commit, string? fontFamily = null);
         void SetFontSize(double size);
         void IncreaseFontSize();
         void DecreaseFontSize();

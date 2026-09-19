@@ -1,5 +1,6 @@
-<Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+﻿<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:behaviours="using:Writersword.Infrastructure.Behaviours">
 
 	<!--
 	    Ленты редактора: группы, кнопки, поля.
@@ -289,6 +290,9 @@
 	     подгонка селекторами давала то съехавшую дорожку, то бегунок мимо неё.
 	     Здесь дорожка, заполнение и бегунок описаны явно и стоят ровно. -->
 	<Style Selector="Slider.RibbonSlider">
+		<!-- Щелчок в любую точку дорожки ставит бегунок туда и сразу берёт его в
+		     руку — так же, как у полос R, G, B в подборщике цвета. -->
+		<Setter Property="behaviours:SliderJumpBehavior.Enabled" Value="True"/>
 		<Setter Property="MinHeight"         Value="0"/>
 		<Setter Property="Height"            Value="18"/>
 		<Setter Property="Width"             Value="96"/>
@@ -298,7 +302,7 @@
 		<Setter Property="Focusable"         Value="False"/>
 		<Setter Property="Template">
 			<ControlTemplate>
-				<Grid Margin="7 0">
+				<Grid>
 					<Border Height="4"
 					        CornerRadius="2"
 					        VerticalAlignment="Center"

@@ -38,6 +38,21 @@ namespace Writersword.Modules.Characters.Models
         public List<CharacterLabel> Labels { get; set; } = new();
         public List<CharacterRelationship> Relationships { get; set; } = new();
         public List<CharacterAnketa> CustomAnketas { get; set; } = new();
+
+        /// <summary>
+        /// Шаблоны проекта — списки анкет под тип персонажа. Живут рядом со
+        /// своими анкетами: шаблон, ссылающийся на анкету из чужого проекта,
+        /// был бы списком пустых мест.
+        /// </summary>
+        public List<CharacterTemplate> Templates { get; set; } = new();
+
+        /// <summary>
+        /// Недавно подключённые анкеты, свежие впереди. Персонажей одного
+        /// типа заводят подряд, и подключённое последним понадобится снова
+        /// скорее всего. Список про привычку, а не про хранение: его чистят,
+        /// и на сами анкеты это не влияет.
+        /// </summary>
+        public List<string> RecentAnketaIds { get; set; } = new();
         public List<CharacterFolder> Folders { get; set; } = new();
 
         /// <summary>

@@ -27,6 +27,14 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         /// </summary>
         IReadOnlyList<ReadingTheme> ReadingThemes();
 
+        /// <summary>
+        /// Виды для списка выбора: всё, кроме спрятанных. Вид с указанным
+        /// опознавателем остаётся в списке даже спрятанным — это тот, что выбран
+        /// сейчас, и показывать имя, которого нет в списке, нельзя.
+        /// </summary>
+        IReadOnlyList<ReadingTheme> VisibleReadingThemes(string? keepId);
+
+
         /// <summary>Правка требует пересборки раскладки: лист, шрифт, подача.</summary>
         void ApplyReadingLayout();
 
@@ -68,12 +76,6 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
 
         /// <summary>Открыть окно видов чтения.</summary>
         void OpenReadingThemes();
-
-        /// <summary>
-        /// Выбрать картинку поля вокруг книги: открывается общая библиотека фонов —
-        /// готовые плитки и свои файлы, — та же, что и у фона рабочей области.
-        /// </summary>
-        void PickReadingBackdropImage();
 
         /// <summary>
         /// Завести новый вид: окно видов открывается с уже созданной копией
@@ -201,15 +203,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             RebuildThemeItems();
 
             CreateThemeCommand = ReactiveCommand.Create(() => _host.CreateReadingTheme());
-            PickBackdropImageCommand = ReactiveCommand.Create(() => _host.PickReadingBackdropImage());
             OpenThemesCommand = ReactiveCommand.Create(() => _host.OpenReadingThemes());
             SelectThemeCommand = ReactiveCommand.Create<ReadingThemeItem?>(item =>
             {
                 if (item is null) return;
                 SelectedThemeItem = item;
             });
-            ClearBackdropImageCommand = ReactiveCommand.Create(ClearBackdropImage);
-
             SetFlowSpreadCommand = ReactiveCommand.Create(() => Flow = ReadingFlow.Spread);
             SetFlowSingleCommand = ReactiveCommand.Create(() => Flow = ReadingFlow.Single);
             SetFlowColumnCommand = ReactiveCommand.Create(() => Flow = ReadingFlow.Column);
@@ -378,7 +377,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 // Пункта «Настроить виды…» в списке больше нет: сетка плиток — это
                 // виды, и строка-действие среди них читалась бы как ещё один вид.
                 // Окно видов открывает кнопка с палитрой рядом с сеткой.
-                foreach (var theme in _host.ReadingThemes())
+                foreach (var theme in _host.VisibleReadingThemes(S?.ThemeId))
                     ThemeItems.Add(new ReadingThemeItem(theme, theme.Name));
 
                 _selectedThemeItem = ThemeItems.FirstOrDefault(
@@ -471,8 +470,6 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             this.RaisePropertyChanged(nameof(SelectedFont));
             this.RaisePropertyChanged(nameof(TextColorHex));
             this.RaisePropertyChanged(nameof(BackdropColorHex));
-            this.RaisePropertyChanged(nameof(UseBackdropImage));
-            this.RaisePropertyChanged(nameof(HasBackdropImage));
         }
 
         // ── Списки ────────────────────────────────────────────────────────
@@ -505,7 +502,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         private IReadOnlyList<string> LoadFontList()
         {
             var list = new List<string> { FontAsInDocument };
-            list.AddRange(Services.ProjectFonts.PickerFamilies(T?.FontFamily));
+            list.AddRange(Services.ProjectFonts.PickerFamilies(S?.FontFamily));
             return list;
         }
 
@@ -600,7 +597,14 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         /// Сообщает ленте, где книга открыта. Зовётся канвасом после каждого
         /// перехода — и после того, что затеяла сама лента.
         /// </summary>
-        public void SetPageState(int number, int count)
+        public void SetPageState(int number, int count) => SetPageState(number, count, 0.0);
+
+        /// <summary>
+        /// То же, но с длительностью идущего перехода: книга объявляет о смене места
+        /// в начале переворота, и бегунок едет к новой странице столько же, сколько
+        /// падает лист.
+        /// </summary>
+        public void SetPageState(int number, int count, double transitionMs)
         {
             _suppressPageNav = true;
             try
@@ -616,9 +620,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
 
             this.RaisePropertyChanged(nameof(PageCount));
             this.RaisePropertyChanged(nameof(PageMax));
-            this.RaisePropertyChanged(nameof(PagePosition));
             this.RaisePropertyChanged(nameof(PageInput));
             this.RaisePropertyChanged(nameof(PageNumberText));
+
+            // Номер пришёл от книги — бегунок доезжает до него сам. Кроме одного
+            // случая: если книгу об этом попросил сам бегунок, он уже стоит под
+            // рукой, и вести его куда-то ещё нельзя.
+            if (!PageInHand) SlidePageTo(_pageNumber, transitionMs);
         }
 
         /// <summary>
@@ -775,21 +783,43 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         /// </summary>
         public double PagePosition
         {
-            get => _pageNumber;
+            get => _pagePos;
             set
             {
                 if (_suppressPageNav) return;
 
-                // Бегунок останавливается на развороте, а не между его страницами:
-                // книга всё равно откроет пару целиком, и разойтись им нельзя.
+                // Ход бегунка возвращается сюда же через двустороннюю привязку: книга
+                // на каждом кадре хода получала бы просьбу открыть страницу, мимо
+                // которой бегунок как раз проезжает. Своё значение узнаётся по тому,
+                // что оно и есть текущее положение хода.
+                //
+                // Всё остальное — рука человека, и она главнее: ход отменяется, а
+                // бегунок слушается руки немедленно. Иначе нажатие по дорожке в первые
+                // четверть секунды после перехода уходило в никуда — на глаз это и
+                // выглядит как «не берётся».
+                if (_pageSliding)
+                {
+                    if (Math.Abs(value - _pagePos) < 0.4) return;
+                    StopPageSlide();
+                }
+
+                // Бегунок стоит ровно там, где рука: значение принимается сырым, без
+                // выравнивания на разворот. Подтягивать его к номеру страницы посреди
+                // перетаскивания значит вырывать его из-под курсора — на глаз это и
+                // есть то самое подёргивание.
+                _pagePos = Math.Clamp(value, 1.0, PageMax);
+
+                // Бегунок в руке. Отметка обновляется на каждом значении от него, и
+                // ответ книги, который придёт следующим кадром, бегунок никуда не
+                // поведёт: рука держит его сама.
+                _pageHandTouch = DateTime.UtcNow;
+
+                // А книга открывается на развороте, которому эта страница принадлежит:
+                // пару она откроет целиком в любом случае.
                 int v = AlignPage((int)Math.Round(value));
                 if (v == _pageNumber)
                 {
-                    // Бегунок мог уехать внутрь той же пары. Своего значения он не
-                    // отдаст обратно сам — его нужно вернуть на место, иначе он
-                    // останется стоять там, куда книга не пошла.
-                    if (Math.Abs(value - _pageNumber) > 0.001)
-                        this.RaisePropertyChanged();
+                    this.RaisePropertyChanged();
                     return;
                 }
 
@@ -798,8 +828,105 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 this.RaisePropertyChanged();
                 this.RaisePropertyChanged(nameof(PageInput));
                 this.RaisePropertyChanged(nameof(PageNumberText));
+
                 _host.GoReadingPage(v - 1, animate: false);
             }
+        }
+
+        // ── Ход бегунка ───────────────────────────────────────────────────
+        // Место в книге меняется скачком: перелистнули — и номер сразу другой. Бегунок
+        // от этого прыгал, и на длинной книге понять, куда именно он прыгнул, было
+        // нельзя — движение и есть то, что показывает направление и величину перехода.
+        // Поэтому у бегунка своё положение, дробное, и оно догоняет номер страницы за
+        // четверть секунды с замедлением к концу — так же, как ложится лист.
+
+        private double _pagePos = 1;
+        private bool _pageSliding;
+
+        // Когда бегунка последний раз касалась рука. Ответ книги приходит не тем же
+        // вызовом, а следующим кадром, поэтому «в руке» это не флаг вокруг вызова, а
+        // короткое окно времени: всё, что вернулось внутри него, — эхо руки, и вести
+        // бегунок по нему нельзя.
+        private DateTime _pageHandTouch = DateTime.MinValue;
+
+        private const double PageHandHoldMs = 400.0;
+
+        private bool PageInHand
+            => (DateTime.UtcNow - _pageHandTouch).TotalMilliseconds < PageHandHoldMs;
+
+        private DispatcherTimer? _pageSlideTimer;
+        private double _pageSlideFrom;
+        private double _pageSlideTo;
+        private DateTime _pageSlideStart;
+
+        private const double PageSlideMs = 260.0;
+
+        // Длительность текущего хода. Задаётся книгой: переворот листа и скольжение
+        // одиночной страницы идут разное время, и бегунок должен идти столько же.
+        private double _pageSlideMs = PageSlideMs;
+
+        /// <summary>Ведёт бегунок к номеру страницы. Рядом — ставит без хода.</summary>
+        private void SlidePageTo(double target) => SlidePageTo(target, 0.0);
+
+        /// <summary>
+        /// То же, но за заданное время. Ноль — своё, короткое: так бегунок догоняет
+        /// место, сменившееся без анимации.
+        /// </summary>
+        private void SlidePageTo(double target, double durationMs)
+        {
+            // Ход к той же цели уже идёт: книга объявила о переходе в начале и
+            // подтвердит его в конце, и перезапускать ход на подтверждении значит
+            // дёрнуть бегунок в конце пути.
+            if (_pageSliding && Math.Abs(_pageSlideTo - target) < 0.01) return;
+
+            if (Math.Abs(_pagePos - target) < 0.01)
+            {
+                StopPageSlide();
+                _pagePos = target;
+                this.RaisePropertyChanged(nameof(PagePosition));
+                return;
+            }
+
+            _pageSlideFrom = _pagePos;
+            _pageSlideTo = target;
+            _pageSlideStart = DateTime.UtcNow;
+            _pageSlideMs = durationMs > 1.0 ? durationMs : PageSlideMs;
+            _pageSliding = true;
+
+            if (_pageSlideTimer is null)
+            {
+                _pageSlideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+                _pageSlideTimer.Tick += (_, _) => TickPageSlide();
+            }
+
+            _pageSlideTimer.Start();
+        }
+
+        private void TickPageSlide()
+        {
+            double t = Math.Clamp(
+                (DateTime.UtcNow - _pageSlideStart).TotalMilliseconds / _pageSlideMs, 0.0, 1.0);
+
+            // Разгон и торможение — та же кривая, что у переворота листа и у
+            // скольжения одиночной страницы. Бегунок и бумага идут в ногу.
+            double eased = t < 0.5
+                ? 4.0 * t * t * t
+                : 1.0 - Math.Pow(-2.0 * t + 2.0, 3.0) / 2.0;
+            _pagePos = _pageSlideFrom + (_pageSlideTo - _pageSlideFrom) * eased;
+
+            if (t >= 1.0)
+            {
+                _pagePos = _pageSlideTo;
+                StopPageSlide();
+            }
+
+            this.RaisePropertyChanged(nameof(PagePosition));
+        }
+
+        private void StopPageSlide()
+        {
+            _pageSlideTimer?.Stop();
+            _pageSliding = false;
         }
 
         /// <summary>
@@ -958,15 +1085,15 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         {
             get
             {
-                string? f = T?.FontFamily;
+                string? f = S?.FontFamily;
                 return string.IsNullOrWhiteSpace(f) ? FontAsInDocument : f!;
             }
             set
             {
-                if (T is not { } t) return;
+                if (S is not { } s) return;
 
                 // Пустое значение приходит не от человека, а от ComboBox, который
-                // не нашёл текущую гарнитуру среди Items. Сбросить шрифт вида можно
+                // не нашёл текущую гарнитуру среди Items. Сбросить гарнитуру можно
                 // только явным выбором «Как в документе»; молчаливый null означает
                 // потерю данных и в модель не идёт.
                 if (string.IsNullOrWhiteSpace(value))
@@ -976,11 +1103,15 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 }
 
                 string? v = value == FontAsInDocument ? null : value;
-                if (string.Equals(v, t.FontFamily, StringComparison.Ordinal)) return;
-                t.FontFamily = v;
+                if (string.Equals(v, s.FontFamily, StringComparison.Ordinal)) return;
+
+                // Гарнитура — настройка чтения, а не часть вида: «Сепия» от неё не
+                // становится «Кастомным», и при переключении видов она остаётся той
+                // же. Поэтому здесь нет ни TouchTheme, ни пометки вида изменённым.
+                s.FontFamily = v;
                 this.RaisePropertyChanged();
                 _host.ApplyReadingLayout();
-                SyncCustomThemeItem();
+                _host.PersistReadingPreferences();
             }
         }
 
@@ -1031,7 +1162,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             get
             {
                 int step = FontStep;
-                if (step == 0) return "±0";
+                if (step == 0) return "0";
                 return step > 0 ? $"+{step}" : step.ToString(System.Globalization.CultureInfo.CurrentCulture);
             }
         }
@@ -1068,33 +1199,6 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         }
 
         /// <summary>
-        /// Класть на поле картинку. Сам файл выбирается в окне видов — в ленте ему не
-        /// место, — а включать и выключать его хочется не отходя от книги.
-        /// </summary>
-        public bool UseBackdropImage
-        {
-            get => T?.UseBackdropImage ?? false;
-            set
-            {
-                if (T is not { } t || t.UseBackdropImage == value) return;
-
-                // Включать нечего, пока файл не выбран: тумблер щёлкал, вид считался
-                // изменённым, а на экране не менялось ничего. Вместо молчания
-                // открывается библиотека фонов — там и заготовки, и свои файлы.
-                if (value && string.IsNullOrWhiteSpace(t.BackdropImagePath))
-                {
-                    this.RaisePropertyChanged();
-                    _host.PickReadingBackdropImage();
-                    return;
-                }
-
-                t.UseBackdropImage = value;
-                this.RaisePropertyChanged();
-                TouchTheme();
-            }
-        }
-
-        /// <summary>
         /// Цвет, который поле получило бы само. Показывается в кружке, пока читатель
         /// своего не выбрал: пустой образец не объясняет, что там сейчас за цвет.
         /// </summary>
@@ -1118,13 +1222,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         private void ResetBackdrop()
         {
             if (T is not { } t) return;
-            if (t.BackdropColor is null && !t.UseBackdropImage) return;
+            if (t.BackdropColor is null && !t.HasBackdropImage) return;
 
             t.BackdropColor = null;
-            t.UseBackdropImage = false;
+            t.BackdropImagePaths.Clear();
 
             this.RaisePropertyChanged(nameof(BackdropColorHex));
-            this.RaisePropertyChanged(nameof(UseBackdropImage));
             TouchTheme();
         }
 
@@ -1136,8 +1239,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             var source = _host.ReadingThemes()
                 .FirstOrDefault(t => string.Equals(t.Id, s.ThemeId, StringComparison.Ordinal));
 
-            active.FontFamily = source?.FontFamily;
             active.InkColor = source?.InkColor ?? "#1A1A1A";
+
+            // Гарнитура и ступень — настройки чтения, а не часть вида: сброс
+            // возвращает их к рукописи, а не к тому, что записано в виде.
+            s.FontFamily = null;
             s.FontStep = 0;
 
             RefreshFontList();
@@ -1268,31 +1374,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         /// </summary>
         public ICommand SelectThemeCommand { get; }
 
-        /// <summary>
-        /// Выбрать картинку поля из библиотеки фонов — той же, что и у фона рабочей
-        /// области при правке.
-        /// </summary>
-        public ICommand PickBackdropImageCommand { get; }
-
-        /// <summary>Убрать картинку с поля. Заливка вида остаётся.</summary>
-        public ICommand ClearBackdropImageCommand { get; }
-
-        /// <summary>Есть ли что убирать: картинка выбрана и лежит на поле.</summary>
-        public bool HasBackdropImage
-            => T is { } t && !string.IsNullOrWhiteSpace(t.BackdropImagePath);
-
-        private void ClearBackdropImage()
-        {
-            if (T is not { } t) return;
-            if (string.IsNullOrWhiteSpace(t.BackdropImagePath) && !t.UseBackdropImage) return;
-
-            t.UseBackdropImage = false;
-            t.BackdropImagePath = null;
-
-            this.RaisePropertyChanged(nameof(UseBackdropImage));
-            this.RaisePropertyChanged(nameof(HasBackdropImage));
-            TouchTheme();
-        }
+        // Картинки поля лента больше не трогает: её выбирают и убирают в окне видов,
+        // где картинка и живёт — в самом виде.
 
         public ICommand SetFlowSpreadCommand { get; }
         public ICommand SetFlowSingleCommand { get; }

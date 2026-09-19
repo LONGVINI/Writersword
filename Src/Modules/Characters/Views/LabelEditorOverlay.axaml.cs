@@ -501,12 +501,21 @@ namespace Writersword.Modules.Characters.Views
                 var crops = await overlay.ShowAsync(
                     bitmap,
                     CharacterAvatarRef.CropOf(imageRef),
-                    "Кадр значка метки");
+                    "Кадр значка метки",
+                    null,
+                    null,
+                    false,
+                    CharacterAvatarRef.RotationOf(imageRef));
 
                 if (crops == null) return imageRef;
 
                 // Метке нужен только кружковый кадр: полоски у значка нет.
-                return CharacterAvatarRef.WithCrop(imageRef, crops.Circle);
+                // Поворот при этом берётся: он принадлежит картинке целиком.
+                return CharacterAvatarRef.Combine(
+                    CharacterAvatarRef.BaseOf(imageRef),
+                    crops.Circle,
+                    CharacterAvatarRef.StripCropOf(imageRef),
+                    crops.Rotation);
             }
             catch (Exception ex)
             {

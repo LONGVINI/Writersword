@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -29,10 +29,16 @@ namespace Writersword.Modules.TextEditor.Document
     {
         private const double BoxSizePx = 18.0;
 
-        private static readonly IBrush GlyphBrush =
-            new SolidColorBrush(Color.FromRgb(0x0E, 0x7A, 0x7A));
+        // Прежний бирюзовый: им квадрат рисуется, пока вид не задал свой цвет
+        // позиций табуляции.
+        private static readonly Color DefaultGlyphColor = Color.FromRgb(0x0E, 0x7A, 0x7A);
 
         private RulerViewModel? _vm;
+
+        // Кисть и перо значка пересобираются при смене цвета, а не на каждый кадр:
+        // цвет меняется от силы раз в сеанс, а перерисовок у квадрата много.
+        private Color _glyphColor = DefaultGlyphColor;
+        private IBrush _glyphBrush = new SolidColorBrush(DefaultGlyphColor);
         private IPen? _glyphPen;
 
         public TabTypeBoxControl()
@@ -66,7 +72,34 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 UpdateHint();
                 InvalidateVisual();
+                return;
             }
+
+            // Квадрат стоит в углу линеек и обязан краситься вместе с ними: вид листа
+            // меняется на ходу, и оставшийся бирюзовым значок на ночной бумаге читается
+            // как чужая деталь.
+            if (e.PropertyName is nameof(RulerViewModel.ThemeActive)
+                or nameof(RulerViewModel.ThemeTabHex)
+                or nameof(RulerViewModel.ThemeSheetHex)
+                or nameof(RulerViewModel.ThemeInkHex))
+                InvalidateVisual();
+        }
+
+        /// <summary>Цвет значка: заданный виду или прежний бирюзовый.</summary>
+        private Color ResolveGlyphColor()
+        {
+            if (_vm is { ThemeActive: true, ThemeTabHex: { Length: > 0 } hex }
+                && Color.TryParse(hex, out var parsed))
+                return parsed;
+
+            return DefaultGlyphColor;
+        }
+
+        /// <summary>Цвет из вида линейки, если он задан и разбирается.</summary>
+        private static bool TryThemeColor(string? hex, out Color color)
+        {
+            color = default;
+            return !string.IsNullOrWhiteSpace(hex) && Color.TryParse(hex, out color);
         }
 
         /// <summary>
@@ -139,8 +172,19 @@ namespace Writersword.Modules.TextEditor.Document
             double top = (Bounds.Height - BoxSizePx) / 2;
             var box = new Rect(left, top, BoxSizePx, BoxSizePx);
 
-            var background = this.FindResource("BgSurfaceBrush") as IBrush;
-            var border = this.FindResource("BorderDefaultBrush") as IBrush;
+            // Подложка и рамка берутся у вида, когда он назначен: квадрат — часть
+            // линейки, и светлая коробка над ночной шкалой выглядит дырой в ней.
+            IBrush? background = this.FindResource("BgSurfaceBrush") as IBrush;
+            IBrush? border = this.FindResource("BorderDefaultBrush") as IBrush;
+
+            if (_vm is { ThemeActive: true } themed)
+            {
+                if (TryThemeColor(themed.ThemeSheetHex, out var sheet))
+                    background = new SolidColorBrush(sheet);
+
+                if (TryThemeColor(themed.ThemeInkHex, out var ink))
+                    border = new SolidColorBrush(ink, 0.24);
+            }
 
             if (background is not null)
                 ctx.DrawRectangle(background, null, new RoundedRect(box, 3));
@@ -148,7 +192,13 @@ namespace Writersword.Modules.TextEditor.Document
             if (border is not null)
                 ctx.DrawRectangle(null, new Pen(border, 1), new RoundedRect(box, 3));
 
-            _glyphPen ??= new Pen(GlyphBrush, 1.6, lineCap: PenLineCap.Round);
+            var glyphColor = ResolveGlyphColor();
+            if (glyphColor != _glyphColor || _glyphPen is null)
+            {
+                _glyphColor = glyphColor;
+                _glyphBrush = new SolidColorBrush(glyphColor);
+                _glyphPen = new Pen(_glyphBrush, 1.6, lineCap: PenLineCap.Round);
+            }
 
             // Значок тот же, что линейка рисует у поставленных позиций: ножка стоит на
             // отметке, полка показывает, в какую сторону от неё пойдёт текст. Совпадение
@@ -175,7 +225,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             if (alignment == Models.Styles.TabAlignment.Decimal)
-                ctx.DrawEllipse(GlyphBrush, null, new Point(cx + 3, bottom - 3.5), 1.3, 1.3);
+                ctx.DrawEllipse(_glyphBrush, null, new Point(cx + 3, bottom - 3.5), 1.3, 1.3);
         }
 
         private static string AlignmentName(Models.Styles.TabAlignment alignment)

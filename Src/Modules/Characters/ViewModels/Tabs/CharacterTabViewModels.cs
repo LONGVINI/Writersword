@@ -37,6 +37,9 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public ReactiveCommand<Unit, Unit> AddTextParameterCommand { get; }
         public ReactiveCommand<Unit, Unit> AddStateListParameterCommand { get; }
         public ReactiveCommand<Unit, Unit> AddBooleanParameterCommand { get; }
+        public ReactiveCommand<Unit, Unit> AddNumberParameterCommand { get; }
+        public ReactiveCommand<Unit, Unit> AddLongTextParameterCommand { get; }
+        public ReactiveCommand<Unit, Unit> AddMultiChoiceParameterCommand { get; }
         public ReactiveCommand<string, Unit> RemoveParameterCommand { get; }
         public ReactiveCommand<string, Unit> MoveParameterUpCommand { get; }
         public ReactiveCommand<Unit, Unit> RandomizeAllCommand { get; }
@@ -60,6 +63,9 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             AddTextParameterCommand = ReactiveCommand.Create(() => AddParameter(CharacterParameterType.Text));
             AddStateListParameterCommand = ReactiveCommand.Create(() => AddParameter(CharacterParameterType.StateList));
             AddBooleanParameterCommand = ReactiveCommand.Create(() => AddParameter(CharacterParameterType.Boolean));
+            AddNumberParameterCommand = ReactiveCommand.Create(() => AddParameter(CharacterParameterType.Number));
+            AddLongTextParameterCommand = ReactiveCommand.Create(() => AddParameter(CharacterParameterType.LongText));
+            AddMultiChoiceParameterCommand = ReactiveCommand.Create(() => AddParameter(CharacterParameterType.MultiChoice));
             RemoveParameterCommand = ReactiveCommand.Create<string>(id =>
             {
                 var p = Parameters.FirstOrDefault(x => x.Id == id);
@@ -100,6 +106,16 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                 parameter.MinValue = 0;
                 parameter.MaxValue = 5;
                 parameter.Step = 1;
+            }
+
+            // Списку выбора нужны варианты: пустой список — это поле, которое
+            // ничего не предлагает, и первое, что человек увидит, — пустоту,
+            // непонятно чем заполняемую. Три заготовки показывают и смысл
+            // поля, и то, что их правят.
+            if (type == CharacterParameterType.StateList ||
+                type == CharacterParameterType.MultiChoice)
+            {
+                parameter.States = new List<string> { "Первый", "Второй", "Третий" };
             }
 
             Parameters.Add(Wrap(parameter));

@@ -117,13 +117,175 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="Action_CopyPage" xml:space="preserve">
+    <value>Текстом</value>
+  </data>
+  <data name="Action_Dismiss" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="Action_DuplicatePage" xml:space="preserve">
+    <value>Копия</value>
+  </data>
+  <data name="Action_NewPage" xml:space="preserve">
+    <value>Новая</value>
+  </data>
+  <data name="Action_PageDown" xml:space="preserve">
+    <value>Ниже</value>
+  </data>
+  <data name="Action_PageUp" xml:space="preserve">
+    <value>Выше</value>
+  </data>
+  <data name="Action_RemovePage" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="Action_TogglePages" xml:space="preserve">
+    <value>Панель</value>
+  </data>
+  <data name="Action_Undo" xml:space="preserve">
+    <value>Отменить</value>
+  </data>
+  <data name="Block_Bullet" xml:space="preserve">
+    <value>Маркеры</value>
+  </data>
+  <data name="Block_Checklist" xml:space="preserve">
+    <value>Задача</value>
+  </data>
+  <data name="Block_Code" xml:space="preserve">
+    <value>Код</value>
+  </data>
+  <data name="Block_Divider" xml:space="preserve">
+    <value>Черта</value>
+  </data>
+  <data name="Block_Heading1" xml:space="preserve">
+    <value>Заголовок 1</value>
+  </data>
+  <data name="Block_Heading2" xml:space="preserve">
+    <value>Заголовок 2</value>
+  </data>
+  <data name="Block_Heading3" xml:space="preserve">
+    <value>Заголовок 3</value>
+  </data>
+  <data name="Block_Numbered" xml:space="preserve">
+    <value>Нумерация</value>
+  </data>
+  <data name="Block_Paragraph" xml:space="preserve">
+    <value>Обычный</value>
+  </data>
+  <data name="Block_Quote" xml:space="preserve">
+    <value>Цитата</value>
+  </data>
   <data name="Description" xml:space="preserve">
     <value>Быстрые заметки и напоминания</value>
   </data>
   <data name="DisplayName" xml:space="preserve">
     <value>Заметки</value>
   </data>
+  <data name="Group_Inline" xml:space="preserve">
+    <value>Кусок текста</value>
+  </data>
+  <data name="Group_Line" xml:space="preserve">
+    <value>Строка</value>
+  </data>
+  <data name="Group_Lists" xml:space="preserve">
+    <value>Списки</value>
+  </data>
+  <data name="Group_Pages" xml:space="preserve">
+    <value>Страницы</value>
+  </data>
+  <data name="Hint_Blocks" xml:space="preserve">
+    <value># заголовок · ## подзаголовок · - список · 1. нумерация · - [ ] задача · &gt; цитата · ``` код · --- черта</value>
+  </data>
+  <data name="Hint_Header" xml:space="preserve">
+    <value>Просто пишите. Разметка применяется прямо при наборе:</value>
+  </data>
+  <data name="Hint_Inline" xml:space="preserve">
+    <value>**жирный** · *курсив* · ~~зачёркнутый~~ · `код` · ==выделенный==</value>
+  </data>
+  <data name="Inline_Bold" xml:space="preserve">
+    <value>Жирный</value>
+  </data>
+  <data name="Inline_Code" xml:space="preserve">
+    <value>Код</value>
+  </data>
+  <data name="Inline_Italic" xml:space="preserve">
+    <value>Курсив</value>
+  </data>
+  <data name="Inline_Mark" xml:space="preserve">
+    <value>Выделить</value>
+  </data>
+  <data name="Inline_Strike" xml:space="preserve">
+    <value>Зачеркнуть</value>
+  </data>
+  <data name="Line_Down" xml:space="preserve">
+    <value>Ниже</value>
+  </data>
+  <data name="Line_Highlight" xml:space="preserve">
+    <value>Подсветить</value>
+  </data>
+  <data name="Line_Remove" xml:space="preserve">
+    <value>Убрать</value>
+  </data>
+  <data name="Line_Strike" xml:space="preserve">
+    <value>Зачеркнуть</value>
+  </data>
+  <data name="Line_Up" xml:space="preserve">
+    <value>Выше</value>
+  </data>
+  <data name="Page_CopyTitle" xml:space="preserve">
+    <value>{0} — копия</value>
+  </data>
+  <data name="Page_DefaultTitle" xml:space="preserve">
+    <value>Заметки</value>
+  </data>
+  <data name="Page_NewTitle" xml:space="preserve">
+    <value>Страница {0}</value>
+  </data>
+  <data name="Page_Tasks" xml:space="preserve">
+    <value>Задачи: {0} из {1}</value>
+  </data>
+  <data name="Page_TitleWatermark" xml:space="preserve">
+    <value>Название страницы</value>
+  </data>
+  <data name="Page_Untitled" xml:space="preserve">
+    <value>Без названия</value>
+  </data>
+  <data name="Page_UpdatedAt" xml:space="preserve">
+    <value>Изменено {0:dd.MM.yyyy HH:mm}</value>
+  </data>
+  <data name="Pages_FoundCount" xml:space="preserve">
+    <value>Найдено {0} из {1}</value>
+  </data>
+  <data name="Pages_Header" xml:space="preserve">
+    <value>Страницы</value>
+  </data>
+  <data name="Pages_SearchWatermark" xml:space="preserve">
+    <value>Поиск по страницам</value>
+  </data>
+  <data name="Pages_TotalCount" xml:space="preserve">
+    <value>Страниц: {0}</value>
+  </data>
   <data name="Title" xml:space="preserve">
     <value>Быстрые заметки</value>
+  </data>
+  <data name="Undo_BlockRemoved" xml:space="preserve">
+    <value>Строка удалена</value>
+  </data>
+  <data name="Undo_PageRemoved" xml:space="preserve">
+    <value>Страница «{0}» удалена</value>
+  </data>
+  <data name="Undo_PageRemovedShort" xml:space="preserve">
+    <value>Удаление страницы</value>
+  </data>
+  <data name="Group_Styles" xml:space="preserve">
+    <value>Стили</value>
+  </data>
+  <data name="Inline_Bold_Letter" xml:space="preserve">
+    <value>Ж</value>
+  </data>
+  <data name="Inline_Italic_Letter" xml:space="preserve">
+    <value>К</value>
+  </data>
+  <data name="Inline_Strike_Letter" xml:space="preserve">
+    <value>З</value>
   </data>
 </root>

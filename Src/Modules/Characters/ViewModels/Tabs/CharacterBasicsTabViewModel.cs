@@ -163,6 +163,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
 
         public ReactiveCommand<Unit, Unit> OpenPickerCommand { get; }
         public ReactiveCommand<Unit, Unit> DeleteAvatarCommand { get; }
+
         public ReactiveCommand<string, Unit> AddNameCommand { get; }
         public ReactiveCommand<string, Unit> RemoveTagCommand { get; }
         public ReactiveCommand<string, Unit> AddTagCommand { get; }
@@ -269,7 +270,11 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public string? AvatarPath
         {
             get => _avatarPath;
-            set { this.RaiseAndSetIfChanged(ref _avatarPath, value); ReloadBitmap(); }
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _avatarPath, value);
+                ReloadBitmap();
+            }
         }
 
         private Bitmap? _avatarBitmap;
@@ -498,52 +503,6 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         /// одного «Ранен» может быть с каплей, у другого — с крестом, и это
         /// законно.
         /// </summary>
-        /// <summary>
-        /// Метки проекта, которые есть смысл предложить: те, что у персонажа
-        /// уже стоят, отсеиваются — предлагать поставить второй раз то, что и
-        /// так стоит, незачем. Совпадением считается и опознаватель, и имя:
-        /// проекты старше реестра меток собрали его из копий персонажей, и
-        /// одно имя там могло разойтись по нескольким опознавателям.
-        /// </summary>
-        public System.Collections.Generic.IReadOnlyList<CharacterLabel> PickableLabels()
-        {
-            var mine = Labels.ToList();
-
-            return _characterService.GetAllLabels()
-                .Where(known => !mine.Any(l =>
-                    l.Id == known.Id ||
-                    string.Equals(l.Name, known.Name, StringComparison.CurrentCultureIgnoreCase)))
-                .ToList();
-        }
-
-        /// <summary>
-        /// Поставить персонажу метку, уже заведённую в проекте: вид берётся
-        /// целиком, порядок — свой, в конец. Вид метки при этом никуда не
-        /// пишется: её просто ставят, а не правят.
-        /// </summary>
-        public void AddKnownLabel(CharacterLabel known)
-        {
-            if (known == null) return;
-            if (Labels.Any(l => l.Id == known.Id)) return;
-
-            UpsertLabel(new CharacterLabel
-            {
-                Id = known.Id,
-                Name = known.Name,
-                Icon = known.Icon,
-                IconImage = known.IconImage,
-                Color = known.Color,
-                IconColor = known.IconColor,
-                ShowBackdrop = known.ShowBackdrop,
-                Effect = known.Effect,
-                ShowOnCard = known.ShowOnCard,
-                Description = known.Description,
-                Order = Labels.Count
-            });
-
-            ReloadKnownLabels();
-        }
-
         public void UpsertLabel(CharacterLabel label, bool asGlobal = false)
         {
             var index = -1;
@@ -635,16 +594,194 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             }
 
             var attachedIds = character.AttachedAnketaIds;
+            var all = _anketaService.GetAll();
 
-            foreach (var anketa in _anketaService.GetAll())
+            // Подключённые идут в том порядке, в каком их подключили и
+            // переставили, а не в порядке общего списка: этот порядок —
+            // ответ на вопрос «что у этого персонажа главное».
+            foreach (var id in attachedIds)
             {
-                if (attachedIds.Contains(anketa.Id)) AttachedAnketas.Add(anketa);
-                else AvailableAnketas.Add(anketa);
+                var anketa = all.FirstOrDefault(a => a.Id == id);
+                if (anketa != null) AttachedAnketas.Add(anketa);
             }
+
+            // Остальные делятся надвое: сначала те, что уже где-то в проекте
+            // подключены, — их и выберут скорее всего, — потом все прочие.
+            // У проекта про эльфов «Магия» нужна чаще, чем «Космический
+            // корабль», и порядок списка должен это знать.
+            var usedElsewhere = _characterService.GetAll()
+                .SelectMany(c => c.AttachedAnketaIds)
+                .ToHashSet(StringComparer.Ordinal);
+
+            var rest = all.Where(a => !attachedIds.Contains(a.Id)).ToList();
+
+            foreach (var anketa in rest.Where(a => usedElsewhere.Contains(a.Id)))
+                AvailableAnketas.Add(anketa);
+
+            foreach (var anketa in rest.Where(a => !usedElsewhere.Contains(a.Id)))
+                AvailableAnketas.Add(anketa);
+
+            Templates.Clear();
+            foreach (var template in _anketaService.GetTemplates())
+                Templates.Add(template);
+
+            // Уже подключённого в недавних не показываем: подключать второй
+            // раз нечего, а строка, которая ничего не делает, только сбивает.
+            RecentAnketas.Clear();
+            foreach (var anketa in _anketaService.GetRecentAnketas())
+                if (!attachedIds.Contains(anketa.Id))
+                    RecentAnketas.Add(anketa);
+
+            this.RaisePropertyChanged(nameof(HasTemplates));
+            this.RaisePropertyChanged(nameof(HasRecentAnketas));
+
+            // Состав разделов идёт следом за составом анкет: подключили —
+            // раздел появился, отключили — поля уехали в «Свои поля».
+            RebuildSections();
 
             this.RaisePropertyChanged(nameof(HasAttachedAnketas));
             this.RaisePropertyChanged(nameof(CanAttachAnketa));
             this.RaisePropertyChanged(nameof(HasAnySets));
+        }
+
+        // ── Поля подключённых анкет ───────────────────────────────────────
+        //
+        // Поля показываются здесь же, под кнопкой, разделами по анкетам, а не
+        // отдельной вкладкой. Подключил анкету — тут же её и заполняешь:
+        // вкладка «Параметры» заставляла ходить туда-обратно и держала
+        // плоский список, по которому не сказать, откуда какое поле взялось.
+        //
+        // Сами значения по-прежнему живут во вкладке параметров: она их
+        // хранит и отдаёт при сохранении. Здесь только показ, поэтому и
+        // связь односторонняя — ссылка на её список.
+
+        private CharacterParametersTabViewModel? _parameters;
+
+        public ObservableCollection<CharacterAnketaSectionViewModel> Sections { get; } = new();
+
+        public bool HasSections => Sections.Count > 0;
+
+        /// <summary>
+        /// Связать с хранилищем значений. Зовётся карточкой сразу после
+        /// создания обеих вкладок: порознь они не знают друг о друге.
+        /// </summary>
+        public void AttachParameters(CharacterParametersTabViewModel parameters)
+        {
+            _parameters = parameters;
+            RebuildSections();
+        }
+
+        /// <summary>
+        /// Разложить значения персонажа по разделам — по анкетам, в порядке
+        /// их подключения. Поля, не входящие ни в одну подключённую анкету
+        /// (заведённые вручную или оставшиеся от отключённой), собираются в
+        /// последний раздел: терять их нельзя, а приписывать чужой анкете
+        /// нечестно.
+        /// </summary>
+        public void RebuildSections()
+        {
+            Sections.Clear();
+
+            if (_parameters == null || _anketaService == null)
+            {
+                this.RaisePropertyChanged(nameof(HasSections));
+                return;
+            }
+
+            var character = _characterService.GetById(_characterId);
+            var attachedIds = character?.AttachedAnketaIds ?? new List<string>();
+
+            var taken = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var anketaId in attachedIds)
+            {
+                var anketa = _anketaService.GetById(anketaId);
+                if (anketa?.Fields == null) continue;
+
+                var fieldIds = anketa.Fields
+                    .Select(CharacterFieldId.Resolve)
+                    .Where(id => !string.IsNullOrEmpty(id))
+                    .ToHashSet(StringComparer.Ordinal);
+
+                var items = _parameters.Parameters
+                    .Where(p => fieldIds.Contains(CharacterFieldId.Resolve(p.Model)))
+                    .Where(p => taken.Add(p.Id))
+                    .ToList();
+
+                if (items.Count == 0) continue;
+
+                Sections.Add(new CharacterAnketaSectionViewModel(anketa.Name, anketa.Id, items));
+            }
+
+            var rest = _parameters.Parameters.Where(p => !taken.Contains(p.Id)).ToList();
+            if (rest.Count > 0)
+                Sections.Add(new CharacterAnketaSectionViewModel("Свои поля", string.Empty, rest));
+
+            this.RaisePropertyChanged(nameof(HasSections));
+        }
+
+        // ── Шаблоны ───────────────────────────────────────────────────────
+        //
+        // Шаблон — список анкет под тип персонажа. Выбрал «Эльф» — подключились
+        // все его разделы разом, вместо того чтобы набирать их по одному
+        // каждому новому персонажу.
+
+        public ObservableCollection<CharacterTemplate> Templates { get; } = new();
+
+        public bool HasTemplates => Templates.Count > 0;
+
+        /// <summary>
+        /// Недавно подключённые анкеты. Персонажей одного типа заводят подряд,
+        /// и подключённое последним понадобится снова скорее всего.
+        /// </summary>
+        public ObservableCollection<CharacterAnketa> RecentAnketas { get; } = new();
+
+        public bool HasRecentAnketas => RecentAnketas.Count > 0;
+
+        /// <summary>Забыть порядок обращений. Сами анкеты остаются на местах.</summary>
+        public void ClearRecentAnketas()
+        {
+            if (_anketaService == null) return;
+
+            _anketaService.ClearRecentAnketas();
+
+            var updated = _characterService.GetById(_characterId);
+            if (updated != null) ReloadAnketas(updated);
+        }
+
+        /// <summary>Подключить все анкеты шаблона, которых на карточке ещё нет.</summary>
+        public void ApplyTemplate(string templateId)
+        {
+            if (_anketaService == null) return;
+
+            var template = _anketaService.GetTemplateById(templateId);
+            if (template == null) return;
+
+            _characterService.ApplyTemplate(_characterId, template);
+
+            // Анкеты набора тоже попадают в недавние: человек ими только что
+            // воспользовался, пусть и не выбирая каждую по отдельности.
+            foreach (var anketaId in template.AnketaIds)
+                _anketaService.RememberAnketa(anketaId);
+
+            var updated = _characterService.GetById(_characterId);
+            if (updated != null) ReloadAnketas(updated);
+
+            AnketasChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Переставить подключённую анкету. Порядок анкет — это порядок
+        /// разделов в карточке, и поля переезжают вслед за ними.
+        /// </summary>
+        public void MoveAnketa(string anketaId, int delta)
+        {
+            _characterService.MoveAttachedAnketa(_characterId, anketaId, delta);
+
+            var updated = _characterService.GetById(_characterId);
+            if (updated != null) ReloadAnketas(updated);
+
+            AnketasChanged?.Invoke();
         }
 
         /// <summary>Подключить набор к карточке.</summary>
@@ -656,6 +793,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             if (anketa == null) return;
 
             _characterService.ApplyAnketa(_characterId, anketa, false);
+            _anketaService.RememberAnketa(anketaId);
 
             var updated = _characterService.GetById(_characterId);
             if (updated != null) ReloadAnketas(updated);
@@ -982,6 +1120,63 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             catch (Exception ex) { _logger.Error(ex, "Reload bitmap failed"); AvatarBitmap = null; }
         }
 
+        /// <summary>
+        /// Перечитать персонажа из хранилища.
+        ///
+        /// Карточка строится один раз, при выборе персонажа, и дальше живёт
+        /// снимком. Пока человек ходил по списку, он мог сменить тому же
+        /// персонажу важность, цвет, аватарку или метки — и, вернувшись в
+        /// редактор, видел прежнее. Хуже того, ближайшее сохранение записывало
+        /// снимок поверх этих правок.
+        ///
+        /// Поля заполняет тот же LoadFrom, что и конструктор, — он пишет прямо
+        /// в поля, поэтому об изменениях следом нужно сказать показу отдельно.
+        /// </summary>
+        public void ReloadFromStorage()
+        {
+            var character = _characterService.GetById(_characterId);
+            if (character is null) return;
+
+            LoadFrom(character);
+            ReloadBitmap();
+            ReloadKnownTags();
+            ReloadKnownLabels();
+            ReloadAnketas(character);
+
+            RaiseLoadedProperties();
+        }
+
+        /// <summary>
+        /// Сказать показу, что перечитано всё. Список ровно тот, что заполняет
+        /// LoadFrom: коллекции (имена, метки, теги, галерея) о себе сообщают
+        /// сами, здесь — одиночные свойства и признаки при них.
+        /// </summary>
+        private void RaiseLoadedProperties()
+        {
+            this.RaisePropertyChanged(nameof(Name));
+            this.RaisePropertyChanged(nameof(ShortDescription));
+            this.RaisePropertyChanged(nameof(Note));
+            this.RaisePropertyChanged(nameof(DefaultAddress));
+            this.RaisePropertyChanged(nameof(Color));
+            this.RaisePropertyChanged(nameof(FallbackIcon));
+            this.RaisePropertyChanged(nameof(AvatarGlyph));
+            this.RaisePropertyChanged(nameof(AvatarPath));
+            this.RaisePropertyChanged(nameof(AvatarBitmap));
+            this.RaisePropertyChanged(nameof(AvatarRing));
+            this.RaisePropertyChanged(nameof(GroupBookmark));
+            this.RaisePropertyChanged(nameof(ImportanceLevel));
+            this.RaisePropertyChanged(nameof(ImportanceLevelName));
+            this.RaisePropertyChanged(nameof(ImportanceLevelHint));
+            this.RaisePropertyChanged(nameof(CustomImportanceLabel));
+            this.RaisePropertyChanged(nameof(NarrativeStartPoint));
+            this.RaisePropertyChanged(nameof(NarrativeEndPoint));
+            this.RaisePropertyChanged(nameof(IsCollective));
+            this.RaisePropertyChanged(nameof(PopulationNote));
+            this.RaisePropertyChanged(nameof(HasAlternateNames));
+            this.RaisePropertyChanged(nameof(HasTags));
+            this.RaisePropertyChanged(nameof(HasLabels));
+        }
+
         private void LoadFrom(Character c)
         {
             _name = c.Name; _shortDescription = c.ShortDescription; _note = c.Note;
@@ -1060,5 +1255,32 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             // не теряют при сохранении.
             character.Labels = Labels.ToList();
         }
+    }
+
+    /// <summary>
+    /// Раздел полей в карточке — одна подключённая анкета со своими
+    /// значениями. Заголовок нужен: без него список полей плоский, и по нему
+    /// не сказать, откуда взялась «Сила» — из боевой анкеты или из общей.
+    /// </summary>
+    public class CharacterAnketaSectionViewModel : ReactiveObject
+    {
+        public CharacterAnketaSectionViewModel(
+            string title,
+            string anketaId,
+            IReadOnlyList<CharacterParameterItemViewModel> items)
+        {
+            Title = title;
+            AnketaId = anketaId;
+            Items = items;
+        }
+
+        public string Title { get; }
+
+        /// <summary>Пусто у раздела «Свои поля»: анкеты за ним не стоит.</summary>
+        public string AnketaId { get; }
+
+        public IReadOnlyList<CharacterParameterItemViewModel> Items { get; }
+
+        public int Count => Items.Count;
     }
 }

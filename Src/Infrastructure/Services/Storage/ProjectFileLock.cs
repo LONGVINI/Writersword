@@ -10,8 +10,8 @@ namespace Writersword.Infrastructure.Services.Storage
     /// Глобальный шлюз доступа к файлу проекта (.writersword).
     ///
     /// Файл открывается из нескольких независимых мест: запись через
-    /// ZipFileStorageService (workspace.json, конфиги), хеширование в
-    /// ZipCacheService и ProjectWorkflow, чтение/сохранение в ZipProjectService.
+    /// SqliteFileStorageService (workspace.json, конфиги), хеширование в
+    /// SqliteCacheService и ProjectWorkflow, чтение/сохранение в SqliteProjectService.
     /// Каждое место раньше открывало файл со своими режимами FileShare,
     /// из-за чего параллельные операции падали с IOException
     /// "file is being used by another process".

@@ -89,6 +89,13 @@
 	</ItemGroup>
 
 	<!-- ========================================
+       ХРАНИЛИЩЕ
+       ======================================== -->
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+	</ItemGroup>
+
+	<!-- ========================================
        ЛОКАЛИЗАЦИЯ + JSON
        ======================================== -->
 	<ItemGroup>
@@ -217,6 +224,7 @@
 		<Compile Remove="Src\Infrastructure\Behaviours\ClickOutsideBehavior.cs" />
 		<Compile Remove="Src\Infrastructure\Behaviours\FocusOnVisibleBehavior.cs" />
 		<Compile Remove="Src\Infrastructure\Behaviours\TooltipBehavior.cs" />
+		<Compile Remove="Src\Infrastructure\Behaviours\SliderJumpBehavior.cs" />
 		<Compile Remove="Src\Infrastructure\Controls\ItalicCaretTextBox.cs" />
 		<Compile Remove="Src\Infrastructure\Controls\HintMark.cs" />
 		<Compile Remove="Src\Infrastructure\Converters\GradientBrushFactory.cs" />

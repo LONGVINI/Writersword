@@ -26,6 +26,12 @@ namespace Writersword.Modules.Characters.Services
         public CharacterAnketaService()
         {
             _builtInAnketas = BuildBuiltInAnketas();
+
+            // Встроенные шаблоны есть с первой секунды, ещё до открытия
+            // проекта: без них список шаблонов у нового проекта был бы пуст,
+            // и первое, что увидел бы человек, — пустоту вместо готовых
+            // сочетаний. Загрузка проекта потом дополняет их своими.
+            _templates.AddRange(BuildBuiltInTemplates());
         }
 
         // ── Получение ─────────────────────────────────────────────────────
@@ -221,6 +227,148 @@ namespace Writersword.Modules.Characters.Services
             _logger.Debug("Custom anketas loaded: {Count}", _customAnketas.Count);
         }
 
+        // ── Недавние ──────────────────────────────────────────────────────
+
+        private const int RecentLimit = 8;
+
+        private readonly List<string> _recentAnketaIds = new();
+
+        public IReadOnlyList<CharacterAnketa> GetRecentAnketas()
+        {
+            var all = GetAll();
+
+            // Записи об анкетах, которых больше нет, просто не показываются:
+            // чистить хранилище незачем — удалили анкету, список и так о ней
+            // молчит.
+            return _recentAnketaIds
+                .Select(id => all.FirstOrDefault(a => a.Id == id))
+                .Where(a => a != null)
+                .Select(a => a!)
+                .ToList();
+        }
+
+        public void RememberAnketa(string anketaId)
+        {
+            if (string.IsNullOrEmpty(anketaId)) return;
+
+            _recentAnketaIds.Remove(anketaId);
+            _recentAnketaIds.Insert(0, anketaId);
+
+            while (_recentAnketaIds.Count > RecentLimit)
+                _recentAnketaIds.RemoveAt(_recentAnketaIds.Count - 1);
+        }
+
+        public void ClearRecentAnketas() => _recentAnketaIds.Clear();
+
+        public IReadOnlyList<string> GetRecentAnketaIds() => _recentAnketaIds;
+
+        public void LoadRecentAnketas(List<string> ids)
+        {
+            _recentAnketaIds.Clear();
+            if (ids != null) _recentAnketaIds.AddRange(ids.Where(id => !string.IsNullOrEmpty(id)));
+        }
+
+        // ── Шаблоны ───────────────────────────────────────────────────────
+        //
+        // Шаблон — список анкет под тип персонажа: «Эльф» = Внешность + Магия
+        // + События. Хранит опознаватели, а не копии анкет: правка анкеты
+        // должна доходить до всех, кто её подключил.
+
+        private readonly List<CharacterTemplate> _templates = new();
+
+        public IReadOnlyList<CharacterTemplate> GetTemplates() => _templates;
+
+        public IReadOnlyList<CharacterTemplate> GetCustomTemplates() =>
+            _templates.Where(t => !t.IsBuiltIn).ToList();
+
+        public CharacterTemplate? GetTemplateById(string id) =>
+            string.IsNullOrEmpty(id) ? null : _templates.FirstOrDefault(t => t.Id == id);
+
+        public CharacterTemplate CreateTemplate(string name)
+        {
+            var template = new CharacterTemplate
+            {
+                Name = string.IsNullOrWhiteSpace(name) ? "Новый шаблон" : name.Trim()
+            };
+
+            _templates.Add(template);
+            _logger.Debug("Template created: {Name}", template.Name);
+            return template;
+        }
+
+        public void UpdateTemplate(CharacterTemplate template)
+        {
+            if (template == null) return;
+
+            var index = _templates.FindIndex(t => t.Id == template.Id);
+            if (index < 0)
+            {
+                _templates.Add(template);
+                return;
+            }
+
+            _templates[index] = template;
+        }
+
+        public void DeleteTemplate(string id)
+        {
+            // Встроенные не удаляются: они лежат в коде, и следующий запуск
+            // вернул бы их обратно — удаление выглядело бы сработавшим ровно
+            // до перезапуска.
+            var template = GetTemplateById(id);
+            if (template == null || template.IsBuiltIn) return;
+
+            _templates.Remove(template);
+        }
+
+        public void LoadTemplates(List<CharacterTemplate> templates)
+        {
+            _templates.Clear();
+            _templates.AddRange(BuildBuiltInTemplates());
+
+            if (templates != null)
+                _templates.AddRange(templates.Where(t => !t.IsBuiltIn));
+
+            _logger.Debug("Templates loaded: {Count}", _templates.Count);
+        }
+
+        /// <summary>
+        /// Встроенные шаблоны собираются из встроенных же анкет — новых полей
+        /// они не заводят. Это готовые сочетания под частые виды историй:
+        /// открыл проект, выбрал «Детективная история», и у персонажа сразу
+        /// и общие данные, и профессиональные.
+        /// </summary>
+        private static List<CharacterTemplate> BuildBuiltInTemplates()
+        {
+            return new List<CharacterTemplate>
+            {
+                new CharacterTemplate
+                {
+                    Id = "builtin_template_person",
+                    Name = "Обычная история",
+                    Description = "Один раздел общих данных: возраст, здоровье, профессия.",
+                    IsBuiltIn = true,
+                    AnketaIds = new List<string> { "builtin_human" }
+                },
+                new CharacterTemplate
+                {
+                    Id = "builtin_template_detective",
+                    Name = "Детективная история",
+                    Description = "Общие данные плюс профессиональные качества сыщика.",
+                    IsBuiltIn = true,
+                    AnketaIds = new List<string> { "builtin_human", "builtin_detective" }
+                },
+                new CharacterTemplate
+                {
+                    Id = "builtin_template_fantasy",
+                    Name = "Фэнтези",
+                    Description = "Общие данные и боевые характеристики.",
+                    IsBuiltIn = true,
+                    AnketaIds = new List<string> { "builtin_human", "builtin_fantasy_warrior" }
+                }
+            };
+        }
+
         // ── Вспомогательные ───────────────────────────────────────────────
 
         private static CharacterParameter FieldToParameter(CharacterAnketaField field, bool randomize)
@@ -249,13 +397,26 @@ namespace Writersword.Modules.Characters.Services
                 ScalePoints = new Dictionary<double, string>(field.ScalePoints)
             };
 
-            if (field.Type == CharacterParameterType.StateList &&
+            // Список вариантов нужен обоим выборам — и одиночному, и
+            // множественному: разница между ними только в том, сколько из
+            // этого списка можно отметить.
+            if ((field.Type == CharacterParameterType.StateList ||
+                 field.Type == CharacterParameterType.MultiChoice) &&
                 !string.IsNullOrWhiteSpace(field.StatesRaw))
             {
                 param.States = field.StatesRaw
                     .Split(',', StringSplitOptions.RemoveEmptyEntries)
                     .Select(s => s.Trim())
                     .ToList();
+            }
+
+            // Свободное число край шкалы не наследует: у «длины ушей» нет
+            // ни минимума, ни максимума, и подставленный ноль был бы не
+            // «пусто», а утверждением.
+            if (param.Type == CharacterParameterType.Number)
+            {
+                param.NumericValue = 0;
+                return param;
             }
 
             if (randomize && param.Type == CharacterParameterType.Numeric)

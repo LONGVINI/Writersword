@@ -27,11 +27,18 @@ namespace Writersword.Modules.TextEditor.Rendering
         private static readonly ConcurrentDictionary<(string Family, bool Bold, bool Italic), SKTypeface>
             _typefaceCache = new();
 
-        // Кеш SKFont по ключу (typeface handle, размер в тысячных pt).
-        // SKFont — тонкая обёртка над нативным объектом; без кеша создаётся заново
-        // для каждого сегмента каждого рендер-кадра и при измерении в layout.
-        private static readonly ConcurrentDictionary<(IntPtr Typeface, int SizeMils), SKFont>
-            _fontCache = new();
+        // Кеш SKFont — свой на каждый поток, а не один на всех.
+        //
+        // SKFont не рассчитан на две руки сразу: раскладка меряет им текст на потоке
+        // прогрева, рисование идёт на потоке композиции, и один и тот же объект в
+        // обеих руках роняет процесс внутри Skia (sk_font_text_to_glyphs). Поймать
+        // это тем труднее, что падает не там, где ошиблись, а там, где в этот миг
+        // рисовали, — например, на дорожке точек в оглавлении.
+        //
+        // Свой набор на поток снимает вопрос целиком и стоит недорого: SKFont — тонкая
+        // обёртка, а потоков, которые верстают и рисуют, всего несколько.
+        [ThreadStatic]
+        private static Dictionary<(IntPtr Typeface, int SizeMils), SKFont>? _fontCache;
 
         // Кеш фолбэк-гарнитур по кодпоинту Unicode.
         // Заполняется при первом обращении к символу не поддержанному основным шрифтом.
@@ -45,18 +52,15 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public static void TrimFontCache()
         {
-            // SKFont сначала — они держат внутреннюю ссылку на SKTypeface.
-            // Диспозим шрифты до диспоза гарнитур.
-            foreach (var font in _fontCache.Values)
-                font?.Dispose();
-            _fontCache.Clear();
-
-            // SKTypeface — нативные объекты (данные шрифтового файла в памяти).
-            // При следующем открытии документа загружаются с диска за ~50 мс.
-            foreach (var typeface in _typefaceCache.Values)
-                typeface?.Dispose();
+            // Ничего не освобождается вручную, только отпускаются ссылки.
+            //
+            // Освободить шрифт или гарнитуру может понадобиться ровно в тот миг, когда
+            // ими рисует поток композиции: сброс кеша зовут при смене документа, а
+            // кадр в это время уже в работе. Нативный объект, убитый под рукой, — это
+            // падение процесса, а не сэкономленная память. Остальное сделает сборщик,
+            // когда на них действительно никто не смотрит.
+            _fontCache?.Clear();
             _typefaceCache.Clear();
-
             _fallbackFamilyCache.Clear();
         }
 
@@ -1520,11 +1524,18 @@ namespace Writersword.Modules.TextEditor.Rendering
                         SKRunSegment charFormat = format;
                         char drawCh = ch;
 
-                        // Управляющие символы (\r, \n, \t и прочие C0 < U+0020) не имеют глифа и
+                        // Управляющие символы (\r, \n и прочие C0 < U+0020) не имеют глифа и
                         // рисуются шрифтом как .notdef — квадрат (□). Затекают в текст ячейки при
                         // вставке многострочного текста. Рисуем как пробел, сохраняя счётчик
                         // символов, чтобы каретка/хит-тест не смещались.
-                        if (ch < ' ') drawCh = ' ';
+                        //
+                        // Табуляция из этого правила исключена. Она не знак, а прыжок к отметке
+                        // на строке, и ширину ей даёт позиция табуляции, а не шрифт. Пока она
+                        // подменялась пробелом, вёрстка не видела её вовсе: весь разбор позиций
+                        // ниже ищет токен "\t" и получал пробел. Номер страницы в оглавлении
+                        // из-за этого вставал вплотную к названию, дорожка точек не рисовалась,
+                        // а длинная строка уносила номер на перенос.
+                        if (ch < ' ' && ch != '\t') drawCh = ' ';
 
                         // Проверяем глифы только для символов вне Basic Latin (U+0080+).
                         // Basic Latin всегда есть в любом текстовом шрифте — проверять незачем,
@@ -1591,6 +1602,34 @@ namespace Writersword.Modules.TextEditor.Rendering
             // textAreaWidthPt = availableWidthPt - leftIndentPt - rightIndentPt,
             // т.е. именно то пространство в котором располагаются строки.
             layout.TextAreaWidthPt = textAreaWidthPt;
+
+            // Отметка табуляции правее текстовой области подрезается по её краю.
+            //
+            // Позиция отметки — величина запечённая: у строк оглавления её ставит
+            // сборщик по ширине текста на листе рукописи. Стоит той ширине стать
+            // меньше — уже лист чтения, другие поля, колонки, — и правая отметка
+            // остаётся снаружи: дорожка точек с номером страницы уходит за обрез, и
+            // видно это на каждой строке оглавления сразу.
+            //
+            // Подрезка идёт по копиям: сами позиции абзаца принадлежат рукописи и
+            // должны вернуться, как только ширина станет прежней.
+            if (tabStops is { Count: > 0 })
+            {
+                List<Models.Styles.TabStop>? clipped = null;
+
+                for (int i = 0; i < tabStops.Count; i++)
+                {
+                    if (tabStops[i].PositionPt <= textAreaWidthPt + 0.01) continue;
+
+                    clipped ??= new List<Models.Styles.TabStop>(tabStops);
+
+                    var moved = tabStops[i].Clone();
+                    moved.PositionPt = textAreaWidthPt;
+                    clipped[i] = moved;
+                }
+
+                if (clipped is not null) tabStops = clipped;
+            }
 
             if (tokens.Count == 0)
             {
@@ -2046,6 +2085,11 @@ namespace Writersword.Modules.TextEditor.Rendering
             int pendingContentSegIdx = -1;
             float pendingContentStartW = 0f;
 
+            // Формат и место самого знака табуляции. Нужны, чтобы прыжок, за которым на
+            // строке ничего не встало, можно было заново выпустить на следующей строке.
+            SKRunSegment? pendingTabFormat = null;
+            int pendingTabGlobalIdx = -1;
+
             // Ближайшая своя позиция правее точки. null — свои кончились.
             Models.Styles.TabStop? NextExplicitStop(float fromAbsPt)
             {
@@ -2073,6 +2117,44 @@ namespace Writersword.Modules.TextEditor.Rendering
                 pendingTabStop = null;
                 pendingContentSegIdx = -1;
                 pendingContentStartW = 0f;
+                pendingTabFormat = null;
+                pendingTabGlobalIdx = -1;
+            }
+
+            // Снимает со строки прыжок, за которым на ней так ничего и не встало, —
+            // чтобы выпустить его заново на следующей строке.
+            //
+            // Так ведёт себя строка оглавления с длинным названием: название занимает
+            // строку целиком, номеру страницы места не остаётся. Оставить прыжок здесь
+            // значило бы дотянуть дорожку точек до правого поля под названием, а номер
+            // бросить в начало следующей строки — оторванным от своего названия числом.
+            // Прыжок уходит вниз вместе с номером, и номер снова встаёт к отметке.
+            //
+            // Прыжок, который на строке один, не переносится: новая строка была бы такой
+            // же пустой, и перенос повторялся бы до конца абзаца.
+            bool DetachPendingTabForCarry(out SKRunSegment? format, out int globalIdx)
+            {
+                format = null;
+                globalIdx = -1;
+
+                if (pendingTabSeg is null || pendingTabStop is null) return false;
+                if (pendingTabFormat is null || pendingTabGlobalIdx < 0) return false;
+                if (pendingContentSegIdx < currentLine.Segments.Count) return false;
+                if (currentLine.Segments.Count < 2) return false;
+                if (!ReferenceEquals(currentLine.Segments[^1], pendingTabSeg)) return false;
+
+                format = pendingTabFormat;
+                globalIdx = pendingTabGlobalIdx;
+
+                currentW -= pendingTabSeg.Width;
+                if (currentW < 0f) currentW = 0f;
+
+                currentLine.Segments.RemoveAt(currentLine.Segments.Count - 1);
+                currentLine.TextWidth = currentW;
+                currentLine.LastCharIndex = globalIdx - 1;
+
+                ClearPendingTab();
+                return true;
             }
 
             // Ширина куска от начала до десятичного разделителя. Разделителя нет —
@@ -2224,6 +2306,10 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             void StartNewLine(int firstCharIndex, float probeHPt, float requiredWidthPt)
             {
+                // Прыжок, за которым на этой строке так ничего и не встало, уезжает на
+                // новую строку вместе со своим куском.
+                bool carryTab = DetachPendingTabForCarry(out var carryFormat, out int carryIdx);
+
                 // Прыжок, не закрытый к переносу, закрывается тем, что успело набраться:
                 // строка кончилась, и ждать продолжения куска больше нечего.
                 ResolvePendingTab();
@@ -2232,8 +2318,14 @@ namespace Writersword.Modules.TextEditor.Rendering
                 lineProbeHPt = probeHPt;
                 bandExtraTop = ComputeBand(
                     ZoneY(layout.TotalHeightPt, probeHPt), probeHPt, requiredWidthPt, bandFragments);
-                currentLine = new SKLineLayout { FirstCharIndex = firstCharIndex };
+                currentLine = new SKLineLayout
+                {
+                    FirstCharIndex = carryTab ? carryIdx : firstCharIndex
+                };
                 ApplyBandToCurrentLine();
+
+                if (carryTab && carryFormat is not null)
+                    AppendTab(carryFormat, carryIdx);
             }
 
             void FlushWord()
@@ -2370,6 +2462,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                     ? SKTabLeader.None
                     : (SKTabLeader)(int)explicitStop.Leader;
 
+                tabSeg.TabLeaderDensity = explicitStop is null
+                    ? 0f
+                    : (float)explicitStop.LeaderDensity;
+
                 // Левая позиция закрыта сразу: её кусок начинается ровно на отметке, и
                 // ждать конца текста незачем.
                 if (deferred)
@@ -2378,6 +2474,8 @@ namespace Writersword.Modules.TextEditor.Rendering
                     pendingTabStop = explicitStop;
                     pendingContentSegIdx = currentLine.Segments.Count;
                     pendingContentStartW = currentW;
+                    pendingTabFormat = format;
+                    pendingTabGlobalIdx = globalIdx;
                 }
             }
 
@@ -2841,13 +2939,14 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// <summary>
         /// Рисует заполнитель прыжка табуляции: точки, чёрточки или сплошную линию.
         ///
-        /// Точки ставятся по сетке от начала прыжка, а не подгоняются под его ширину:
-        /// в оглавлении соседние строки имеют разную длину названия, и подогнанные под
-        /// каждую строку точки вставали бы вразнобой. По общей сетке они выстраиваются
-        /// столбиками сверху вниз — именно так набирают книжные оглавления.
+        /// Сетка точек отсчитывается от КОНЦА прыжка влево, а не от его начала. Начало у
+        /// каждой строки своё — названия глав разной длины, — и точки, расставленные от
+        /// него, вставали бы вразнобой. Конец же у всех строк один: это отметка табуляции,
+        /// к которой прижат номер страницы. Отсчёт от неё выстраивает точки столбиками
+        /// сверху вниз — именно так набирают книжные оглавления.
         ///
-        /// Последняя точка отбрасывается, если налезает на текст за прыжком: зазор перед
-        /// номером страницы читается как воздух, а слипшиеся точка и цифра — как опечатка.
+        /// Крайняя точка у номера отбрасывается: зазор перед цифрой читается как воздух,
+        /// а слипшиеся точка и цифра — как опечатка.
         /// </summary>
         private static void DrawTabLeader(SKCanvas canvas, SKRunSegment seg, float xPt, float baseYPt)
         {
@@ -2881,16 +2980,87 @@ namespace Writersword.Modules.TextEditor.Rendering
             // Шаг сетки: у точки он шире собственной ширины знака — сплошная дорожка точек
             // читается как многоточие, а не как ведущая линия.
             float stepPt = seg.TabLeader == SKTabLeader.Dots
-                ? Math.Max(markWidth * 2f, seg.FontSizePt * 0.28f)
+                ? Math.Max(markWidth * 1.35f, seg.FontSizePt * 0.2f)
                 : Math.Max(markWidth * 1.6f, seg.FontSizePt * 0.22f);
 
-            // Зазор перед текстом за прыжком — в один шаг сетки.
-            float limit = xPt + seg.Width - stepPt;
+            // Плотность из позиции табуляции: вдвое больше единицы — вдвое чаще знаки.
+            // Ноль означает «как обычно» — так рисуются прыжки, собранные без этой
+            // величины. Пределы стоят здесь, а не только в ленте: величина приезжает и
+            // из файла, где её мог поправить кто угодно, а шаг в ноль повесил бы цикл.
+            float density = seg.TabLeaderDensity;
+            if (density > 0.01f)
+                stepPt /= Math.Clamp(density, 0.25f, 4f);
+
+            if (stepPt < 0.2f) stepPt = 0.2f;
+
+            // Зазор после названия главы — в ширину знака: точка вплотную к букве
+            // читается как точка в конце слова. Перед номером страницы зазор шире, в шаг
+            // сетки: там цифра, и слипшиеся точка с цифрой читаются как опечатка.
+            float rightPt = xPt + seg.Width - stepPt;
+            float leftPt = xPt + markWidth;
+
+            if (rightPt < leftPt) return;
+
+            int count = (int)((rightPt - leftPt) / stepPt) + 1;
+            if (count <= 0) return;
+            if (count > MaxLeaderMarks) count = MaxLeaderMarks;
+
+            ushort glyph = typeface.GetGlyph(mark[0]);
+            if (glyph == 0) return;
+
+            // Вся дорожка уходит в Skia одним блобом, а не знак за знаком.
+            //
+            // Поштучная отрисовка стоила вызова DrawText на каждую точку: в строке
+            // оглавления их до полусотни, на листе с оглавлением — за тысячу, и всё
+            // это заново на каждый кадр, включая мигание каретки. Каждый такой вызов
+            // — это ещё и разбор строки в глифы. Правка внутри оглавления шла рывками
+            // именно поэтому. Блоб собирает глифы один раз на строку и отдаёт их
+            // одной отрисовкой.
+            EnsureLeaderBuffers(count);
+
+            var glyphs = _leaderGlyphs!;
+            var positions = _leaderPositions!;
+
+            for (int i = 0; i < count; i++)
+            {
+                glyphs[i] = glyph;
+                positions[i] = rightPt - stepPt * i;
+            }
 
             using var paint = new SKPaint { Color = color, IsAntialias = true };
 
-            for (float x = xPt + stepPt; x <= limit; x += stepPt)
-                canvas.DrawText(mark, x, baseYPt, font, paint);
+            using var builder = new SKTextBlobBuilder();
+            var run = builder.AllocateHorizontalRun(font, count, baseYPt);
+            run.SetGlyphs(new ReadOnlySpan<ushort>(glyphs, 0, count));
+            run.SetPositions(new ReadOnlySpan<float>(positions, 0, count));
+
+            using var blob = builder.Build();
+            if (blob is null) return;
+
+            canvas.DrawText(blob, 0f, 0f, paint);
+        }
+
+        /// <summary>
+        /// Предел знаков в одной дорожке заполнителя.
+        ///
+        /// Нужен не ради красоты: плотность приезжает из файла, где её мог поправить кто
+        /// угодно, а очень широкая дорожка при крошечном шаге дала бы десятки тысяч
+        /// знаков, которых всё равно не различить.
+        /// </summary>
+        private const int MaxLeaderMarks = 4096;
+
+        // Буферы дорожки живут между вызовами: отрисовка идёт на одном потоке, а заводить
+        // на каждую строку по два массива значит кормить сборщик мусора на каждом кадре.
+        [ThreadStatic] private static ushort[]? _leaderGlyphs;
+        [ThreadStatic] private static float[]? _leaderPositions;
+
+        private static void EnsureLeaderBuffers(int count)
+        {
+            if (_leaderGlyphs is not null && _leaderGlyphs.Length >= count) return;
+
+            int size = count < 256 ? 256 : count;
+            _leaderGlyphs = new ushort[size];
+            _leaderPositions = new float[size];
         }
 
         private static SKGlyphMetrics[] BuildGlyphMetrics(SKRunSegment seg, SKFont font)
@@ -3193,11 +3363,18 @@ namespace Writersword.Modules.TextEditor.Rendering
             //
             // Плата — текст чуть мягче по горизонтали: штрихи перестают ложиться
             // точно на пиксель. Word и просмотрщики PDF платят её по той же причине.
-            return _fontCache.GetOrAdd(key, _ => new SKFont(typeface, sizePt)
+            var cache = _fontCache ??= new Dictionary<(IntPtr, int), SKFont>();
+
+            if (cache.TryGetValue(key, out var ready)) return ready;
+
+            var font = new SKFont(typeface, sizePt)
             {
                 Subpixel = true,
                 LinearMetrics = true
-            });
+            };
+
+            cache[key] = font;
+            return font;
         }
 
         private static SKTypeface GetOrCreateTypeface(string family, bool bold, bool italic)

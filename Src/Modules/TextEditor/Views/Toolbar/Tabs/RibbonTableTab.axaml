@@ -973,13 +973,13 @@
 
 							<Button Grid.Row="1" Grid.Column="0" Margin="1 0"
 									Command="{Binding SetBreakLabelCommand}" Classes="TBtn"
-									behaviours:TooltipBehavior.Tip="Подпись под таблицей перед разрывом страницы. Первый клик — дефолтный текст, второй — диалог редактирования, пустая строка — убрать.">
+									behaviours:TooltipBehavior.Tip="Подпись под таблицей перед разрывом страницы. Первый клик — дефолтный текст, второй — диалог редактирования, пустая строка — убрать">
 								<PathIcon Width="14" Height="14" Data="M3 3h18v2H3V3zm0 4h12v2H3V7zm11 4l4 4-4 4v-3h-3v-2h3v-3z"/>
 							</Button>
 
 							<Button Grid.Row="1" Grid.Column="1" Margin="1 0"
 									Command="{Binding SetContinuationLabelCommand}" Classes="TBtn"
-									behaviours:TooltipBehavior.Tip="Подпись над продолжением таблицы на следующей странице. Первый клик — дефолтный текст, второй — диалог редактирования, пустая строка — убрать.">
+									behaviours:TooltipBehavior.Tip="Подпись над продолжением таблицы на следующей странице. Первый клик — дефолтный текст, второй — диалог редактирования, пустая строка — убрать">
 								<PathIcon Width="14" Height="14" Data="M14 3l-4 4 4 4V8h3V5h-3V3zm-3 8H3v2h8v-2zm0 4H3v2h8v-2z"/>
 							</Button>
 

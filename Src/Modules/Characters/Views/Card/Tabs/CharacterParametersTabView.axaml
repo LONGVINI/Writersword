@@ -227,7 +227,22 @@
                                                        FontSize="12"
                                                        VerticalAlignment="Center"
                                                        Foreground="{DynamicResource TextPrimaryBrush}"/>
-										</StackPanel>
+										<Button Classes="param-type"
+					        Content="Число"
+					        Command="{Binding AddNumberParameterCommand}"
+					        behaviours:TooltipBehavior.Tip="Свободное число"
+					        behaviours:TooltipBehavior.Description="Величина без краёв: рост, вес, год, длина ушей. От шкалы отличается тем, что мерой служит само число, а не «сколько из пяти». Пустым остаётся, пока не вписали"/>
+					<Button Classes="param-type"
+					        Content="Описание"
+					        Command="{Binding AddLongTextParameterCommand}"
+					        behaviours:TooltipBehavior.Tip="Большое поле"
+					        behaviours:TooltipBehavior.Description="Несколько абзацев: внешность, привычки, прошлое. От короткого текста отличается только высотой поля — и этого хватает, чтобы список не превращался в простыню"/>
+					<Button Classes="param-type"
+					        Content="Несколько"
+					        Command="{Binding AddMultiChoiceParameterCommand}"
+					        behaviours:TooltipBehavior.Tip="Несколько вариантов"
+					        behaviours:TooltipBehavior.Description="Список галок: отметить можно сколько угодно. Варианты перечисляются через запятую там же, где у обычного выбора"/>
+					</StackPanel>
 
 										<TextBlock Text="{Binding ScaleHint}"
                                                    IsVisible="{Binding HasScaleHint}"
@@ -280,6 +295,62 @@
                                               HorizontalAlignment="Stretch"
                                               FontSize="12"
                                               Background="{DynamicResource BgSurfaceBrush}"/>
+
+									<!-- Свободное число. Поле узкое и в одну строку: число — это
+									     число, а не абзац, и растянутое на всю ширину оно
+									     читается как текстовое. Пустым оно и остаётся, пока в
+									     него не вписали: «не указано» и «ноль» — разные вещи. -->
+									<TextBox Text="{Binding NumberText}"
+									         IsVisible="{Binding ShowNumber}"
+									         Width="140"
+									         HorizontalAlignment="Left"
+									         FontSize="12"
+									         Background="{DynamicResource BgSurfaceBrush}"
+									         Foreground="{DynamicResource TextPrimaryBrush}"
+									         BorderBrush="{DynamicResource BorderDefaultBrush}"
+									         BorderThickness="1"
+									         CornerRadius="4"
+									         Padding="8,6"/>
+
+									<!-- Описание. То же текстовое значение, что и у короткого
+									     текста, но поле сразу высокое и растёт дальше: внешность
+									     в одну строку не опишешь, а поле, которое приходится
+									     разворачивать вручную, разворачивать и не станут. -->
+									<TextBox Text="{Binding TextValue}"
+									         IsVisible="{Binding ShowLongText}"
+									         MinHeight="96"
+									         FontSize="12"
+									         AcceptsReturn="True"
+									         TextWrapping="Wrap"
+									         VerticalContentAlignment="Top"
+									         Background="{DynamicResource BgSurfaceBrush}"
+									         Foreground="{DynamicResource TextPrimaryBrush}"
+									         BorderBrush="{DynamicResource BorderDefaultBrush}"
+									         BorderThickness="1"
+									         CornerRadius="4"
+									         Padding="8,6"/>
+
+									<!-- Несколько вариантов. Галки списком, а не выпадающий
+									     список с отметками: выбранное должно быть видно, не
+									     открывая список, — иначе по карточке не скажешь, что
+									     у персонажа отмечено. -->
+									<ItemsControl ItemsSource="{Binding Options}"
+									              IsVisible="{Binding ShowMultiChoice}">
+										<ItemsControl.ItemsPanel>
+											<ItemsPanelTemplate>
+												<WrapPanel Orientation="Horizontal"/>
+											</ItemsPanelTemplate>
+										</ItemsControl.ItemsPanel>
+										<ItemsControl.ItemTemplate>
+											<DataTemplate x:DataType="tabs:CharacterChoiceOptionViewModel">
+												<CheckBox Content="{Binding Name}"
+												          IsChecked="{Binding IsSelected, Mode=TwoWay}"
+												          FontSize="12"
+												          Margin="0,0,14,2"
+												          Foreground="{DynamicResource TextPrimaryBrush}"/>
+											</DataTemplate>
+										</ItemsControl.ItemTemplate>
+									</ItemsControl>
 
 									<!-- Да или нет -->
 									<ToggleSwitch IsChecked="{Binding BoolValue}"

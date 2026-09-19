@@ -258,6 +258,12 @@ namespace Writersword.Modules.Characters.Services
                     ScalePoints = new System.Collections.Generic.Dictionary<double, string>(p.ScalePoints),
                     States = new List<string>(p.States),
                     CurrentStateIndex = p.CurrentStateIndex,
+                    // Отмеченное в поле с несколькими ответами и признак
+                    // «число вписано» — такие же части значения, как и всё
+                    // остальное здесь: без них копия теряла бы галочки и
+                    // получала бы ноль вместо пустого поля.
+                    SelectedStates = new List<string>(p.SelectedStates),
+                    HasNumber = p.HasNumber,
                     TextValue = p.TextValue,
                     BoolValue = p.BoolValue,
                     TrueLabel = p.TrueLabel,
@@ -376,6 +382,154 @@ namespace Writersword.Modules.Characters.Services
                 _logger.Debug("Anketa '{Name}' synced into {Count} characters", anketa.Name, changed);
 
             return changed;
+        }
+
+        /// <summary>
+        /// Подключить к карточке все анкеты шаблона.
+        ///
+        /// Уже подключённые остаются на своих местах и не переезжают в конец:
+        /// шаблон добавляет недостающие разделы, а не переставляет карточку
+        /// по-своему. Заполненные значения не трогаются — этим занимается
+        /// ApplyAnketa, и правило у него то же.
+        /// </summary>
+        public int ApplyTemplate(string characterId, CharacterTemplate template)
+        {
+            if (IsReadOnly)
+            {
+                _logger.Debug("ApplyTemplate ignored (compare mode): {Id}", characterId);
+                return 0;
+            }
+
+            if (template?.AnketaIds == null) return 0;
+
+            var character = GetById(characterId);
+            if (character == null) return 0;
+
+            var applied = 0;
+
+            foreach (var anketaId in template.AnketaIds)
+            {
+                if (character.AttachedAnketaIds.Contains(anketaId)) continue;
+
+                var anketa = _anketaService.GetById(anketaId);
+                if (anketa == null) continue;
+
+                ApplyAnketa(characterId, anketa, false);
+                applied++;
+            }
+
+            if (applied > 0)
+            {
+                // Порядок разделов задаёт шаблон — ради этого его и выбирали.
+                var refreshed = GetById(characterId);
+                if (refreshed != null)
+                {
+                    ReorderParametersByAnketas(refreshed);
+                    refreshed.UpdatedAt = DateTime.UtcNow;
+                    Update(refreshed);
+                }
+
+                _logger.Debug("Template '{Name}' applied to {Id}: {Count} anketas",
+                    template.Name, characterId, applied);
+            }
+
+            return applied;
+        }
+
+        /// <summary>
+        /// Переставить подключённую анкету выше или ниже.
+        ///
+        /// Порядок подключения — это порядок разделов в карточке: сначала то,
+        /// что для этого персонажа главное. У одного автора первой идёт
+        /// внешность, у другого — боевые характеристики, и навязывать тут
+        /// свой порядок программе не по чину.
+        ///
+        /// Вслед за анкетами переставляются и сами поля: иначе список
+        /// параметров остался бы в порядке, в каком их когда-то подключили,
+        /// и перестановка ничего бы не меняла.
+        /// </summary>
+        public void MoveAttachedAnketa(string characterId, string anketaId, int delta)
+        {
+            if (IsReadOnly)
+            {
+                _logger.Debug("MoveAttachedAnketa ignored (compare mode): {Id}", characterId);
+                return;
+            }
+
+            var character = GetById(characterId);
+            if (character == null) return;
+
+            var index = character.AttachedAnketaIds.IndexOf(anketaId);
+            if (index < 0) return;
+
+            var target = index + delta;
+            if (target < 0 || target >= character.AttachedAnketaIds.Count) return;
+
+            character.AttachedAnketaIds.RemoveAt(index);
+            character.AttachedAnketaIds.Insert(target, anketaId);
+
+            ReorderParametersByAnketas(character);
+
+            character.UpdatedAt = DateTime.UtcNow;
+            Update(character);
+        }
+
+        /// <summary>
+        /// Разложить поля персонажа в порядке подключённых анкет, а внутри
+        /// анкеты — в порядке её полей.
+        ///
+        /// Поля, которых нет ни в одной подключённой анкете, уходят в конец и
+        /// сохраняют свой прежний порядок между собой: это либо заведённые
+        /// вручную, либо оставшиеся от отключённого набора, и терять их
+        /// расстановку незачем.
+        /// </summary>
+        private void ReorderParametersByAnketas(Character character)
+        {
+            if (_anketaService == null) return;
+
+            // Место каждого поля по всем подключённым анкетам: сначала анкета,
+            // потом позиция поля внутри неё.
+            var rank = new Dictionary<string, int>();
+            var next = 0;
+
+            foreach (var anketaId in character.AttachedAnketaIds)
+            {
+                var anketa = _anketaService.GetById(anketaId);
+                if (anketa?.Fields == null) continue;
+
+                foreach (var field in anketa.Fields.OrderBy(f => f.Order))
+                {
+                    var fieldId = CharacterFieldId.Resolve(field);
+                    if (string.IsNullOrEmpty(fieldId)) continue;
+
+                    // Поле, встречающееся в двух анкетах, остаётся там, где
+                    // его увидели впервые: иначе перестановка нижней анкеты
+                    // дёргала бы поле из верхней.
+                    if (rank.ContainsKey(fieldId)) continue;
+
+                    rank[fieldId] = next++;
+                }
+            }
+
+            var tail = next;
+
+            var ordered = character.Parameters
+                .Select((parameter, position) => new
+                {
+                    parameter,
+                    key = rank.TryGetValue(CharacterFieldId.Resolve(parameter), out var place)
+                        ? place
+                        : tail + position
+                })
+                .OrderBy(x => x.key)
+                .Select(x => x.parameter)
+                .ToList();
+
+            for (int i = 0; i < ordered.Count; i++)
+                ordered[i].Order = i;
+
+            character.Parameters.Clear();
+            character.Parameters.AddRange(ordered);
         }
 
         public void DetachAnketa(string characterId, string anketaId)
@@ -604,7 +758,8 @@ namespace Writersword.Modules.Characters.Services
             return CharacterAvatarRef.Combine(
                 replacement,
                 CharacterAvatarRef.CropOf(avatarRef),
-                CharacterAvatarRef.StripCropOf(avatarRef));
+                CharacterAvatarRef.StripCropOf(avatarRef),
+                CharacterAvatarRef.RotationOf(avatarRef));
         }
 
     }

@@ -50,11 +50,30 @@ namespace Writersword.Modules.Characters.Views.Avatars
         private const double PreviewStripHeight = 60.0;
         private const double PreviewTinySide = 44.0;
 
-        // Предел приближения: во сколько раз кадр может стать мельче того
-        // размера, при котором картинка ровно закрывает рамку.
+        // Потолок ползунка: во сколько раз кадр может стать мельче того
+        // размера, при котором картинка ровно закрывает рамку. Потолок самой
+        // правки это больше не задаёт — числом в поле берут и выше.
         private const double MaxZoomFactor = 6.0;
 
+        // Дальше приближать нечего: в кадр попадает меньше восьми точек
+        // исходника по стороне, и на карточке от картинки остаётся ровное
+        // пятно. Этим и ограничено поле, а не привычным потолком ползунка.
+        private const double MinCropSide = 8.0;
+
         private Bitmap? _source;
+
+        // Повёрнутая копия исходника. Принадлежит окну — в отличие от самого
+        // исходника, который приходит снаружи и там же освобождается.
+        private Bitmap? _rotated;
+
+        // Поворот картинки в градусах: 0, 90, 180 или 270. Принадлежит
+        // картинке целиком, а не отдельному кадру: оба кадра снимаются уже с
+        // повёрнутой, и разный поворот у кружка и полоски означал бы две
+        // разные картинки на одной карточке.
+        private int _rotation;
+
+        // Стороны показываемой картинки — то есть повёрнутой, если поворот
+        // задан. Вся геометрия кадра считается по ним.
         private double _imageWidth;
         private double _imageHeight;
 
@@ -73,6 +92,22 @@ namespace Writersword.Modules.Characters.Views.Avatars
         private double _frameWidth = ViewportSide - FrameInset * 2;
         private double _frameHeight = ViewportSide - FrameInset * 2;
 
+        // Какие направляющие показаны: 0 — никаких, 1 — центральные оси,
+        // 2 — сетка по третям. Не поле ссылки и не часть кадра: линии видит
+        // только тот, кто кадрирует, и в картинку они не попадают.
+        //
+        // Выбор переживает закрытие окна: окно живёт всё время работы модуля,
+        // и человек, который кадрирует по третям, кадрирует так и следующую
+        // картинку.
+        private int _guides;
+
+        // Рамка, по которой построена нынешняя фигура затемнения. Хранится,
+        // чтобы не пересобирать геометрию на каждом шаге перетаскивания.
+        private double _shadeX = double.NaN;
+        private double _shadeY = double.NaN;
+        private double _shadeWidth = double.NaN;
+        private double _shadeHeight = double.NaN;
+
         private bool _dragging;
         private Point _dragOrigin;
         private double _dragOffsetX;
@@ -90,6 +125,11 @@ namespace Writersword.Modules.Characters.Views.Avatars
         // лица, полоске — широкая полоса. Один кадр на оба вида означал бы,
         // что один из них всегда обрезан не туда.
         private bool _stripMode;
+
+        // Бегунок выбранного сегмента уже вставал на место. До первой
+        // постановки он переезжает без перехода: иначе при открытии окна
+        // подложка прилетала бы из левого края дорожки.
+        private bool _segThumbPlaced;
 
         // Отложенные кадры: тот, который сейчас не правят, ждёт здесь.
         private CharacterAvatarCrop _circleCrop = CharacterAvatarCrop.Full;
@@ -125,6 +165,15 @@ namespace Writersword.Modules.Characters.Views.Avatars
                 shadow.Height = Math.Max(0, b.Height);
             });
 
+            // Бегунок сегментов встаёт по границам самой кнопки, а они
+            // известны только после прохода раскладки — и меняются, когда
+            // окно ужимается по ширине модуля.
+            foreach (var name in new[] { "ModeCircleButton", "ModeStripButton" })
+            {
+                var segButton = this.FindControl<Button>(name);
+                segButton?.GetObservable(BoundsProperty).Subscribe(_ => UpdateSegThumb());
+            }
+
             // Зона полоски меряется раскладкой: до первого прохода её границы
             // нулевые, и картинка встала бы в неё по запасным числам.
             var stripBox = this.FindControl<Border>("PreviewStripBox");
@@ -148,6 +197,12 @@ namespace Writersword.Modules.Characters.Views.Avatars
         /// вызов при уже открытом окне возвращает задачу текущего показа.
         ///
         /// Битмап остаётся за вызывающей стороной: окно его не освобождает.
+        /// Повёрнутую копию окно делает себе само и само же освобождает.
+        ///
+        /// initialRotation — поворот, с которым картинку уже показывают. Окно
+        /// открывается на нём, а не на нуле: иначе повторный заход в обрезку
+        /// показывал бы лежащую на боку фотографию, однажды уже поставленную
+        /// как надо.
         ///
         /// cardContext — вью-модель карточки, для которой выбирают кадр. Если
         /// она передана, справа показывается сама карточка с её цветом,
@@ -161,15 +216,15 @@ namespace Writersword.Modules.Characters.Views.Avatars
             string? title = null,
             object? cardContext = null,
             CharacterAvatarCrop? initialStripCrop = null,
-            bool openOnStrip = false)
+            bool openOnStrip = false,
+            int initialRotation = 0)
         {
             if (_tcs != null) return _tcs.Task;
             if (source == null) return Task.FromResult<CharacterAvatarCropPair?>(null);
 
             _tcs = new TaskCompletionSource<CharacterAvatarCropPair?>();
             _source = source;
-            _imageWidth = Math.Max(1, source.PixelSize.Width);
-            _imageHeight = Math.Max(1, source.PixelSize.Height);
+            _rotation = CharacterAvatarRef.NormalizeRotation(initialRotation);
 
             var titleText = this.FindControl<TextBlock>("TitleText");
             if (titleText != null && !string.IsNullOrWhiteSpace(title))
@@ -177,10 +232,9 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
             ApplyCardContext(cardContext);
 
-            SetImageSource(this.FindControl<Image>("SourceImage"), source);
-            SetImageSource(this.FindControl<Image>("PreviewCircleImage"), source);
-            SetImageSource(this.FindControl<Image>("PreviewStripImage"), source);
-            SetImageSource(this.FindControl<Image>("PreviewTinyImage"), source);
+            // Картинка ставится уже повёрнутой: кадры из ссылки сняты с
+            // повёрнутой, и раскладывать их на исходную было бы не на что.
+            ApplyRotationToImages();
 
             // Повторный заход в обрезку должен показать ровно то, что было
             // выбрано в прошлый раз: положение и масштаб разворачиваются из
@@ -196,10 +250,11 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
             _stripMode = openOnStrip;
             UpdateModeButtons();
+            UpdateGuidesButton();
 
             LayoutFrame();
             ApplyCropToState(_stripMode ? _stripCrop : _circleCrop);
-            SyncZoomSliderFromScale();
+            SyncZoomControls();
             Redraw();
 
             IsVisible = true;
@@ -224,6 +279,128 @@ namespace Writersword.Modules.Characters.Views.Avatars
             if (image == null) return;
             image.Source = source;
             image.Stretch = Stretch.Fill;
+        }
+
+        // ── Поворот ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Пересобрать показываемую картинку под текущий поворот и раздать её
+        /// полотну и всем трём превью.
+        ///
+        /// Поворот делается один раз в новый битмап, а не преобразованием при
+        /// отрисовке: рамка, затемнение и превью считаются по сторонам
+        /// картинки, и поворот на лету пришлось бы учитывать в каждом из этих
+        /// расчётов.
+        ///
+        /// Не удался — окно остаётся на нулевом повороте. Показать одно, а
+        /// запомнить другое хуже, чем не повернуть вовсе.
+        /// </summary>
+        private void ApplyRotationToImages()
+        {
+            _rotated?.Dispose();
+            _rotated = null;
+
+            if (_source == null) return;
+
+            if (_rotation != 0)
+            {
+                _rotated = Services.AvatarImageRotation.Rotate(_source, _rotation);
+                if (_rotated == null) _rotation = 0;
+            }
+
+            ShowImage(_rotated ?? _source);
+        }
+
+        /// <summary>Поставить картинку полотну и превью, запомнив её стороны.</summary>
+        private void ShowImage(Bitmap display)
+        {
+            _imageWidth = Math.Max(1, display.PixelSize.Width);
+            _imageHeight = Math.Max(1, display.PixelSize.Height);
+
+            SetImageSource(this.FindControl<Image>("SourceImage"), display);
+            SetImageSource(this.FindControl<Image>("PreviewCircleImage"), display);
+            SetImageSource(this.FindControl<Image>("PreviewStripImage"), display);
+            SetImageSource(this.FindControl<Image>("PreviewTinyImage"), display);
+        }
+
+        /// <summary>
+        /// Повернуть картинку на четверть по часовой стрелке.
+        ///
+        /// Вместе с картинкой поворачиваются оба кадра: человек выбрал место на
+        /// фотографии, и поворот листа не должен уводить кадр на чужой угол.
+        /// После поворота каждый кадр подгоняется под форму своей рамки — доли
+        /// ширины и высоты меняются местами, и квадратный на вид кадр иначе
+        /// стал бы прямоугольным.
+        ///
+        /// Повёрнутая копия строится до правки состояния: не построится — в
+        /// окне не меняется ничего, и показанное по-прежнему совпадает с тем,
+        /// что уедет в ссылку.
+        /// </summary>
+        private void OnRotateClick(object? sender, RoutedEventArgs e)
+        {
+            if (_source == null) return;
+
+            var next = CharacterAvatarRef.NormalizeRotation(_rotation + 90);
+
+            Bitmap? rotated = null;
+            if (next != 0)
+            {
+                rotated = Services.AvatarImageRotation.Rotate(_source, next);
+                if (rotated == null) return;
+            }
+
+            StoreCurrentCrop();
+
+            _rotated?.Dispose();
+            _rotated = rotated;
+            _rotation = next;
+            ShowImage(_rotated ?? _source);
+
+            _circleCrop = FitCropToFrame(_circleCrop.RotateCw(), 1.0);
+            _stripCrop = FitCropToFrame(_stripCrop.RotateCw(), StripAspect);
+
+            LayoutFrame();
+            ApplyCropToState(_stripMode ? _stripCrop : _circleCrop);
+            SyncZoomControls();
+            Redraw();
+        }
+
+        /// <summary>
+        /// Подогнать кадр под форму рамки, оставив его середину на месте.
+        ///
+        /// Берётся наибольший прямоугольник нужной формы, вписанный в прежний
+        /// кадр: так кадр после поворота показывает то же место картинки и не
+        /// вылезает за её край.
+        ///
+        /// frameAspect задан в точках экрана, а доли кадра считаются от разных
+        /// сторон картинки, поэтому пропорция переводится через её стороны.
+        /// </summary>
+        private CharacterAvatarCrop FitCropToFrame(CharacterAvatarCrop crop, double frameAspect)
+        {
+            if (_imageWidth <= 0 || _imageHeight <= 0) return crop;
+
+            var ratio = frameAspect * _imageHeight / _imageWidth;
+            if (double.IsNaN(ratio) || double.IsInfinity(ratio) || ratio <= 0) return crop;
+
+            var width = crop.Width;
+            var height = width / ratio;
+            if (height > crop.Height)
+            {
+                height = crop.Height;
+                width = height * ratio;
+            }
+
+            if (width > 1.0) { width = 1.0; height = width / ratio; }
+            if (height > 1.0) { height = 1.0; width = height * ratio; }
+
+            var centerX = crop.X + crop.Width / 2.0;
+            var centerY = crop.Y + crop.Height / 2.0;
+
+            return new CharacterAvatarCrop(
+                centerX - width / 2.0,
+                centerY - height / 2.0,
+                width,
+                height);
         }
 
         // ── Геометрия рамки ───────────────────────────────────────────────
@@ -273,7 +450,7 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
             LayoutFrame();
             ApplyCropToState(_stripMode ? _stripCrop : _circleCrop);
-            SyncZoomSliderFromScale();
+            SyncZoomControls();
             UpdateModeButtons();
             Redraw();
         }
@@ -290,6 +467,58 @@ namespace Writersword.Modules.Characters.Views.Avatars
         {
             MarkModeButton("ModeCircleButton", !_stripMode);
             MarkModeButton("ModeStripButton", _stripMode);
+            UpdateSegThumb();
+        }
+
+        /// <summary>
+        /// Поставить бегунок под выбранный сегмент.
+        ///
+        /// Ширина и сдвиг берутся у самой кнопки, а не считаются делением
+        /// дорожки пополам: надписи разной длины, и половина промахнулась бы
+        /// мимо той, что длиннее.
+        ///
+        /// Сдвиг задан преобразованием, а не отступом: отступ пересчитывает
+        /// раскладку на каждом кадре переезда, а преобразование меняет только
+        /// то, как уже размеренный прямоугольник ложится на экран.
+        /// </summary>
+        private void UpdateSegThumb()
+        {
+            var thumb = this.FindControl<Border>("SegThumb");
+            var target = this.FindControl<Button>(
+                _stripMode ? "ModeStripButton" : "ModeCircleButton");
+            if (thumb == null || target == null) return;
+
+            var bounds = target.Bounds;
+            if (bounds.Width <= 0 || bounds.Height <= 0)
+            {
+                thumb.IsVisible = false;
+                return;
+            }
+
+            var shift = Avalonia.Media.Transformation.TransformOperations.Parse(
+                string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    "translateX({0:0.##}px)", bounds.X));
+
+            if (_segThumbPlaced)
+            {
+                thumb.IsVisible = true;
+                thumb.Width = bounds.Width;
+                thumb.RenderTransform = shift;
+                return;
+            }
+
+            // Первая постановка — без перехода: переходы на время снимаются,
+            // иначе бегунок приехал бы к своему сегменту прямо при открытии
+            // окна, хотя переключать никто ничего не просил.
+            var transitions = thumb.Transitions;
+            thumb.Transitions = null;
+            thumb.IsVisible = true;
+            thumb.Width = bounds.Width;
+            thumb.RenderTransform = shift;
+            thumb.Transitions = transitions;
+
+            _segThumbPlaced = true;
         }
 
         private void MarkModeButton(string name, bool active)
@@ -311,6 +540,18 @@ namespace Writersword.Modules.Characters.Views.Avatars
         private double MinScale => Math.Max(
             _frameWidth / _imageWidth,
             _frameHeight / _imageHeight);
+
+        /// <summary>
+        /// Наибольший масштаб. Считается от кадра, а не от MinScale: предел,
+        /// привязанный к вписанному размеру, менялся при каждом повороте и
+        /// смене вида — после поворота одна и та же картинка приближалась то
+        /// ближе, то дальше. Здесь же предел говорит ровно одно: мельче
+        /// MinCropSide точек исходника кадр не режет.
+        ///
+        /// MinScale снизу — на случай картинки мельче самой рамки: у неё
+        /// вписанный масштаб и так выше предела.
+        /// </summary>
+        private double MaxScale => Math.Max(MinScale, _frameWidth / MinCropSide);
 
         /// <summary>
         /// Развернуть кадр в положение и масштаб картинки. Обратная операция к
@@ -390,24 +631,61 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
             LayoutShade();
             LayoutFrameVisuals();
+            LayoutGuides();
             RedrawPreviews();
         }
 
+        /// <summary>
+        /// Затемнение вне кадра — одна фигура с дыркой.
+        ///
+        /// Раньше это были четыре полосы вокруг рамки. Стороны кадра нацело не
+        /// делятся — у полоски высота выходит дробной, — и полосы стыковались
+        /// по дробной координате. Растеризация клала полупрозрачный чёрный на
+        /// стыковую строку дважды, и вдоль верхнего и нижнего края кадра, по
+        /// бокам от него, оставались тёмные чёрточки. Одна фигура так не умеет
+        /// по построению: дырка вырезается правилом чёт-нечет, и ни одна точка
+        /// не закрашивается второй раз.
+        ///
+        /// Геометрия пересобирается только при смене самой рамки: перетаскивание
+        /// картинки её не двигает, а строить фигуру на каждый шаг мыши значило
+        /// бы выбрасывать её шестьдесят раз в секунду.
+        /// </summary>
         private void LayoutShade()
         {
-            var shadeCanvas = this.FindControl<Canvas>("ShadeCanvas");
-            if (shadeCanvas != null)
+            var path = this.FindControl<Avalonia.Controls.Shapes.Path>("ShadePath");
+            if (path == null) return;
+
+            if (path.Data != null
+                && Math.Abs(_shadeX - _frameX) < 0.001
+                && Math.Abs(_shadeY - _frameY) < 0.001
+                && Math.Abs(_shadeWidth - _frameWidth) < 0.001
+                && Math.Abs(_shadeHeight - _frameHeight) < 0.001)
+                return;
+
+            var geometry = new StreamGeometry();
+            using (var ctx = geometry.Open())
             {
-                shadeCanvas.Width = ViewportSide;
-                shadeCanvas.Height = ViewportSide;
+                ctx.SetFillRule(FillRule.EvenOdd);
+                AddRectangle(ctx, 0, 0, ViewportSide, ViewportSide);
+                AddRectangle(ctx, _frameX, _frameY, _frameWidth, _frameHeight);
             }
 
-            PlaceBox("ShadeTop", 0, 0, ViewportSide, _frameY);
-            PlaceBox("ShadeBottom", 0, _frameY + _frameHeight,
-                ViewportSide, Math.Max(0, ViewportSide - (_frameY + _frameHeight)));
-            PlaceBox("ShadeLeft", 0, _frameY, _frameX, _frameHeight);
-            PlaceBox("ShadeRight", _frameX + _frameWidth, _frameY,
-                Math.Max(0, ViewportSide - (_frameX + _frameWidth)), _frameHeight);
+            path.Data = geometry;
+
+            _shadeX = _frameX;
+            _shadeY = _frameY;
+            _shadeWidth = _frameWidth;
+            _shadeHeight = _frameHeight;
+        }
+
+        private static void AddRectangle(
+            StreamGeometryContext ctx, double x, double y, double width, double height)
+        {
+            ctx.BeginFigure(new Point(x, y), true);
+            ctx.LineTo(new Point(x + width, y));
+            ctx.LineTo(new Point(x + width, y + height));
+            ctx.LineTo(new Point(x, y + height));
+            ctx.EndFigure(true);
         }
 
         private void LayoutFrameVisuals()
@@ -437,6 +715,96 @@ namespace Writersword.Modules.Characters.Views.Avatars
                 if (!_stripMode)
                     PlaceBox("FrameCircleHint", _frameX, _frameY, _frameWidth, _frameHeight);
             }
+        }
+
+        /// <summary>
+        /// Переключить направляющие по кругу: оси, сетка, ничего.
+        ///
+        /// По кругу, а не двумя кнопками: вместе эти два вида не нужны — оси
+        /// ставят лицо по середине кружка, сетка кладёт его по третям, и
+        /// выбирают из них, а не складывают.
+        /// </summary>
+        private void OnGuidesClick(object? sender, RoutedEventArgs e)
+        {
+            _guides = (_guides + 1) % 3;
+            UpdateGuidesButton();
+            LayoutGuides();
+        }
+
+        private void UpdateGuidesButton()
+        {
+            var button = this.FindControl<Button>("GuidesButton");
+            if (button == null) return;
+
+            if (_guides != 0)
+            {
+                if (!button.Classes.Contains("on")) button.Classes.Add("on");
+            }
+            else
+            {
+                button.Classes.Remove("on");
+            }
+        }
+
+        /// <summary>
+        /// Разложить направляющие по кадру.
+        ///
+        /// Линии идут внутри рамки, а не через всё полотно: за рамкой лежит
+        /// затемнение, и продолжение линий по нему показывало бы деления там,
+        /// где кадра уже нет.
+        ///
+        /// Толщина в одну точку, а половина её вычитается из координаты:
+        /// иначе линия встаёт не по самой середине, а рядом с ней.
+        /// </summary>
+        private void LayoutGuides()
+        {
+            var guideCanvas = this.FindControl<Canvas>("GuideCanvas");
+            if (guideCanvas != null)
+            {
+                guideCanvas.Width = ViewportSide;
+                guideCanvas.Height = ViewportSide;
+            }
+
+            if (_guides == 0)
+            {
+                PlaceLine("GuideV1", 0, 0, 0, 0, false);
+                PlaceLine("GuideV2", 0, 0, 0, 0, false);
+                PlaceLine("GuideH1", 0, 0, 0, 0, false);
+                PlaceLine("GuideH2", 0, 0, 0, 0, false);
+                return;
+            }
+
+            if (_guides == 1)
+            {
+                var centerX = _frameX + _frameWidth / 2.0 - 0.5;
+                var centerY = _frameY + _frameHeight / 2.0 - 0.5;
+
+                PlaceLine("GuideV1", centerX, _frameY, 1, _frameHeight, true);
+                PlaceLine("GuideH1", _frameX, centerY, _frameWidth, 1, true);
+                PlaceLine("GuideV2", 0, 0, 0, 0, false);
+                PlaceLine("GuideH2", 0, 0, 0, 0, false);
+                return;
+            }
+
+            var thirdX = _frameWidth / 3.0;
+            var thirdY = _frameHeight / 3.0;
+
+            PlaceLine("GuideV1", _frameX + thirdX - 0.5, _frameY, 1, _frameHeight, true);
+            PlaceLine("GuideV2", _frameX + thirdX * 2.0 - 0.5, _frameY, 1, _frameHeight, true);
+            PlaceLine("GuideH1", _frameX, _frameY + thirdY - 0.5, _frameWidth, 1, true);
+            PlaceLine("GuideH2", _frameX, _frameY + thirdY * 2.0 - 0.5, _frameWidth, 1, true);
+        }
+
+        private void PlaceLine(
+            string name, double x, double y, double width, double height, bool visible)
+        {
+            var line = this.FindControl<Border>(name);
+            if (line == null) return;
+
+            line.IsVisible = visible;
+            if (!visible) return;
+
+            PlaceBox(name, x, y, width, height);
         }
 
         private void PlaceBox(string name, double x, double y, double width, double height)
@@ -504,27 +872,66 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
         // ── Ползунок масштаба ─────────────────────────────────────────────
 
-        private void SyncZoomSliderFromScale()
+        /// <summary>
+        /// Привести ползунок и поле к нынешнему масштабу.
+        ///
+        /// Масштаб считается в процентах от натуральной величины: сто
+        /// процентов — точка картинки на точку экрана. Мера не зависит ни от
+        /// рамки, ни от поворота, поэтому число на экране означает одно и то
+        /// же до и после любой правки; прежняя шкала «во столько-то раз от
+        /// вписанного» после поворота меняла смысл вместе с MinScale.
+        /// </summary>
+        private void SyncZoomControls()
         {
-            var slider = this.FindControl<Slider>("ZoomSlider");
-            if (slider == null) return;
-
-            var minScale = MinScale;
-            var factor = minScale <= 0 ? 1.0 : _scale / minScale;
-            if (factor < 1.0) factor = 1.0;
-            if (factor > MaxZoomFactor) factor = MaxZoomFactor;
+            var minPercent = MinScale * 100.0;
+            var maxPercent = MaxScale * 100.0;
+            var percent = _scale * 100.0;
 
             _suppressZoomEvent = true;
-            slider.Minimum = 1.0;
-            slider.Maximum = MaxZoomFactor;
-            slider.Value = factor;
-            _suppressZoomEvent = false;
+            try
+            {
+                var slider = this.FindControl<Slider>("ZoomSlider");
+                if (slider != null)
+                {
+                    slider.Minimum = minPercent;
+
+                    // Потолок ползунка привычный — вшестеро от вписанного, —
+                    // но если числом задали больше, он раздвигается до этого
+                    // значения: иначе ползунок молча вернул бы масштаб к своему
+                    // потолку на первом же прикосновении.
+                    slider.Maximum = Math.Max(minPercent * MaxZoomFactor, percent);
+                    slider.Value = percent;
+                }
+
+                var box = this.FindControl<NumericUpDown>("ZoomBox");
+                if (box != null)
+                {
+                    box.Minimum = (decimal)Math.Floor(minPercent);
+                    box.Maximum = (decimal)Math.Ceiling(maxPercent);
+                    box.Value = (decimal)Math.Round(percent);
+                }
+            }
+            finally
+            {
+                _suppressZoomEvent = false;
+            }
         }
 
         private void OnZoomSliderChanged(object? sender, RangeBaseValueChangedEventArgs e)
         {
             if (_suppressZoomEvent || _source == null) return;
-            ZoomTo(MinScale * e.NewValue, new Point(ViewportSide / 2.0, ViewportSide / 2.0));
+            ZoomTo(e.NewValue / 100.0, new Point(ViewportSide / 2.0, ViewportSide / 2.0));
+            SyncZoomControls();
+            Redraw();
+        }
+
+        private void OnZoomBoxChanged(object? sender, NumericUpDownValueChangedEventArgs e)
+        {
+            if (_suppressZoomEvent || _source == null) return;
+            if (e.NewValue is not decimal percent) return;
+
+            ZoomTo((double)percent / 100.0, new Point(ViewportSide / 2.0, ViewportSide / 2.0));
+            SyncZoomControls();
             Redraw();
         }
 
@@ -535,7 +942,7 @@ namespace Writersword.Modules.Characters.Views.Avatars
         private void ZoomTo(double targetScale, Point anchor)
         {
             var minScale = MinScale;
-            var maxScale = minScale * MaxZoomFactor;
+            var maxScale = MaxScale;
 
             if (targetScale < minScale) targetScale = minScale;
             if (targetScale > maxScale) targetScale = maxScale;
@@ -601,7 +1008,7 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
             var step = Math.Pow(1.04, notches);
             ZoomTo(_scale * step, e.GetPosition(this.FindControl<Panel>("Viewport")));
-            SyncZoomSliderFromScale();
+            SyncZoomControls();
             Redraw();
             e.Handled = true;
         }
@@ -616,14 +1023,14 @@ namespace Writersword.Modules.Characters.Views.Avatars
             _offsetX = _frameX + _frameWidth / 2.0 - _imageWidth * _scale / 2.0;
             _offsetY = _frameY + _frameHeight / 2.0 - _imageHeight * _scale / 2.0;
             ClampOffsets();
-            SyncZoomSliderFromScale();
+            SyncZoomControls();
             Redraw();
         }
 
         private void OnApplyClick(object? sender, RoutedEventArgs e)
         {
             StoreCurrentCrop();
-            Close(new CharacterAvatarCropPair(_circleCrop, _stripCrop));
+            Close(new CharacterAvatarCropPair(_circleCrop, _stripCrop, _rotation));
         }
 
         private void OnCancelClick(object? sender, RoutedEventArgs e) => Close(null);
@@ -643,6 +1050,16 @@ namespace Writersword.Modules.Characters.Views.Avatars
             ClearImage("PreviewStripImage");
             ClearImage("PreviewTinyImage");
             _source = null;
+
+            // Следующий показ поставит бегунок сегментов сразу на место:
+            // переезд уместен, когда вид переключают, а не когда открывают
+            // окно уже на нужном.
+            _segThumbPlaced = false;
+
+            // Повёрнутая копия своя, её и освобождаем.
+            _rotated?.Dispose();
+            _rotated = null;
+            _rotation = 0;
 
             // Карточка отпускается вместе с картинкой: окно живёт всё время
             // работы модуля, и держать за собой вью-модель закрытого выбора

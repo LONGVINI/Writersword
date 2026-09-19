@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:Writersword.Modules.TextEditor.Views.Dialogs"
              x:Class="Writersword.Modules.TextEditor.Views.Dialogs.FontPickerOverlay">
@@ -22,11 +22,78 @@
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
+		<!-- Отступ справа — под полосу прокрутки. Она всплывает поверх содержимого, а
+		     не раздвигает его, и ложилась ровно на звёздочку у правого края строки.
+		     Отступ небольшой: полоса вынесена к самому краю панели, за пределы списка,
+		     и отводить под неё всю ширину больше не нужно — освободившееся место ушло
+		     строке, то есть полю нажатия на шрифт. -->
 		<Style Selector="ListBox.FontList">
 			<Setter Property="Background"      Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="0"/>
-			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="Padding"         Value="0 0 8 0"/>
 			<Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+		</Style>
+
+		<!-- Полоса прокрутки: без подложки, у самого края панели.
+		     Своя подложка здесь ни к чему — список лежит на сплошном фоне панели, и
+		     серая колонка вдоль него только режет глаз. Отрицательное поле справа
+		     выносит полосу за край списка, в поле самой панели: там она не отнимает у
+		     строк ни точки и ни на что не налезает. -->
+		<Style Selector="ListBox.FontList ScrollBar">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Margin"     Value="0 2 -6 2"/>
+		</Style>
+		<!-- Ширина полосы — это поле захвата, а не толщина ползунка. Ползунок внутри
+		     тоньше, но брать его можно по всей этой ширине: тонкая полоса, по которой
+		     ещё и надо попасть, мучительна. -->
+		<Style Selector="ListBox.FontList ScrollBar:vertical">
+			<Setter Property="Width"    Value="12"/>
+			<Setter Property="MinWidth" Value="12"/>
+		</Style>
+		<Style Selector="ListBox.FontList ScrollBar /template/ Border">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="ListBox.FontList ScrollBar /template/ Rectangle">
+			<Setter Property="Fill" Value="Transparent"/>
+		</Style>
+		<!-- Кнопки-стрелки убираются целиком: на списке в полторы сотни строк ими не
+		     пользуются, а места они занимают больше, чем сам ползунок. -->
+		<Style Selector="ListBox.FontList ScrollBar /template/ RepeatButton">
+			<Setter Property="IsVisible" Value="False"/>
+			<Setter Property="Width"     Value="0"/>
+			<Setter Property="Height"    Value="0"/>
+		</Style>
+		<!-- Ползунок виден всегда. Прятать его до наведения нельзя: список длинный, и
+		     без ползунка не понять ни где ты в нём стоишь, ни сколько осталось.
+		     Восемь точек — чтобы попадать мышью без прицеливания. -->
+		<Style Selector="ListBox.FontList ScrollBar /template/ Thumb">
+			<Setter Property="Background"          Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="BorderThickness"     Value="0"/>
+			<Setter Property="CornerRadius"        Value="4"/>
+			<Setter Property="MinWidth"            Value="8"/>
+			<Setter Property="Width"               Value="8"/>
+			<Setter Property="HorizontalAlignment" Value="Right"/>
+			<Setter Property="Opacity"             Value="0.55"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+					<DoubleTransition Property="Width"   Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+
+		<!-- Наведение считается по всей полосе, а не по самому ползунку: подсветиться он
+		     обязан ДО того, как мышь на него попала, иначе целиться приходится в то,
+		     чего не видно. -->
+		<Style Selector="ListBox.FontList ScrollBar:pointerover /template/ Thumb">
+			<Setter Property="Opacity" Value="1"/>
+			<Setter Property="Width"   Value="10"/>
+		</Style>
+		<Style Selector="ListBox.FontList ScrollBar /template/ Thumb:pressed">
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Opacity"    Value="1"/>
+			<Setter Property="Width"      Value="10"/>
 		</Style>
 
 		<!-- Подсветка живёт на Border.Row, а не на самом ListBoxItem: заголовок
@@ -42,10 +109,32 @@
 			<Setter Property="Padding"    Value="0"/>
 		</Style>
 
+		<!-- Поле справа меньше левого: звезда прижата к краю строки, подальше от
+		     названия шрифта и поближе к полосе. По вертикали строка выше — попадать
+		     по ней мышью на длинном списке проще. -->
 		<Style Selector="Border.Row">
 			<Setter Property="Background"   Value="Transparent"/>
 			<Setter Property="CornerRadius" Value="4"/>
-			<Setter Property="Padding"      Value="8 4"/>
+			<Setter Property="Padding"      Value="8 6 3 6"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+					<TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+
+		<!-- Строка, которую тащат: приподнята и чуть просвечивает, чтобы под ней было
+		     видно, куда она встанет. Тень даёт ощущение снятого со стопки листа —
+		     остальные строки при этом просто расступаются. -->
+		<Style Selector="Border.Row.Dragging">
+			<Setter Property="Background"      Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="Opacity"         Value="0.9"/>
+			<Setter Property="RenderTransform" Value="scale(1.015)"/>
+			<Setter Property="ZIndex"          Value="10"/>
+			<Setter Property="Effect">
+				<DropShadowEffect BlurRadius="10" OffsetX="0" OffsetY="2" Opacity="0.5" Color="#000000"/>
+			</Setter>
 		</Style>
 		<Style Selector="ListBoxItem:pointerover Border.Row">
 			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
@@ -77,7 +166,7 @@
 		<Style Selector="Button.Star">
 			<Setter Property="Background"      Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="0"/>
-			<Setter Property="Padding"         Value="4 0"/>
+			<Setter Property="Padding"         Value="7 3"/>
 			<Setter Property="MinWidth"        Value="0"/>
 			<Setter Property="MinHeight"       Value="0"/>
 			<Setter Property="Cursor"          Value="Hand"/>
@@ -144,7 +233,8 @@
 								           Text="{Binding SectionTitle}"
 								           IsVisible="{Binding HasSection}"/>
 
-								<Border Classes="Row">
+								<Border Classes="Row"
+								        Classes.Dragging="{Binding IsDragging}">
 									<Grid ColumnDefinitions="* Auto">
 										<TextBlock Grid.Column="0" Classes="FontName"
 										           Text="{Binding Name}"

@@ -306,49 +306,6 @@ namespace Writersword.Modules.TextEditor.Views
         /// обязан доехать до получателя целиком.
         /// </summary>
         /// <summary>
-        /// Библиотека фонов для поля вокруг книги. Окно то же самое, что и у фона
-        /// рабочей области, — заготовки, папки и свои файлы лежат в одном месте;
-        /// отличается только то, куда ложится выбранное.
-        /// </summary>
-        private async void PickReadingBackdropImage()
-        {
-            if (DataContext is not TextEditorViewModel vm) return;
-
-            var overlay = this.FindControl<Backdrops.BackdropPickerOverlay>("BackdropOverlay");
-            if (overlay is null) return;
-
-            var result = await overlay.ShowAsync(vm.ReadingBackdropReference);
-            if (result is null) return;
-
-            if (string.IsNullOrWhiteSpace(result.Reference))
-            {
-                vm.ClearReadingBackdropImage();
-                return;
-            }
-
-            vm.SetReadingBackdropImage(result.Reference!);
-        }
-
-        private async void PickBackdropImage()
-        {
-            if (DataContext is not TextEditorViewModel vm) return;
-
-            var overlay = this.FindControl<Backdrops.BackdropPickerOverlay>("BackdropOverlay");
-            if (overlay is null) return;
-
-            var result = await overlay.ShowAsync(vm.WindowBackdrop()?.ImageRef);
-            if (result is null) return;
-
-            if (string.IsNullOrWhiteSpace(result.Reference))
-            {
-                vm.ClearBackdropImage();
-                return;
-            }
-
-            vm.SetBackdropImage(result.Reference!);
-        }
-
-        /// <summary>
         /// Язычок ленты редактора.
         ///
         /// В фокусе он поднимает ленту на время, не выходя из режима: человек берёт
@@ -874,8 +831,6 @@ namespace Writersword.Modules.TextEditor.Views
 
             // Картинка позади страниц выбирается файловым окном, а его знает
             // только вью: модель модуля про окна не осведомлена.
-            vm.BackdropImageRequested = PickBackdropImage;
-            vm.ReadingBackdropImageRequested = PickReadingBackdropImage;
 
             // Слой фона под прокруткой перекладывает тоже вью — кисти и чтение
             // картинки в окно живут здесь.
@@ -914,9 +869,16 @@ namespace Writersword.Modules.TextEditor.Views
             // Смена разворота → подпись в ленте чтения.
             canvas.SpreadPageChanged = () =>
             {
+                // Состояние снимается сейчас, а не в отложенном вызове: книга
+                // объявляет о переходе в его начале, и к моменту доставки объявление
+                // уже снято — лента получила бы страницу, с которой книга ушла.
+                int page = canvas.SpreadPageNumber;
+                int count = canvas.SpreadPageCount;
+                double ms = canvas.SpreadTransitionMs;
+
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                    vm.UpdateSpreadPageLabel(canvas.SpreadPageNumber, canvas.SpreadPageCount),
-                    Avalonia.Threading.DispatcherPriority.Background);
+                    vm.UpdateSpreadPageLabel(page, count, ms),
+                    Avalonia.Threading.DispatcherPriority.Normal);
             };
 
             // Прокрутка ленты → доля прочитанного в поле и на ползунке.
@@ -1017,16 +979,33 @@ namespace Writersword.Modules.TextEditor.Views
             var overlay = this.FindControl<ReadingThemeOverlay>("ThemeOverlay");
             if (overlay is null) return;
 
-            var result = await overlay.ShowAsync(vm.ReadingThemes(), reading.ThemeId, startWithNewTheme);
-            if (result is null) return;
+            // Окно ничего не копит: каждая правка приходит сюда по ходу и сохраняется
+            // сразу. Закрытие — хоть кнопкой, хоть крестиком — ничего не отменяет.
+            overlay.ApplyRequested = state =>
+            {
+                vm.SaveReadingThemes(state.Themes);
 
-            vm.SaveReadingThemes(result.Themes);
+                // Выбранный в окне вид сразу становится рабочим: человек его только что
+                // настраивал и ждёт увидеть книгу такой.
+                reading.ApplyTheme(state.Selected);
+                vm.ReadingRibbon.RefreshAll();
+                vm.ApplyReadingLayout();
+            };
 
-            // Выбранный в окне вид сразу становится рабочим: человек его только что
-            // настраивал и ждёт увидеть книгу такой.
-            reading.ApplyTheme(result.Selected);
-            vm.ReadingRibbon.RefreshAll();
-            vm.ApplyReadingLayout();
+            try
+            {
+                var result = await overlay.ShowAsync(vm.ReadingThemes(), reading.ThemeId, startWithNewTheme);
+                if (result is null) return;
+
+                vm.SaveReadingThemes(result.Themes);
+                reading.ApplyTheme(result.Selected);
+                vm.ReadingRibbon.RefreshAll();
+                vm.ApplyReadingLayout();
+            }
+            finally
+            {
+                overlay.ApplyRequested = null;
+            }
         }
 
         /// <summary>

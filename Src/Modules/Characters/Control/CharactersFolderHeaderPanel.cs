@@ -75,6 +75,18 @@ public sealed class CharactersFolderHeaderPanel : Panel
         ClearSubscriptions();
     }
 
+    /// <summary>
+    /// В контейнер положили другую папку. Имя и комментарий сейчас сменятся,
+    /// а подписок на их текст у панели нет — поэтому мера назначается прямо
+    /// отсюда. Без этого переиспользованная строка считала бы ширины по
+    /// предыдущей папке.
+    /// </summary>
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        InvalidateMeasure();
+    }
+
     private void SubscribeToChildren()
     {
         ClearSubscriptions();
@@ -249,9 +261,34 @@ public sealed class CharactersFolderHeaderPanel : Panel
         var nameChild = Children[0];
         var commentChild = Children[1];
 
-        // Используем кешированные натуральные ширины, а не DesiredSize после constrained-меры.
-        // Пересчитываем аллокации по реальному finalSize.Width — он отличается от available
-        // в Measure когда панель находится в star-колонке Grid внутри ScrollViewer.
+        // Натуральные ширины снимаются здесь заново, а не берутся из кеша
+        // прошлой меры.
+        //
+        // Кеш подводил при возврате из карточки персонажа. Строки списка —
+        // переиспользуемые контейнеры: при возврате в готовый элемент
+        // подставляют другую папку, имя на кнопке меняется, а панель об этом
+        // не узнаёт — подписки у неё только на видимость детей и на ввод в
+        // поле переименования, смена текста кнопки среди них не значится.
+        // Если к моменту той единственной меры имя ещё не было привязано,
+        // в кеше оставался ноль, и Arrange раздавал блоку имени ширину в
+        // ноль. Полоса шапки при этом сохраняла свои 36 точек и фон, а имя
+        // со стрелкой срезал ClipToBounds — «место под папку есть, самой
+        // папки нет».
+        //
+        // Две лишние меры на шапку: папок в списке единицы, а Arrange,
+        // который не зависит от того, звали ли перед ним Measure, стоит
+        // дороже пары измерений текста.
+        var natural = new Size(double.PositiveInfinity, finalSize.Height);
+
+        nameChild.Measure(natural);
+        _naturalNameWidth = nameChild.DesiredSize.Width;
+
+        commentChild.Measure(natural);
+        _naturalCommentWidth = commentChild.DesiredSize.Width;
+
+        // Пересчитываем аллокации по реальному finalSize.Width — он отличается
+        // от available в Measure, когда панель находится в star-колонке Grid
+        // внутри ScrollViewer.
         bool nameEditing = HasVisibleTextBox(nameChild);
 
         var (nameAlloc, commentAlloc) = ComputeAllocations(
@@ -259,6 +296,12 @@ public sealed class CharactersFolderHeaderPanel : Panel
             _naturalNameWidth,
             _naturalCommentWidth,
             nameEditing);
+
+        // Дети меряются под выданную им ширину: после меры на бесконечность
+        // их DesiredSize описывает нестеснённый случай, и внутренние панели
+        // раскладывались бы по нему, а не по тому, что им досталось.
+        nameChild.Measure(new Size(nameAlloc, finalSize.Height));
+        commentChild.Measure(new Size(commentAlloc, finalSize.Height));
 
         double commentLeft = Math.Max(nameAlloc, finalSize.Width - commentAlloc);
         double commentWidth = Math.Max(0, finalSize.Width - commentLeft);

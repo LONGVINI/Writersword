@@ -53,6 +53,16 @@ namespace Writersword.Modules.TextEditor.Models.Toc
         /// <summary>Заполнитель между строкой и номером страницы.</summary>
         public TocLeader Leader { get; set; } = TocLeader.Dots;
 
+        /// <summary>
+        /// Насколько густо стоят знаки заполнителя. Единица — обычный шаг, два — вдвое
+        /// чаще, половина — вдвое реже.
+        ///
+        /// Величина вкусовая и потому вынесена в ленту: густая дорожка точек держит глаз
+        /// на строке в книге с длинными названиями, редкая не спорит с текстом в тонкой
+        /// брошюре. Одного правильного значения здесь нет.
+        /// </summary>
+        public double LeaderDensity { get; set; } = 1.0;
+
         /// <summary>Сдвигать строки вложенных уровней вправо.</summary>
         public bool IndentByLevel { get; set; } = true;
 
