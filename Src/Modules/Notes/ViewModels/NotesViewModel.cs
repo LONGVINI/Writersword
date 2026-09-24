@@ -59,8 +59,23 @@ namespace Writersword.Modules.Notes.ViewModels
             Pages = new ObservableCollection<NotePageViewModel>();
             FilteredPages = new ObservableCollection<NotePageViewModel>();
             Pages.CollectionChanged += OnPagesChanged;
+            _undo.StateChanged += () => HistoryChanged?.Invoke();
             LoadData(null);
         }
+
+        // ── Отслеживание правок ───────────────────────────────────────────
+
+        /// <summary>Номер состояния истории отмены (см. UndoRedoStack.StateId).</summary>
+        public long HistoryState => _undo.StateId;
+
+        /// <summary>История отмены сдвинулась: удаление или его отмена.</summary>
+        public event Action? HistoryChanged;
+
+        /// <summary>
+        /// Пользователь изменил содержимое заметок. Поднимается при каждой правке, а не
+        /// только при первой: модуль по нему сообщает вкладке о несохранённых правках.
+        /// </summary>
+        public event Action? DataEdited;
 
         // ── Данные ────────────────────────────────────────────────────────
 
@@ -907,6 +922,8 @@ namespace Writersword.Modules.Notes.ViewModels
         /// </summary>
         private void MarkDirty()
         {
+            DataEdited?.Invoke();
+
             if (!_isPristine)
                 return;
             _isPristine = false;

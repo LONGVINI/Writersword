@@ -85,6 +85,14 @@ namespace Writersword.Core.Interfaces.Modules
         Control? GetOrCreateView();
 
         /// <summary>
+        /// Уже созданная View модуля без побочных эффектов: не создаёт её и не
+        /// отцепляет от текущего родителя. null — View ещё не создавалась.
+        /// Используется DockFactory, чтобы не переприцеплять живую вью, которая
+        /// уже стоит в своей панели.
+        /// </summary>
+        Control? CachedView => null;
+
+        /// <summary>
         /// Принудительно обновить состояние модуля из контекста
         /// Используется при выходе из CompareMode
         /// </summary>

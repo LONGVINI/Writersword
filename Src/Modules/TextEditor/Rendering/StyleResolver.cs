@@ -125,7 +125,7 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             foreach (var style in WalkChain(styleName))
                 if (style.RunProperties is not null)
-                    return style.RunProperties.IsBold;
+                    return style.RunProperties.IsBold ?? false;
 
             return false;
         }
@@ -137,7 +137,86 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             foreach (var style in WalkChain(styleName))
                 if (style.RunProperties is not null)
-                    return style.RunProperties.IsItalic;
+                    return style.RunProperties.IsItalic ?? false;
+
+            return false;
+        }
+
+        // ── Символьный стиль ──────────────────────────────────────────────
+        //
+        // Отличаются эти четыре от резолверов выше тем, чего они НЕ делают.
+        //
+        // Те отвечают за вид абзаца целиком и обязаны дать значение всегда, поэтому в
+        // конце подставляют запасное: не нашлось гарнитуры в цепочке — Times New Roman.
+        // Символьному стилю так вести себя нельзя. Он ложится поверх абзаца и задаёт
+        // ровно то, что в нём написано: стиль, который делает текст жирным и больше
+        // ничего, обязан оставить гарнитуру абзаца в покое, а не подменить её запасной.
+        //
+        // Пустое имя здесь не подменяется на «Обычный», в отличие от WalkChain. Отсутствие
+        // символьного стиля — это отсутствие слоя, а не слой со стилем по умолчанию.
+
+        /// <summary>Гарнитура, заданная символьным стилем. Null — цепочка её не задаёт.</summary>
+        public string? FindFontFamily(string? styleName)
+        {
+            if (string.IsNullOrEmpty(styleName)) return null;
+
+            foreach (var style in WalkChain(styleName))
+                if (!string.IsNullOrEmpty(style.RunProperties?.FontFamily))
+                    return style.RunProperties!.FontFamily;
+
+            return null;
+        }
+
+        /// <summary>Кегль, заданный символьным стилем. Null — цепочка его не задаёт.</summary>
+        public float? FindFontSize(string? styleName)
+        {
+            if (string.IsNullOrEmpty(styleName)) return null;
+
+            foreach (var style in WalkChain(styleName))
+                if (style.RunProperties?.FontSize.HasValue == true)
+                    return (float)style.RunProperties.FontSize.Value;
+
+            return null;
+        }
+
+        /// <summary>Цвет текста, заданный символьным стилем. Null — цепочка его не задаёт.</summary>
+        public string? FindTextColor(string? styleName)
+        {
+            if (string.IsNullOrEmpty(styleName)) return null;
+
+            foreach (var style in WalkChain(styleName))
+                if (!string.IsNullOrEmpty(style.RunProperties?.TextColor))
+                    return style.RunProperties!.TextColor;
+
+            return null;
+        }
+
+        /// <summary>
+        /// Делает ли символьный стиль текст жирным.
+        ///
+        /// Только добавляет: снять жирность стилем нельзя. Стили, сохранённые до того, как
+        /// IsBold стал трёхзначным, записывали «не жирный» пропуском поля, и «не задано» от
+        /// «задано ложью» в них не отличить. Из двух толкований выбрано то, ради которого
+        /// символьные стили и заводят: ими выделяют, а не гасят. Снять жирность с
+        /// фрагмента можно прямым форматированием — оно сильнее стиля.
+        /// </summary>
+        public bool AnyBold(string? styleName)
+        {
+            if (string.IsNullOrEmpty(styleName)) return false;
+
+            foreach (var style in WalkChain(styleName))
+                if (style.RunProperties?.IsBold == true) return true;
+
+            return false;
+        }
+
+        /// <summary>Делает ли символьный стиль текст курсивным. Только добавляет — см. AnyBold.</summary>
+        public bool AnyItalic(string? styleName)
+        {
+            if (string.IsNullOrEmpty(styleName)) return false;
+
+            foreach (var style in WalkChain(styleName))
+                if (style.RunProperties?.IsItalic == true) return true;
 
             return false;
         }

@@ -95,7 +95,7 @@
 									</Style>
 								</Button.Styles>
 
-								<Grid ColumnDefinitions="*,Auto">
+								<Grid ColumnDefinitions="*,Auto,Auto">
 
 									<TextBlock Grid.Column="0"
                                                x:Name="TabTitle"
@@ -115,7 +115,25 @@
 										</TextBlock.Styles>
 									</TextBlock>
 
-									<Button Grid.Column="1"
+									<!--
+                                        В проекте есть несохранённые правки. Модули сами сообщают
+                                        о правках, поэтому точка появляется сразу и на любой вкладке,
+                                        а после сохранения (или отката правок до сохранённого
+                                        состояния) пропадает. Стоит слева от крестика и приглушена:
+                                        это подсказка, а не тревога.
+                                    -->
+									<Ellipse Grid.Column="1"
+                                             Width="5"
+                                             Height="5"
+                                             Fill="{DynamicResource TextMutedBrush}"
+                                             Opacity="0.7"
+                                             Margin="0,0,5,0"
+                                             VerticalAlignment="Center"
+                                             IsHitTestVisible="False"
+                                             IsVisible="{Binding IsDirty}"/>
+
+									<!-- Крестик закрытия -->
+									<Button Grid.Column="2"
                                             Command="{Binding #TabBarViewRoot.DataContext.CloseTabCommand}"
                                             CommandParameter="{Binding}"
                                             Background="Transparent"
@@ -125,16 +143,21 @@
                                             Padding="0"
                                             CornerRadius="3"
                                             VerticalAlignment="Center"
-                                            HorizontalAlignment="Center"
-                                            Margin="4,0,0,0">
-										<Viewbox Width="10" Height="10">
-											<TextBlock Text="&#10005;"
-                                                       Foreground="{DynamicResource TextMutedBrush}"
-                                                       FontSize="16"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center"
-                                                       IsHitTestVisible="False"/>
-										</Viewbox>
+                                            HorizontalAlignment="Center">
+										<!--
+                                            Крестик нарисован линиями, а не символом шрифта: глиф сидит
+                                            в строке по базовой линии и визуально опускался ниже центра,
+                                            из-за чего точка рядом казалась выше. Линии центрируются точно.
+                                        -->
+										<Path Data="M 0,0 L 8,8 M 8,0 L 0,8"
+                                              Stroke="{DynamicResource TextMutedBrush}"
+                                              StrokeThickness="1.3"
+                                              StrokeLineCap="Round"
+                                              Width="8"
+                                              Height="8"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              IsHitTestVisible="False"/>
 										<Button.Styles>
 											<Style Selector="Button:pointerover /template/ ContentPresenter">
 												<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>

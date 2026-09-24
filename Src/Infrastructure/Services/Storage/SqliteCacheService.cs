@@ -45,8 +45,37 @@ namespace Writersword.Infrastructure.Services.Storage
         private readonly ILogger<SqliteCacheService> _logger;
         private readonly IHashService _hashService;
 
-        // Гарантирует что только одна операция одновременно обращается к файлу кеша.
-        private readonly System.Threading.SemaphoreSlim _fileLock = new(1, 1);
+        // Замок на каждый файл кеша. Прежде замок был один на всё приложение, и
+        // сохранение кеша одного проекта задерживало чтение кеша другого: при
+        // нескольких открытых вкладках это выливалось в таймауты на ровном месте.
+        private readonly Dictionary<string, System.Threading.SemaphoreSlim> _fileLocks =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        // Кеши, объявленные устаревшими: файл переносится в резервную копию.
+        // Читать их нельзя с момента объявления, а не с момента, когда файл
+        // реально перенесён: перенос ждёт своей очереди в фоне, и до него чтение
+        // вернуло бы данные, которые вызывающий код уже считает недействительными.
+        private readonly HashSet<string> _suppressedCaches = new(StringComparer.OrdinalIgnoreCase);
+
+        private System.Threading.SemaphoreSlim GetFileLock(string cachePath)
+        {
+            lock (_fileLocks)
+            {
+                if (!_fileLocks.TryGetValue(cachePath, out var fileLock))
+                {
+                    fileLock = new System.Threading.SemaphoreSlim(1, 1);
+                    _fileLocks[cachePath] = fileLock;
+                }
+
+                return fileLock;
+            }
+        }
+
+        private bool IsSuppressed(string cachePath)
+        {
+            lock (_suppressedCaches)
+                return _suppressedCaches.Contains(cachePath);
+        }
 
         public SqliteCacheService(IHashService hashService)
         {
@@ -327,7 +356,11 @@ namespace Writersword.Infrastructure.Services.Storage
             var cachePath = GetCachePath(projectPath);
             if (!File.Exists(cachePath) && !File.Exists(GetBackupPath(projectPath))) return null;
 
-            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            // Кеш объявлен устаревшим и ждёт переноса в резервную копию — отдавать нечего.
+            if (IsSuppressed(cachePath)) return null;
+
+            var fileLock = GetFileLock(cachePath);
+            if (!fileLock.Wait(TimeSpan.FromSeconds(3)))
             {
                 // Таймаут означает что UI-поток заблокирован ожиданием этого же лока
                 // (классический дедлок при откате вкладки или закрытии приложения).
@@ -349,7 +382,7 @@ namespace Writersword.Infrastructure.Services.Storage
             }
             finally
             {
-                _fileLock.Release();
+                fileLock.Release();
             }
         }
 
@@ -383,7 +416,11 @@ namespace Writersword.Infrastructure.Services.Storage
                 return null;
             }
 
-            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            // Кеш объявлен устаревшим и ждёт переноса в резервную копию — отдавать нечего.
+            if (IsSuppressed(cachePath)) return null;
+
+            var fileLock = GetFileLock(cachePath);
+            if (!fileLock.Wait(TimeSpan.FromSeconds(3)))
             {
                 // Таймаут означает что UI-поток заблокирован ожиданием этого же лока
                 // (классический дедлок при откате вкладки или закрытии приложения).
@@ -447,7 +484,7 @@ namespace Writersword.Infrastructure.Services.Storage
             }
             finally
             {
-                _fileLock.Release();
+                fileLock.Release();
             }
         }
 
@@ -459,7 +496,11 @@ namespace Writersword.Infrastructure.Services.Storage
             var cachePath = GetCachePath(projectPath);
             if (!File.Exists(cachePath) && !File.Exists(GetBackupPath(projectPath))) return null;
 
-            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            // Кеш объявлен устаревшим и ждёт переноса в резервную копию — отдавать нечего.
+            if (IsSuppressed(cachePath)) return null;
+
+            var fileLock = GetFileLock(cachePath);
+            if (!fileLock.Wait(TimeSpan.FromSeconds(3)))
             {
                 // Таймаут означает что UI-поток заблокирован ожиданием этого же лока
                 // (классический дедлок при откате вкладки или закрытии приложения).
@@ -510,7 +551,7 @@ namespace Writersword.Infrastructure.Services.Storage
             }
             finally
             {
-                _fileLock.Release();
+                fileLock.Release();
             }
         }
 
@@ -519,7 +560,11 @@ namespace Writersword.Infrastructure.Services.Storage
             var cachePath = GetCachePath(projectPath);
             if (!File.Exists(cachePath) && !File.Exists(GetBackupPath(projectPath))) return null;
 
-            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            // Кеш объявлен устаревшим и ждёт переноса в резервную копию — отдавать нечего.
+            if (IsSuppressed(cachePath)) return null;
+
+            var fileLock = GetFileLock(cachePath);
+            if (!fileLock.Wait(TimeSpan.FromSeconds(3)))
             {
                 _logger.LogWarning("Cache lock timeout — returning null, caller uses in-memory fallback");
                 return null;
@@ -545,7 +590,7 @@ namespace Writersword.Infrastructure.Services.Storage
             }
             finally
             {
-                _fileLock.Release();
+                fileLock.Release();
             }
         }
 
@@ -569,50 +614,91 @@ namespace Writersword.Infrastructure.Services.Storage
         {
             var cachePath = GetCachePath(projectPath);
 
-            await _fileLock.WaitAsync().ConfigureAwait(false);
+            _logger.LogDebug("Saving cache: {ModulesCount} modules", customDataDict.Count);
+
+            // Сериализация данных модулей и хеширование файла проекта идут ДО взятия
+            // замка. Прежде замок держался на всё это время — секунды на большом
+            // документе, — и другие операции с кешем упирались в таймаут ожидания.
+            // Под замком остаётся только работа с самим файлом базы.
+            // Подготавливаем данные модулей которые нужно записать.
+            var modulesToSave = new Dictionary<string, (string CustomDataJson, string? SessionDataJson)>();
+
+            foreach (var kvp in customDataDict)
+            {
+                var moduleType = kvp.Key;
+                var customData = kvp.Value;
+
+                if (customData == null || (customData is string str && string.IsNullOrWhiteSpace(str)))
+                {
+                    _logger.LogDebug("Skipping module without data: {moduleType}", moduleType);
+                    continue;
+                }
+
+                // Сериализуем снапшот — живая коллекция может меняться из UI-треда
+                // пока фоновый поток сериализует, что даёт InvalidOperationException.
+                object? customDataToSerialize = customData is IDictionary<string, object?> cd
+                    ? new Dictionary<string, object?>(cd)
+                    : customData;
+                var customDataJson = JsonConvert.SerializeObject(customDataToSerialize, Formatting.Indented);
+
+                string? sessionDataJson = null;
+                if (sessionDataDict.TryGetValue(moduleType, out var sessionData) && sessionData != null)
+                {
+                    object? sessionDataToSerialize = sessionData is IDictionary<string, object?> sd
+                        ? new Dictionary<string, object?>(sd)
+                        : sessionData;
+                    sessionDataJson = JsonConvert.SerializeObject(sessionDataToSerialize, Formatting.Indented);
+                }
+
+                modulesToSave[moduleType] = (customDataJson, sessionDataJson);
+            }
+
+            if (modulesToSave.Count == 0)
+            {
+                _logger.LogDebug("Nothing to save");
+                return;
+            }
+
+            // Хеш файла проекта — для быстрого сравнения при открытии.
+            // Позволяет пропустить загрузку 400 МБ данных до показа диалога восстановления.
+            // Сам файл проекта в этот момент может быть кратковременно занят другой
+            // операцией сохранения (хранилище держит его открытым в RELEASE-режиме) —
+            // несколько попыток с паузой снимают эту гонку без изменения результата
+            // при успехе.
+            string projectFileHash = "";
+            const int hashReadAttempts = 3;
+            for (int attempt = 1; attempt <= hashReadAttempts; attempt++)
+            {
+                try
+                {
+                    // Глобальный шлюз файла проекта: хеширование не пересекается
+                    // с записью в хранилище и сохранением проекта.
+                    // FileShare.ReadWrite — чтобы не блокировать удерживаемый
+                    // в RELEASE-режиме дескриптор хранилища.
+                    using var fileGate = ProjectFileLock.Acquire(projectPath);
+                    using var sha = SHA256.Create();
+                    using var fs = new FileStream(
+                        projectPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    projectFileHash = Convert.ToHexString(sha.ComputeHash(fs));
+                    break;
+                }
+                catch (IOException ex) when (attempt < hashReadAttempts)
+                {
+                    _logger.LogDebug(ex, "Project file busy, retrying hash computation ({Attempt}/{Total})", attempt, hashReadAttempts);
+                    await Task.Delay(100 * attempt).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to compute project file hash");
+                    projectFileHash = "";
+                    break;
+                }
+            }
+
+            var fileLock = GetFileLock(cachePath);
+            await fileLock.WaitAsync().ConfigureAwait(false);
             try
             {
-                _logger.LogDebug("Saving cache: {ModulesCount} modules", customDataDict.Count);
-
-                // Подготавливаем данные модулей которые нужно записать.
-                var modulesToSave = new Dictionary<string, (string CustomDataJson, string? SessionDataJson)>();
-
-                foreach (var kvp in customDataDict)
-                {
-                    var moduleType = kvp.Key;
-                    var customData = kvp.Value;
-
-                    if (customData == null || (customData is string str && string.IsNullOrWhiteSpace(str)))
-                    {
-                        _logger.LogDebug("Skipping module without data: {moduleType}", moduleType);
-                        continue;
-                    }
-
-                    // Сериализуем снапшот — живая коллекция может меняться из UI-треда
-                    // пока фоновый поток сериализует, что даёт InvalidOperationException.
-                    object? customDataToSerialize = customData is IDictionary<string, object?> cd
-                        ? new Dictionary<string, object?>(cd)
-                        : customData;
-                    var customDataJson = JsonConvert.SerializeObject(customDataToSerialize, Formatting.Indented);
-
-                    string? sessionDataJson = null;
-                    if (sessionDataDict.TryGetValue(moduleType, out var sessionData) && sessionData != null)
-                    {
-                        object? sessionDataToSerialize = sessionData is IDictionary<string, object?> sd
-                            ? new Dictionary<string, object?>(sd)
-                            : sessionData;
-                        sessionDataJson = JsonConvert.SerializeObject(sessionDataToSerialize, Formatting.Indented);
-                    }
-
-                    modulesToSave[moduleType] = (customDataJson, sessionDataJson);
-                }
-
-                if (modulesToSave.Count == 0)
-                {
-                    _logger.LogDebug("Nothing to save");
-                    return;
-                }
-
                 bool fileExists = EnsureCacheReadable(cachePath);
 
                 // Нечитаемый файл на месте кеша убирается до создания базы:
@@ -650,41 +736,6 @@ namespace Writersword.Infrastructure.Services.Storage
                     }
                 }
 
-                // Хеш файла проекта — для быстрого сравнения при открытии.
-                // Позволяет пропустить загрузку 400 МБ данных до показа диалога восстановления.
-                // Сам файл проекта в этот момент может быть кратковременно занят другой
-                // операцией сохранения (хранилище держит его открытым в RELEASE-режиме) —
-                // несколько попыток с паузой снимают эту гонку без изменения результата
-                // при успехе.
-                string projectFileHash = "";
-                const int hashReadAttempts = 3;
-                for (int attempt = 1; attempt <= hashReadAttempts; attempt++)
-                {
-                    try
-                    {
-                        // Глобальный шлюз файла проекта: хеширование не пересекается
-                        // с записью в хранилище и сохранением проекта.
-                        // FileShare.ReadWrite — чтобы не блокировать удерживаемый
-                        // в RELEASE-режиме дескриптор хранилища.
-                        using var fileGate = ProjectFileLock.Acquire(projectPath);
-                        using var sha = SHA256.Create();
-                        using var fs = new FileStream(
-                            projectPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                        projectFileHash = Convert.ToHexString(sha.ComputeHash(fs));
-                        break;
-                    }
-                    catch (IOException ex) when (attempt < hashReadAttempts)
-                    {
-                        _logger.LogDebug(ex, "Project file busy, retrying hash computation ({Attempt}/{Total})", attempt, hashReadAttempts);
-                        await Task.Delay(100 * attempt).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to compute project file hash");
-                        projectFileHash = "";
-                        break;
-                    }
-                }
 
                 var now = DateTime.Now;
                 var modifiedMs = new DateTimeOffset(now).ToUnixTimeMilliseconds();
@@ -758,7 +809,7 @@ namespace Writersword.Infrastructure.Services.Storage
             }
             finally
             {
-                _fileLock.Release();
+                fileLock.Release();
             }
         }
 
@@ -771,7 +822,8 @@ namespace Writersword.Infrastructure.Services.Storage
 
             if (!File.Exists(cachePath) && !File.Exists(backupPath)) return;
 
-            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            var fileLock = GetFileLock(cachePath);
+            if (!fileLock.Wait(TimeSpan.FromSeconds(3)))
             {
                 _logger.LogWarning("Cache lock timeout in DeleteCache — skipping delete");
                 return;
@@ -794,7 +846,7 @@ namespace Writersword.Infrastructure.Services.Storage
             }
             finally
             {
-                _fileLock.Release();
+                fileLock.Release();
             }
         }
 
@@ -803,34 +855,50 @@ namespace Writersword.Infrastructure.Services.Storage
             var cachePath = GetCachePath(projectPath);
             if (!File.Exists(cachePath)) return;
 
-            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            // Кеш объявляется устаревшим сразу: с этого момента чтение его не
+            // отдаёт, даже пока файл физически на месте. Сам перенос идёт в фоне.
+            // Прежде метод ждал замок до трёх секунд прямо в UI-потоке, и если
+            // кеш был занят сохранением, каждое переключение воркмода замирало
+            // ровно на эти три секунды.
+            lock (_suppressedCaches)
             {
-                _logger.LogWarning("Cache lock timeout in MoveCacheToBackup — skipping");
-                return;
+                if (!_suppressedCaches.Add(cachePath))
+                    return;
             }
-            try
+
+            _ = Task.Run(async () =>
             {
-                var backupPath = GetBackupPath(projectPath);
+                var fileLock = GetFileLock(cachePath);
+                await fileLock.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    if (!File.Exists(cachePath)) return;
 
-                // Прежняя копия уходит целиком вместе со спутниками: чужой
-                // журнал рядом с базой делает её нечитаемой.
-                DeleteWithCompanions(backupPath);
+                    var backupPath = GetBackupPath(projectPath);
 
-                File.Move(cachePath, backupPath, overwrite: true);
+                    // Прежняя копия уходит целиком вместе со спутниками: чужой
+                    // журнал рядом с базой делает её нечитаемой.
+                    DeleteWithCompanions(backupPath);
 
-                foreach (var companion in Companions(cachePath))
-                    if (File.Exists(companion)) File.Delete(companion);
+                    File.Move(cachePath, backupPath, overwrite: true);
 
-                _logger.LogDebug("Cache moved to backup: {BackupPath}", backupPath);
-            }
-            catch (IOException ex)
-            {
-                _logger.LogError(ex, "Error moving cache to backup: {CachePath}", cachePath);
-            }
-            finally
-            {
-                _fileLock.Release();
-            }
+                    foreach (var companion in Companions(cachePath))
+                        if (File.Exists(companion)) File.Delete(companion);
+
+                    _logger.LogDebug("Cache moved to backup: {BackupPath}", backupPath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error moving cache to backup: {CachePath}", cachePath);
+                }
+                finally
+                {
+                    fileLock.Release();
+
+                    lock (_suppressedCaches)
+                        _suppressedCaches.Remove(cachePath);
+                }
+            });
         }
 
         // ── Данные проекта ────────────────────────────────────────────────

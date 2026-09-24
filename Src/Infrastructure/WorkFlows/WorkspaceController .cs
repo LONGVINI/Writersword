@@ -43,6 +43,15 @@ namespace Writersword.Infrastructure.Workspace
         private IRootDock _dockLayout = null!;
         private List<WorkMode> _availableWorkModes;
 
+        // Раскладки неактивных воркмодов вкладки (ключ — WorkMode.Id). При уходе
+        // из воркмода его раскладка паркуется целиком — вместе с Document-ами и
+        // вью модулей в них, — а DockStage держит для неё скрытый DockControl.
+        // Возврат в воркмод берёт ту же раскладку без десериализации, без
+        // построения дерева и без переприцепления вью. Раскладка с float-окнами
+        // не паркуется: окна закрываются при переключении, и такая раскладка
+        // восстанавливается прежним путём — из сериализованной строки.
+        private readonly Dictionary<string, IRootDock> _parkedLayouts = new(StringComparer.Ordinal);
+
         private bool _isDeactivating = false;
         private bool _needsFullLayoutRefresh = false;
 
@@ -81,6 +90,22 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         public IRootDock GetCurrentLayout() => _dockLayout;
+
+        public IReadOnlyCollection<IRootDock> GetAliveLayouts()
+        {
+            var result = new List<IRootDock>(_parkedLayouts.Count + 1);
+
+            if (_dockLayout != null)
+                result.Add(_dockLayout);
+
+            foreach (var parked in _parkedLayouts.Values)
+            {
+                if (!ReferenceEquals(parked, _dockLayout))
+                    result.Add(parked);
+            }
+
+            return result;
+        }
 
         public List<WorkMode> GetAvailableWorkModes() => _availableWorkModes;
 
@@ -194,15 +219,42 @@ namespace Writersword.Infrastructure.Workspace
                 pendingCacheProjectId = _tab.GetProject().Id;
             }
 
+            // Раскладку можно припарковать целиком, только если в ней нет float-окон:
+            // окна закрываются ниже, и без них раскладка потеряла бы вынесенные панели.
+            // Проверка строго до CloseAllFloatWindows.
+            bool canParkLayout = _dockLayout != null
+                && (_dockLayout.Windows == null || _dockLayout.Windows.Count == 0);
+
+            Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("сериализация раскладки и кеш");
+
             CloseAllFloatWindows();
 
+            var previousMode = _activeWorkMode;
             _activeWorkMode.IsActive = false;
             newMode.IsActive = true;
             _activeWorkMode = newMode;
 
-            // clearDataContext: false — модули паркуются живыми и их вью переиспользуются
-            // при возврате в воркмод; разрыв биндингов больших вью занимал секунды UI-потока.
-            _dockFactory.DetachViewsFromLayout(_dockLayout, clearDataContext: false);
+            if (canParkLayout)
+            {
+                // Раскладка уходящего воркмода паркуется живой: её DockControl остаётся
+                // в DockStage скрытым, вью модулей не снимаются с визуального дерева.
+                _parkedLayouts[previousMode.Id] = _dockLayout;
+            }
+            else
+            {
+                _parkedLayouts.Remove(previousMode.Id);
+
+                // clearDataContext: false — модули паркуются живыми и их вью переиспользуются
+                // при возврате в воркмод; разрыв биндингов больших вью занимал секунды UI-потока.
+                _dockFactory.DetachViewsFromLayout(_dockLayout, clearDataContext: false);
+            }
+
+            // Раскладки воркмодов, которых больше нет в списке, не держим.
+            foreach (var parkedId in _parkedLayouts.Keys.ToList())
+            {
+                if (!_availableWorkModes.Any(w => w.Id == parkedId))
+                    _parkedLayouts.Remove(parkedId);
+            }
 
             // Модули, которых нет в новом WorkMode, НЕ уничтожаются — паркуются живыми
             // в контексте вкладки. Возврат в прежний WorkMode переиспользует их мгновенно,
@@ -216,8 +268,22 @@ namespace Writersword.Infrastructure.Workspace
             // переиспользуются без чтения данных), поэтому отложенное обновление
             // словаря в фоновой задаче ниже на CreateLayout не влияет.
             var layoutStopwatch = System.Diagnostics.Stopwatch.StartNew();
-            _dockLayout = _dockFactory.CreateLayout(newMode, _tab);
+            if (_parkedLayouts.Remove(newMode.Id, out var parkedLayout))
+            {
+                // Возврат в воркмод: раскладка берётся из парковки как есть. Документы,
+                // которым нужна починка (вью общего модуля ушла в другую раскладку,
+                // модуль закрыт в другом воркмоде), чинит RecreateAllDocumentViews
+                // в режиме reattachLive: false после показа раскладки.
+                _dockLayout = parkedLayout;
+                _dockFactory.AttachToLayout(parkedLayout);
+                _logger.LogDebug("WorkMode layout reused from parking: {Title}", newMode.Title);
+            }
+            else
+            {
+                _dockLayout = _dockFactory.CreateLayout(newMode, _tab);
+            }
             layoutStopwatch.Stop();
+            Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("раскладка воркмода готова");
             if (layoutStopwatch.ElapsedMilliseconds > 50)
             {
                 _logger.LogWarning(
@@ -615,26 +681,35 @@ namespace Writersword.Infrastructure.Workspace
 
             // Сбрасываем состояние модулей в кеш (асинхронность внутри сервиса),
             // чтобы при падении приложения на другой вкладке данные не потерялись.
-            var cacheService = App.Services.GetRequiredService<ICacheUpdateService>();
-            cacheService.SaveToCache();
+            Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("Suspend: сериализация раскладки");
+
+            // Кеш ушедшей вкладки пишется отложенно, когда пользователь перестанет
+            // переключаться (QuietPeriodScheduler). Прежний вызов CacheUpdateService.SaveToCache
+            // запускал сбор данных сразу, и к моменту выполнения сервис уже мог смотреть
+            // на модули новой вкладки. Здесь список модулей снимается сейчас, а ключ общий
+            // с TabBarViewModel: два места ставят одну работу, выполняется она один раз.
+            var modulesToCache = GetActiveModules();
+            var tabToCache = _tab;
+            Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.Schedule(
+                "cache:" + DocumentTabViewModel.GetDeferredSaveKey(_tab),
+                () => tabToCache.SaveToCacheAsync(() => modulesToCache));
 
             long cacheMs = suspendStopwatch.ElapsedMilliseconds - serializeMs;
 
-            // Отцепляем вьюхи от презентеров текущего дерева: при возврате DockControl
-            // построит новые презентеры, и RecreateAllDocumentViews переприцепит вьюхи.
-            // clearDataContext: false — модули живы, вью переиспользуются при возврате;
-            // разрыв и восстановление биндингов больших вью занимали секунды UI-потока.
-            _dockFactory.DetachViewsFromLayout(_dockLayout, clearDataContext: false);
+            // Вьюхи НЕ отцепляются: DockControl этой вкладки остаётся в DockStage
+            // скрытым вместе со всем деревом, и возврат на вкладку — это только
+            // смена видимости. Прежнее отцепление снимало большие вью с визуального
+            // дерева, а возврат вешал их обратно: перестиль, пересоздание шаблонов
+            // и перемер всего содержимого — секунды UI-потока в обе стороны.
 
             suspendStopwatch.Stop();
-            long detachMs = suspendStopwatch.ElapsedMilliseconds - serializeMs - cacheMs;
             if (suspendStopwatch.ElapsedMilliseconds > 50)
             {
                 _logger.LogWarning(
                     "Workspace Suspend took {ElapsedMs}ms on UI thread for: {Title} " +
-                    "(serializeLayout={SerializeMs}ms, scheduleCache={CacheMs}ms, detachViews={DetachMs}ms)",
+                    "(serializeLayout={SerializeMs}ms, scheduleCache={CacheMs}ms)",
                     suspendStopwatch.ElapsedMilliseconds, _tab.Title,
-                    serializeMs, cacheMs, detachMs);
+                    serializeMs, cacheMs);
             }
 
             _logger.LogDebug("Workspace suspended");
@@ -697,6 +772,7 @@ namespace Writersword.Infrastructure.Workspace
                 _logger.LogDebug("Cache flushed before deactivation");
 
                 _dockFactory.DetachViewsFromLayout(_dockLayout);
+                ReleaseParkedLayouts();
                 ClearAllModulesFromContext();
                 _dockFactory.OnModuleClosed = null;
                 _dockLayout = null!;
@@ -728,6 +804,7 @@ namespace Writersword.Infrastructure.Workspace
             _logger.LogDebug("Cache flushed before dispose");
 
             CloseAllFloatWindows();
+            ReleaseParkedLayouts();
             ClearAllModulesFromContext();
 
             _logger.LogDebug("Disposed");
@@ -788,6 +865,27 @@ namespace Writersword.Infrastructure.Workspace
 
                 workMode.SerializedDockLayout = null;
             }
+        }
+
+        /// <summary>
+        /// Отпустить припаркованные раскладки воркмодов: вью отвязываются с
+        /// обнулением DataContext (как у текущей раскладки при уничтожении модулей),
+        /// иначе CollectionChangedEventManager держал бы коллекции вьюмоделей.
+        /// Вызывается только там, где модули вкладки уничтожаются.
+        /// </summary>
+        private void ReleaseParkedLayouts()
+        {
+            if (_parkedLayouts.Count == 0)
+                return;
+
+            foreach (var parked in _parkedLayouts.Values)
+            {
+                if (!ReferenceEquals(parked, _dockLayout))
+                    _dockFactory.DetachViewsFromLayout(parked);
+            }
+
+            _logger.LogDebug("Released {Count} parked WorkMode layouts", _parkedLayouts.Count);
+            _parkedLayouts.Clear();
         }
 
         /// <summary>
@@ -936,6 +1034,7 @@ namespace Writersword.Infrastructure.Workspace
                 _autoSave.Stop();
                 CloseAllFloatWindows();
                 _dockFactory.DetachViewsFromLayout(_dockLayout);
+                ReleaseParkedLayouts();
                 ClearAllModulesFromContext();
                 _dockFactory.OnModuleClosed = null;
             }

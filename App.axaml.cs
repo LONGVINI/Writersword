@@ -515,6 +515,11 @@ namespace Writersword
 
                 desktop.MainWindow = mainWindow;
 
+                // ВРЕМЕННАЯ диагностика отклика: сторож UI-потока и счётчик памяти.
+                // Убрать вместе с SwitchProfiler, когда причина задержек будет найдена.
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.StartStallWatchdog();
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.StartResourceMonitor();
+
                 AttachRendererOverlays(mainWindow);
 
                 desktop.ShutdownRequested += (s, e) =>

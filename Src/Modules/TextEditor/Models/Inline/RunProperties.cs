@@ -8,6 +8,16 @@ namespace Writersword.Modules.TextEditor.Models.Inline
     /// </summary>
     public sealed class RunProperties
     {
+        /// <summary>
+        /// Имя символьного стиля, лежащего на этом фрагменте. Null — фрагмент не носит
+        /// стиля и берёт всё от абзаца.
+        ///
+        /// Хранится именно имя, а не свойства: стиль правят один раз на весь документ,
+        /// и копия его свойств в каждом фрагменте устарела бы в ту же минуту.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? StyleName { get; set; }
+
         /// <summary>Название шрифта. Null означает "унаследовать от стиля абзаца".</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? FontFamily { get; set; }
@@ -16,13 +26,19 @@ namespace Writersword.Modules.TextEditor.Models.Inline
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public double? FontSize { get; set; }
 
-        /// <summary>Жирный.</summary>
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-        public bool IsBold { get; set; }
+        /// <summary>
+        /// Жирный. Null — унаследовать от стиля.
+        ///
+        /// Состояний три, а не два. У фрагмента, которому только покрасили цвет, свойства
+        /// уже есть, и обычный bool давал ему «не жирный» — слово в заголовке теряло
+        /// жирность. False теперь значит «жирность снята руками», null — «как у стиля».
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? IsBold { get; set; }
 
-        /// <summary>Курсив.</summary>
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-        public bool IsItalic { get; set; }
+        /// <summary>Курсив. Null — унаследовать от стиля (см. IsBold).</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? IsItalic { get; set; }
 
         /// <summary>Подчёркивание.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -73,10 +89,11 @@ namespace Writersword.Modules.TextEditor.Models.Inline
         /// </summary>
         public bool IsDefault()
         {
-            return FontFamily is null
+            return StyleName is null
+                && FontFamily is null
                 && FontSize is null
-                && !IsBold
-                && !IsItalic
+                && IsBold is null
+                && IsItalic is null
                 && !IsUnderline
                 && !IsStrikethrough
                 && !IsSuperscript

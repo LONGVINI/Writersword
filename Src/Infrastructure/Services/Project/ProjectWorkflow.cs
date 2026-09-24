@@ -152,7 +152,14 @@ namespace Writersword.Infrastructure.Services.Project
                                 var savedRelevantOnOpen = savedProject.ModulesData
                                     .Where(kvp => cache.ContainsKey(kvp.Key))
                                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-                                dataIsSame = _comparisonService.AreDataEqual(cache, savedRelevantOnOpen);
+                                // Сравнение считает хеши всех данных модулей: для проекта
+                                // с картинками это сотни мегабайт и десятки секунд. В UI-потоке
+                                // это намертво вешало приложение на всё время открытия вкладки.
+                                var cacheForCompare = cache;
+                                var savedForCompare = savedRelevantOnOpen;
+                                dataIsSame = await Task.Run(
+                                    () => _comparisonService.AreDataEqual(cacheForCompare, savedForCompare));
+                                Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: сравнение версий");
                             }
                             if (dataIsSame) project = savedProject;
                             _logger.LogDebug("Full data comparison: {Result}", dataIsSame ? "SAME" : "DIFFERENT");
@@ -177,6 +184,7 @@ namespace Writersword.Infrastructure.Services.Project
 
                             recoveryChoice = RecoveryDialogResult.Compare;
                             project = await LoadProjectWithCacheData(filePath);
+                            Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: проект собран из кеша");
                             _logger.LogDebug("Compare mode - viewing cache");
                         }
                     }
@@ -185,6 +193,7 @@ namespace Writersword.Infrastructure.Services.Project
                 if (project == null)
                 {
                     project = await _projectService.LoadAsync(filePath);
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: проект прочитан (основной путь)");
                     if (project == null)
                     {
                         await _dialogService.ShowMessageAsync(
@@ -209,11 +218,13 @@ namespace Writersword.Infrastructure.Services.Project
                 _openStorages[filePath] = storage;
                 tabVM.Context.FileStorage = storage;
                 tabVM.Context.StorageFactory = path => new SqliteFileStorageService(path, Serilog.Log.Logger);
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: хранилище открыто");
                 _logger.LogDebug("Project storage opened for: {FilePath}", filePath);
 
                 var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
                 var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
                 project.WorkModes = workModes;
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: воркмоды прочитаны");
                 _logger.LogDebug("Loaded {Count} WorkModes for project", workModes.Count);
 
                 var autoSaveService = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
@@ -245,6 +256,10 @@ namespace Writersword.Infrastructure.Services.Project
                         };
 
                         tabVM.Context.IsInCompareMode = true;
+
+                        // Открыта версия из автосохранения, отличная от файла: несохранённые
+                        // правки есть, пока пользователь не выберет версию.
+                        tabVM.MarkAsModified();
 
                         var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
                         cacheUpdateService.Stop();
@@ -306,6 +321,7 @@ namespace Writersword.Infrastructure.Services.Project
             try
             {
                 _logger.LogDebug("Lazy loading workspace for: {Title}", tab.Title);
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: старт");
 
                 ProjectFile? project = null;
                 RecoveryDialogResult recoveryChoice = RecoveryDialogResult.None;
@@ -334,7 +350,9 @@ namespace Writersword.Infrastructure.Services.Project
                         // Dispatcher.UIThread.InvokeAsync — классический дедлок.
                         // Task.Run переносит ожидание на пул потоков.
                         var savedProject = await _projectService.LoadAsync(filePath);
+                        Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: проект прочитан");
                         var cache = await Task.Run(() => _cacheService.LoadCache(filePath));
+                        Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: кеш прочитан");
 
                         bool dataIsSame = false;
                         if (savedProject != null && cache != null)
@@ -344,7 +362,14 @@ namespace Writersword.Infrastructure.Services.Project
                             var savedRelevantOnOpen = savedProject.ModulesData
                                 .Where(kvp => cache.ContainsKey(kvp.Key))
                                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-                            dataIsSame = _comparisonService.AreDataEqual(cache, savedRelevantOnOpen);
+                            // Сравнение считает хеши всех данных модулей: для проекта
+                            // с картинками это сотни мегабайт и десятки секунд. В UI-потоке
+                            // это намертво вешало приложение на всё время открытия вкладки.
+                            var cacheForCompare = cache;
+                            var savedForCompare = savedRelevantOnOpen;
+                            dataIsSame = await Task.Run(
+                                () => _comparisonService.AreDataEqual(cacheForCompare, savedForCompare));
+                            Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: сравнение версий");
                             _logger.LogDebug("Data comparison: {Comparison}", dataIsSame ? "SAME" : "DIFFERENT");
                         }
 
@@ -366,6 +391,7 @@ namespace Writersword.Infrastructure.Services.Project
 
                             recoveryChoice = RecoveryDialogResult.Compare;
                             project = await LoadProjectWithCacheData(filePath);
+                            Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: проект собран из кеша");
                             _logger.LogDebug("Compare mode - viewing cache");
                         }
                     }
@@ -374,6 +400,7 @@ namespace Writersword.Infrastructure.Services.Project
                 if (project == null)
                 {
                     project = await _projectService.LoadAsync(filePath);
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: проект прочитан (основной путь)");
                     if (project == null)
                     {
                         _logger.LogError("Failed to load project: {FilePath}", filePath);
@@ -387,11 +414,13 @@ namespace Writersword.Infrastructure.Services.Project
                 _openStorages[filePath] = storage;
                 tab.Context.FileStorage = storage;
                 tab.Context.StorageFactory = path => new SqliteFileStorageService(path, Serilog.Log.Logger);
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: хранилище открыто");
                 _logger.LogDebug("Project storage opened for: {FilePath}", filePath);
 
                 var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
                 var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
                 project.WorkModes = workModes;
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: воркмоды прочитаны");
                 _logger.LogDebug("Loaded {Count} WorkModes for project", workModes.Count);
 
                 var autoSaveService = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
@@ -400,6 +429,7 @@ namespace Writersword.Infrastructure.Services.Project
                 // storage передаётся в WorkspaceController — локальные настройки
                 // применяются внутри Activate() ПОСЛЕ создания живых модулей
                 tab.InitializeWorkspace(workModes, storage);
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: workspace создан");
                 _logger.LogDebug("WorkspaceController lazy initialized for: {FilePath}", filePath);
 
                 if (recoveryChoice == RecoveryDialogResult.Compare)
@@ -423,6 +453,10 @@ namespace Writersword.Infrastructure.Services.Project
                         };
 
                         capturedTab.Context.IsInCompareMode = true;
+
+                        // Открыта версия из автосохранения, отличная от файла: несохранённые
+                        // правки есть, пока пользователь не выберет версию.
+                        capturedTab.MarkAsModified();
 
                         var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
                         cacheUpdateService.Stop();
@@ -877,6 +911,12 @@ namespace Writersword.Infrastructure.Services.Project
 
                     capturedTab.Workspace?.RefreshModulesFromContext();
 
+                    // Автосохранение отброшено, модули перечитаны из файла: несохранённого
+                    // нет. Отметка ставится после того, как перезагрузка модулей отработала.
+                    Avalonia.Threading.Dispatcher.UIThread.Post(
+                        () => capturedTab.MarkAsSaved(),
+                        Avalonia.Threading.DispatcherPriority.Background);
+
                     if (capturedTab.Workspace != null)
                     {
                         var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
@@ -1169,6 +1209,15 @@ namespace Writersword.Infrastructure.Services.Project
                 if (string.IsNullOrEmpty(filePath))
                     return await SaveAsDocumentAsync(tab);
 
+                // Отложенные записи кеша выполняются до сохранения: неактивная вкладка
+                // сохраняется из кеша, и запись, ждущая паузы в переключениях, иначе
+                // не попала бы в файл.
+                await Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.FlushAsync();
+
+                // Отметки правок — до сбора данных: правки, сделанные пока идёт запись,
+                // останутся несохранёнными и оставят точку на вкладке.
+                var stampsAtSave = tab.CaptureChangeStamps();
+
                 _logger.LogDebug("Saving project: {FilePath}", filePath);
 
                 var tabCollection = App.Services.GetRequiredService<ITabCollection>();
@@ -1232,6 +1281,7 @@ namespace Writersword.Infrastructure.Services.Project
                     {
                         _cacheService.DeleteCache(filePath);
                         _logger.LogDebug("Project saved, cache deleted");
+                        tab.MarkAsSaved(stampsAtSave);
                         if (showNotification) _notificationService.ShowSuccess(Strings.Notification_ProjectSaved);
                         ProjectSaved?.Invoke(tab);
                         return true;
@@ -1290,6 +1340,7 @@ namespace Writersword.Infrastructure.Services.Project
                     {
                         _cacheService.DeleteCache(filePath);
                         _logger.LogDebug("Project saved, cache deleted");
+                        tab.MarkAsSaved(stampsAtSave);
                         if (showNotification) _notificationService.ShowSuccess(Strings.Notification_ProjectSaved);
                         ProjectSaved?.Invoke(tab);
                         return true;
@@ -1356,6 +1407,7 @@ namespace Writersword.Infrastructure.Services.Project
                     }
 
                     _logger.LogDebug("SaveAs successful");
+                    tab.MarkAsSaved();
                     ProjectSaved?.Invoke(tab);
                     return true;
                 }

@@ -332,6 +332,12 @@ namespace Writersword.Modules.Timer
         public override object? GetCustomData() => null;
         public override object? GetSessionData() => null;
 
+        /// <summary>
+        /// Данных проекта у модуля нет (GetCustomData всегда null) — менять нечего,
+        /// поэтому модуль считается отслеживающим свои правки и никогда не изменённым.
+        /// </summary>
+        public override bool TracksChanges => true;
+
         public override Control? CreateView()
         {
             return new TimerView { DataContext = ViewModel };

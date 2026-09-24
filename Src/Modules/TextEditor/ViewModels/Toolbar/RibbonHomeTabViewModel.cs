@@ -101,7 +101,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private bool _isParagraphGroupExpanded = true;
         private bool _isEditGroupExpanded = true;
         private bool _isStylesGroupExpanded = true;
-        private IReadOnlyList<string> _visibleStyles;
+        private IReadOnlyList<StyleCardViewModel> _visibleStyles = Array.Empty<StyleCardViewModel>();
+        private IReadOnlyList<StyleCardViewModel> _availableStyles = Array.Empty<StyleCardViewModel>();
+        private StyleCardViewModel? _currentStyle;
 
         // --- Константы геометрии риббона ---
 
@@ -295,13 +297,49 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             set => this.RaiseAndSetIfChanged(ref _currentAlignment, value);
         }
 
+        /// <summary>
+        /// Внутреннее имя стиля под кареткой. Правится не человеком, а приходом контекста:
+        /// выбор в галерее идёт через <see cref="CurrentStyle"/>.
+        /// </summary>
         public string CurrentStyleName
         {
             get => _currentStyleName;
+            private set => this.RaiseAndSetIfChanged(ref _currentStyleName, value);
+        }
+
+        /// <summary>
+        /// Карточка, выбранная в галерее. Её выбор и есть применение стиля.
+        ///
+        /// Абзацу уходит Name, а не то, что написано на карточке. Прежде галерея работала
+        /// со строками отображаемых имён и отдавала их прямо в ApplyStyle: абзац получал
+        /// «Heading 1», стиля с таким именем в рукописи нет, и он оставался «Обычным» —
+        /// а заодно переставал быть заголовком для оглавления, которое ищет стиль по Name.
+        /// </summary>
+        public StyleCardViewModel? CurrentStyle
+        {
+            get => _currentStyle;
             set
             {
-                if (this.RaiseAndSetIfChanged(ref _currentStyleName, value) is { } && value is not null)
-                    _target.ApplyStyle(value);
+                if (this.RaiseAndSetIfChanged(ref _currentStyle, value) is null) return;
+                if (value is null) return;
+
+                // Символьный стиль ложится на выделение и абзацного имени под кареткой
+                // не меняет — сравнивать его с ним нечего, иначе повторное наложение
+                // одного и того же стиля на другой кусок текста не сработало бы.
+                if (value.IsCharacterStyle)
+                {
+                    _target.ApplyCharacterStyle(value.Name);
+                    return;
+                }
+
+                // Приход контекста от каретки тоже ставит это свойство. Отличить его от
+                // выбора человеком можно по имени: если стиль под кареткой уже такой,
+                // применять нечего — иначе каждый щелчок по тексту писал бы абзацу его
+                // же стиль и плодил шаги отмены.
+                if (string.Equals(value.Name, _currentStyleName, StringComparison.Ordinal)) return;
+
+                CurrentStyleName = value.Name;
+                _target.ApplyStyle(value.Name);
             }
         }
 
@@ -351,7 +389,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// Подмножество AvailableStyles для отображения в галерее.
         /// Количество карточек уменьшается по одной при сужении риббона.
         /// </summary>
-        public IReadOnlyList<string> VisibleStyles
+        public IReadOnlyList<StyleCardViewModel> VisibleStyles
         {
             get => _visibleStyles;
             private set => this.RaiseAndSetIfChanged(ref _visibleStyles, value);
@@ -399,19 +437,80 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             "20", "22", "24", "28", "32", "36", "48", "72"
         };
 
-        public IReadOnlyList<string> AvailableStyles { get; } = new[]
+        /// <summary>
+        /// Стили рукописи — все, какие в ней есть, включая написанные человеком.
+        ///
+        /// Раньше здесь стоял неизменяемый список из десяти имён. Он не знал ни о
+        /// пользовательских стилях, ни о стилях оглавления, ни о тех, что приехали с
+        /// импортированным документом: показать их было негде, а созданный стиль не
+        /// появился бы в галерее вовсе.
+        /// </summary>
+        public IReadOnlyList<StyleCardViewModel> AvailableStyles
         {
-            "Normal",
-            "Heading 1",
-            "Heading 2",
-            "Heading 3",
-            "Heading 4",
-            "Heading 5",
-            "Heading 6",
-            "Quote",
-            "Code",
-            "No Spacing"
-        };
+            get => _availableStyles;
+            private set => this.RaiseAndSetIfChanged(ref _availableStyles, value);
+        }
+
+        /// <summary>
+        /// Перечитывает список стилей у рукописи. Зовётся при открытии документа и
+        /// всякий раз, когда список стилей изменился.
+        /// </summary>
+        public void RefreshStyles()
+        {
+            var document = _target.StyleSourceDocument;
+            var styles = _target.DocumentStyles;
+
+            var cards = new List<StyleCardViewModel>(styles.Count);
+
+            foreach (var style in styles)
+            {
+                if (string.IsNullOrEmpty(style.Name)) continue;
+
+                cards.Add(new StyleCardViewModel(style, document));
+            }
+
+            cards.Sort(static (a, b) =>
+            {
+                int byOrder = a.SortOrderKey.CompareTo(b.SortOrderKey);
+                return byOrder != 0
+                    ? byOrder
+                    : string.Compare(a.DisplayName, b.DisplayName, StringComparison.CurrentCulture);
+            });
+
+            AvailableStyles = cards;
+
+            // Список карточек другой — прежняя выбранная принадлежит уже небывшему
+            // списку, и ListBox снял бы выделение. Ищем ту же по имени.
+            SyncCurrentStyleCard();
+
+            // Сколько карточек влезает — решает ширина риббона, и это уже посчитано.
+            // Здесь только пересобираем видимый срез из нового списка: число прежнее,
+            // а карточки другие.
+            int shown = _visibleStyles.Count > 0 ? _visibleStyles.Count : MaxCards;
+            VisibleStyles = Array.Empty<StyleCardViewModel>();
+            SetVisibleStyles(shown);
+        }
+
+        /// <summary>
+        /// Приводит выбранную карточку в соответствие имени стиля под кареткой.
+        /// Применения стиля при этом не происходит: карточка ставится напрямую в поле.
+        /// </summary>
+        private void SyncCurrentStyleCard()
+        {
+            StyleCardViewModel? found = null;
+
+            foreach (var card in _availableStyles)
+            {
+                if (!string.Equals(card.Name, _currentStyleName, StringComparison.Ordinal)) continue;
+                found = card;
+                break;
+            }
+
+            if (ReferenceEquals(found, _currentStyle)) return;
+
+            _currentStyle = found;
+            this.RaisePropertyChanged(nameof(CurrentStyle));
+        }
 
         // --- Команды: форматирование символов ---
 
@@ -572,7 +671,6 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public RibbonHomeTabViewModel(ITextEditorCommandTarget target)
         {
             _target = target ?? throw new ArgumentNullException(nameof(target));
-            _visibleStyles = AvailableStyles;
 
             BoldCommand = ReactiveCommand.Create(() => _target.ToggleBold());
             ItalicCommand = ReactiveCommand.Create(() => _target.ToggleItalic());
@@ -703,7 +801,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             FindCommand = ReactiveCommand.Create(() => _target.OpenFind());
             FindReplaceCommand = ReactiveCommand.Create(() => _target.OpenFindReplace());
 
-            SaveStyleFromCursorCommand = ReactiveCommand.Create(() => _target.ApplyStyle(_currentStyleName));
+            SaveStyleFromCursorCommand = ReactiveCommand.Create(() => { });
             EditStylesCommand = ReactiveCommand.Create(() => { });
             ResetStylesToDefaultsCommand = ReactiveCommand.Create(() => { });
         }
@@ -733,6 +831,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             _highlightColorPick = ctx.HighlightColor ?? "#FFF176";
             _currentAlignment = ctx.Alignment;
             _currentStyleName = ctx.StyleName;
+            SyncCurrentStyleCard();
 
             // Интервалы берём по эффективному значению (с учётом стиля) из CursorContext,
             // уровень структуры — из собственных свойств абзаца.
@@ -759,6 +858,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             this.RaisePropertyChanged(nameof(HighlightColorPick));
             this.RaisePropertyChanged(nameof(CurrentAlignment));
             this.RaisePropertyChanged(nameof(CurrentStyleName));
+            this.RaisePropertyChanged(nameof(CurrentStyle));
             this.RaisePropertyChanged(nameof(IsSpaceBefore));
             this.RaisePropertyChanged(nameof(IsSpaceAfter));
             this.RaisePropertyChanged(nameof(OutlineLevel));
@@ -843,7 +943,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             if (count <= 0)
             {
-                VisibleStyles = Array.Empty<string>();
+                VisibleStyles = Array.Empty<StyleCardViewModel>();
                 return;
             }
 

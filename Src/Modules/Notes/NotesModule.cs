@@ -47,6 +47,13 @@ namespace Writersword.Modules.Notes
         {
             base.Initialize();
             _viewModel = new NotesViewModel { IsReadOnly = Context?.IsInCompareMode == true };
+
+            // Отслеживание правок: удаление страниц и блоков идёт через историю
+            // отмены, правка текста — мимо неё. Проверку рода правки делает
+            // BaseModule.NotifyContentChanged.
+            SetHistoryBaseline(_viewModel.HistoryState);
+            _viewModel.HistoryChanged += OnHistoryChanged;
+            _viewModel.DataEdited += OnDataEdited;
             _logger.LogDebug("Notes module initialized");
         }
 
@@ -160,8 +167,27 @@ namespace Writersword.Modules.Notes
             }
         }
 
+        /// <summary>
+        /// Модуль сообщает о своих правках сам (см. BaseModule.TracksChanges).
+        /// </summary>
+        public override bool TracksChanges => true;
+
+        private void OnHistoryChanged()
+        {
+            if (_viewModel != null)
+                NotifyHistoryChanged(_viewModel.HistoryState);
+        }
+
+        private void OnDataEdited() => NotifyContentChanged();
+
         public override void Dispose()
         {
+            if (_viewModel != null)
+            {
+                _viewModel.HistoryChanged -= OnHistoryChanged;
+                _viewModel.DataEdited -= OnDataEdited;
+            }
+
             _viewModel = null;
             base.Dispose();
             _logger.LogDebug("Notes module disposed");

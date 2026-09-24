@@ -56,6 +56,7 @@ namespace Writersword.ViewModels
 
         private string _title = "Writersword";
         private IRootDock? _dockLayout;
+        private IReadOnlyList<IRootDock> _aliveDockLayouts = Array.Empty<IRootDock>();
 
         private string? _lastFocusedModuleType;
 
@@ -72,6 +73,40 @@ namespace Writersword.ViewModels
         {
             get => _dockLayout;
             set => this.RaiseAndSetIfChanged(ref _dockLayout, value);
+        }
+
+        /// <summary>
+        /// Все раскладки открытых вкладок, которые ещё могут быть показаны
+        /// (текущие и припаркованные воркмоды). DockStage держит для них живые
+        /// DockControl и удаляет DockControl раскладок вне списка.
+        /// </summary>
+        public IReadOnlyList<IRootDock> AliveDockLayouts
+        {
+            get => _aliveDockLayouts;
+            private set => this.RaiseAndSetIfChanged(ref _aliveDockLayouts, value);
+        }
+
+        /// <summary>
+        /// Пересобрать список живых раскладок. Вызывается после каждого события,
+        /// которое может породить или убить раскладку: активация вкладки, смена
+        /// раскладки в workspace, выгрузка неактивных вкладок, закрытие всех вкладок.
+        /// </summary>
+        private void RefreshAliveDockLayouts()
+        {
+            var alive = new List<IRootDock>();
+
+            foreach (var tab in _tabCollection.Tabs.OfType<DocumentTabViewModel>())
+            {
+                if (tab.Workspace == null) continue;
+
+                foreach (var layout in tab.Workspace.GetAliveLayouts())
+                {
+                    if (!alive.Contains(layout))
+                        alive.Add(layout);
+                }
+            }
+
+            AliveDockLayouts = alive;
         }
 
         public ReactiveCommand<Unit, Unit> NewProjectCommand { get; }
@@ -181,7 +216,12 @@ namespace Writersword.ViewModels
         // её состояние уже сохранено в кеш в момент ухода с вкладки, поэтому
         // выгрузка ничего не теряет, а возврат идёт обычным путём загрузки
         // с живым UI. Недавние переключения остаются мгновенными.
-        private static readonly TimeSpan InactiveTabUnloadTimeout = TimeSpan.FromSeconds(30);
+        //
+        // 30 секунд оказалось слишком мало: при обычной работе с двумя-тремя проектами
+        // вкладка успевала выгрузиться между заходами, и каждый возврат шёл холодной
+        // загрузкой — пересоздание модулей, построение вью редактора и прогрев раскладки
+        // всего документа на UI-потоке, секунды заморозки.
+        private static readonly TimeSpan InactiveTabUnloadTimeout = TimeSpan.FromMinutes(2);
         private readonly Dictionary<DocumentTabViewModel, DateTime> _tabSuspendTimes = new();
         private Avalonia.Threading.DispatcherTimer? _inactiveTabUnloadTimer;
 
@@ -201,6 +241,12 @@ namespace Writersword.ViewModels
         {
             try
             {
+                // Пользователь прямо сейчас переключается: разбор дерева вью и модулей
+                // выгружаемой вкладки идёт на UI-потоке и встал бы в очередь к его кликам.
+                // Выгрузка подождёт следующего тика.
+                if (Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.IsBusy)
+                    return;
+
                 var activeTab = _tabCollection.ActiveTab;
 
                 // Чистим записи закрытых вкладок (включая их снапшоты — кадр ~8 МБ).
@@ -227,6 +273,13 @@ namespace Writersword.ViewModels
                     // выгрузка могла бы затронуть кеш — такую вкладку не трогаем.
                     if (tab.Context.IsInCompareMode) continue;
 
+                    // Кеш и workspace.json ушедшей вкладки пишутся отложенно. Пока запись
+                    // не выполнена, модули выгружать нельзя: сохранять стало бы нечего.
+                    var deferredKey = DocumentTabViewModel.GetDeferredSaveKey(tab);
+                    if (Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.HasPending("cache:" + deferredKey)
+                        || Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.HasPending("workspace:" + deferredKey))
+                        continue;
+
                     _logger.LogInformation("Unloading inactive tab to free memory: {Title}", tab.Title);
                     tab.Workspace.Deactivate();
                     _tabSuspendTimes.Remove(tab);
@@ -236,6 +289,9 @@ namespace Writersword.ViewModels
                     // полного цикла сборки память возвращается ОС с большой задержкой.
                     GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: false);
                 }
+
+                // Выгруженные и закрытые вкладки больше не держат DockControl в DockStage.
+                RefreshAliveDockLayouts();
             }
             catch (Exception ex)
             {
@@ -275,11 +331,13 @@ namespace Writersword.ViewModels
                 // немедленном возврате на вкладку — Suspend ниже сериализует его в память.
                 if (previousTab != null && previousTab != tab && previousTab.Workspace != null)
                 {
+                    // Сохранение откладывается до паузы в переключениях (QuietPeriodScheduler).
+                    // Ключ общий с TabBarViewModel.ActivateTab: workspace.json ушедшей вкладки
+                    // записывается один раз, сколько бы раз с неё ни уходили подряд.
                     var workspaceToSave = previousTab.Workspace;
-                    var saveTask = workspaceToSave.SaveWorkspaceAsync();
-                    _ = saveTask.ContinueWith(
-                        t => _logger.LogError(t.Exception, "Background workspace save failed on tab switch"),
-                        TaskContinuationOptions.OnlyOnFaulted);
+                    Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.Schedule(
+                        "workspace:" + DocumentTabViewModel.GetDeferredSaveKey(previousTab),
+                        () => workspaceToSave.SaveWorkspaceAsync());
                 }
 
                 if (!tab.IsLoaded)
@@ -342,7 +400,9 @@ namespace Writersword.ViewModels
                 if (previousTab != null && previousTab != tab && previousTab.Workspace != null)
                 {
                     _logger.LogDebug("Suspending previous tab: {Title}", previousTab.Title);
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация вкладки готова");
                     previousTab.Workspace.Suspend();
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("Suspend предыдущей вкладки");
                     // Отметка для выгрузки по таймауту: вкладка, не активированная
                     // повторно в течение InactiveTabUnloadTimeout, будет выгружена.
                     _tabSuspendTimes[previousTab] = DateTime.UtcNow;
@@ -370,6 +430,7 @@ namespace Writersword.ViewModels
                     _dockFactory.NormalizeAfterRerender(newTabLayout);
 
                 DockLayout = newTabLayout;
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("DockLayout присвоен (показ раскладки)");
                 _logger.LogDebug("DockLayout assigned for tab: {Title}", tab.Title);
 
                 // При первом присвоении DockLayout Dock создаёт ContentPresenter-ы,
@@ -384,10 +445,16 @@ namespace Writersword.ViewModels
                         && DockLayout != null
                         && capturedTabForLoaded.Workspace != null)
                     {
+                        // reattachLive: false — раскладка вкладки показана из DockStage
+                        // без пересборки дерева; живые вью не трогаются, чинятся только
+                        // документы без вью (первая активация, прерванные загрузки).
                         _dockFactory.RecreateAllDocumentViews(
-                            DockLayout, capturedTabForLoaded);
+                            DockLayout, capturedTabForLoaded, reattachLive: false);
+                        Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("починка вью документов");
                     }
                 }, Avalonia.Threading.DispatcherPriority.Loaded);
+
+                RefreshAliveDockLayouts();
 
                 WorkModeBar.LoadWorkModes(tab.Workspace.GetAvailableWorkModes());
 
@@ -453,6 +520,12 @@ namespace Writersword.ViewModels
                 // Чиним VisualParent и показываем loading для всех модулей.
                 var capturedLayoutWs = newLayout;
                 var capturedTabWs = activeTab as DocumentTabViewModel;
+
+                // Принудительное обновление той же раскладки — прежняя полная пересборка
+                // с переприцеплением всех вью. Смена раскладки (переключение воркмода,
+                // новая раскладка после добавления модуля) показывается из DockStage:
+                // живые вью не трогаются.
+                bool reattachLive = forceRefresh;
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
                     if (DockLayout == capturedLayoutWs
@@ -460,10 +533,12 @@ namespace Writersword.ViewModels
                         && capturedTabWs?.Workspace != null)
                     {
                         _dockFactory.RecreateAllDocumentViews(
-                            DockLayout, capturedTabWs);
+                            DockLayout, capturedTabWs, reattachLive);
                     }
                 }, Avalonia.Threading.DispatcherPriority.Loaded);
             }
+
+            RefreshAliveDockLayouts();
 
             var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
             if (activeWorkMode != null)
@@ -593,6 +668,7 @@ namespace Writersword.ViewModels
             _cacheUpdateService.Stop();
 
             DockLayout = null;
+            RefreshAliveDockLayouts();
             WorkModeBar.LoadWorkModes(new List<WorkMode>());
             ModulePanel.Clear();
 

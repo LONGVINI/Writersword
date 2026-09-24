@@ -64,6 +64,29 @@ namespace Writersword.Modules.TextEditor.Contracts
         void SetSpaceAfter(double pt);
         void ApplyStyle(string styleName);
 
+        /// <summary>
+        /// Кладёт символьный стиль на выделенный текст. Пустое имя снимает стиль.
+        ///
+        /// Абзацный стиль и символьный — разные инструменты, и человек их не выбирает:
+        /// выбирает сам стиль. Карточка в галерее знает свой тип и зовёт то, что ему
+        /// положено, — абзацный ложится на абзацы выделения, символьный на буквы.
+        /// </summary>
+        void ApplyCharacterStyle(string? styleName);
+
+        /// <summary>
+        /// Стили рукописи — то, чем наполняется галерея на «Главной».
+        ///
+        /// Пустой список, пока рукописи нет: галерея тогда просто пуста, а не показывает
+        /// придуманный набор имён, половины которого в документе не существует.
+        /// </summary>
+        System.Collections.Generic.IReadOnlyList<DocumentStyle> DocumentStyles { get; }
+
+        /// <summary>
+        /// Сама рукопись — нужна галерее, чтобы поднять вид стиля по цепочке BasedOn.
+        /// null — рукописи нет.
+        /// </summary>
+        Models.Document.DocumentModel? StyleSourceDocument { get; }
+
         // Снимок свойств текущего абзаца для пред-заполнения окна «Абзац» (null — нет абзаца).
         ParagraphProperties? GetActiveParagraphProperties();
         // Применяет поля окна «Абзац» к выделенным абзацам одной командой отмены.

@@ -430,8 +430,19 @@ namespace Writersword.Infrastructure.Dock
         /// Пересоздаёт View для каждого Document через module.CreateView().
         /// Используется после MoveDockable — в Dock 12 существующий View не рендерится
         /// после перемещения между DocumentDock-ами.
+        /// <para>
+        /// reattachLive = false — режим показа раскладки из кеша DockStage (переключение
+        /// вкладки или воркмода): дерево Dock не пересобиралось, и документы, в хосте
+        /// которых уже стоит живая вью своего модуля, пропускаются. Переприцепление
+        /// сняло бы вью с дерева и повесило обратно — полный перестиль и перемер всего
+        /// содержимого, те самые секунды заморозки. Чинятся только документы без
+        /// живой вью: вью общего модуля ушла в другую раскладку, модуль был закрыт
+        /// в другом воркмоде, загрузка была прервана уходом с раскладки.
+        /// reattachLive = true — прежнее поведение (пересборка после перемещения
+        /// панели, принудительное обновление): переприцепляются все документы.
+        /// </para>
         /// </summary>
-        private void RecreateDocumentViews(IDockable dockable, DocumentTabViewModel tab)
+        private void RecreateDocumentViews(IDockable dockable, DocumentTabViewModel tab, bool reattachLive = true)
         {
             if (dockable is Document doc && doc.Id?.StartsWith("Module_") == true)
             {
@@ -439,6 +450,14 @@ namespace Writersword.Infrastructure.Dock
                 var module = tab.ModuleContext.GetModule(moduleType);
                 if (module != null)
                 {
+                    if (!reattachLive
+                        && module.CachedView is { } liveView
+                        && doc.Content is ModuleContentHost liveHost
+                        && ReferenceEquals(liveHost.Content, liveView))
+                    {
+                        return;
+                    }
+
                     // Переиспользуем кэшированную вью модуля вместо пересоздания,
                     // прикрепление отложенное: плейсхолдер встаёт мгновенно, тяжёлая
                     // вью цепляется следующим проходом диспетчера. GetOrCreateView
@@ -451,19 +470,47 @@ namespace Writersword.Infrastructure.Dock
                         return newView;
                     });
                 }
+                else if (!reattachLive && !HasPendingModulePlaceholder(doc, tab, moduleType))
+                {
+                    // Модуля нет в контексте: он был закрыт, пока раскладка стояла
+                    // припаркованной, либо его загрузка была прервана уходом с раскладки.
+                    // Грузим тем же путём, что и при построении раскладки.
+                    SetContentDeferredAsync(doc, async () =>
+                    {
+                        var view = await LoadModuleAndGetViewAsync(tab, moduleType);
+                        var m = tab.ModuleContext.GetModule(moduleType);
+                        if (m != null) doc.Title = m.Title;
+                        _logger.LogDebug("Module reloaded for parked layout (deferred): {moduleType}", moduleType);
+                        return view;
+                    });
+                }
                 return;
             }
 
             if (dockable is IDock dock && dock.VisibleDockables != null)
                 foreach (var child in dock.VisibleDockables.ToList())
-                    RecreateDocumentViews(child, tab);
+                    RecreateDocumentViews(child, tab, reattachLive);
 
             // Флоат-окна живут в отдельных корнях (Windows у RootDock) — обходим и их,
             // иначе вынесенная панель после пересборки дерева остаётся пустой.
             if (dockable is IRootDock rootWithWindows && rootWithWindows.Windows != null)
                 foreach (var wnd in rootWithWindows.Windows.ToList())
                     if (wnd.Layout != null)
-                        RecreateDocumentViews(wnd.Layout, tab);
+                        RecreateDocumentViews(wnd.Layout, tab, reattachLive);
+        }
+
+        /// <summary>
+        /// В документе стоит плейсхолдер, который ещё сам загрузит модуль: либо он
+        /// ни разу не показывался (загрузка по видимости стартует при первом показе),
+        /// либо загрузка модуля уже идёт. Перепланировать такой документ незачем.
+        /// </summary>
+        private bool HasPendingModulePlaceholder(Document doc, DocumentTabViewModel tab, string moduleType)
+        {
+            if (doc.Content is not ModuleContentHost host
+                || host.Content is not ModuleLoadingPlaceholder placeholder)
+                return false;
+
+            return !placeholder.LoadStarted || _moduleLoadTasks.ContainsKey((tab, moduleType));
         }
 
         /// <summary>
@@ -1449,8 +1496,8 @@ namespace Writersword.Infrastructure.Dock
         /// Публичная обёртка — восстанавливает View всех модулей после DockLayout
         /// null+set или первичной активации. Чинит VisualParent и показывает loading.
         /// </summary>
-        public void RecreateAllDocumentViews(IDockable root, DocumentTabViewModel tab)
-            => RecreateDocumentViews(root, tab);
+        public void RecreateAllDocumentViews(IDockable root, DocumentTabViewModel tab, bool reattachLive = true)
+            => RecreateDocumentViews(root, tab, reattachLive);
 
         /// <summary>
         /// Нормализовать пропорции после null+reassign DockLayout.
@@ -1551,7 +1598,9 @@ namespace Writersword.Infrastructure.Dock
 
                 try
                 {
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("прикрепление вью: старт " + doc.Id);
                     var view = provideView();
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("прикрепление вью: вью получена " + doc.Id);
                     if (view == null)
                     {
                         host.Content = null;
@@ -1566,6 +1615,8 @@ namespace Writersword.Infrastructure.Dock
                     PaneAutoHideBehavior.Attach(view);
                     host.Content = null;
                     host.Content = view;
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("прикрепление вью: вью в дереве " + doc.Id);
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.MarkWhenIdle("прикрепление вью: кадр готов " + doc.Id);
                     _logger.LogDebug("Deferred attach completed (sync): {Id}", doc.Id);
                 }
                 catch (Exception ex)
@@ -1791,7 +1842,9 @@ namespace Writersword.Infrastructure.Dock
 
                 try
                 {
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("загрузка модуля: старт " + doc.Id);
                     var view = await provideViewAsync();
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("загрузка модуля: вью получена " + doc.Id);
 
                     // Пока шла фоновая загрузка, могло появиться более новое задание —
                     // прикреплять устаревшую вьюху нельзя, она отцепит актуальную.
@@ -1821,6 +1874,8 @@ namespace Writersword.Infrastructure.Dock
                     PaneAutoHideBehavior.Attach(view);
                     host.Content = null;
                     host.Content = view;
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("загрузка модуля: вью в дереве " + doc.Id);
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.MarkWhenIdle("загрузка модуля: кадр готов " + doc.Id);
                     _logger.LogDebug("Deferred attach completed (async): {Id}", doc.Id);
                 }
                 catch (Exception ex)
@@ -1875,6 +1930,59 @@ namespace Writersword.Infrastructure.Dock
         }
 
         /// <summary>
+        /// Приоритет шагов загрузки модуля на UI-потоке.
+        /// <para>
+        /// Был Loaded, а он выше Input: пока в очереди стоял хоть один шаг загрузки,
+        /// диспетчер не отдавал ввод вообще — клики по вкладкам копились и выполнялись
+        /// разом, когда загрузка заканчивалась. Background ниже Input: перед каждым
+        /// шагом диспетчер сначала обрабатывает накопившиеся клики, и переключение
+        /// вкладки всегда идёт раньше загрузки.
+        /// </para>
+        /// </summary>
+        private static readonly Avalonia.Threading.DispatcherPriority LoadStepPriority =
+            Avalonia.Threading.DispatcherPriority.Background;
+
+        /// <summary>Как часто приостановленная загрузка проверяет, вернулись ли на вкладку.</summary>
+        private static readonly TimeSpan PausedLoadPollInterval = TimeSpan.FromMilliseconds(100);
+
+        /// <summary>
+        /// Дождаться, пока вкладка снова станет активной. Возвращает false, если
+        /// вкладку за это время закрыли: загружать модуль больше некуда.
+        /// <para>
+        /// Прервать уже идущий шаг загрузки нельзя — поток не останавливается посреди
+        /// метода. Поэтому загрузка проверяет, нужна ли она ещё, между шагами: перед
+        /// чтением данных и перед созданием вью.
+        /// </para>
+        /// </summary>
+        private async Task<bool> WaitForTabTurnAsync(DocumentTabViewModel tab, string moduleType, string stage)
+        {
+            if (tab.IsActive)
+                return true;
+
+            var tabs = App.Services.GetRequiredService<ITabCollection>();
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            _logger.LogDebug("Materialize [{ModuleType}]: tab {Title} is not active — load paused {Stage}",
+                moduleType, tab.Title, stage);
+
+            while (!tab.IsActive)
+            {
+                if (!tabs.Tabs.Any(t => ReferenceEquals(t, tab)))
+                {
+                    _logger.LogDebug("Materialize [{ModuleType}]: tab {Title} closed while load was paused",
+                        moduleType, tab.Title);
+                    return false;
+                }
+
+                await Task.Delay(PausedLoadPollInterval);
+            }
+
+            _logger.LogDebug("Materialize [{ModuleType}]: tab {Title} active again — load resumed after {ElapsedMs}ms",
+                moduleType, tab.Title, stopwatch.ElapsedMilliseconds);
+            return true;
+        }
+
+        /// <summary>
         /// Тело загрузки модуля. Чтение кеша (дисковая операция) и десериализация
         /// данных модулей с поддержкой IPreparedDataModule выполняются на фоновом
         /// потоке — раньше весь путь (включая десериализацию целого документа) шёл
@@ -1882,6 +1990,13 @@ namespace Writersword.Infrastructure.Dock
         /// </summary>
         private async Task<Avalonia.Controls.Control?> LoadModuleAndGetViewCoreAsync(DocumentTabViewModel tab, string moduleType)
         {
+            // Вкладку уже покинули — загрузка ждёт её возвращения. Иначе модуль
+            // невидимой вкладки строился бы на UI-потоке, пока пользователь работает в
+            // другой: создание вью редактора — секунда с лишним одним куском, и новая
+            // вкладка ждала бы, пока достроится старая.
+            if (!await WaitForTabTurnAsync(tab, moduleType, "перед загрузкой"))
+                return null;
+
             var existing = tab.ModuleContext.GetModule(moduleType);
             if (existing?.ViewModel != null)
             {
@@ -1990,7 +2105,7 @@ namespace Writersword.Infrastructure.Dock
                     _logger.LogDebug("Module data prepared (background): {ModuleType}", moduleType);
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
                         () => preparedDataModule.ApplyPreparedCustomData(prepared),
-                        Avalonia.Threading.DispatcherPriority.Loaded);
+                        LoadStepPriority);
                     _logger.LogDebug("Module data applied: {ModuleType}", moduleType);
                 }
                 else
@@ -1998,7 +2113,7 @@ namespace Writersword.Infrastructure.Dock
                     var dataToApply = customDataToRestore;
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
                         () => module.SetCustomData(dataToApply),
-                        Avalonia.Threading.DispatcherPriority.Loaded);
+                        LoadStepPriority);
                     _logger.LogDebug("Module data applied (legacy path): {ModuleType}", moduleType);
                 }
             }
@@ -2008,13 +2123,25 @@ namespace Writersword.Infrastructure.Dock
 
             _logger.LogDebug("Creating module view: {ModuleType}", moduleType);
 
+            // Самый дорогой шаг — создание вью. Если за время применения данных
+            // пользователь ушёл с вкладки, вью строится только после возвращения.
+            // Данные модуль уже получил, поэтому сохранения видят его полным.
+            if (!await WaitForTabTurnAsync(tab, moduleType, "перед созданием вью"))
+                return null;
+
             // Создание вьюхи — тоже отдельным проходом: инфляция AXAML больших
             // модулей заметно дорогая, ввод между проходами остаётся живым.
             var createdView = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
                 () => module.GetOrCreateView(),
-                Avalonia.Threading.DispatcherPriority.Loaded);
+                LoadStepPriority);
 
             _logger.LogDebug("Module view ready: {ModuleType}", moduleType);
+
+            // Всё, что модуль получил при загрузке, — его исходное состояние: несохранённых
+            // правок в нём пока нет. Правки из кеша вкладка учитывает сама — режимом
+            // сравнения версий и отметкой при уходе модуля с несохранёнными правками.
+            tab.AcceptModuleBaseline(module);
+
             return createdView;
         }
 

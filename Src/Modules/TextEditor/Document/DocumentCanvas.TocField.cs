@@ -61,9 +61,10 @@ namespace Writersword.Modules.TextEditor.Document
         // логические, без сдвига центрирования листа — тот же уговор, что у картинок.
         private SKRect _tocChipRectPt = SKRect.Empty;
 
-        // Границы между кнопками закладки: имя | обновить | удалить.
+        // Границы между кнопками закладки: имя | обновить | номера | убрать.
         private float _tocChipSplit1XPt;
         private float _tocChipSplit2XPt;
+        private float _tocChipSplit3XPt;
 
         // Лист, на котором нарисована закладка. Нужен при развороте страниц рядом:
         // точка нажатия переводится в координаты именно того листа.
@@ -82,8 +83,10 @@ namespace Writersword.Modules.TextEditor.Document
             Name = 1,
             /// <summary>Пересобрать оглавление.</summary>
             Update = 2,
+            /// <summary>Обновить только номера страниц, не трогая названия строк.</summary>
+            UpdatePages = 3,
             /// <summary>Убрать оглавление из рукописи.</summary>
-            Remove = 3
+            Remove = 4
         }
 
         // ── Кто сейчас под кареткой ───────────────────────────────────────
@@ -226,6 +229,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             string name = TextEditorStrings.Toc_Group_Main;
             string update = TextEditorStrings.Toc_Update;
+            string pages = TextEditorStrings.Toc_UpdatePages;
             string remove = TextEditorStrings.Toc_Remove;
 
             // Шрифт закладки живёт между кадрами. Поиск начертания по имени семейства —
@@ -235,13 +239,15 @@ namespace Writersword.Modules.TextEditor.Document
 
             float nameBoxW = font.MeasureText(name) + TocChipPadXPt * 2f;
             float updateBoxW = font.MeasureText(update) + TocChipPadXPt * 2f;
+            float pagesBoxW = font.MeasureText(pages) + TocChipPadXPt * 2f;
             float removeBoxW = font.MeasureText(remove) + TocChipPadXPt * 2f;
 
             float top = blockTopPt - TocChipGapPt - TocChipHeightPt;
             float bottom = blockTopPt - TocChipGapPt;
 
             var chip = new SKRect(
-                leftPt, top, leftPt + nameBoxW + updateBoxW + removeBoxW, bottom);
+                leftPt, top,
+                leftPt + nameBoxW + updateBoxW + pagesBoxW + removeBoxW, bottom);
 
             // Заливка непрозрачная. Полупрозрачная читалась ровно до тех пор, пока под
             // закладкой был чистый лист: строка, оказавшаяся под ней, просвечивала сквозь
@@ -271,6 +277,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             float split1X = leftPt + nameBoxW;
             float split2X = split1X + updateBoxW;
+            float split3X = split2X + pagesBoxW;
 
             using (var divider = new SKPaint
             {
@@ -282,6 +289,7 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 canvas.DrawLine(split1X, top + 2f, split1X, bottom - 2f, divider);
                 canvas.DrawLine(split2X, top + 2f, split2X, bottom - 2f, divider);
+                canvas.DrawLine(split3X, top + 2f, split3X, bottom - 2f, divider);
             }
 
             float baseline = bottom - (TocChipHeightPt - TocChipFontPt) * 0.5f - 1.2f;
@@ -294,6 +302,7 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 canvas.DrawText(name, leftPt + TocChipPadXPt, baseline, font, ink);
                 canvas.DrawText(update, split1X + TocChipPadXPt, baseline, font, ink);
+                canvas.DrawText(pages, split2X + TocChipPadXPt, baseline, font, ink);
             }
 
             // Удаление подписано своим цветом: в ряду одинаковых надписей глаз не
@@ -304,7 +313,7 @@ namespace Writersword.Modules.TextEditor.Document
                 Color = new SKColor(0x9A, 0x33, 0x2B)
             })
             {
-                canvas.DrawText(remove, split2X + TocChipPadXPt, baseline, font, warn);
+                canvas.DrawText(remove, split3X + TocChipPadXPt, baseline, font, warn);
             }
 
             // Прямоугольник закладки нужен нажатию, а оно приходит на другом потоке:
@@ -315,6 +324,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _tocChipRectPt = chip;
                 _tocChipSplit1XPt = split1X;
                 _tocChipSplit2XPt = split2X;
+                _tocChipSplit3XPt = split3X;
                 _tocChipPageIndex = pl.PageIndex;
                 _tocChipOwnerId = ownerId;
             }
@@ -345,23 +355,36 @@ namespace Writersword.Modules.TextEditor.Document
             var settings = FindTocSettings(ownerId);
             if (settings is null) return false;
 
-            // Время операции пишется в журнал. Обе они трогают весь документ — снимают
-            // и вставляют абзацы, пересобирают раскладку, — и на большой рукописи
-            // заметны на глаз. Без замера спорить о том, где именно уходит время,
-            // приходится догадками.
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-
             if (zone == TocChipZone.Update)
             {
-                DocVm?.RebuildToc(settings);
-                watch.Stop();
-                _logger.Debug("[TOC] Обновление: {Ms} мс", watch.ElapsedMilliseconds);
+                // Тот же путь, что и у кнопки ленты: если в строках есть правки,
+                // человека спросят, прежде чем их снести.
+                _ = DocVm?.UpdateTocAskingAsync(settings);
+                return true;
+            }
+
+            // Только номера. Стоит рядом с пересборкой намеренно: это единственные две
+            // кнопки, между которыми человек выбирает осознанно, и выбирать их надо
+            // там же, где он смотрит на оглавление, а не на ленте.
+            //
+            // Пересобирать здесь нечего — правятся числа в готовых строках, — поэтому и
+            // замер по фазам ни к чему: проход идёт по готовой раскладке и пишет в
+            // журнал сам.
+            if (zone == TocChipZone.UpdatePages)
+            {
+                DocVm?.RefreshTocPageNumbers();
                 return true;
             }
 
             // Удаление уносит блок целиком и кладёт свой шаг отмены — тот же, что у
             // кнопки ленты. Закладку гасим сразу: каретка уйдёт в текст за оглавлением,
             // и прямоугольник от последнего кадра остался бы висеть до следующего.
+            //
+            // Время пишется в журнал: удаление снимает абзацы и пересобирает раскладку,
+            // и на большой рукописи это заметно на глаз. Без замера спорить о том, где
+            // уходит время, приходится догадками.
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+
             DocVm?.RemoveToc(settings);
             ForgetTocChip();
 
@@ -380,6 +403,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _tocChipRectPt = SKRect.Empty;
                 _tocChipSplit1XPt = 0f;
                 _tocChipSplit2XPt = 0f;
+                _tocChipSplit3XPt = 0f;
                 _tocChipPageIndex = -1;
                 _tocChipOwnerId = Guid.Empty;
             }
@@ -395,6 +419,7 @@ namespace Writersword.Modules.TextEditor.Document
             SKRect chip;
             float split1X;
             float split2X;
+            float split3X;
             int chipPage;
             Guid ownerId;
             List<ParaLayout> layouts;
@@ -404,6 +429,7 @@ namespace Writersword.Modules.TextEditor.Document
                 chip = _tocChipRectPt;
                 split1X = _tocChipSplit1XPt;
                 split2X = _tocChipSplit2XPt;
+                split3X = _tocChipSplit3XPt;
                 chipPage = _tocChipPageIndex;
                 ownerId = _tocChipOwnerId;
                 layouts = _layouts;
@@ -425,6 +451,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (xPt <= split1X + shift) return TocChipZone.Name;
             if (xPt <= split2X + shift) return TocChipZone.Update;
+            if (xPt <= split3X + shift) return TocChipZone.UpdatePages;
 
             return TocChipZone.Remove;
         }

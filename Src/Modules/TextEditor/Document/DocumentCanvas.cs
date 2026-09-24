@@ -1493,7 +1493,7 @@ namespace Writersword.Modules.TextEditor.Document
         private float _spreadReadPageStepPt = 1f;
 
         // Левая страница текущего разворота. Развороты идут парами: (0,1), (2,3)…
-        private int _spreadLeftPage;
+        // _spreadLeftPage объявлено в DocumentCanvas.SpreadFrame.cs: кадр читает его копию.
 
         // Страница, которая прямо сейчас снимается в отдельный битмап: её визуальная
         // дельта обнуляется, потому что внутри снимка координаты логические и лист
@@ -1815,6 +1815,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             FocusedInstance = this;
             _ = PrefetchClipboardAsync();
+            FlipTraceEvent("got focus");
 
             // Возобновляем мигание каретки.
             _caretVisible = true;
@@ -3680,14 +3681,35 @@ namespace Writersword.Modules.TextEditor.Document
         private void StartLayoutWarmup()
         {
             if (_layoutWarmupActive) return;
+
+            // Размер листа чтения и отпечаток вёрстки чтения — до прогрева, как в
+            // RebuildLayouts. Иначе отпечаток впервые выставлялся уже в пересборке после
+            // прогрева, обесценивал только что прогретый кеш целиком, и прогрев всего
+            // документа запускался второй раз («Layout warmup started ... cache=0» сразу
+            // после «finished»).
+            if (DocVm is not null)
+            {
+                if (SpreadMode) ComputeSpreadPageSize();
+                SyncReadingShapeSignature();
+            }
+
             SetWarmupActive(true);
             // Один раз перед прогревом выставляем тексты маркеров списков (и чиним битые позиции),
             // чтобы раскладка учла ширину цифры уже в кэше. Раньше это делалось каждый проход.
             ApplyListMarkerTexts();
             _logger.Debug("Layout warmup started: {Count} paragraphs, cache={CacheCount}",
                 DocVm?.Paragraphs.Count ?? 0, _layoutCache.Count);
-            Dispatcher.UIThread.Post(PumpLayoutWarmup, DispatcherPriority.Loaded);
+            Dispatcher.UIThread.Post(PumpLayoutWarmup, WarmupPassPriority);
         }
+
+        // Приоритет проходов прогрева. Был Loaded, а он выше Input: проходы шли один за
+        // другим, и диспетчер не отдавал ввод до конца прогрева — секунды, в которые
+        // клики копились и выполнялись разом после. Background ниже Input: между
+        // проходами по 30 мс диспетчер сначала обрабатывает клики и клавиши.
+        private static readonly DispatcherPriority WarmupPassPriority = DispatcherPriority.Background;
+
+        // Как часто прогрев скрытого канваса проверяет, не показали ли его снова.
+        private static readonly TimeSpan HiddenWarmupPollInterval = TimeSpan.FromMilliseconds(100);
 
         /// <summary>
         /// Один проход прогрева: шейпит незакешированные абзацы пока не исчерпан
@@ -3803,6 +3825,15 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // Канвас скрыт (ушли на другую вкладку или воркмод): прогрев невидимого
+            // документа занимал бы UI-поток, пока пользователь работает в другом месте.
+            // Прогрев замирает и продолжается с того же места, когда канвас покажут.
+            if (!IsEffectivelyVisible)
+            {
+                DispatcherTimer.RunOnce(PumpLayoutWarmup, HiddenWarmupPollInterval, WarmupPassPriority);
+                return;
+            }
+
             if (_styleResolver is null)
                 _styleResolver = CreateStyleResolver();
 
@@ -3836,7 +3867,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (!allShaped)
             {
-                Dispatcher.UIThread.Post(PumpLayoutWarmup, DispatcherPriority.Loaded);
+                Dispatcher.UIThread.Post(PumpLayoutWarmup, WarmupPassPriority);
                 return;
             }
 
@@ -4675,6 +4706,13 @@ namespace Writersword.Modules.TextEditor.Document
                 Bounds = bounds;
             }
 
+            // Сколько раз композитор уже проиграл эту операцию. Записывается она один
+            // раз на InvalidateVisual канваса, а проигрываться может многократно: всякий
+            // раз, когда композитор перерисовывает эту область по чужим причинам. Первый
+            // проигрыш выполняет то, ради чего операцию записали; повторные нового
+            // содержимого не несут и берут готовый снимок.
+            private int _playCount;
+
             public void Dispose() { }
             public bool Equals(ICustomDrawOperation? other) => false;
             public bool HitTest(Point p) => true;
@@ -4684,8 +4722,34 @@ namespace Writersword.Modules.TextEditor.Document
                 var feature = context.TryGetFeature(typeof(ISkiaSharpApiLeaseFeature))
                     as ISkiaSharpApiLeaseFeature;
                 if (feature is null) return;
+
+                // Повторный проигрыш той же записи. Одноразовый флаг _caretOnlyRedraw
+                // первый проигрыш уже снял, и без этой поправки каждый повтор уходил в
+                // полный рендер всех видимых листов — при нескольких листах в ряду это
+                // сотни миллисекунд на кадр. Снимок при этом верен: всякая правка
+                // содержимого идёт через новый InvalidateVisual (новая запись) или
+                // поднимает _contentDirty, а выход прокрутки за снимок быстрый путь
+                // распознаёт сам и уходит в полный рендер.
+                if (_playCount > 0)
+                {
+                    _canvas._caretOnlyRedraw = true;
+                    _canvas.PerfCount("r.replay");
+                }
+                _playCount++;
+
                 using var lease = feature.Lease();
-                _canvas.RenderWithSKCanvas(lease.SkCanvas);
+
+                // Состояние книги замораживается на весь кадр: поток интерфейса
+                // может двигать лист, пока кадр ещё рисуется (см. SpreadFrame).
+                _canvas.BeginSpreadFrame();
+                try
+                {
+                    _canvas.RenderWithSKCanvas(lease.SkCanvas);
+                }
+                finally
+                {
+                    _canvas.EndSpreadFrame();
+                }
             }
         }
     }

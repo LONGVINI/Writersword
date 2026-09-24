@@ -192,8 +192,23 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var toc = ActiveToc;
             if (toc is null) return;
 
-            DocumentViewModel?.RebuildToc(toc);
+            // Через вопрос: пересборка сотрёт правки, сделанные в строках, и спросить
+            // об этом надо до, а не показывать результат после.
+            _ = DocumentViewModel?.UpdateTocAskingAsync(toc);
         }
+
+        /// <inheritdoc/>
+        public void ApplyCharacterStyle(string? styleName)
+            => DocumentViewModel?.ApplyCharacterStyle(styleName);
+
+        /// <inheritdoc/>
+        public System.Collections.Generic.IReadOnlyList<Models.Styles.DocumentStyle> DocumentStyles
+            => DocumentViewModel?.Document.Styles
+               ?? (System.Collections.Generic.IReadOnlyList<Models.Styles.DocumentStyle>)
+                  System.Array.Empty<Models.Styles.DocumentStyle>();
+
+        /// <inheritdoc/>
+        public Models.Document.DocumentModel? StyleSourceDocument => DocumentViewModel?.Document;
 
         /// <inheritdoc/>
         public void RefreshActiveTocPageNumbers()
@@ -711,7 +726,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
             DocumentViewModel?.RaiseReadingSettingsChanged();
 
             // Документ изменился — правка видов такая же правка, как любая другая.
-            if (forDocument.Count > 0 || doc?.ReadingThemes is not null) IsModified = true;
+            if (forDocument.Count > 0 || doc?.ReadingThemes is not null)
+            {
+                IsModified = true;
+
+                // Виды чтения меняются мимо истории отмены: модуль учитывает это
+                // как неотменяемую правку данных документа.
+                ChangedOutsideHistory?.Invoke();
+            }
 
             GlobalSettingsChanged?.Invoke(Settings);
         }
@@ -1235,6 +1257,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
             private set => this.RaiseAndSetIfChanged(ref _monitorSizeInches, value);
         }
 
+        /// <summary>
+        /// Правка документа, которая не меняет текст абзацев: свойства картинки, поля
+        /// страницы, форматирование. Модуль по ней проверяет, прошла ли правка через
+        /// историю отмены (см. BaseModule.NotifyContentChanged).
+        /// </summary>
+        public event Action? ContentEdited;
+
+        /// <summary>
+        /// Правка данных документа мимо истории отмены (виды чтения). Откатить её
+        /// нельзя: документ остаётся изменённым до сохранения.
+        /// </summary>
+        public event Action? ChangedOutsideHistory;
+
         public bool IsModified
         {
             get => _isModified;
@@ -1403,9 +1438,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 docVm.SetActiveParagraph(docVm.Paragraphs[0]);
             DocumentViewModel = docVm;
 
+            // Галерея наполняется сразу: до этого мига список стилей пуст, и на «Главной»
+            // не было бы ни одной карточки.
+            Ribbon.Home.RefreshStyles();
+
             // Навигатор следит за структурой рукописи: заголовки меняются вместе с текстом,
             // и обновлять дерево по кнопке значило бы показывать вчерашнюю книгу.
             docVm.StructureChanged += OnStructureChangedForNavigator;
+
+            // Галерея стилей живёт списком стилей рукописи. Он пополняется и правится
+            // не только человеком: оглавление дописывает свои стили при первой вставке,
+            // импорт приносит чужие. Без этой подписки галерея показывала бы набор,
+            // который был у документа в минуту открытия.
+            docVm.StylesChanged += Ribbon.Home.RefreshStyles;
             docVm.ParagraphFormatChanged += OnStructureChangedForNavigator;
             docVm.ActiveParagraphChanged += OnActiveParagraphChangedForNavigator;
 
@@ -1648,7 +1693,22 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // по контентному боксу из раскладки. Прежний вызов писал края СТОЛБЦА, то есть
             // другую точку отсчёта, и стрелки прыгали между двумя вариантами.
             Ruler.UpdateTableColumns(columnOffsetsMm, columnWidthsMm, tableOffsetMm);
-            Ribbon.IsTableTabVisible = true;
+
+            // Вкладка открывается сама — но только на входе в таблицу, а не на каждом
+            // движении каретки внутри неё. Зовут этот метод и на движения тоже: линейке
+            // нужны свежие границы столбцов. Без проверки риббон выдёргивало бы обратно
+            // на «Таблицу» при каждом нажатии стрелки, даже если человек сам ушёл на
+            // «Главную», чтобы набрать в ячейке жирным.
+            if (!Ribbon.IsTableTabVisible)
+            {
+                _tabIndexBeforeTable = Ribbon.SelectedTabIndex;
+
+                // Порядок тот же, что и у картинки: сперва показать, потом выбрать.
+                // Выбор скрытой вкладки роняет разметку — см. RestoreRibbonTab.
+                Ribbon.IsTableTabVisible = true;
+                Ribbon.SelectedTabIndex = TableTabIndex;
+            }
+
             // Синхронизируем кнопку-тоггл режима разбивки с текущей таблицей
             Ribbon.Table.SyncFromTarget();
         }
@@ -1659,19 +1719,46 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void NotifyCaretLeftTable()
         {
             Ruler.SwitchToParagraphMode();
+
+            // Возврат делается ДО того, как вкладка гаснет: выбранной не должна
+            // остаться скрытая. Уходим только со своей вкладки — человек мог уйти с
+            // неё сам, и возвращать его с «Главной» на «Главную» незачем.
+            if (Ribbon.SelectedTabIndex == TableTabIndex)
+                RestoreRibbonTab(_tabIndexBeforeTable, TableTabIndex);
+
             Ribbon.IsTableTabVisible = false;
+            _tabIndexBeforeTable = -1;
         }
 
-        // Индексы контекстных вкладок в TabControl риббона:
-        // Home=0, Insert=1, Layout=2, References=3, Table=4,
-        // Формат=5, Расположение=6.
+        // Вкладка, активная до входа каретки в таблицу — на неё риббон возвращается,
+        // когда каретка из таблицы ушла.
+        private int _tabIndexBeforeTable = -1;
+
+        // Индексы вкладок в TabControl риббона, в порядке их объявления в
+        // RibbonView.axaml:
         //
-        // Последние две — две половины одного инструмента для плавающего объекта:
-        // показываются и гаснут вместе, по одному флагу IsImageTabVisible.
-        private const int TableTabIndex = 4;
-        private const int ImageTabIndex = 5;
-        private const int ImagePlacementTabIndex = 6;
-        private const int TocTabIndex = 7;
+        //   0 — Главная, 1 — Вставка, 2 — Разметка, 3 — Ссылки, 4 — Вид,
+        //   5 — Таблица, 6 — Формат, 7 — Расположение, 8 — Оглавление.
+        //
+        // Числа обязаны совпадать с разметкой знак в знак: TabControl различает
+        // вкладки только по месту в списке. Разошлись они однажды так — вкладку
+        // «Вид» дописали пятой по счёту, а числа здесь остались от времён, когда
+        // её не было. Нажатие на картинку после этого открывало инструменты
+        // таблицы: код просил вкладку 5, считая её «Форматом», а пятой к тому
+        // времени стала «Таблица». По той же причине риббон не уходил с вкладки
+        // оглавления, когда каретка покидала список: её индексом числился 7, то
+        // есть «Расположение».
+        //
+        // Добавляешь вкладку в разметку — правь и здесь. Другой связи между
+        // разметкой и этими числами нет.
+        //
+        // «Формат» и «Расположение» — две половины одного инструмента для
+        // плавающего объекта: показываются и гаснут вместе, по одному флагу
+        // IsImageTabVisible.
+        private const int TableTabIndex = 5;
+        private const int ImageTabIndex = 6;
+        private const int ImagePlacementTabIndex = 7;
+        private const int TocTabIndex = 8;
 
         // Вкладка, активная до автопереключения на «Формат» — восстанавливается
         // при снятии выделения картинки.
@@ -2445,6 +2532,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void Print()
         {
             if (DocumentViewModel is null) return;
+
+            // На бумаге номера уже не поправить — досчитываем их до печати, а не ждём
+            // паузы в наборе, которой перед нажатием «Печать» могло и не быть.
+            DocumentViewModel.FlushTocPageNumbersDelegate?.Invoke();
+
             _logger.Debug("Print requested: title={Title}", DocumentViewModel.Document.Title);
             PrintRequested?.Invoke(
                 DocumentViewModel.Document,
@@ -2618,6 +2710,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 // не влияют — на большом документе это была бы полная пересборка текста
                 // на каждый коммит правки картинки.
                 IsModified = true;
+                ContentEdited?.Invoke();
             }
 
             docVm.ContentModified += OnContentModified;

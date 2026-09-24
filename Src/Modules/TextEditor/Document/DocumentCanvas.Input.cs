@@ -977,9 +977,15 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Авто-скролл выделения у края вьюпорта: чем ближе к верхней/нижней границе,
             // тем быстрее лист прокручивается, продолжая выделять.
+            long perfMoveTs = PerfNow();
+            if (_perfLastMoveTs != 0)
+                PerfTime("ui.move.gap", _perfLastMoveTs);
+            _perfLastMoveTs = perfMoveTs;
+
             UpdateAutoScroll(rawPt);
 
             ExtendSelectionToPoint(rawPt);
+            PerfTime("ui.move.select", perfMoveTs);
             e.Handled = true;
         }
 
@@ -987,13 +993,18 @@ namespace Writersword.Modules.TextEditor.Document
         // чтобы тем же кодом продолжать выделение при авто-скролле у края вьюпорта.
         private void ExtendSelectionToPoint(Point rawPt)
         {
+            // Что из запечённого в снимок зависит от каретки и выделения — до шага.
+            var renderStateBefore = CaptureSelectionRenderState();
+
             double zoom = Zoom;
             float xPt = (float)(rawPt.X / zoom * PxToPt);
             float yPt = (float)(rawPt.Y / zoom * PxToPt);
             // Страницы рядом: переводим точку указателя в логические координаты раскладки.
             (xPt, yPt) = VisualToLogicalPt(xPt, yPt);
 
+            long perfHitTs = PerfNow();
             var (pi, ci) = HitTest(rawPt);
+            PerfTime("ui.hittest", perfHitTs);
             bool nowInCell = pi >= 0 && pi < _layouts.Count && _layouts[pi].Cell != null;
 
             // Нажатие было в ячейке таблицы.
@@ -1152,7 +1163,13 @@ namespace Writersword.Modules.TextEditor.Document
             _selEndPara = pi; _selEndChar = ci;
             _caretPara = pi; _caretChar = ci;
             UpdateSelectionContext();
-            InvalidateFull();
+
+            // Сменилось только текстовое выделение — рисуем его поверх готового снимка.
+            // Если протяжка задела таблицы или подложку оглавления, InvalidateSelection
+            // сам уйдёт в полный рендер.
+            long perfInvTs = PerfNow();
+            InvalidateSelection(renderStateBefore);
+            PerfTime("ui.invalidate", perfInvTs);
         }
 
         // Включает/выключает авто-скролл в зависимости от близости указателя к краю вьюпорта.
@@ -1266,6 +1283,7 @@ namespace Writersword.Modules.TextEditor.Document
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
         {
             base.OnPointerReleased(e);
+            _perfLastMoveTs = 0;
 
             if (SpreadMode)
             {
@@ -2583,7 +2601,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (operational && DocVm!.InsertFlowParagraph(para, index))
                 {
                     PushTextCommand(new Commands.InsertParagraphCommand(
-                        DocVm, para, index, "Абзац перед таблицей")
+                        DocVm!, para, index, "Абзац перед таблицей")
                     {
                         RestoreCaretCallback = RestoreCaretToParagraphLight
                     });
@@ -3036,6 +3054,8 @@ namespace Writersword.Modules.TextEditor.Document
             if (cmd is null) return false;
 
             PushTextCommand(cmd);
+            UpdatePreferredX();
+            SyncSel(); ResetCaret();
             return true;
         }
 
@@ -3052,7 +3072,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// <returns>null — быстрый путь не подошёл, вызывающий уходит на снимок.</returns>
         private Commands.ITextCommand? BuildOperationalDeleteSelection()
         {
-            if (DocVm is null || UndoStack is null) return null;
+            if (DocVm is null || TextUndoStack is null) return null;
             if (!HasSel()) return null;
             if (_tableSelections.Count > 0) return null;
 
@@ -3480,7 +3500,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// <returns>false — быстрый путь не подошёл, вызывающий уходит на снимок.</returns>
         private bool TryOperationalNewParagraph(ParagraphViewModel pvm)
         {
-            if (DocVm is null || UndoStack is null) return false;
+            if (DocVm is null || TextUndoStack is null) return false;
             if (IsInCell(_caretPara)) return false;
             if (pvm.Model is null) return false;
 
@@ -3632,7 +3652,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// <returns>false — быстрый путь не подошёл, вызывающий уходит на снимок.</returns>
         private bool TryOperationalMergeWithPrevious(ParagraphViewModel pvm)
         {
-            if (DocVm is null || UndoStack is null) return false;
+            if (DocVm is null || TextUndoStack is null) return false;
             if (HasSel()) return false;
             if (_caretChar != 0 || _caretPara <= 0) return false;
             if (IsInCell(_caretPara)) return false;
@@ -3666,7 +3686,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// <returns>false — быстрый путь не подошёл, вызывающий уходит на снимок.</returns>
         private bool TryOperationalMergeWithNext(ParagraphViewModel pvm)
         {
-            if (DocVm is null || UndoStack is null) return false;
+            if (DocVm is null || TextUndoStack is null) return false;
             if (HasSel()) return false;
             if (IsInCell(_caretPara)) return false;
             if (pvm.Model is null) return false;
@@ -3719,7 +3739,7 @@ namespace Writersword.Modules.TextEditor.Document
                 RestoreCaretCallback = RestoreCaretToParagraph
             };
 
-            PushUndoCommand(cmd);
+            PushTextCommand(cmd);
             RestoreCaretToParagraph(span.FirstParaId, span.At);
 
             return true;
@@ -3785,6 +3805,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteNavLeft(bool extend)
         {
+            var renderStateBefore = CaptureSelectionRenderState();
             _caretLineHint = -1;
 
             if (HasSel() && !extend)
@@ -3800,11 +3821,12 @@ namespace Writersword.Modules.TextEditor.Document
             if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
             else { ExtendSel(); UpdateSelectionContext(); }
             UpdatePreferredX();
-            ResetCaret(); InvalidateFull();
+            ResetCaret(); InvalidateSelection(renderStateBefore);
         }
 
         public void ExecuteNavRight(bool extend)
         {
+            var renderStateBefore = CaptureSelectionRenderState();
             _caretLineHint = -1;
             int len = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
 
@@ -3829,7 +3851,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
             else { ExtendSel(); UpdateSelectionContext(); }
             UpdatePreferredX();
-            ResetCaret(); InvalidateFull();
+            ResetCaret(); InvalidateSelection(renderStateBefore);
         }
 
         // Индекс визуальной строки, у которой charPos == LastCharIndex + 1 и которая не последняя,
@@ -3854,26 +3876,29 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteNavUp(bool extend)
         {
+            var renderStateBefore = CaptureSelectionRenderState();
             _caretLineHint = -1;
             MoveCaretVertically(-1);
             SnapCaretToCorrectSlice();
             if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
             else { ExtendSel(); UpdateSelectionContext(); }
-            ResetCaret(); InvalidateFull();
+            ResetCaret(); InvalidateSelection(renderStateBefore);
         }
 
         public void ExecuteNavDown(bool extend)
         {
+            var renderStateBefore = CaptureSelectionRenderState();
             _caretLineHint = -1;
             MoveCaretVertically(+1);
             SnapCaretToCorrectSlice();
             if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
             else { ExtendSel(); UpdateSelectionContext(); }
-            ResetCaret(); InvalidateFull();
+            ResetCaret(); InvalidateSelection(renderStateBefore);
         }
 
         public void ExecuteHome(bool document, bool extend)
         {
+            var renderStateBefore = CaptureSelectionRenderState();
             if (document) { _caretPara = 0; _caretChar = 0; }
             else
             {
@@ -3890,11 +3915,12 @@ namespace Writersword.Modules.TextEditor.Document
             if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
             else { ExtendSel(); UpdateSelectionContext(); }
             UpdatePreferredX();
-            ResetCaret(); InvalidateFull();
+            ResetCaret(); InvalidateSelection(renderStateBefore);
         }
 
         public void ExecuteEnd(bool document, bool extend)
         {
+            var renderStateBefore = CaptureSelectionRenderState();
             if (document)
             {
                 _caretPara = _layouts.Count - 1;
@@ -3916,11 +3942,13 @@ namespace Writersword.Modules.TextEditor.Document
             if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
             else { ExtendSel(); UpdateSelectionContext(); }
             UpdatePreferredX();
-            ResetCaret(); InvalidateFull();
+            ResetCaret(); InvalidateSelection(renderStateBefore);
         }
 
         public void ExecuteSelectAll()
         {
+            var renderStateBefore = CaptureSelectionRenderState();
+
             if (_layouts.Count == 0) return;
 
             // Концы выделения обязаны лежать в потоке, а не в ячейке таблицы. Последний
@@ -3942,7 +3970,7 @@ namespace Writersword.Modules.TextEditor.Document
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
             UpdateSelectionContext();
-            InvalidateFull();
+            InvalidateSelection(renderStateBefore);
         }
 
         public void ExecuteCopy() => _ = CopyAsync();

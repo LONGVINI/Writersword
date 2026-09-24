@@ -98,6 +98,13 @@ namespace Writersword.ViewModels.Components
             {
                 _logger.LogDebug("Activating tab: {TabTitle}", tab.Title);
 
+                // ВРЕМЕННАЯ диагностика отклика.
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.Begin(
+                    "переключение вкладки → " + tab.Title);
+
+                // Переключение идёт — всё отложенное тяжёлое сдвигается.
+                Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.NotifyActivity();
+
                 var oldTab = ActiveTab;
 
                 // Список активных модулей старой вкладки снимается ДО переключения:
@@ -115,12 +122,20 @@ namespace Writersword.ViewModels.Components
                 // перетаскивания вкладки) ощутимо запаздывало.
                 ActiveTab = tab;
 
-                // Сохранения старой вкладки догоняют после переключения: её модули
-                // припаркованы живыми, сбор данных с них потокобезопасен (тот же
-                // путь, что у периодического автосейва).
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("ActiveTab присвоен (весь путь активации)");
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.MarkWhenIdle("кадр после переключения вкладки");
+
+                // Сохранения старой вкладки откладываются до паузы в переключениях.
+                // Сбор данных модулей снимает снимок модели на UI-потоке (у TextEditor —
+                // поиск изменений и клон всего документа), и при быстрых переключениях
+                // такие снимки копились десятками и вешали интерфейс на десятки секунд.
+                // Теперь, пока пользователь кликает, сохранение не запускается вовсе, а
+                // повторные уходы с одной вкладки схлопываются в одно сохранение.
+                // Ключи общие с WorkspaceController.Suspend и MainWindowViewModel:
+                // одна и та же работа, поставленная из разных мест, выполняется один раз.
                 if (oldTab != null && oldTab != tab)
                 {
-                    _logger.LogDebug("Saving previous tab in background: {OldTabTitle}", oldTab.Title);
+                    var tabKey = DocumentTabViewModel.GetDeferredSaveKey(oldTab);
 
                     if (!string.IsNullOrEmpty(oldTab.FilePath))
                     {
@@ -129,16 +144,23 @@ namespace Writersword.ViewModels.Components
 
                         if (autoSave != null)
                         {
-                            await autoSave.SaveNowAsync();
-                            _logger.LogDebug("workspace.json saved for: {OldTabTitle}", oldTab.Title);
+                            var tabTitle = oldTab.Title;
+                            Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.Schedule("workspace:" + tabKey, async () =>
+                            {
+                                await autoSave.SaveNowAsync();
+                                _logger.LogDebug("workspace.json saved for: {OldTabTitle}", tabTitle);
+                            });
                         }
                     }
 
                     var capturedModules = oldTabModules
                         ?? new System.Collections.Generic.List<Writersword.Core.Interfaces.Modules.IModule>();
-                    await oldTab.SaveToCacheAsync(() => capturedModules);
-
-                    _logger.LogDebug("Old tab saved to cache");
+                    var tabToSave = oldTab;
+                    Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.Schedule("cache:" + tabKey, async () =>
+                    {
+                        await tabToSave.SaveToCacheAsync(() => capturedModules);
+                        _logger.LogDebug("Old tab saved to cache: {OldTabTitle}", tabToSave.Title);
+                    });
                 }
             }
             catch (Exception ex)
@@ -151,6 +173,13 @@ namespace Writersword.ViewModels.Components
         private async Task CloseTabAsync(DocumentTabViewModel tab)
         {
             _logger.LogDebug("Closing tab: {TabTitle}", tab.Title);
+
+            // Отложенные сохранения этой вкладки снимаются: закрытие сохраняет её само,
+            // а запоздалая запись кеша после закрытия воскресила бы удалённую точку
+            // восстановления.
+            var closingKey = DocumentTabViewModel.GetDeferredSaveKey(tab);
+            Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.Cancel("workspace:" + closingKey);
+            Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.Cancel("cache:" + closingKey);
 
             if (!string.IsNullOrEmpty(tab.FilePath))
             {

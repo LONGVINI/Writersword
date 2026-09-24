@@ -1092,6 +1092,14 @@
   <data name="Toc_UpdatePages_Tip" xml:space="preserve">
     <value>Обновить только номера страниц. Названия строк остаются как есть — вместе с вашими правками в них</value>
   </data>
+  <data name="Toc_UpdateAsk_Title" xml:space="preserve">
+    <value>Обновление оглавления</value>
+  </data>
+  <data name="Toc_UpdateAsk_Message" xml:space="preserve">
+    <value>Строки оглавления разошлись с заголовками рукописи. Пересборка заменит их и сотрёт всё, что вы правили в самих строках.
+
+Обновить только номера страниц?</value>
+  </data>
   <data name="Toc_Insert" xml:space="preserve">
     <value>Вставить</value>
   </data>

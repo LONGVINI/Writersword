@@ -1380,8 +1380,8 @@ namespace Writersword.Modules.TextEditor.Document
 
         // Сдвиг книги относительно центра видимой области, в пунктах. Пока книга
         // помещается в окно, он всегда нулевой.
-        private float _readingPanXPt;
-        private float _readingPanYPt;
+        // _readingPanXPt и _readingPanYPt объявлены в DocumentCanvas.SpreadFrame.cs:
+        // кадр читает их копию.
 
         // Куда книгу зовёт указатель. Сама она идёт туда не мгновенно, а догоняя:
         // события мыши приходят неровно, и книга, повторяющая их один в один, дёргается
@@ -1638,6 +1638,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             _spreadCornerSide = side;
             _spreadCornerHint = hint;
+            FlipTraceEvent(FormattableString.Invariant($"hint side={side} {hint:0.00}"));
 
             // Уголок рисуется поверх готового снимка страницы — как каретка. Полная
             // пересборка кадра ради него не нужна, иначе книга перерисовывалась бы
@@ -1657,6 +1658,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (_spreadCornerHint <= 0f) return;
 
             _spreadCornerHint = 0f;
+            FlipTraceEvent("hint clear");
             _caretOnlyRedraw = true;
             InvalidateVisual();
         }

@@ -123,6 +123,7 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.GoToParagraphDelegate = GoToParagraph;
             DocVm.PushUndoCommandDelegate = PushUndoCommand;
             DocVm.SetCaretToParagraphDelegate = SetCaretToParagraphNow;
+            DocVm.FlushTocPageNumbersDelegate = FlushTocPageNumbersNow;
 
             DocVm.StylesChanged -= OnStylesChanged;
             DocVm.StylesChanged += OnStylesChanged;
@@ -395,17 +396,99 @@ namespace Writersword.Modules.TextEditor.Document
         private void NotifyTocPageCount(int pageCount)
         {
             if (DocVm is null) return;
+
+            // Пересборку раскладки порождает и сам проход по номерам. Её он не должен
+            // принимать за правку человека — иначе каждый проход назначал бы следующий.
             if (_tocPassRunning) return;
 
-            if (_tocKnownPageCount == pageCount) return;
-
+            // Первая раскладка открытого документа правкой не является. Проход на ней
+            // поправил бы числа, записанные в файл, и документ оказался бы изменённым
+            // сразу после открытия — человек ещё ничего не тронул, а его уже спрашивают,
+            // сохранить ли.
             bool firstLayout = _tocKnownPageCount < 0;
             _tocKnownPageCount = pageCount;
-
             if (firstLayout) return;
+
             if (DocVm.Document.TableOfContents is not { Count: > 0 }) return;
 
+            // Автоматика ждёт паузы в наборе.
+            //
+            // Раньше проход назначался на смену числа страниц. Плохо это было дважды.
+            // Во-первых, на границе страницы при наборе он срабатывал раз за разом: слово
+            // перенеслось — страниц прибавилось, стёр — убавилось, и каждый раз по четыре
+            // пересборки книги. Во-вторых, он пропускал настоящие сдвиги: дописал абзац
+            // в первой главе и стёр такой же в пятой — число страниц прежнее, а главы
+            // между ними съехали, и номера врали молча.
+            //
+            // Теперь каждая пересборка только перезапускает таймер. Сработает он, когда
+            // человек остановится, и тогда дешёвая проверка скажет, врёт ли хоть одна
+            // строка. Проход запускается только если да.
+            EnsureTocIdleTimer();
+            _tocIdleTimer!.Stop();
+            _tocIdleTimer.Start();
+        }
+
+        // Таймер паузы в наборе. Каждая пересборка раскладки перезапускает его, и
+        // срабатывает он только когда пересборки прекратились.
+        private DispatcherTimer? _tocIdleTimer;
+
+        /// <summary>
+        /// Сколько ждать тишины перед проверкой номеров. Достаточно, чтобы не мешать
+        /// набору, и мало, чтобы человек, поднявший глаза на оглавление, увидел в нём
+        /// правду.
+        /// </summary>
+        private static readonly TimeSpan TocIdleDelay = TimeSpan.FromSeconds(1.5);
+
+        private void EnsureTocIdleTimer()
+        {
+            if (_tocIdleTimer is not null) return;
+
+            _tocIdleTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TocIdleDelay
+            };
+
+            _tocIdleTimer.Tick += OnTocIdle;
+        }
+
+        /// <summary>
+        /// Человек остановился. Если хоть одна строка оглавления врёт о номере страницы —
+        /// назначаем проход; если нет — не делаем ничего.
+        /// </summary>
+        private void OnTocIdle(object? sender, EventArgs e)
+        {
+            _tocIdleTimer?.Stop();
+
+            if (DocVm is null) return;
+            if (_tocPassRunning) return;
+
+            if (!DocVm.AreTocPageNumbersStale()) return;
+
             OnTocPageNumbersStale(force: false);
+        }
+
+        /// <summary>
+        /// Досчитать номера сейчас же, без паузы и без очереди. Зовётся перед печатью и
+        /// выгрузкой: в готовый файл устаревшие числа уйдут навсегда.
+        ///
+        /// Работает, только если есть что править, и только синхронно — вызывающему
+        /// нужен документ с правильными числами к той строке, что идёт следом.
+        /// </summary>
+        private void FlushTocPageNumbersNow()
+        {
+            _tocIdleTimer?.Stop();
+
+            if (DocVm is null) return;
+            if (DocVm.Document.TableOfContents is not { Count: > 0 }) return;
+
+            // Отложенный проход, если он уже назначен, выполняем сейчас. Назначен он или
+            // нет — решаем сами, по признаку устаревших чисел, плюс явное требование
+            // обновить, пришедшее из ленты и ждущее своей очереди.
+            bool pending = _tocPageNumbersPending;
+            if (!pending && !DocVm.AreTocPageNumbersStale()) return;
+
+            _tocPageNumbersPending = true;
+            RunTocPageNumberPass();
         }
 
         /// <summary>
@@ -420,6 +503,9 @@ namespace Writersword.Modules.TextEditor.Document
             _tocPassRunning = false;
             _tocPassAwaitsWarmup = false;
             _tocPassAwaitsWarmupForce = false;
+
+            // Пауза, начатая над прежним документом, к новому отношения не имеет.
+            _tocIdleTimer?.Stop();
         }
     }
 }

@@ -202,7 +202,36 @@ namespace Writersword.Modules.TextEditor
                 _localSettings = saved;
                 _logger.Debug("Settings loaded: MonitorSizeInches={V}", _globalSettings.MonitorSizeInches);
             }
+
+            // Отслеживание правок: состояние документа однозначно задаётся позициями в
+            // обоих стеках отмены (набор текста и форматирование). Каждое движение любого
+            // из них — правка; возврат обоих в сохранённые позиции — откат до сохранённого.
+            SetHistoryBaseline(CombinedHistoryState());
+            _undoStack.StateChanged += OnHistoryStateChanged;
+            _textUndoStack.StateChanged += OnHistoryStateChanged;
         }
+
+        // ── Отслеживание правок ───────────────────────────────────────────
+
+        /// <summary>
+        /// Все правки документа проходят через стеки отмены, поэтому модуль сообщает
+        /// о правках сам, и вкладка не собирает документ целиком ради ответа на вопрос
+        /// «есть ли несохранённое».
+        /// </summary>
+        public override bool TracksChanges => true;
+
+        /// <summary>
+        /// Номер состояния документа из двух стеков отмены. Номера состояний сквозные и
+        /// уникальные, перемешивание делает совпадение разных пар практически невозможным.
+        /// </summary>
+        private long CombinedHistoryState()
+            => unchecked((_textUndoStack.StateId * -7046029254386353131L) ^ _undoStack.StateId);
+
+        private void OnHistoryStateChanged() => NotifyHistoryChanged(CombinedHistoryState());
+
+        private void OnViewModelContentEdited() => NotifyContentChanged();
+
+        private void OnViewModelChangedOutsideHistory() => NotifyDataChanged();
 
         // ── BaseModule ────────────────────────────────────────────────────
 
@@ -2001,7 +2030,14 @@ namespace Writersword.Modules.TextEditor
                 _hotKeyService.UnbindExecutor(moduleType);
 
             if (_viewModel is not null)
+            {
                 _viewModel.PrintRequested -= OnPrintRequested;
+                _viewModel.ContentEdited -= OnViewModelContentEdited;
+                _viewModel.ChangedOutsideHistory -= OnViewModelChangedOutsideHistory;
+            }
+
+            _undoStack.StateChanged -= OnHistoryStateChanged;
+            _textUndoStack.StateChanged -= OnHistoryStateChanged;
 
             _viewModel?.Dispose();
             _viewModel = null;
@@ -2043,6 +2079,8 @@ namespace Writersword.Modules.TextEditor
         {
             var vm = new TextEditorViewModel();
             vm.PrintRequested += OnPrintRequested;
+            vm.ContentEdited += OnViewModelContentEdited;
+            vm.ChangedOutsideHistory += OnViewModelChangedOutsideHistory;
             vm.GlobalSettingsChanged = SaveGlobalSettings;
             vm.LoadNewDocument(_localSettings);
             return vm;

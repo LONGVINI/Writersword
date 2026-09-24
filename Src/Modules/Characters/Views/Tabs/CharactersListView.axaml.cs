@@ -481,6 +481,28 @@ namespace Writersword.Modules.Characters.Views.Tabs
             return null;
         }
 
+        /// <summary>
+        /// Нажатие пришло из кнопки цвета.
+        ///
+        /// Обход идёт по самим элементам, а не по их контексту данных: то, на
+        /// что нажали, — часть внутренней разметки кнопки, и контекст у неё
+        /// тот же карточкин. По контексту проверка остановилась бы на первом
+        /// же шаге, так и не дойдя до кнопки.
+        ///
+        /// Дальше этой вью обход не идёт: выше начинается уже не список
+        /// персонажей, и его кнопки этой проверки не касаются.
+        /// </summary>
+        private bool IsInsideColorPicker(Visual? visual)
+        {
+            var current = visual;
+            while (current is not null && !ReferenceEquals(current, this))
+            {
+                if (current is Writersword.Styles.UserControls.ColorPickerButton) return true;
+                current = current.GetVisualParent();
+            }
+            return false;
+        }
+
         private static CharacterFolderViewModel? FindFolderVm(Visual? visual)
         {
             var current = visual;
@@ -583,6 +605,17 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (folderVm is not null) vm.ActiveFolderId = folderVm.FolderId;
 
             var charVm = FindCharacterItemVm(source);
+
+            // Кнопка цвета живёт внутри карточки, и без этой проверки нажатие
+            // на неё шло карточке как обычный клик: вместе с палитрой
+            // выделялся персонаж и разворачивалась панель справа. Цвет правят
+            // и у невыделенного персонажа — разворачивать ради этого панель
+            // незачем.
+            //
+            // Заодно карточка перестаёт таскаться за кружок цвета: тянут её за
+            // саму карточку, а кружок открывает палитру.
+            if (charVm is not null && IsInsideColorPicker(source)) charVm = null;
+
             if (charVm is not null
                 && !vm.IsReadOnly
                 && !charVm.IsBeingNamed

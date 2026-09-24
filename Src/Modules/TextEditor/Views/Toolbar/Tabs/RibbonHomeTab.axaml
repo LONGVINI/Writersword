@@ -908,7 +908,7 @@
                         IsVisible="{Binding IsStylesGroupExpanded}">
                     <StackPanel>
                         <ListBox ItemsSource="{Binding VisibleStyles}"
-                                 SelectedItem="{Binding CurrentStyleName}"
+                                 SelectedItem="{Binding CurrentStyle}"
                                  Classes="StyleGallery" Height="56"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ScrollViewer.VerticalScrollBarVisibility="Disabled">
@@ -918,16 +918,16 @@
                                 </ItemsPanelTemplate>
                             </ListBox.ItemsPanel>
                             <ListBox.ItemTemplate>
-                                <DataTemplate x:DataType="x:String">
+                                <DataTemplate x:DataType="vm:StyleCardViewModel">
                                     <Border Classes="StyleCard" Width="62" Height="52" Padding="4 3">
                                         <StackPanel VerticalAlignment="Center" Spacing="1">
-                                            <TextBlock Text="{Binding}"
-                                                       FontSize="{Binding Converter={x:Static converters:StylePreviewSizeConverter.Instance}}"
-                                                       FontWeight="{Binding Converter={x:Static converters:StylePreviewWeightConverter.Instance}}"
-                                                       FontStyle="{Binding Converter={x:Static converters:StylePreviewStyleConverter.Instance}}"
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       FontSize="{Binding PreviewFontSize}"
+                                                       FontWeight="{Binding PreviewFontWeight}"
+                                                       FontStyle="{Binding PreviewFontStyle}"
                                                        Foreground="#1A1A1A" TextAlignment="Center"
                                                        TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
-                                            <TextBlock Text="{Binding}" FontSize="8" Foreground="#6A6A6A"
+                                            <TextBlock Text="{Binding DisplayName}" FontSize="8" Foreground="#6A6A6A"
                                                        TextAlignment="Center" TextTrimming="CharacterEllipsis"
                                                        HorizontalAlignment="Center"/>
                                         </StackPanel>
@@ -991,7 +991,7 @@
                             <Button.Flyout>
                                 <Flyout Placement="Bottom">
                                     <ListBox ItemsSource="{Binding AvailableStyles}"
-                                             SelectedItem="{Binding CurrentStyleName}"
+                                             SelectedItem="{Binding CurrentStyle}"
                                              Classes="StyleGallery" Height="56"
                                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                              ScrollViewer.VerticalScrollBarVisibility="Disabled">
@@ -1001,16 +1001,16 @@
                                             </ItemsPanelTemplate>
                                         </ListBox.ItemsPanel>
                                         <ListBox.ItemTemplate>
-                                            <DataTemplate x:DataType="x:String">
+                                            <DataTemplate x:DataType="vm:StyleCardViewModel">
                                                 <Border Classes="StyleCard" Width="62" Height="52" Padding="4 3">
                                                     <StackPanel VerticalAlignment="Center" Spacing="1">
-                                                        <TextBlock Text="{Binding}"
-                                                                   FontSize="{Binding Converter={x:Static converters:StylePreviewSizeConverter.Instance}}"
-                                                                   FontWeight="{Binding Converter={x:Static converters:StylePreviewWeightConverter.Instance}}"
-                                                                   FontStyle="{Binding Converter={x:Static converters:StylePreviewStyleConverter.Instance}}"
+                                                        <TextBlock Text="{Binding DisplayName}"
+                                                                   FontSize="{Binding PreviewFontSize}"
+                                                                   FontWeight="{Binding PreviewFontWeight}"
+                                                                   FontStyle="{Binding PreviewFontStyle}"
                                                                    Foreground="#1A1A1A" TextAlignment="Center"
                                                                    TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"/>
-                                                        <TextBlock Text="{Binding}" FontSize="8" Foreground="#6A6A6A"
+                                                        <TextBlock Text="{Binding DisplayName}" FontSize="8" Foreground="#6A6A6A"
                                                                    TextAlignment="Center" TextTrimming="CharacterEllipsis"
                                                                    HorizontalAlignment="Center"/>
                                                     </StackPanel>

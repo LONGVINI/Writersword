@@ -7,6 +7,7 @@ using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Rendering;
@@ -2523,13 +2524,117 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
-        private void InvalidateFull()
+        private void InvalidateFull([CallerMemberName] string perfCaller = "")
         {
+            PerfCount("inv.full<-" + perfCaller);
+            FlipTraceEvent("InvalidateFull<-" + perfCaller);
+
+            // Содержимое изменилось: фоновый снимок прокрутки, начатый до этого, устарел.
+            System.Threading.Interlocked.Increment(ref _contentGeneration);
+
             if (_isTransitioning && TopLevel.GetTopLevel(this) is not null)
                 _isTransitioning = false;
             RefreshImagesInTextSelection();
             _contentDirty = true;
             _caretOnlyRedraw = false;
+            InvalidateVisual();
+        }
+
+        /// <summary>
+        /// То, что запекается в снимок и при этом зависит от каретки или выделения:
+        /// подложка оглавления под кареткой и всё табличное (выделение ячеек, поток по
+        /// ячейкам, контекст активной таблицы). Пока это состояние не изменилось,
+        /// снимок остаётся верным, и смену выделения можно рисовать поверх него.
+        /// </summary>
+        private readonly record struct SelectionRenderState(Guid? TocOwner, bool TableContext, long TableState);
+
+        private SelectionRenderState CaptureSelectionRenderState()
+            => new(CaretTocOwnerId(_layouts), TableSelectionContextActive(), TableSelectionStateHash());
+
+        /// <summary>
+        /// Отпечаток всего табличного состояния, запекаемого в снимок: выделенные
+        /// прямоугольники таблиц, поток по ячейкам (частичные и полные), протяжка по
+        /// ячейкам и активная ячейка. Порядок записей в словарях не важен — вклады
+        /// складываются.
+        ///
+        /// Нужен, чтобы отличать «таблица в выделении есть» от «табличное выделение
+        /// изменилось». Протяжка, накрывшая таблицу, дальше несёт её выделенной целиком
+        /// на каждом шаге, и прежняя проверка по одному наличию гнала полный рендер всех
+        /// видимых листов на каждое движение мыши.
+        /// </summary>
+        private long TableSelectionStateHash()
+        {
+            unchecked
+            {
+                long h = 17;
+                h = h * 31 + _tableSelections.Count;
+                h = h * 31 + _cellFlowRanges.Count;
+                h = h * 31 + _cellFlowFull.Count;
+                h = h * 31 + (_isCellRangeSelecting ? 1 : 0);
+                h = h * 31 + (_activeTableBlock is null
+                    ? 0
+                    : RuntimeHelpers.GetHashCode(_activeTableBlock));
+                h = h * 31 + _activeCellRow;
+                h = h * 31 + _activeCellCol;
+
+                long sum = 0;
+                foreach (var kv in _tableSelections)
+                    sum += HashCode.Combine(1, RuntimeHelpers.GetHashCode(kv.Key),
+                        kv.Value.sr, kv.Value.sc, kv.Value.er, kv.Value.ec);
+                foreach (var kv in _cellFlowRanges)
+                    sum += HashCode.Combine(2, RuntimeHelpers.GetHashCode(kv.Key),
+                        kv.Value.from, kv.Value.to);
+                foreach (var c in _cellFlowFull)
+                    sum += HashCode.Combine(3, RuntimeHelpers.GetHashCode(c.table), c.row, c.col);
+
+                return h * 31 + sum;
+            }
+        }
+
+        private bool TableSelectionContextActive()
+            => _tableSelections.Count > 0
+               || _cellFlowRanges.Count > 0
+               || _cellFlowFull.Count > 0
+               || _isCellRangeSelecting
+               || _activeTableBlock is not null;
+
+        /// <summary>
+        /// Перерисовка после смены выделения или положения каретки без правки текста.
+        ///
+        /// Текстовое выделение в снимок не запекается (см. DrawSelectionOverlay), поэтому
+        /// обычно достаточно блита готового снимка и заливки прямоугольников выделения —
+        /// тот же быстрый путь, что у мигания каретки. Полный рендер нужен, только если
+        /// поменялось то, что в снимке лежит: набор картинок внутри выделения, подложка
+        /// оглавления под кареткой или табличное состояние (до или после шага).
+        /// </summary>
+        private void InvalidateSelection(SelectionRenderState before)
+        {
+            var imagesBefore = _imagesInTextSelection;
+            RefreshImagesInTextSelection();
+            bool imagesChanged = !ReferenceEquals(imagesBefore, _imagesInTextSelection)
+                && !imagesBefore.SetEquals(_imagesInTextSelection);
+
+            var after = CaptureSelectionRenderState();
+
+            // Табличное состояние решает не само его наличие, а изменение: неизменное
+            // выделение таблицы уже лежит в снимке ровно таким, каким должно быть.
+            if (imagesChanged || after != before)
+            {
+                if (imagesChanged) PerfCount("inv.sel.full.images");
+                if (after.TableState != before.TableState || after.TableContext != before.TableContext) PerfCount("inv.sel.full.table");
+                if (after.TocOwner != before.TocOwner) PerfCount("inv.sel.full.toc");
+                InvalidateFull();
+                return;
+            }
+
+            PerfCount("inv.sel.overlay");
+
+            if (_isTransitioning && TopLevel.GetTopLevel(this) is not null)
+                _isTransitioning = false;
+
+            // _contentDirty не трогаем: если полный рендер уже заказан, он и выполнится —
+            // быстрый путь при поднятом _contentDirty не срабатывает.
+            _caretOnlyRedraw = true;
             InvalidateVisual();
         }
 
@@ -2765,6 +2870,19 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         private void UpdateSelectionContext()
+        {
+            long perfTs = PerfNow();
+            try
+            {
+                UpdateSelectionContextCore();
+            }
+            finally
+            {
+                PerfTime("ui.selctx", perfTs);
+            }
+        }
+
+        private void UpdateSelectionContextCore()
         {
             if (DocVm is null) return;
 

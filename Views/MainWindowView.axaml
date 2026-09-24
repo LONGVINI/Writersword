@@ -4,6 +4,7 @@
         xmlns:loc="using:Writersword.Resources.Localization"
         xmlns:converters="using:Writersword.Infrastructure.Converters"
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
+        xmlns:dockhost="using:Writersword.Infrastructure.Dock"
         xmlns:components="using:Writersword.Views.Components"
         x:Class="Writersword.Views.MainWindowView"
         xmlns:menubar="using:Writersword.Views.Components.MenuBar"
@@ -101,8 +102,15 @@
 
 		<!-- Главная область -->
 		<Panel Grid.Row="4">
-			<dock:DockControl Layout="{Binding DockLayout}"
-                              Background="{DynamicResource BgSurfaceBrush}"/>
+			<!--
+                Сцена док-области: по одному DockControl на каждую живую раскладку
+                (вкладка + воркмод). Переключение вкладок и воркмодов меняет только
+                видимость — вью модулей не снимаются с визуального дерева.
+                Должна оставаться первым ребёнком панели (снапшоты вкладок).
+            -->
+			<dockhost:DockStage Layout="{Binding DockLayout}"
+                                AliveLayouts="{Binding AliveDockLayouts}"
+                                Background="{DynamicResource BgSurfaceBrush}"/>
 			<Panel Name="NotificationContainer"
                    ZIndex="1000"
                    HorizontalAlignment="Stretch"

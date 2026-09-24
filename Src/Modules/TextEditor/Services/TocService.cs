@@ -340,6 +340,79 @@ namespace Writersword.Modules.TextEditor.Services
         }
 
         /// <summary>
+        /// Разошлись ли строки оглавления с заголовками рукописи.
+        ///
+        /// Вопрос этот задаётся перед пересборкой, и только ради одного: пересборка
+        /// сносит строки и создаёт их заново. Всё, что человек в них поправил руками —
+        /// дописал пояснение, сократил длинное название, выделил слово, — уходит вместе
+        /// со снесёнными строками. Спрашивать об этом всегда, как делает Word, значит
+        /// задавать вопрос впустую в девяти случаях из десяти: правок обычно нет, и
+        /// терять нечего.
+        ///
+        /// Расхождение здесь — это и правка в самой строке, и переименованная глава, и
+        /// сдвинутый порядок заголовков. Отличить одно от другого нечем: чтобы знать,
+        /// что строка была изменена ИМЕННО в оглавлении, пришлось бы хранить в ней текст
+        /// на момент сборки — вторую правду о том же самом. Поэтому вопрос ставится так,
+        /// как оно есть: строки разошлись с заголовками, пересборка их выровняет и сотрёт
+        /// правки, а обновление номеров оставит как есть.
+        /// </summary>
+        /// <returns>true — есть что терять, стоит спросить.</returns>
+        public static bool HasManualEdits(DocumentModel doc, TocSettings settings)
+        {
+            if (doc is null || settings is null) return false;
+            if (doc.Sections.Count == 0) return false;
+
+            var (start, count) = FindRange(doc, settings.Id);
+            if (start < 0 || count <= 0) return false;
+
+            var headings = Collect(doc, settings);
+            var blocks = doc.Sections[0].Blocks;
+
+            int headingIndex = 0;
+
+            for (int i = start; i < start + count && i < blocks.Count; i++)
+            {
+                if (blocks[i] is not ParagraphBlock entry) continue;
+
+                var props = entry.Properties;
+
+                // Название над списком строкой оглавления не является: заголовка за ним
+                // нет, и сравнивать его не с чем.
+                if (props.TocEntryLevel <= 0) continue;
+
+                // Строка без ссылки на главу — добавленная руками. Пересборка её снесёт.
+                if (props.TocTargetBlockId is not Guid target) return true;
+
+                if (headingIndex >= headings.Count) return true;
+
+                var heading = headings[headingIndex];
+                headingIndex++;
+
+                // Порядок разошёлся: строка указывает не на тот заголовок, который
+                // стоит на её месте в рукописи.
+                if (heading.BlockId != target) return true;
+
+                if (!string.Equals(EntryTitle(entry), heading.Text, StringComparison.Ordinal))
+                    return true;
+            }
+
+            // Заголовков больше, чем строк, — в рукописи появились новые главы.
+            return headingIndex != headings.Count;
+        }
+
+        /// <summary>
+        /// Название строки оглавления — всё, что стоит до последней табуляции. За ней
+        /// номер страницы, и к названию он не относится.
+        /// </summary>
+        private static string EntryTitle(ParagraphBlock entry)
+        {
+            string raw = entry?.GetPlainText() ?? string.Empty;
+            int tabAt = raw.LastIndexOf('\t');
+
+            return tabAt >= 0 ? raw.Substring(0, tabAt) : raw;
+        }
+
+        /// <summary>
         /// Дописывает документу встроенные стили, которых в нём ещё нет.
         ///
         /// Рукопись, начатая до появления стилей оглавления, их не содержит: список
@@ -432,6 +505,33 @@ namespace Writersword.Modules.TextEditor.Services
             bool tabsChanged = ApplyEntryTabStop(props, settings, IndentOf(props), textWidthPt, withPage);
 
             return textChanged || tabsChanged;
+        }
+
+        /// <summary>
+        /// Врёт ли строка о номере страницы — то же сравнение, что делает
+        /// <see cref="ApplyPageNumber"/>, но без правки.
+        ///
+        /// Нужно, чтобы решить, стоит ли вообще запускать проход по номерам. Сам проход
+        /// дорогой: он пересобирает раскладку книги до четырёх раз. Проверка — один
+        /// взгляд на хвост каждой строки. Запускать дорогое ради того, чтобы узнать, что
+        /// делать ничего не надо, — ровно та работа, от которой уходим.
+        /// </summary>
+        public static bool PageNumberDiffers(ParagraphBlock entry, TocSettings settings, int pageNumber)
+        {
+            if (entry is null || settings is null) return false;
+
+            var props = entry.Properties;
+            if (props.TocOwnerId != settings.Id) return false;
+            if (props.TocEntryLevel <= 0) return false;
+
+            string raw = entry.GetPlainText();
+            int tabAt = raw.LastIndexOf('\t');
+            int headLength = tabAt >= 0 ? tabAt : raw.Length;
+
+            bool withPage = settings.ShowPageNumbers && pageNumber > 0;
+            string tail = withPage ? "\t" + pageNumber.ToString() : string.Empty;
+
+            return !string.Equals(raw.Substring(headLength), tail, StringComparison.Ordinal);
         }
 
         /// <summary>

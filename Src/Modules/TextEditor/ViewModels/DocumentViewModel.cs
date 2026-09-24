@@ -960,10 +960,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 rp = GetRunPropsAtOffset(block, caretPos);
             }
 
+            // Кнопки «Ж» и «К» показывают то, что нарисовано, а не только собственные
+            // свойства фрагмента: в заголовке без прямого форматирования они горят.
+            var (effectiveBold, effectiveItalic) = ResolveEffectiveBoldItalic(rp, block.Properties.StyleName);
+            ctx.IsBold = effectiveBold;
+            ctx.IsItalic = effectiveItalic;
+
             if (rp is not null)
             {
-                ctx.IsBold = rp.IsBold;
-                ctx.IsItalic = rp.IsItalic;
                 ctx.IsUnderline = rp.IsUnderline;
                 ctx.IsStrikethrough = rp.IsStrikethrough;
                 ctx.IsSuperscript = rp.IsSuperscript;
@@ -1632,8 +1636,67 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         // ── ITextEditorCommandTarget: символы ─────────────────────────────
 
-        public void ToggleBold() => ApplyCharProperty(p => p.IsBold = !p.IsBold);
-        public void ToggleItalic() => ApplyCharProperty(p => p.IsItalic = !p.IsItalic);
+        // Переключение идёт от того, что видно под кареткой или в начале выделения, и
+        // ставит всем фрагментам одно значение, как в Word. Переворачивать собственное
+        // значение каждого фрагмента больше нельзя: у фрагмента заголовка его нет вовсе
+        // (null — «как у стиля»), и «не null» из него не получить.
+        public void ToggleBold()
+        {
+            bool target = !ResolveCurrentBoldItalic().Bold;
+            ApplyCharProperty(p => p.IsBold = target);
+        }
+
+        public void ToggleItalic()
+        {
+            bool target = !ResolveCurrentBoldItalic().Italic;
+            ApplyCharProperty(p => p.IsItalic = target);
+        }
+
+        // Жирность и курсив там, откуда их показывает лента: ячейка таблицы — по её
+        // выделению, иначе первый выделенный абзац. С выделением — первый выделенный
+        // символ, без него — символ слева от каретки (как в BuildCursorContext).
+        private (bool Bold, bool Italic) ResolveCurrentBoldItalic()
+        {
+            ParagraphBlock? block;
+            int selStart;
+            int selEnd;
+
+            if (TableActiveCellParagraph is not null)
+            {
+                block = TableActiveCellParagraph;
+                selStart = _selectionStart;
+                selEnd = _selectionEnd;
+            }
+            else
+            {
+                var pvm = SelectionParagraphs.Count > 0 ? SelectionParagraphs[0] : _activeParagraph;
+                if (pvm is null) return (false, false);
+                block = pvm.Model;
+                selStart = pvm.SelectionStart;
+                selEnd = pvm.SelectionEnd;
+            }
+
+            int pos = selEnd > selStart ? selStart : Math.Max(0, selStart - 1);
+            var rp = GetRunPropsAtOffset(block, pos);
+            return ResolveEffectiveBoldItalic(rp, block.Properties.StyleName);
+        }
+
+        // Жирность и курсив в том порядке, в каком их разбирает SKTextRenderer.CollectTokens:
+        // значение фрагмента, иначе символьный стиль поверх стиля абзаца. Порядок обязан
+        // совпадать, иначе кнопка ленты горела бы не над тем, что нарисовано.
+        private (bool Bold, bool Italic) ResolveEffectiveBoldItalic(RunProperties? rp, string? paragraphStyle)
+        {
+            var styles = new Rendering.StyleResolver(_document.Styles);
+            string? charStyle = rp?.StyleName;
+            bool hasCharStyle = !string.IsNullOrEmpty(charStyle);
+
+            bool bold = rp?.IsBold
+                ?? ((hasCharStyle && styles.AnyBold(charStyle)) || styles.ResolveBold(paragraphStyle));
+            bool italic = rp?.IsItalic
+                ?? ((hasCharStyle && styles.AnyItalic(charStyle)) || styles.ResolveItalic(paragraphStyle));
+
+            return (bold, italic);
+        }
         public void ToggleUnderline() => ApplyCharProperty(p => p.IsUnderline = !p.IsUnderline);
         public void ToggleStrikethrough() => ApplyCharProperty(p => p.IsStrikethrough = !p.IsStrikethrough);
 
@@ -1995,6 +2058,25 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetSpaceBefore(double pt) => ApplyParaProperty(p => p.SpaceBefore = pt);
         public void SetSpaceAfter(double pt) => ApplyParaProperty(p => p.SpaceAfter = pt);
         public void ApplyStyle(string name) => ApplyParaProperty(p => p.StyleName = name);
+
+        /// <inheritdoc/>
+        public System.Collections.Generic.IReadOnlyList<DocumentStyle> DocumentStyles
+            => _document.Styles;
+
+        /// <inheritdoc/>
+        public DocumentModel? StyleSourceDocument => _document;
+
+        /// <summary>
+        /// Кладёт символьный стиль на выделенный текст. Пустое имя снимает стиль.
+        ///
+        /// Механизм тот же, которым ложатся жирность и цвет: правится свойство
+        /// фрагментов выделения. Отличие только в том, ЧТО правится — не сами свойства
+        /// вида, а имя стиля, из которого вид потом берётся. Поэтому правка стиля
+        /// меняет весь помеченный им текст разом, а не только тот, что набрали после.
+        /// </summary>
+        public void ApplyCharacterStyle(string? styleName)
+            => ApplyCharProperty(p => p.StyleName =
+                string.IsNullOrEmpty(styleName) ? null : styleName);
 
         public void SetLeftIndentPt(double pt) => ApplyParaProperty(p =>
         {
@@ -2474,7 +2556,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (IsReadOnly) return;
             if (data is null || data.Length == 0) return;
 
-            // Файлы картинок хранятся внутри проекта, доступ — через контекст активной вкладки.
+            // Файлы картинок хранятся внутри проекта (ZIP), доступ — через контекст активной вкладки.
             var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
             if (ctx is null) return;
 
@@ -2787,7 +2869,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         /// <summary>
         /// Вставляет картинку из байтов, перенося свойства из шаблона. Байты пишутся
-        /// НОВЫМ файлом в ТЕКУЩИЙ проект — поэтому работает и при копировании
+        /// НОВЫМ файлом в ZIP ТЕКУЩЕГО проекта — поэтому работает и при копировании
         /// между проектами (файл переносится в целевой проект). Возвращает блок.
         /// </summary>
         public ImageBlock? InsertImageWithProps(byte[] data, ImageBlock template,
@@ -3380,7 +3462,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         /// <summary>
-        /// Кладёт файл картинки в хранилище проекта и возвращает его имя внутри проекта.
+        /// Кладёт файл картинки в хранилище проекта и возвращает его имя внутри ZIP.
         /// Тем же путём и в ту же папку, что и обычная вставка изображения: заливка
         /// фигуры картинкой хранится так же, как сама картинка документа.
         /// null — файла нет или хранилище недоступно.
@@ -3572,6 +3654,101 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         /// <summary>
+        /// Обновляет оглавление, спросив человека, если есть что терять.
+        ///
+        /// Пересборка сносит строки и создаёт их заново — вместе с правками, сделанными
+        /// в самих строках. Вопрос задаётся не всегда, а только когда строки разошлись
+        /// с заголовками: если расхождений нет, терять нечего и спрашивать не о чем.
+        /// Word спрашивает каждый раз, и это раздражает ровно потому, что в девяти
+        /// случаях из десяти ответ ничего не меняет.
+        ///
+        /// «Да» — только номера: строки остаются как есть. «Нет» — пересобрать целиком.
+        /// Утвердительный ответ намеренно отдан безопасному действию: по привычке жмут
+        /// его, и привычка не должна ничего стирать.
+        /// </summary>
+        public async System.Threading.Tasks.Task UpdateTocAskingAsync(Models.Toc.TocSettings settings)
+        {
+            if (IsReadOnly || settings is null) return;
+
+            if (!TocService.HasManualEdits(_document, settings))
+            {
+                RebuildToc(settings);
+                return;
+            }
+
+            var dialogs = CoreServices.GetService<IDialogService>();
+
+            if (dialogs is null)
+            {
+                // Спросить нечем. Выбираем то, что ничего не уносит: пересобрать человек
+                // и сам сможет, а вернуть стёртые правки — уже нет.
+                RefreshTocPageNumbers();
+                return;
+            }
+
+            var answer = await dialogs.ShowMessageAsync(
+                TextEditorStrings.Toc_UpdateAsk_Title,
+                TextEditorStrings.Toc_UpdateAsk_Message,
+                Writersword.Core.Enums.MessageBoxType.Question,
+                Writersword.Core.Enums.MessageBoxButtons.YesNoCancel);
+
+            if (answer == Writersword.Core.Enums.MessageBoxResult.Yes)
+                RefreshTocPageNumbers();
+            else if (answer == Writersword.Core.Enums.MessageBoxResult.No)
+                RebuildToc(settings);
+        }
+
+        /// <summary>
+        /// Врёт ли хоть одна строка оглавления о номере страницы.
+        ///
+        /// Смотрятся только оглавления с включённым самообновлением: выключенное значит
+        /// «номера только по кнопке», и автоматике там делать нечего, даже если числа
+        /// устарели.
+        ///
+        /// Ничего не правит. Нужна, чтобы дорогой проход по номерам запускался только
+        /// тогда, когда ему есть что делать.
+        /// </summary>
+        public bool AreTocPageNumbersStale()
+        {
+            if (_document.TableOfContents is not { Count: > 0 }) return false;
+            if (_document.Sections.Count == 0) return false;
+
+            var pageMap = GetBlockPageNumbers();
+            if (pageMap.Count == 0) return false;
+
+            var blocks = _document.Sections[0].Blocks;
+
+            foreach (var settings in _document.TableOfContents)
+            {
+                if (!settings.AutoUpdate) continue;
+
+                var (start, count) = TocService.FindRange(_document, settings.Id);
+                if (start < 0) continue;
+
+                for (int i = start; i < start + count && i < blocks.Count; i++)
+                {
+                    if (blocks[i] is not ParagraphBlock entry) continue;
+                    if (entry.Properties.TocTargetBlockId is not System.Guid target) continue;
+
+                    pageMap.TryGetValue(target, out int page);
+
+                    if (TocService.PageNumberDiffers(entry, settings, page)) return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Досчитать номера страниц в оглавлениях сейчас же, не дожидаясь паузы.
+        ///
+        /// Ставит полотно: номера знает только раскладка. Зовётся перед печатью и
+        /// выгрузкой — там отложенный проход мог ещё не случиться, а в выгруженный файл
+        /// устаревшие числа уйдут навсегда.
+        /// </summary>
+        public Action? FlushTocPageNumbersDelegate { get; set; }
+
+        /// <summary>
         /// Проставляет строкам всех оглавлений свежие номера страниц, не пересобирая
         /// списки.
         ///
@@ -3641,13 +3818,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
                     if (!boldFound)
                     {
-                        bold = run.IsBold;
+                        bold = run.IsBold ?? false;
                         boldFound = true;
                     }
 
                     if (!italicFound)
                     {
-                        italic = run.IsItalic;
+                        italic = run.IsItalic ?? false;
                         italicFound = true;
                     }
                 }
@@ -4938,6 +5115,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private async Task ExportDocumentAsync(ExportFileFormat format)
         {
+            // Номера страниц в оглавлении досчитываются до выгрузки. Автоматика ждёт паузы
+            // в наборе, и человек, нажавший «Экспорт» сразу после правки, выгрузил бы
+            // книгу с числами от прошлой раскладки — а в файле их уже никто не поправит.
+            FlushTocPageNumbersDelegate?.Invoke();
+
             var notifications = CoreServices.GetService<INotificationService>();
 
             var window = (Avalonia.Application.Current?.ApplicationLifetime

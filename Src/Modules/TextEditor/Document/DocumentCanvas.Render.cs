@@ -76,11 +76,21 @@ namespace Writersword.Modules.TextEditor.Document
 
         internal void RenderWithSKCanvas(SKCanvas canvas)
         {
+            long flipTraceTs = FlipTraceNow();
+            if (_isTransitioning) FlipTraceFrame("EMPTY:transitioning", flipTraceTs);
             if (_isTransitioning) return;
+
+            long perfFrameTs = PerfNow();
 
             // Дренируем очередь битмапов ожидающих удаления.
             while (_bitmapDisposeQueue.TryDequeue(out var stale))
                 stale?.Dispose();
+
+            // Снимки, списанные фоновой дорисовкой, освобождаются здесь же, на каждом
+            // кадре: полный рендер при прокрутке теперь редок, и дожидаться его значило
+            // бы копить в очереди снимки по полтора десятка мегабайт каждый.
+            while (_imageDisposeQueue.TryDequeue(out var staleSnapshot))
+                staleSnapshot?.Dispose();
 
             List<ParaLayout> layouts;
             List<PageRect> pages;
@@ -136,6 +146,7 @@ namespace Writersword.Modules.TextEditor.Document
             // ScrollViewer. Контентный снимок кладётся поверх и перекрывает скелет там, где
             // текст и картинки уже готовы.
             {
+                long perfSkeletonTs = PerfNow();
                 var skeletonMode = DocVm?.ViewMode ?? EditorViewMode.Draft;
                 canvas.Save();
                 canvas.Scale(scale, scale);
@@ -156,6 +167,7 @@ namespace Writersword.Modules.TextEditor.Document
                     DrawCanvasBackdrop(canvas, bgWPt, bgHPt);
                 }
                 canvas.Restore();
+                PerfTime("r.skeleton", perfSkeletonTs);
             }
 
             // Переворот страницы рисуется прямо в канвас, минуя весь обычный конвейер.
@@ -176,6 +188,7 @@ namespace Writersword.Modules.TextEditor.Document
                 canvas.Scale(scale, scale);
                 DrawSingleSlide(canvas, canvasHeightPt, canvasWidth);
                 canvas.Restore();
+                FlipTraceFrame("slide", flipTraceTs);
                 return;
             }
 
@@ -206,8 +219,13 @@ namespace Writersword.Modules.TextEditor.Document
                 }
 
                 canvas.Restore();
+                FlipTraceFrame("lifted", flipTraceTs);
                 return;
             }
+
+            // Диагностика: почему кадр может уйти в полный рендер.
+            if (!_caretOnlyRedraw) PerfCount("r.why.requested");
+            else if (_contentDirty) PerfCount("r.why.dirty");
 
             if (_caretOnlyRedraw && !_contentDirty)
             {
@@ -225,10 +243,13 @@ namespace Writersword.Modules.TextEditor.Document
                     // рендера. Если пользователь проскроллил так что viewport ещё внутри
                     // снимка — переиспользуем его без перерисовки. DrawImage иммутабельного
                     // снимка не копирует пиксели: GPU держит текстуру в кэше по uniqueID.
+                    // Размеры берутся у самого снимка: снимок фоновой дорисовки может
+                    // быть другой высоты, чем офскрин-битмап синхронного рендера.
                     bool scrollInRange = _displayImage is not null
-                        && _bitmapW == pixelW
+                        && _displayImage.Width == pixelW
+                        && (!SpreadMode || _displayImageSpreadLeft == _spreadLeftPage)
                         && scrollY >= _lastFullRenderScrollY - 0.5f
-                        && scrollY + viewportPx <= _lastFullRenderScrollY + _bitmapH + 0.5f;
+                        && scrollY + viewportPx <= _lastFullRenderScrollY + _displayImage.Height + 0.5f;
 
                     if (scrollInRange)
                     {
@@ -241,6 +262,14 @@ namespace Writersword.Modules.TextEditor.Document
                 if (drewFromCache)
                 {
                     _caretOnlyRedraw = false;
+
+                    // Выделение в снимке не лежит — кладём его поверх, как каретку.
+                    long perfOverlayTs = PerfNow();
+                    canvas.Save();
+                    canvas.Scale(scale, scale);
+                    DrawSelectionOverlay(canvas, layouts, pages, canvasWidth);
+                    canvas.Restore();
+                    PerfTime("r.overlay", perfOverlayTs);
 
                     if (CaretDrawable)
                     {
@@ -260,10 +289,38 @@ namespace Writersword.Modules.TextEditor.Document
                         DrawSpreadCornerHint(canvas);
                         canvas.Restore();
                     }
+                    // Прокрутка подходит к краю снимка — следующий снимок начинаем
+                    // готовить заранее, в фоне, пока этот ещё покрывает экран.
+                    MaybePrefetchSnapshot(scrollY, viewportPx, docHeightPx, pixelW, scale);
+
+                    PerfTime("r.frame.cache", perfFrameTs);
+                    FlipTraceFrame("cache", flipTraceTs);
                     return;
                 }
+
+                // Прокрутка вышла за снимок, а содержимое не менялось. Вместо полного
+                // рендера всех видимых листов прямо в этом кадре (при нескольких листах
+                // в ряду это сотни миллисекунд — рывок) кладём прежний снимок на его место,
+                // открывшуюся полосу закрывают пустые листы подложки, а новый снимок
+                // дорисовывается в фоне и подменяет прежний, как только готов.
+                if (TryDrawStaleSnapshotAndRenderAsync(
+                        canvas, layouts, pages, canvasWidth,
+                        scale, scrollY, viewportPx, docHeightPx, pixelW))
+                {
+                    _caretOnlyRedraw = false;
+                    PerfTime("r.frame.async", perfFrameTs);
+                    FlipTraceFrame("stale-async", flipTraceTs);
+                    return;
+                }
+
+                PerfCount("r.why.cachemiss");
                 _caretOnlyRedraw = false;
             }
+
+            // Синхронный полный рендер: всякий снимок фоновой дорисовки, начатый раньше,
+            // устарел — поколение содержимого сдвигается, и его результат будет отброшен.
+            System.Threading.Interlocked.Increment(ref _contentGeneration);
+            _fullRenderRequested = false;
 
             _caretOnlyRedraw = false;
 
@@ -304,10 +361,34 @@ namespace Writersword.Modules.TextEditor.Document
                 offscreen.Translate(0f, -bitmapTopYInPts);
 
                 var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
+
+                // Текстовое выделение в снимок не попадает: его рисует DrawSelectionOverlay
+                // поверх снимка. Тогда смена выделения (протяжка мышью, Shift+стрелки)
+                // обходится блитом готового снимка и заливкой нескольких прямоугольников,
+                // а не полной перерисовкой всех видимых листов.
+                long perfContentTs = PerfNow();
+                _selectionAsOverlay = true;
+                try
+                {
+                    if (mode == EditorViewMode.Page || SpreadMode || ReadingRibbon)
+                        RenderPageMode(offscreen, layouts, pages, tables, images, canvasHeightPt, canvasWidth, false);
+                    else
+                        RenderFlowMode(offscreen, mode, layouts, tables, images, canvasHeightPt, canvasWidth, false);
+                }
+                finally
+                {
+                    _selectionAsOverlay = false;
+                }
+                PerfTime("r.full.content", perfContentTs);
+
                 if (mode == EditorViewMode.Page || SpreadMode || ReadingRibbon)
-                    RenderPageMode(offscreen, layouts, pages, tables, images, canvasHeightPt, canvasWidth, false);
-                else
-                    RenderFlowMode(offscreen, mode, layouts, tables, images, canvasHeightPt, canvasWidth, false);
+                {
+                    var (perfFirstPage, perfLastPage) = GetVisiblePageRange(pages);
+                    PerfInfo("pages", $"{perfFirstPage}..{perfLastPage}");
+                }
+                PerfInfo("bitmap", $"{pixelW}x{pixelH}");
+                PerfInfo("perRow", _pagesPerRow.ToString());
+                PerfInfo("zoom", Zoom.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
 
                 offscreen.Restore();
 
@@ -318,6 +399,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // Именно FromPixelCopy, а не FromBitmap: FromBitmap заворачивает ту же
                 // память без смены generation ID, и GPU-кэш продолжает отдавать старую
                 // текстуру — на экране остаётся прежний кадр, хотя битмап уже перерисован.
+                long perfCopyTs = PerfNow();
                 var newImage = SKImage.FromPixelCopy(
                     new SKImageInfo(renderTarget.Width, renderTarget.Height,
                         SKColorType.Bgra8888, SKAlphaType.Premul),
@@ -328,9 +410,11 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     oldImage = _displayImage;
                     _displayImage = newImage;
+                    _displayImageZoom = zoom;
                     // Сохраняем bitmapTopY — верхний край отрисованного снимка.
                     // Используется в cache check: scroll внутри [bitmapTopY, bitmapTopY+H]?
                     _lastFullRenderScrollY = bitmapTopY;
+                    _displayImageSpreadLeft = SpreadMode ? _spreadLeftPage : -1;
                 }
                 // Рендер выполняется только на render-треде, старый снимок в этом кадре
                 // уже никем не используется — освобождаем сразу.
@@ -338,9 +422,17 @@ namespace Writersword.Modules.TextEditor.Document
 
                 // Полный рендер выполнен — быстрые пути снова могут рисовать из кэша.
                 _contentDirty = false;
+                PerfTime("r.full.copy", perfCopyTs);
 
                 if (newImage is not null)
                     canvas.DrawImage(newImage, 0, bitmapTopY);
+
+                long perfOverlayTs = PerfNow();
+                canvas.Save();
+                canvas.Scale(scale, scale);
+                DrawSelectionOverlay(canvas, layouts, pages, canvasWidth);
+                canvas.Restore();
+                PerfTime("r.overlay", perfOverlayTs);
 
                 if (CaretDrawable)
                 {
@@ -357,6 +449,9 @@ namespace Writersword.Modules.TextEditor.Document
                     DrawSpreadCornerHint(canvas);
                     canvas.Restore();
                 }
+
+                PerfTime("r.frame.full", perfFrameTs);
+                FlipTraceFrame("full", flipTraceTs);
             }
             else
             {
@@ -371,6 +466,7 @@ namespace Writersword.Modules.TextEditor.Document
                 DrawSpreadCornerHint(canvas);
                 canvas.Restore();
                 _contentDirty = false;
+                FlipTraceFrame("fallback", flipTraceTs);
             }
         }
 
@@ -834,6 +930,26 @@ namespace Writersword.Modules.TextEditor.Document
             double canvasWidth,
             bool drawCaret)
         {
+            // Проход содержимого пользуется общим статическим состоянием рендера текста
+            // (подмены чтения, обработчик картинок в строке) и общими кистями. Раньше все
+            // проходы шли одним render-потоком; теперь снимок может рисовать и фоновый
+            // поток прокрутки, поэтому проходы сериализуются одним замком.
+            lock (ContentPassLock)
+            {
+                RenderPageModeCore(canvas, layouts, pages, tables, images, canvasHeightPt, canvasWidth, drawCaret);
+            }
+        }
+
+        private void RenderPageModeCore(
+            SKCanvas canvas,
+            List<ParaLayout> layouts,
+            List<PageRect> pages,
+            List<TableEntry> tables,
+            List<ImageEntry> images,
+            float canvasHeightPt,
+            double canvasWidth,
+            bool drawCaret)
+        {
             float canvasWPt = (float)(canvasWidth * PxToPt);
 
             // Фон заливаем не по canvasWPt (это viewportW/zoom), а по реальным границам канваса:
@@ -1055,6 +1171,24 @@ namespace Writersword.Modules.TextEditor.Document
         // картинки за текстом, рамки таблиц, параграфы, картинки поверх текста,
         // рамка выделенной картинки, табличные выделения и потоковые заливки ячеек.
         private void RenderPageContent(
+            SKCanvas canvas,
+            List<ParaLayout> layouts,
+            List<PageRect> pages,
+            List<TableEntry> tables,
+            List<ImageEntry> images,
+            int firstPage,
+            int lastPage,
+            bool drawCaret)
+        {
+            // Тот же замок, что у RenderPageMode (он реентерабелен): сюда заходят и
+            // напрямую — снимки страниц книги.
+            lock (ContentPassLock)
+            {
+                RenderPageContentCore(canvas, layouts, pages, tables, images, firstPage, lastPage, drawCaret);
+            }
+        }
+
+        private void RenderPageContentCore(
             SKCanvas canvas,
             List<ParaLayout> layouts,
             List<PageRect> pages,
@@ -1959,6 +2093,22 @@ namespace Writersword.Modules.TextEditor.Document
             double canvasWidth,
             bool drawCaret)
         {
+            lock (ContentPassLock)
+            {
+                RenderFlowModeCore(canvas, mode, layouts, tables, images, canvasHeightPt, canvasWidth, drawCaret);
+            }
+        }
+
+        private void RenderFlowModeCore(
+            SKCanvas canvas,
+            EditorViewMode mode,
+            List<ParaLayout> layouts,
+            List<TableEntry> tables,
+            List<ImageEntry> images,
+            float canvasHeightPt,
+            double canvasWidth,
+            bool drawCaret)
+        {
             // Отрисовка встроенных в строку картинок: обработчик статический и общий для
             // всех канвасов, поэтому ставится перед каждым проходом — он замкнут на
             // документ именно этого канваса.
@@ -2007,8 +2157,8 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             float zoom2 = (float)Zoom;
-            float viewTopPt = (float)(_scrollOffsetY / zoom2 * PxToPt) - FallbackLinePt * 5f;
-            float viewBotPt = (float)((_scrollOffsetY + Math.Max(_viewportHeight, 100))
+            float viewTopPt = (float)(ContentScrollTopPx / zoom2 * PxToPt) - FallbackLinePt * 5f;
+            float viewBotPt = (float)((ContentScrollTopPx + ContentViewportPx)
                 / zoom2 * PxToPt) + FallbackLinePt * 5f;
 
             foreach (var te in tables)
@@ -2297,7 +2447,12 @@ namespace Writersword.Modules.TextEditor.Document
             // Выделение рисуем ПОВЕРХ содержимого (после заливки текста и глифов), иначе
             // непрозрачная заливка HighlightColor перекрывает полупрозрачную подсветку
             // выделения и выделенный текст на залитом фоне становится не виден.
-            DrawSelectionForSlice(canvas, idx, pl, absX, absY, layouts, renderLayout);
+            //
+            // В снимок (рендер в overscan-битмап) выделение не запекается: там его рисует
+            // DrawSelectionOverlay поверх готового снимка. Иначе каждое движение мыши при
+            // выделении перерисовывало три вьюпорта текста заново.
+            if (!_selectionAsOverlay)
+                DrawSelectionForSlice(canvas, idx, pl, absX, absY, layouts, renderLayout);
 
             if (drawCaret && _caretPara == idx)
                 DrawCaret(canvas, pl, absX, absY, renderLayout);
@@ -2410,8 +2565,8 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             double zoom2 = Zoom;
-            float viewTopPt = (float)(_scrollOffsetY / zoom2 * PxToPt);
-            float viewBotPt = (float)((_scrollOffsetY + Math.Max(_viewportHeight, 100)) / zoom2 * PxToPt);
+            float viewTopPt = (float)(ContentScrollTopPx / zoom2 * PxToPt);
+            float viewBotPt = (float)((ContentScrollTopPx + ContentViewportPx) / zoom2 * PxToPt);
             float bufferPt = (pages.Count > 0 ? pages[0].HeightPt : 842f) + PageGapPt;
             viewTopPt -= bufferPt;
             viewBotPt += bufferPt;
@@ -2459,6 +2614,188 @@ namespace Writersword.Modules.TextEditor.Document
                 if (pages[i].Ypt > viewBotPt) break;
             }
             return (first, last);
+        }
+
+        /// <summary>
+        /// Поднят на время рендера в overscan-битмап (снимок). Пока он поднят,
+        /// RenderParaLayout не рисует текстовое выделение: его кладёт поверх снимка
+        /// DrawSelectionOverlay.
+        ///
+        /// Флаг потоковый: снимок рисует и render-поток, и фоновый поток дорисовки при
+        /// прокрутке (DocumentCanvas.ScrollSnapshot.cs). Общий флаг один поток мог бы
+        /// сбросить посреди прохода другого, и выделение запеклось бы в снимок.
+        /// </summary>
+        [ThreadStatic]
+        private static bool _selectionAsOverlay;
+
+        /// <summary>
+        /// Текстовое выделение поверх готового снимка. Координаты — документные пункты
+        /// (канвас уже отмасштабирован вызывающим), как у каретки.
+        ///
+        /// Повторяет ровно те переносы и клипы, что применяет к абзацу контентный проход:
+        /// сдвиг до-центрирования листа, визуальную позицию страницы (страницы рядом),
+        /// клип по листу, по текстовой зоне страницы и по ячейке таблицы, — чтобы
+        /// прямоугольники выделения ложились точно на буквы снимка.
+        ///
+        /// Обходятся только слайсы в диапазоне выделения и только на видимых листах:
+        /// раскладка невидимых абзацев здесь не строится.
+        /// </summary>
+        private void DrawSelectionOverlay(
+            SKCanvas canvas,
+            List<ParaLayout> layouts,
+            List<PageRect> pages,
+            double canvasWidth)
+        {
+            if (!SelectionDrawable) return;
+            if (layouts.Count == 0) return;
+
+            // Потоковое выделение ячеек может задеть абзацы вне [sp..ep] — тогда
+            // обходим все видимые слайсы; DrawSelectionForSlice сам отбросит лишние.
+            bool cellFlow = _cellFlowRanges.Count > 0 || _cellFlowFull.Count > 0;
+
+            int from = 0;
+            int to = layouts.Count - 1;
+            if (!cellFlow)
+            {
+                if (!HasSel()) return;
+                var (sp, _, ep, _) = NormalizeSelection();
+                from = Math.Max(sp, 0);
+                to = Math.Min(ep, layouts.Count - 1);
+                if (from > to) return;
+            }
+
+            var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
+
+            if (mode == EditorViewMode.Page || SpreadMode || ReadingRibbon)
+            {
+                var (firstPage, lastPage) = GetVisiblePageRange(pages);
+
+                // Тот же сдвиг до-центрирования, что и в RenderPageMode: во время
+                // зум-жеста лист держится по центру без пересборки раскладки.
+                float canvasWPt = (float)(canvasWidth * PxToPt);
+                float curPageXPt = Math.Max((canvasWPt - GetPageWidthPt()) / 2f, 0f);
+                float pageXShiftPt = curPageXPt - _layoutPageXPt;
+
+                canvas.Save();
+                if (_pagesPerRow <= 1 && !SpreadMode && MathF.Abs(pageXShiftPt) > 0.01f)
+                    canvas.Translate(pageXShiftPt, 0);
+
+                if (ReadingRibbon && pages.Count > 0)
+                {
+                    for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
+                    {
+                        var ribbonPage = pages[pi];
+                        var (ribbonDx, ribbonDy) = PageVisualDelta(pi, pages);
+                        var (bandTopPt, bandBotPt) = RibbonPageBand(pi, pages);
+
+                        canvas.Save();
+                        canvas.ClipRect(new SKRect(
+                            ribbonPage.PadLeftPt, bandTopPt,
+                            ribbonPage.PadLeftPt + ribbonPage.WidthPt, bandBotPt));
+                        canvas.Translate(ribbonDx, ribbonDy);
+                        DrawSelectionOverlayPages(canvas, layouts, pages, from, to, pi, pi);
+                        canvas.Restore();
+                    }
+                }
+                else if (_pagesPerRow <= 1 && !SpreadMode)
+                {
+                    DrawSelectionOverlayPages(canvas, layouts, pages, from, to, firstPage, lastPage);
+                }
+                else
+                {
+                    for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
+                    {
+                        var page = pages[pi];
+                        var (dxp, dyp) = PageVisualDelta(pi, pages);
+                        if (dyp >= SpreadHiddenOffsetPt * 0.5f) continue;
+
+                        float visX = page.PadLeftPt + dxp;
+                        float visY = page.Ypt + dyp;
+
+                        canvas.Save();
+                        canvas.ClipRect(new SKRect(
+                            visX - PageGapPt, visY - PageGapPt,
+                            visX + page.WidthPt + PageGapPt, visY + page.HeightPt + PageGapPt));
+                        canvas.Translate(dxp, dyp);
+                        DrawSelectionOverlayPages(canvas, layouts, pages, from, to, pi, pi);
+                        canvas.Restore();
+                    }
+                }
+
+                canvas.Restore();
+                return;
+            }
+
+            // Потоковые режимы: та же видимая полоса, что и в RenderFlowMode.
+            float zoom2 = (float)Zoom;
+            float viewTopPt = (float)(_scrollOffsetY / zoom2 * PxToPt) - FallbackLinePt * 5f;
+            float viewBotPt = (float)((_scrollOffsetY + Math.Max(_viewportHeight, 100))
+                / zoom2 * PxToPt) + FallbackLinePt * 5f;
+
+            for (int i = from; i <= to && i < layouts.Count; i++)
+            {
+                var pl = layouts[i];
+                if (pl.Ypt + pl.HeightPt < viewTopPt) continue;
+                if (pl.Ypt > viewBotPt) break;
+
+                DrawSelectionOverlaySlice(canvas, i, pl, layouts, pages, pageModeCellClip: false);
+            }
+        }
+
+        // Слайсы [from..to], лежащие на страницах [firstPage..lastPage], — в логических
+        // координатах, как их обходит RenderPageContent.
+        private void DrawSelectionOverlayPages(
+            SKCanvas canvas, List<ParaLayout> layouts, List<PageRect> pages,
+            int from, int to, int firstPage, int lastPage)
+        {
+            for (int i = from; i <= to && i < layouts.Count; i++)
+            {
+                var pl = layouts[i];
+                if (pl.PageIndex < firstPage || pl.PageIndex > lastPage) continue;
+
+                DrawSelectionOverlaySlice(canvas, i, pl, layouts, pages, pageModeCellClip: true);
+            }
+        }
+
+        // Один слайс: клипы в том же порядке, что у RenderPageContent + RenderParaLayout.
+        private void DrawSelectionOverlaySlice(
+            SKCanvas canvas, int idx, ParaLayout pl,
+            List<ParaLayout> layouts, List<PageRect> pages, bool pageModeCellClip)
+        {
+            int saveCount = canvas.Save();
+
+            // Ячейка в страничном проходе: клип по правому краю страницы и её текстовой зоне.
+            if (pageModeCellClip && pl.Cell != null && pl.PageIndex >= 0 && pl.PageIndex < pages.Count)
+            {
+                var pg = pages[pl.PageIndex];
+                float pageRight = pg.PadLeftPt + pg.WidthPt;
+                float textTop = pg.Ypt + pg.PadTopPt;
+                float textBottom = pg.Ypt + pg.HeightPt - pg.PadBottomPt;
+                canvas.ClipRect(new SKRect(0, textTop, pageRight, textBottom));
+            }
+
+            // Клип по своему листу — как в RenderParaLayout.
+            if (DocVm?.ViewMode == EditorViewMode.Page
+                && pl.PageIndex >= 0 && pl.PageIndex < pages.Count)
+            {
+                var pg = pages[pl.PageIndex];
+                canvas.ClipRect(new SKRect(
+                    pg.PadLeftPt, pg.Ypt,
+                    pg.PadLeftPt + pg.WidthPt, pg.Ypt + pg.HeightPt));
+            }
+
+            if (pl.Cell != null)
+            {
+                var clip = pl.Cell;
+                canvas.ClipRect(new SKRect(clip.ClipX, clip.ClipY,
+                    clip.ClipX + clip.ClipW, clip.ClipY + clip.ClipH));
+            }
+
+            var renderLayout = GetRenderLayout(pl, (float)(_canvasWidth * PxToPt));
+            DrawSelectionForSlice(canvas, idx, pl, pl.AbsXPt, pl.Ypt, layouts, renderLayout);
+            PerfCount("r.overlay.slices");
+
+            canvas.RestoreToCount(saveCount);
         }
 
         private void DrawSelectionForSlice(
@@ -2546,6 +2883,9 @@ namespace Writersword.Modules.TextEditor.Document
             // и выделение рядом с картинкой выглядит темнее остального.
             int drawnGroupLine = -1;
 
+            // Участки ранов с признаком голубой заливки — строятся при первой нужде.
+            List<BlueSpan>? blueSpans = null;
+
             foreach (var r in rects)
             {
                 if (r.LineIndex < pl.LineFrom || r.LineIndex >= pl.LineTo) continue;
@@ -2584,11 +2924,19 @@ namespace Writersword.Modules.TextEditor.Document
                 // весь фрагмент красился бы цветом первого символа — и белый участок выделялся
                 // бы янтарным вместо обычного голубого.
                 var para = pl.Vm?.Model as ParagraphBlock;
+
+                // «Голубизна» по участкам ранов считается один раз на абзац, а не заново
+                // для каждого символа: прежний IsBlueishAt на каждый символ проходил все
+                // раны абзаца с начала и разбирал строку цвета. На видимой площади в
+                // десятки страниц (несколько листов в ряд) это съедало кадр целиком.
+                blueSpans ??= BuildBlueSpans(para);
+                int spanCursor = 0;
+
                 int segStart = lineSelStart;
-                bool curBlue = IsBlueishAt(para, lineSelStart);
+                bool curBlue = BlueAt(blueSpans, lineSelStart, ref spanCursor);
                 for (int pos = lineSelStart + 1; pos < lineSelEnd; pos++)
                 {
-                    bool b = IsBlueishAt(para, pos);
+                    bool b = BlueAt(blueSpans, pos, ref spanCursor);
                     if (b == curBlue) continue;
                     DrawSelectionSubRange(canvas, sl, r.LineIndex, segStart, pos,
                         xPt, yPt, yBase, curBlue ? _paintSelectionAlt : _paintSelection);
@@ -2656,6 +3004,65 @@ namespace Writersword.Modules.TextEditor.Document
             width += SKTextRenderer.HighlightRightOverhangPt;
 
             canvas.DrawRect(left, yPt + (rectTop - yBase), width, rectHeight, paint);
+        }
+
+        /// <summary>
+        /// Участок абзаца [Start, End) с одной заливкой. End == int.MaxValue — участок
+        /// до конца абзаца (пустой ран: HighlightAt отдаёт его заливку всем смещениям
+        /// за ним, и здесь это сохранено).
+        /// </summary>
+        private readonly record struct BlueSpan(int Start, int End, bool Blue);
+
+        /// <summary>
+        /// Разбивка абзаца на участки ранов с признаком голубой заливки. Даёт ровно те же
+        /// ответы, что HighlightAt + IsBlueishHighlight для каждого смещения, но за один
+        /// проход по ранам и с одним разбором строки цвета на ран.
+        /// </summary>
+        private static List<BlueSpan> BuildBlueSpans(ParagraphBlock? para)
+        {
+            var spans = new List<BlueSpan>();
+            if (para is null) return spans;
+
+            int acc = 0;
+            foreach (var chunk in para.Chunks)
+            {
+                foreach (var run in chunk.Runs)
+                {
+                    int rl = run.Text?.Length ?? 0;
+                    bool blue = IsBlueishHighlight(run.Properties?.HighlightColor);
+
+                    if (rl == 0)
+                    {
+                        spans.Add(new BlueSpan(acc, int.MaxValue, blue));
+                        return spans;
+                    }
+
+                    spans.Add(new BlueSpan(acc, acc + rl, blue));
+                    acc += rl;
+                }
+            }
+
+            return spans;
+        }
+
+        /// <summary>
+        /// Голубая ли заливка в смещении offset. Смещения запрашиваются по возрастанию,
+        /// поэтому курсор по участкам только движется вперёд.
+        /// </summary>
+        private static bool BlueAt(List<BlueSpan> spans, int offset, ref int cursor)
+        {
+            if (cursor < 0 || cursor >= spans.Count || spans[cursor].Start > offset)
+                cursor = 0;
+
+            while (cursor < spans.Count)
+            {
+                var sp = spans[cursor];
+                if (offset < sp.End) return offset >= sp.Start && sp.Blue;
+                cursor++;
+            }
+
+            // За последним раном HighlightAt возвращает null — заливки нет.
+            return false;
         }
 
         // Голубая ли заливка в символе с локальным смещением offset.

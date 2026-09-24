@@ -173,6 +173,8 @@ namespace Writersword.Modules.TextEditor.Resources
         public static string Toc_Update_Tip => ResourceManager.GetString("Toc_Update_Tip", _culture)!;
         public static string Toc_UpdatePages => ResourceManager.GetString("Toc_UpdatePages", _culture)!;
         public static string Toc_UpdatePages_Tip => ResourceManager.GetString("Toc_UpdatePages_Tip", _culture)!;
+        public static string Toc_UpdateAsk_Title => ResourceManager.GetString("Toc_UpdateAsk_Title", _culture)!;
+        public static string Toc_UpdateAsk_Message => ResourceManager.GetString("Toc_UpdateAsk_Message", _culture)!;
         public static string Toc_GoTo => ResourceManager.GetString("Toc_GoTo", _culture)!;
         public static string Toc_GoTo_Tip => ResourceManager.GetString("Toc_GoTo_Tip", _culture)!;
         public static string Toc_Remove => ResourceManager.GetString("Toc_Remove", _culture)!;

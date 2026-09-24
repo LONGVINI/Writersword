@@ -24,6 +24,19 @@ namespace Writersword.Core.Services
         private readonly string _projectId;
 
         /// <summary>
+        /// Данные одного из модулей проекта изменились (IChangeTrackingModule.DataChanged).
+        /// Всегда на UI-потоке. Вкладка по нему пересчитывает признак несохранённых правок.
+        /// </summary>
+        public event Action<IModule>? ModuleDataChanged;
+
+        /// <summary>
+        /// Модуль сейчас будет удалён из контейнера (закрыт или убран сменой воркмода).
+        /// Поднимается до Dispose: вкладка успевает прочитать отметку его правок —
+        /// несохранённые правки удаляемого модуля не должны пропасть из виду.
+        /// </summary>
+        public event Action<IModule>? ModuleRemoving;
+
+        /// <summary>
         /// Конструктор контейнера модулей проекта
         /// </summary>
         /// <param name="projectId">ID проекта (GUID) — используется для верификации данных при загрузке</param>
@@ -64,6 +77,9 @@ namespace Writersword.Core.Services
                 module.RequestClose += OnModuleRequestClose;
                 module.RequestDetach += OnModuleRequestDetach;
 
+                if (module is IChangeTrackingModule tracking)
+                    tracking.DataChanged += OnModuleDataChanged;
+
                 _logger.LogDebug("Module created: {moduleType}", moduleType);
             }
             else
@@ -101,8 +117,13 @@ namespace Writersword.Core.Services
         {
             if (_modules.TryGetValue(moduleType, out var module))
             {
+                ModuleRemoving?.Invoke(module);
+
                 module.RequestClose -= OnModuleRequestClose;
                 module.RequestDetach -= OnModuleRequestDetach;
+
+                if (module is IChangeTrackingModule tracking)
+                    tracking.DataChanged -= OnModuleDataChanged;
 
                 module.Dispose();
 
@@ -163,6 +184,9 @@ namespace Writersword.Core.Services
                     module.RequestClose -= OnModuleRequestClose;
                     module.RequestDetach -= OnModuleRequestDetach;
 
+                    if (module is IChangeTrackingModule tracking)
+                        tracking.DataChanged -= OnModuleDataChanged;
+
                     module.Dispose();
 
                     _logger.LogDebug("Disposed module: {moduleType}", module.moduleType);
@@ -182,6 +206,8 @@ namespace Writersword.Core.Services
         /// Количество модулей в контейнере (для диагностики)
         /// </summary>
         public int Count => _modules.Count;
+
+        private void OnModuleDataChanged(IModule module) => ModuleDataChanged?.Invoke(module);
 
         /// <summary>
         /// Обработчик запроса на закрытие модуля

@@ -137,12 +137,22 @@ namespace Writersword.ViewModels.Components
 
             _logger.LogDebug("Switching WorkMode: {OldTitle} → {NewTitle}", ActiveWorkMode?.Title, newWorkMode.Title);
 
+            // ВРЕМЕННАЯ диагностика отклика.
+            Writersword.Infrastructure.Diagnostics.SwitchProfiler.Begin(
+                "переключение воркмода → " + newWorkMode.Title);
+
+            // Переключение идёт — всё отложенное тяжёлое сдвигается.
+            Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.NotifyActivity();
+
             ActiveWorkMode = newWorkMode;
 
             if (_onWorkModeSwitched != null)
             {
                 await _onWorkModeSwitched(newWorkMode);
             }
+
+            Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("обработчик воркмода отработал");
+            Writersword.Infrastructure.Diagnostics.SwitchProfiler.MarkWhenIdle("кадр после переключения воркмода");
 
             _logger.LogDebug("WorkMode switched to: {Title}", newWorkMode.Title);
         }

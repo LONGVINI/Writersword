@@ -20,10 +20,29 @@ namespace Writersword.Modules.Common
     /// Определения клавиш регистрируются отдельно при старте приложения
     /// через ModuleFactory и IHotKeyDescriptor в метаданных.
     /// </summary>
-    public abstract class BaseModule : IModule
+    public abstract class BaseModule : IModule, IChangeTrackingModule
     {
         private DocumentContext? _context;
         private Control? _cachedView;
+
+        // ── Отслеживание правок (IChangeTrackingModule) ───────────────────
+        //
+        // _historyState — номер состояния истории отмены (его сообщает сам модуль
+        // из своих стеков Undo/Redo), _extraChanges — правки мимо истории,
+        // _revision — любая правка вообще. Доступ из разных потоков: сбор данных
+        // для кеша читает отметки с фонового потока, поэтому только Interlocked.
+        private long _historyState;
+        private long _extraChanges;
+        private long _revision;
+
+        // Состояние истории на момент прошлой проверки правки «неизвестного рода»
+        // (см. NotifyContentChanged). Только UI-поток.
+        private long _historyAtLastContentCheck;
+        private bool _contentCheckPending;
+
+        // Поколение отложенных проверок: AcceptLoadedState его сдвигает, и проверки,
+        // поставленные до этого, ничего не учитывают. Только UI-поток.
+        private long _contentCheckEpoch;
 
         // Контекст логгера берётся от фактического типа наследника, поэтому в
         // журнале виден конкретный модуль, а не BaseModule. Тип фиксирован на
@@ -47,6 +66,125 @@ namespace Writersword.Modules.Common
 
         /// <summary>Метаданные модуля</summary>
         public abstract IModuleMetadata Metadata { get; }
+
+        /// <summary>
+        /// Модуль сообщает о своих правках. По умолчанию false: для такого модуля
+        /// вкладка работает прежним путём — полным сбором данных и сравнением с файлом.
+        /// Наследник, который вызывает NotifyHistoryChanged / NotifyDataChanged /
+        /// NotifyContentChanged при каждой правке своих данных, возвращает true.
+        /// Модуль без данных проекта тоже возвращает true: ему нечего менять.
+        /// </summary>
+        public virtual bool TracksChanges => false;
+
+        /// <inheritdoc/>
+        public ModuleChangeStamp ChangeStamp => new(
+            System.Threading.Interlocked.Read(ref _historyState),
+            System.Threading.Interlocked.Read(ref _extraChanges));
+
+        /// <inheritdoc/>
+        public long Revision => System.Threading.Interlocked.Read(ref _revision);
+
+        /// <inheritdoc/>
+        public event Action<IModule>? DataChanged;
+
+        /// <summary>
+        /// Начальное состояние истории — без события. Вызывается модулем один раз,
+        /// когда он подключается к своим стекам Undo/Redo: данные при этом не
+        /// менялись, и вкладка не должна считать модуль изменённым.
+        /// </summary>
+        protected void SetHistoryBaseline(long historyState)
+        {
+            System.Threading.Interlocked.Exchange(ref _historyState, historyState);
+            _historyAtLastContentCheck = historyState;
+        }
+
+        /// <summary>
+        /// История отмены сдвинулась: новая команда, Undo или Redo. historyState —
+        /// номер нового состояния истории. Возврат в прежнюю позицию истории
+        /// возвращает прежний номер, и правки считаются откаченными.
+        /// </summary>
+        protected void NotifyHistoryChanged(long historyState)
+        {
+            System.Threading.Interlocked.Exchange(ref _historyState, historyState);
+            System.Threading.Interlocked.Increment(ref _revision);
+            RaiseDataChanged();
+        }
+
+        /// <summary>
+        /// Правка, которую нельзя отменить (прошла мимо истории отмены). После неё
+        /// модуль остаётся изменённым до сохранения, даже если откатить всё остальное.
+        /// </summary>
+        protected void NotifyDataChanged()
+        {
+            System.Threading.Interlocked.Increment(ref _extraChanges);
+            System.Threading.Interlocked.Increment(ref _revision);
+            RaiseDataChanged();
+        }
+
+        /// <summary>
+        /// Правка неизвестного рода: модуль видит, что данные изменились, но не знает,
+        /// пришла ли правка через историю отмены. Проверка откладывается до конца
+        /// текущей операции: если за это время история сдвинулась — правка уже учтена
+        /// ею (команда кладётся в стек после применения), если нет — это правка мимо
+        /// истории, и она учитывается как неотменяемая. Несколько событий подряд
+        /// схлопываются в одну проверку.
+        /// </summary>
+        protected void NotifyContentChanged()
+        {
+            System.Threading.Interlocked.Increment(ref _revision);
+
+            if (!Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(ScheduleContentCheck);
+                return;
+            }
+
+            ScheduleContentCheck();
+        }
+
+        /// <inheritdoc/>
+        public void AcceptLoadedState()
+        {
+            _contentCheckEpoch++;
+            _contentCheckPending = false;
+            _historyAtLastContentCheck = System.Threading.Interlocked.Read(ref _historyState);
+        }
+
+        private void ScheduleContentCheck()
+        {
+            if (_contentCheckPending)
+                return;
+
+            _contentCheckPending = true;
+            long epoch = _contentCheckEpoch;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                // Проверка поставлена до того, как модуль принял загруженное состояние:
+                // событие пришло от самой загрузки, а не от правки.
+                if (epoch != _contentCheckEpoch)
+                    return;
+
+                _contentCheckPending = false;
+
+                long history = System.Threading.Interlocked.Read(ref _historyState);
+                if (history == _historyAtLastContentCheck)
+                    System.Threading.Interlocked.Increment(ref _extraChanges);
+
+                _historyAtLastContentCheck = history;
+                RaiseDataChanged();
+            }, Avalonia.Threading.DispatcherPriority.Background);
+        }
+
+        private void RaiseDataChanged()
+        {
+            if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+            {
+                DataChanged?.Invoke(this);
+                return;
+            }
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => DataChanged?.Invoke(this));
+        }
 
         /// <summary>
         /// Контекст документа.
@@ -179,6 +317,11 @@ namespace Writersword.Modules.Common
                 ?? AppContext.BaseDirectory;
         }
 
+
+        /// <summary>
+        /// Уже созданная View без побочных эффектов (см. IModule.CachedView).
+        /// </summary>
+        public Control? CachedView => _cachedView;
 
         /// <summary>
         /// Возвращает View модуля с кешированием.

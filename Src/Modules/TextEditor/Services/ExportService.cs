@@ -554,9 +554,11 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         /// <param name="props">Свойства рана или стиля. Null — элементов нет.</param>
         /// <param name="writeExplicitToggles">
-        /// Писать выключенные начертания явно (w:val="0"). Нужно для ранов: объект
-        /// свойств рана несёт полное состояние начертаний, и без явного выключения
-        /// не жирный текст внутри жирного стиля абзаца стал бы в Word жирным.
+        /// Писать выключенные начертания явно (w:val="0"). Нужно для ранов: без явного
+        /// выключения не жирный текст внутри жирного стиля абзаца стал бы в Word жирным.
+        /// Жирность и курсив пишутся выключенными, только когда их сняли руками
+        /// (false); не заданные (null) не пишутся вовсе — такой ран берёт их от стиля,
+        /// и слово в заголовке, которому поменяли один цвет, остаётся в Word жирным.
         /// Для стилей выключенные начертания не пишутся — иначе стиль перебивал бы
         /// то, что задано его базовым стилем.
         /// </param>
@@ -576,11 +578,11 @@ namespace Writersword.Modules.TextEditor.Services
                 });
             }
 
-            if (props.IsBold) elements.Add(new W.Bold());
-            else if (writeExplicitToggles) elements.Add(new W.Bold { Val = false });
+            if (props.IsBold == true) elements.Add(new W.Bold());
+            else if (props.IsBold == false && writeExplicitToggles) elements.Add(new W.Bold { Val = false });
 
-            if (props.IsItalic) elements.Add(new W.Italic());
-            else if (writeExplicitToggles) elements.Add(new W.Italic { Val = false });
+            if (props.IsItalic == true) elements.Add(new W.Italic());
+            else if (props.IsItalic == false && writeExplicitToggles) elements.Add(new W.Italic { Val = false });
 
             if (props.IsAllCaps) elements.Add(new W.Caps());
             else if (writeExplicitToggles) elements.Add(new W.Caps { Val = false });
@@ -1372,8 +1374,8 @@ namespace Writersword.Modules.TextEditor.Services
                     string text = run.Text;
                     if (run.Properties is null) { sb.Append(text); continue; }
 
-                    bool bold = run.Properties.IsBold;
-                    bool italic = run.Properties.IsItalic;
+                    bool bold = run.Properties.IsBold == true;
+                    bool italic = run.Properties.IsItalic == true;
                     bool code = run.Properties.FontFamily == "Consolas"
                         || run.Properties.FontFamily == "Courier New";
 
@@ -1597,11 +1599,16 @@ namespace Writersword.Modules.TextEditor.Services
         public ResolvedRunStyle Clone() => (ResolvedRunStyle)MemberwiseClone();
 
         /// <summary>
-        /// Свойства рана переопределяют значения стиля: незаданными остаются только
+        /// Свойства рана переопределяют значения стиля: незаданными остаются
         /// шрифт, размер и цвета (у них есть состояние «унаследовать»), а флаги
         /// начертания объект несёт целиком — как и указано в модели документа.
+        ///
+        /// Жирность и курсив трёхзначные. У стиля не заданное значение читается как
+        /// «выключено» — так же, как его читает StyleResolver.ResolveBold, иначе экспорт
+        /// разошёлся бы с тем, что на экране. У рана не заданное значение оставляет то,
+        /// что пришло от стиля (<paramref name="unsetInherits"/> = true).
         /// </summary>
-        public void Apply(Models.Inline.RunProperties? properties)
+        public void Apply(Models.Inline.RunProperties? properties, bool unsetInherits = false)
         {
             if (properties is null) return;
 
@@ -1610,8 +1617,8 @@ namespace Writersword.Modules.TextEditor.Services
             if (properties.TextColor is not null) TextColor = properties.TextColor;
             if (properties.HighlightColor is not null) HighlightColor = properties.HighlightColor;
 
-            Bold = properties.IsBold;
-            Italic = properties.IsItalic;
+            Bold = properties.IsBold ?? (unsetInherits && Bold);
+            Italic = properties.IsItalic ?? (unsetInherits && Italic);
             Underline = properties.IsUnderline;
             Strikethrough = properties.IsStrikethrough;
             Superscript = properties.IsSuperscript;
@@ -1693,7 +1700,7 @@ namespace Writersword.Modules.TextEditor.Services
         public ResolvedRunStyle ResolveRun(RunModel run, ResolvedParagraphStyle paragraphStyle)
         {
             var result = paragraphStyle.BaseRun.Clone();
-            result.Apply(run.Properties);
+            result.Apply(run.Properties, unsetInherits: true);
             return result;
         }
 

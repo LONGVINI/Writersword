@@ -32,6 +32,13 @@ namespace Writersword.Core.Interfaces.Workspace
         IRootDock GetCurrentLayout();
 
         /// <summary>
+        /// Все раскладки вкладки, которые ещё могут быть показаны: текущая и
+        /// припаркованные раскладки неактивных воркмодов. Сцена док-области
+        /// (DockStage) держит для них живые DockControl, остальные удаляет.
+        /// </summary>
+        IReadOnlyCollection<IRootDock> GetAliveLayouts();
+
+        /// <summary>
         /// Получить все доступные WorkModes проекта
         /// </summary>
         List<WorkMode> GetAvailableWorkModes();

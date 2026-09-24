@@ -142,10 +142,20 @@ namespace Writersword.Infrastructure.Services.Storage
                 return;
             }
 
+            // Пользователь прямо сейчас переключает вкладки или воркмоды. Сбор данных
+            // снимает снимок модели на UI-потоке и в этот момент встал бы в очередь
+            // к переключениям. Пропущенный тик догонит следующий.
+            if (Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.IsBusy)
+            {
+                _logger.LogDebug("Skipped: user is switching tabs or work modes");
+                return;
+            }
+
             try
             {
-                var activeModules = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                    getModulesCallback());
+                // Вкладка проекта ищется там же, на UI-потоке: коллекция вкладок живёт на нём.
+                var (activeModules, tab) = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    (getModulesCallback(), FindTab(projectPath)));
 
                 // DispatcherOperation не поддерживает ConfigureAwait напрямую (это не Task),
                 // а завершает его именно UI-поток — без явного ухода вся дальнейшая сборка
@@ -159,6 +169,85 @@ namespace Writersword.Infrastructure.Services.Storage
                     return;
                 }
 
+                // Быстрый путь: модули сами сообщают о правках. Вкладка без правок или с
+                // кешем, записанным после последней правки, не требует ничего — прежде
+                // каждый тик собирал все модули и читал файл проекта целиком ради
+                // сравнения, и память росла даже когда пользователь ничего не делал.
+                if (tab != null)
+                {
+                    var modulesList = activeModules.ToList();
+                    var decision = tab.DecideCacheWrite(modulesList, out var revisions);
+
+                    if (decision == Writersword.ViewModels.DocumentTabViewModel.CacheWriteDecision.SkipClean
+                        || decision == Writersword.ViewModels.DocumentTabViewModel.CacheWriteDecision.SkipUnchanged)
+                    {
+                        _logger.LogDebug("Cache tick skipped: {Decision}", decision);
+                        return;
+                    }
+
+                    if (decision == Writersword.ViewModels.DocumentTabViewModel.CacheWriteDecision.Write)
+                    {
+                        Writersword.Infrastructure.Diagnostics.SwitchProfiler.SetStage(
+                            "тик кеша: сбор данных (отслеживаемые) " + System.IO.Path.GetFileName(projectPath));
+                        var (trackedCustom, trackedSession) = _stateCollector.CollectAllData(modulesList);
+
+                        if (trackedCustom.Count == 0)
+                        {
+                            _logger.LogWarning(
+                                "Cache tick: modules returned no data ({Count} active) — nothing is protected",
+                                modulesList.Count);
+                            return;
+                        }
+
+                        await _cacheService.SaveCacheAsync(projectPath, tab.GetProject().Id, trackedCustom, trackedSession);
+                        tab.RememberCachedRevisions(revisions!);
+
+                        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            CacheSaved?.Invoke(this, EventArgs.Empty);
+                        });
+
+                        _logger.LogInformation("Cache updated (tracked changes): {Count} modules, {Path}",
+                            trackedCustom.Count, projectPath + ".wsasd");
+                        return;
+                    }
+                }
+
+                // Вкладка с модулями без отслеживания правок. Сначала сравниваются только
+                // их данные: если правок нет ни в них, ни по отметкам остальных модулей —
+                // тик завершается без полного сбора. Прежде каждый тик собирал все модули
+                // (со снимком всего документа на UI-потоке) и почти всегда писал кеш:
+                // набор модулей воркмода не совпадает с набором в файле, и общее сравнение
+                // видело «изменилось» без единой правки.
+                bool untrackedEvaluated = false;
+                if (tab != null)
+                {
+                    var modulesList = activeModules.ToList();
+                    var untrackedModules = modulesList
+                        .Where(m => m is not IChangeTrackingModule { TracksChanges: true })
+                        .ToList();
+
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.SetStage(
+                        "тик кеша: сбор данных (без отслеживания) " + System.IO.Path.GetFileName(projectPath));
+                    var (untrackedCustom, _) = _stateCollector.CollectAllData(untrackedModules);
+                    var savedForUntracked = _cacheService.ReadProjectDataWithoutLock(projectPath);
+
+                    if (savedForUntracked != null)
+                    {
+                        bool untrackedDirty = tab.EvaluateUntrackedDirty(untrackedModules, untrackedCustom, savedForUntracked);
+                        tab.SetUntrackedDirty(untrackedDirty);
+                        untrackedEvaluated = true;
+
+                        if (!untrackedDirty && !tab.HasTrackedChanges(modulesList))
+                        {
+                            _logger.LogDebug("Cache tick skipped: no changes in {Path}", projectPath);
+                            return;
+                        }
+                    }
+                }
+
+                Writersword.Infrastructure.Diagnostics.SwitchProfiler.SetStage(
+                    "тик кеша: сбор данных (полный путь) " + System.IO.Path.GetFileName(projectPath));
                 var (customData, sessionData) = _stateCollector.CollectAllData(activeModules);
 
                 if (customData.Count == 0)
@@ -248,6 +337,15 @@ namespace Writersword.Infrastructure.Services.Storage
                         }
                     }
 
+                    // Прежний путь заодно отвечает на вопрос о несохранённых правках
+                    // модулей, которые сами о них не сообщают. Общий итог dataChanged
+                    // для этого не годится: он истинен при любом несовпадении набора
+                    // модулей воркмода с файлом и при другой записи той же строки
+                    // документа — точка загоралась на вкладках без правок. Вкладка
+                    // сравнивает только модули без отслеживания правок.
+                    if (tab != null && !untrackedEvaluated)
+                        tab.SetUntrackedDirty(tab.EvaluateUntrackedDirty(activeModules, customData, savedProjectData));
+
                     if (!dataChanged)
                     {
                         _logger.LogDebug("No changes from project file, skipping");
@@ -295,6 +393,19 @@ namespace Writersword.Infrastructure.Services.Storage
             {
                 _logger.LogError(ex, "Cache update failed");
             }
+        }
+
+        /// <summary>
+        /// Вкладка открытого проекта по пути к файлу. Только UI-поток.
+        /// </summary>
+        private static Writersword.ViewModels.DocumentTabViewModel? FindTab(string projectPath)
+        {
+            var tabs = App.Services.GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>();
+            if (tabs == null) return null;
+
+            return tabs.Tabs
+                .OfType<Writersword.ViewModels.DocumentTabViewModel>()
+                .FirstOrDefault(t => string.Equals(t.FilePath, projectPath, StringComparison.OrdinalIgnoreCase));
         }
 
         public void Dispose()

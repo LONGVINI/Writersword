@@ -17,16 +17,13 @@ namespace Writersword.Modules.TextEditor.Document
     {
         // ── Состояние переворота ──────────────────────────────────────────
 
-        // Направление идущего переворота: 0 — покоя нет, +1 — вперёд, -1 — назад.
-        private int _spreadFlipDir;
-
-        // Угол листа в градусах: 0 — лежит на своей стороне, 180 — лёг на другую.
-        private float _spreadFlipAngle;
+        // Направление переворота (_spreadFlipDir) и угол листа (_spreadFlipAngle)
+        // объявлены в DocumentCanvas.SpreadFrame.cs: кадр читает их копию.
 
         // На какой разворот лист ложится. Обычно это соседний, но при переходе по
         // номеру страницы — любой: книга открывается одним движением, а не сотней
         // перевёрнутых листов подряд.
-        private int _spreadFlipTargetLeft = -1;
+        // Объявлено в DocumentCanvas.SpreadFrame.cs (_spreadFlipTargetLeft): кадр читает его копию.
 
         // Лист ведёт рука: анимация не идёт, угол берётся из положения указателя.
         private bool _spreadDragging;
@@ -92,8 +89,8 @@ namespace Writersword.Modules.TextEditor.Document
         private readonly HashSet<int> _spreadSnapshotFailed = new();
 
         // Страницы, которые обычный проход не рисует: они летят как отдельный лист.
-        private int _spreadFlyFront = -1;
-        private int _spreadFlyBack = -1;
+        // Объявлены в DocumentCanvas.SpreadFrame.cs (_spreadFlyFront, _spreadFlyBack):
+        // кадр читает их копию.
 
         // Открыть книгу на странице каретки — один раз при входе в режим.
         private bool _spreadNeedsCaretSync = true;
@@ -217,27 +214,30 @@ namespace Writersword.Modules.TextEditor.Document
 
             int dir = targetLeft > _spreadLeftPage ? 1 : -1;
 
-            _spreadFlipDir = dir;
-            _spreadFlipTargetLeft = targetLeft;
-            _spreadFlipAngle = 0f;
-
-            // Подсказка гасится не здесь, а когда лист действительно поднимется
-            // (см. UpdateSpreadCornerHint): взятый, но лежащий плашмя лист выглядит
-            // ровно так же, как до нажатия, и уголок — часть этой же картинки.
-
-            // Какие страницы уходят вместе с листом. Вперёд переворачивается правая
-            // страница разворота, и её изнанкой оказывается левая целевого; назад —
-            // зеркально. При переходе к соседнему развороту это те же страницы, что и
-            // раньше; при дальнем прыжке лист сразу несёт на изнанке нужную.
-            if (dir > 0)
+            lock (_spreadFrameLock)
             {
-                _spreadFlyFront = _spreadLeftPage + 1;
-                _spreadFlyBack = targetLeft;
-            }
-            else
-            {
-                _spreadFlyFront = _spreadLeftPage;
-                _spreadFlyBack = targetLeft + 1;
+                _spreadFlipDir = dir;
+                _spreadFlipTargetLeft = targetLeft;
+                _spreadFlipAngle = 0f;
+
+                // Подсказка гасится не здесь, а когда лист действительно поднимется
+                // (см. UpdateSpreadCornerHint): взятый, но лежащий плашмя лист выглядит
+                // ровно так же, как до нажатия, и уголок — часть этой же картинки.
+
+                // Какие страницы уходят вместе с листом. Вперёд переворачивается правая
+                // страница разворота, и её изнанкой оказывается левая целевого; назад —
+                // зеркально. При переходе к соседнему развороту это те же страницы, что и
+                // раньше; при дальнем прыжке лист сразу несёт на изнанке нужную.
+                if (dir > 0)
+                {
+                    _spreadFlyFront = _spreadLeftPage + 1;
+                    _spreadFlyBack = targetLeft;
+                }
+                else
+                {
+                    _spreadFlyFront = _spreadLeftPage;
+                    _spreadFlyBack = targetLeft + 1;
+                }
             }
 
             // Снимаются только стороны самого листа: он деформируется перспективой, и
@@ -247,6 +247,7 @@ namespace Writersword.Modules.TextEditor.Document
             // на глазах.
             CacheSpreadPage(_spreadFlyFront);
             CacheSpreadPage(_spreadFlyBack);
+            FlipTraceStart(FormattableString.Invariant($"begin target={targetLeft} dir={dir}"));
             return true;
         }
 
@@ -301,6 +302,7 @@ namespace Writersword.Modules.TextEditor.Document
             _spreadReleaseStartTicks = DateTime.UtcNow.Ticks;
 
             StartSpreadTimer();
+            FlipTraceStart(FormattableString.Invariant($"release-anim from={_spreadReleaseFrom:0.00} to={_spreadReleaseTo:0} ms={_spreadReleaseMs:0}"));
 
             // Лист пошёл до конца — место в книге уже определено, и объявить о нём
             // можно сейчас же. Подпись и бегунок идут вместе с бумагой.
@@ -311,22 +313,26 @@ namespace Writersword.Modules.TextEditor.Document
         /// <summary>Завершение переворота: разворот меняется, снимки освобождаются.</summary>
         private void FinishSpreadFlip(bool committed)
         {
-            if (committed && _spreadFlipTargetLeft >= 0)
+            FlipTraceStart(committed ? "finish commit (before)" : "finish back (before)");
+            lock (_spreadFrameLock)
             {
-                _spreadLeftPage = SpreadLeftOf(Math.Clamp(
-                    _spreadFlipTargetLeft, 0, Math.Max(0, _pages.Count - 1)));
-            }
+                if (committed && _spreadFlipTargetLeft >= 0)
+                {
+                    _spreadLeftPage = SpreadLeftOf(Math.Clamp(
+                        _spreadFlipTargetLeft, 0, Math.Max(0, _pages.Count - 1)));
+                }
 
-            _spreadFlipDir = 0;
-            _spreadFlipTargetLeft = -1;
-            _spreadFlipAngle = 0f;
-            _spreadDragging = false;
-            _spreadDragMoved = false;
-            _spreadDragStartTravel = 0f;
-            _spreadDragTargetAngle = 0f;
-            _spreadReleasing = false;
-            _spreadFlyFront = -1;
-            _spreadFlyBack = -1;
+                _spreadFlipDir = 0;
+                _spreadFlipTargetLeft = -1;
+                _spreadFlipAngle = 0f;
+                _spreadDragging = false;
+                _spreadDragMoved = false;
+                _spreadDragStartTravel = 0f;
+                _spreadDragTargetAngle = 0f;
+                _spreadReleasing = false;
+                _spreadFlyFront = -1;
+                _spreadFlyBack = -1;
+            }
 
             // Уголок мог остаться поднятым с момента захвата: пока лист лежал плашмя,
             // подсказка держалась. Лист улетел — держать её больше не за чем.
@@ -352,6 +358,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             InvalidateFull();
             SchedulePrefetchSpreadNeighbours();
+            FlipTraceStart("finish (after)");
         }
 
         /// <summary>
@@ -363,16 +370,19 @@ namespace Writersword.Modules.TextEditor.Document
         {
             _spreadAnnouncedLeft = -1;
             _spreadAnnouncedMs = 0.0;
-            _spreadFlipDir = 0;
-            _spreadFlipTargetLeft = -1;
-            _spreadFlipAngle = 0f;
-            _spreadDragging = false;
-            _spreadDragMoved = false;
-            _spreadDragStartTravel = 0f;
-            _spreadDragTargetAngle = 0f;
-            _spreadReleasing = false;
-            _spreadFlyFront = -1;
-            _spreadFlyBack = -1;
+            lock (_spreadFrameLock)
+            {
+                _spreadFlipDir = 0;
+                _spreadFlipTargetLeft = -1;
+                _spreadFlipAngle = 0f;
+                _spreadDragging = false;
+                _spreadDragMoved = false;
+                _spreadDragStartTravel = 0f;
+                _spreadDragTargetAngle = 0f;
+                _spreadReleasing = false;
+                _spreadFlyFront = -1;
+                _spreadFlyBack = -1;
+            }
             _spreadNeedsCaretSync = true;
             _singleSlideDir = 0;
             _singleSlideFrom = -1;
@@ -406,6 +416,7 @@ namespace Writersword.Modules.TextEditor.Document
         public void SpreadTurn(int dir)
         {
             if (!SpreadMode || dir == 0) return;
+            FlipTraceStart(FormattableString.Invariant($"turn dir={dir}"));
 
             if (SpreadSinglePage)
             {
@@ -902,6 +913,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (!_spreadSnapshotFailed.Add(pageIdx)) return;
 
             var page = _pages[pageIdx];
+            long flipSnapTs = FlipTraceNow();
 
             // Снимок берётся с запасом по разрешению: поднятый край листа идёт к
             // читателю и увеличивается, а снятая один в один страница на этом
@@ -973,10 +985,12 @@ namespace Writersword.Modules.TextEditor.Document
 
                 _spreadPageCache[pageIdx] = surface.Snapshot();
                 _spreadSnapshotFailed.Remove(pageIdx);
+                FlipTraceEvent(FormattableString.Invariant($"snapshot page={pageIdx} {FlipTraceMs(flipSnapTs, FlipTraceNow()):0.0}ms th={Environment.CurrentManagedThreadId}"));
             }
             catch (Exception ex)
             {
                 _logger.Warning(ex, "Failed to capture the spread page snapshot: page={Page}", pageIdx);
+                FlipTraceEvent(FormattableString.Invariant($"snapshot FAILED page={pageIdx}"));
             }
             finally
             {
@@ -1096,6 +1110,7 @@ namespace Writersword.Modules.TextEditor.Document
             Dispatcher.UIThread.Post(() =>
             {
                 _spreadPrefetchQueued = false;
+                FlipTraceEvent("prefetch");
                 if (!SpreadMode || _spreadFlipDir != 0 || _singleSlideDir != 0) return;
 
                 // Одиночной странице нужны соседи по обе стороны: скольжение берёт
@@ -1199,11 +1214,9 @@ namespace Writersword.Modules.TextEditor.Document
             n = Math.Min(n, LeafStripsMax);
             from = Math.Clamp(from, 0, n - 1);
 
-            using var path = new SKPath();
-            path.MoveTo(_leafTop[from]);
-            for (int i = from + 1; i <= n; i++) path.LineTo(_leafTop[i]);
-            for (int i = n; i >= from; i--) path.LineTo(_leafBottom[i]);
-            path.Close();
+            // Силуэт тот же, что у бумаги и клипа: при сложенном листе обход по
+            // кромкам давал дыру и в тени.
+            using var path = BuildLeafPath(from, n);
 
             byte alpha = (byte)Math.Clamp(lift * 70f, 0f, 70f);
             if (alpha < 2) return;
@@ -1255,21 +1268,54 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         /// <summary>
-        /// Силуэт летящего листа: замкнутый путь по его верхней и нижней кромкам.
-        /// Один и тот же путь заливается бумагой и служит границей, за которую полосы
-        /// снимка не выходят.
+        /// Силуэт летящего листа. Один и тот же путь заливается бумагой, служит
+        /// границей, за которую полосы снимка не выходят, и даёт форму тени.
+        ///
+        /// Силуэт собирается из полос, а не одним обходом по верхней и нижней кромкам.
+        /// Около вертикали лист на экране складывается: часть у корешка ещё смотрит
+        /// лицом, дальняя уже изнанкой и ложится поверх неё. Обход по кромкам проходил
+        /// сложенный участок дважды в разные стороны, витки гасили друг друга, и путь
+        /// там оказывался пустым — клип срезал бумагу вместе со снимком, и лист на
+        /// середине переворота пропадал кусками.
+        ///
+        /// Каждая полоса добавляется одним и тем же обходом — по часовой стрелке на
+        /// экране, как бы она ни легла, — поэтому перекрытия складываются, а не
+        /// вычитаются, и путь покрывает ровно то, что покрывают полосы.
         /// </summary>
-        private SKPath BuildLeafPath(int n)
+        private SKPath BuildLeafPath(int n) => BuildLeafPath(0, n);
+
+        private SKPath BuildLeafPath(int from, int n)
         {
-            var path = new SKPath();
+            var path = new SKPath { FillType = SKPathFillType.Winding };
 
             n = Math.Min(n, LeafStripsMax);
             if (n < 1) return path;
+            from = Math.Clamp(from, 0, n - 1);
 
-            path.MoveTo(_leafTop[0]);
-            for (int i = 1; i <= n; i++) path.LineTo(_leafTop[i]);
-            for (int i = n; i >= 0; i--) path.LineTo(_leafBottom[i]);
-            path.Close();
+            for (int i = from; i < n; i++)
+            {
+                var t0 = _leafTop[i];
+                var t1 = _leafTop[i + 1];
+                var b0 = _leafBottom[i];
+                var b1 = _leafBottom[i + 1];
+
+                if (t1.X >= t0.X)
+                {
+                    path.MoveTo(t0);
+                    path.LineTo(t1);
+                    path.LineTo(b1);
+                    path.LineTo(b0);
+                }
+                else
+                {
+                    path.MoveTo(t1);
+                    path.LineTo(t0);
+                    path.LineTo(b0);
+                    path.LineTo(b1);
+                }
+
+                path.Close();
+            }
 
             return path;
         }
@@ -1443,7 +1489,16 @@ namespace Writersword.Modules.TextEditor.Document
                 // сходятся на той полосе, что встала ровно ребром.
                 float ang = (_leafAngle[i] + _leafAngle[j]) * 0.5f;
                 float facing = MathF.Cos(ang);
-                bool showsBack = facing < 0f;
+
+                // Сторону решает то, как полоса легла на экран, а не её наклон.
+                // Камера висит над корешком, и полоса, чуть перевалившая за вертикаль,
+                // но ещё стоящая по свою сторону корешка, видна глазу лицом. По наклону
+                // она считалась изнанкой: на неё клался чужой снимок, а углы
+                // четырёхугольника шли в обратном порядке — посреди листа появлялись
+                // отзеркаленные полосы, и бумага будто закручивалась. На экране лицевая
+                // полоса идёт от корешка наружу, изнаночная — обратно к нему.
+                float spineSide = frontSpineLeft ? 1f : -1f;
+                bool showsBack = (_leafTop[j].X - _leafTop[i].X) * spineSide < 0f;
 
                 // Снимка изнанки может и не быть — так у одиночного листа, который
                 // сворачивается сам в себя. Тогда полосу закрывает бумага.
@@ -1827,6 +1882,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private bool SpreadPointerPressed(float xPt, float yPt)
         {
+            FlipTraceStart(FormattableString.Invariant($"press x={xPt:0.0} y={yPt:0.0}"));
             if (!SpreadMode || _spreadFlipDir != 0) return false;
             if (_pages.Count == 0) return false;
 
@@ -1868,6 +1924,7 @@ namespace Writersword.Modules.TextEditor.Document
             _spreadFlipAngle = 0f;
             _spreadDragTargetAngle = 0f;
 
+            FlipTraceEvent("grab");
             InvalidateVisual();
             return true;
         }
@@ -1883,6 +1940,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Рука задаёт только цель. Сам лист подтягивается к ней в такте таймера,
             // ровными шагами — иначе каждый скачок указателя виден как рывок бумаги.
             _spreadDragTargetAngle = angle;
+            FlipTraceEvent(FormattableString.Invariant($"move x={xPt:0.0} aim={angle:0.00}"));
             StartSpreadTimer();
             return true;
         }
@@ -1896,6 +1954,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (!_spreadDragging || _spreadFlipDir == 0) return false;
 
             bool commit = !_spreadDragMoved || _spreadFlipAngle >= SpreadCommitAngle;
+            FlipTraceEvent(commit ? "release commit" : "release back");
             ReleaseSpreadFlip(commit);
             return true;
         }

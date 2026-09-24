@@ -1470,10 +1470,32 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                     var p = run.Properties;
 
+                    // Символьный стиль — слой между стилем абзаца и собственным
+                    // форматированием фрагмента. Порядок силы такой: абзац даёт основу,
+                    // символьный стиль её переопределяет, прямое форматирование сильнее
+                    // обоих — его ставят руками, и по нему человек и ждёт результата.
+                    //
+                    // Стиль задаёт только то, что в нём написано: если гарнитуры в его
+                    // цепочке нет, остаётся гарнитура абзаца.
+                    string baseFamily = styleFontFamily;
+                    float baseSize = styleFontSize;
+                    bool styleAddsBold = false;
+                    bool styleAddsItalic = false;
+                    string? baseColor = null;
+
+                    if (!string.IsNullOrEmpty(p?.StyleName))
+                    {
+                        baseFamily = styles.FindFontFamily(p!.StyleName) ?? baseFamily;
+                        baseSize = styles.FindFontSize(p.StyleName) ?? baseSize;
+                        styleAddsBold = styles.AnyBold(p.StyleName);
+                        styleAddsItalic = styles.AnyItalic(p.StyleName);
+                        baseColor = styles.FindTextColor(p.StyleName);
+                    }
+
                     string resolvedFamily = !string.IsNullOrEmpty(p?.FontFamily)
-                        ? p!.FontFamily : styleFontFamily;
+                        ? p!.FontFamily : baseFamily;
                     float resolvedSize = p?.FontSize.HasValue == true
-                        ? (float)p.FontSize.Value : styleFontSize;
+                        ? (float)p.FontSize.Value : baseSize;
 
                     // Подмена чтения. Стоит именно здесь, после разбора собственных
                     // свойств run-а: читатель просит показать ему всю книгу одним
@@ -1481,8 +1503,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // при этом не меняется ничего.
                     resolvedFamily = ResolveReadingFamily(resolvedFamily);
                     resolvedSize = ScaleReadingFont(resolvedSize);
-                    bool resolvedBold = p?.IsBold ?? styleBold;
-                    bool resolvedItalic = p?.IsItalic ?? styleItalic;
+                    // Жирность и курсив: задано у фрагмента — решает фрагмент, в том числе
+                    // когда жирность снята руками. Не задано — символьный стиль добавляет
+                    // выделение поверх стиля абзаца (снять его стиль не может, см.
+                    // StyleResolver.AnyBold). Раньше решал уже сам факт свойств у фрагмента:
+                    // покрашенное слово в заголовке получало «не жирный» и теряло жирность.
+                    bool resolvedBold = p?.IsBold ?? (styleAddsBold || styleBold);
+                    bool resolvedItalic = p?.IsItalic ?? (styleAddsItalic || styleItalic);
 
                     // Над/подстрочный: уменьшаем кегль и смещаем базовую линию. Сдвиг считаем от
                     // исходного размера, чтобы надстрочный поднимался к верху обычного текста,
@@ -1509,9 +1536,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                         IsItalic = resolvedItalic,
                         IsUnderline = p?.IsUnderline ?? false,
                         IsStrikethrough = p?.IsStrikethrough ?? false,
-                        Color = ParseColor(p?.TextColor),
+                        Color = ParseColor(p?.TextColor ?? baseColor),
                         HighlightColor = ParseHighlight(p?.HighlightColor),
-                        ColorCode = p?.TextColor,
+                        ColorCode = p?.TextColor ?? baseColor,
                         HighlightCode = p?.HighlightColor,
                         GlobalCharOffset = globalIndex
                     };
@@ -1557,9 +1584,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                                         IsItalic = resolvedItalic,
                                         IsUnderline = p?.IsUnderline ?? false,
                                         IsStrikethrough = p?.IsStrikethrough ?? false,
-                                        Color = ParseColor(p?.TextColor),
+                                        Color = ParseColor(p?.TextColor ?? baseColor),
                                         HighlightColor = ParseHighlight(p?.HighlightColor),
-                                        ColorCode = p?.TextColor,
+                                        ColorCode = p?.TextColor ?? baseColor,
                                         HighlightCode = p?.HighlightColor,
                                         GlobalCharOffset = globalIndex
                                     };
