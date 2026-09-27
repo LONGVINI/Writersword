@@ -4,48 +4,57 @@
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:controls="using:Writersword.Styles.UserControls"
+             xmlns:shared="using:Writersword.Modules.TextEditor.Views.Shared"
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonAppearanceTab"
              x:DataType="vm:RibbonAppearanceTabViewModel">
 
 	<!--
-	    Вкладка «Вид»: чем залит лист при правке, что лежит позади страниц, каким
+	    Вкладка «Вид»: чем залит лист при правке, что лежит вокруг страниц, каким
 	    светом и что остаётся на экране в фокусе.
 
-	    Своих стилей здесь нет: кнопки, группы, ползунки и списки ленты живут в
-	    Styles/Controls/Ribbon.axaml — одни на все вкладки.
+	    Вид листа и фон устроены так же, как группа «Вид чтения» в ленте чтения:
+	    одна группа, две строки одной сеткой — значок, подпись, значение. Вид и
+	    фон — одно и то же дело: как выглядит лист, — и держать их в двух группах
+	    значило делать вид, будто фон живёт отдельно от вида. Свет — тем же
+	    столбиком ползунков, что и в чтении.
 
-	    Флажков на вкладке тоже нет. Всё, что включается и выключается, — тумблеры
-	    со значком: в полосе высотой в шестьдесят точек флажок с подписью занимает
+	    Кнопки, группы, ползунки и списки ленты живут в Styles/Controls/Ribbon.axaml —
+	    одни на все вкладки. Список видов плитками — общий с лентой чтения
+	    (Views/Shared/ThemeTilePicker): пункты у них одни и те же, и плитка обязана
+	    выглядеть одинаково. Здесь только подпись и значок строки.
+
+	    Флажков на вкладке нет. Всё, что включается и выключается, — тумблеры со
+	    значком: в полосе высотой в шестьдесят точек флажок с подписью занимает
 	    строку целиком, а значок помещается рядом с кнопкой и читается быстрее.
 	-->
 
 	<UserControl.Styles>
-		<!-- Плитка вида: небольшой прямоугольник, по две в ряд. Та же, что и в ленте
-		     чтения: список видов один, и выбирать его одинаково. -->
-		<Style Selector="Button.ThemeTile">
-			<Setter Property="Width"           Value="104"/>
-			<Setter Property="Height"          Value="72"/>
-			<Setter Property="Margin"          Value="3"/>
-			<Setter Property="Padding"         Value="0"/>
-			<Setter Property="CornerRadius"    Value="5"/>
-			<Setter Property="BorderThickness" Value="2"/>
-			<Setter Property="BorderBrush"     Value="Transparent"/>
-			<Setter Property="Background"      Value="Transparent"/>
-			<Setter Property="Cursor"          Value="Hand"/>
-			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-			<Setter Property="VerticalContentAlignment"   Value="Stretch"/>
+		<!-- Подпись поля: короткое слово слева от значения. Без неё видно только
+		     значение — «Белая», «Кастомное», — и что именно этим задаётся,
+		     приходится узнавать наведением. Та же, что и в ленте чтения. -->
+		<Style Selector="TextBlock.FieldCaption">
+			<Setter Property="FontSize"          Value="10"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Width"             Value="34"/>
 		</Style>
-		<Style Selector="Button.ThemeTile /template/ ContentPresenter">
-			<Setter Property="CornerRadius"    Value="5"/>
-			<Setter Property="BorderThickness" Value="2"/>
-			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
-			<Setter Property="Padding"         Value="0"/>
+
+		<!-- Значок поля: тем же тоном, что и подпись, чтобы не спорить со
+		     значением рядом. -->
+		<Style Selector="PathIcon.FieldGlyph">
+			<Setter Property="Width"             Value="13"/>
+			<Setter Property="Height"            Value="13"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextMutedBrush}"/>
 		</Style>
-		<Style Selector="Button.ThemeTile:pointerover /template/ ContentPresenter">
-			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
-		</Style>
-		<Style Selector="Button.ThemeTile.active /template/ ContentPresenter">
-			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+
+		<!-- Подпись ползунка света: той же ширины, что и в ленте чтения, чтобы
+		     ползунки обеих лент начинались на одной отметке. -->
+		<Style Selector="TextBlock.LightLabel">
+			<Setter Property="FontSize"          Value="10"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Width"             Value="58"/>
 		</Style>
 	</UserControl.Styles>
 
@@ -53,21 +62,38 @@
 		<controls:RibbonScrollContainer.RibbonContent>
 			<StackPanel Orientation="Horizontal">
 
-				<!-- ═══ ВИД ЛИСТА ═══════════════════════════════════════════ -->
+				<!-- ═══ ВИД ЛИСТА ═══════════════════════════════════════════
+				     Вид, заливка поля и картинка — это всё одно и то же: как
+				     выглядит лист. Две строки одной сеткой: значки, подписи и
+				     значения встают в столбцы. Обе строки высотой 24 с зазором 4,
+				     как в группе «Вид чтения». -->
 				<Border Classes="RibbonGroup" IsVisible="{Binding IsThemeGroupExpanded}">
 					<DockPanel>
 						<TextBlock DockPanel.Dock="Bottom"
 						           Classes="RibbonGroupLabel"
 						           Text="Вид листа"/>
-						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-							<!-- Ширина задана и не растёт под имя вида: длинное имя раздвигало
-							     ленту и уводило соседние группы за край. -->
-							<Button Classes="RibbonBtn"
-							        MinHeight="26" Width="130"
+						<Grid ColumnDefinitions="Auto Auto 120"
+						      RowDefinitions="Auto Auto"
+						      ColumnSpacing="5" RowSpacing="4"
+						      VerticalAlignment="Center">
+
+							<!-- Виды. Плитки с видами открываются из списка, окно видов —
+							     кнопкой внизу этого списка. -->
+							<PathIcon Grid.Row="0" Grid.Column="0" Classes="FieldGlyph"
+							          Data="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+							<TextBlock Grid.Row="0" Grid.Column="1" Classes="FieldCaption" Text="Вид"/>
+
+							<!-- Ширина кнопки задана и не зависит от имени вида: имя человек
+							     придумывает сам, и длинное растягивало кнопку, сдвигая всё,
+							     что стоит в ленте правее. Не поместилось — обрежется
+							     многоточием, полное имя есть в списке. -->
+							<Button Grid.Row="0" Grid.Column="2"
+							        Classes="RibbonBtn"
+							        MinHeight="24" Height="24" Width="120"
 							        Padding="8 0"
 							        HorizontalContentAlignment="Stretch"
 							        behaviours:TooltipBehavior.Tip="Вид листа"
-							        behaviours:TooltipBehavior.Description="Чем залит лист при правке. «Без вида» — белая бумага и серое поле, как было до вкладки">
+							        behaviours:TooltipBehavior.Description="Чем залит лист при правке: цвет бумаги, цвет букв, поле вокруг и свет. «Без вида» — белая бумага и серое поле. Правка ползунками или фоном на ходу превращает вид в «Кастомное» — сохранить её под именем можно в окне видов">
 								<Grid ColumnDefinitions="* Auto">
 									<TextBlock Grid.Column="0"
 									           Text="{Binding SelectedThemeItem.Label}"
@@ -82,74 +108,62 @@
 								<Button.Flyout>
 									<Flyout Placement="Bottom">
 										<Border Padding="8">
-											<Grid RowDefinitions="* Auto" Width="228">
-											<ScrollViewer Grid.Row="0"
-											              MaxHeight="330"
-											              AllowAutoHide="False"
-											              HorizontalScrollBarVisibility="Disabled"
-											              VerticalScrollBarVisibility="Auto">
-											<ItemsControl ItemsSource="{Binding ThemeItems}">
-												<ItemsControl.ItemsPanel>
-													<ItemsPanelTemplate>
-														<WrapPanel Orientation="Horizontal"/>
-													</ItemsPanelTemplate>
-												</ItemsControl.ItemsPanel>
-												<ItemsControl.ItemTemplate>
-													<DataTemplate>
-														<Button Classes="ThemeTile"
-														        Classes.active="{Binding IsSelected}"
-														        Command="{Binding $parent[ItemsControl].DataContext.SelectThemeCommand}"
-														        CommandParameter="{Binding}">
-															<Border CornerRadius="3"
-															        Background="{Binding FieldColor, Converter={x:Static converters:HexColorConverter.Instance}}">
-																<Border Margin="6"
-																        CornerRadius="2"
-																        Background="{Binding SheetColor, Converter={x:Static converters:HexColorConverter.Instance}}">
-																	<StackPanel Margin="7 6" Spacing="3" VerticalAlignment="Center">
-																		<Rectangle Height="2" Width="52" HorizontalAlignment="Left"
-																		           Fill="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																		<Rectangle Height="2" Width="52" HorizontalAlignment="Left"
-																		           Fill="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																		<Rectangle Height="2" Width="34" HorizontalAlignment="Left"
-																		           Fill="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																		<TextBlock Text="{Binding Label}"
-																		           FontSize="10"
-																		           Margin="0 3 0 0"
-																		           TextTrimming="CharacterEllipsis"
-																		           Foreground="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																	</StackPanel>
-																</Border>
-															</Border>
-														</Button>
-													</DataTemplate>
-												</ItemsControl.ItemTemplate>
-											</ItemsControl>
-											</ScrollViewer>
-
-											<!-- Настройка видов — закреплённой кнопкой внизу списка, как
-											     у палитр цвета. Она не уезжает вместе с плитками: до неё
-											     должно быть можно дотянуться, сколько бы видов человек ни
-											     завёл. Там же виды и заводятся — отдельной кнопки для
-											     этого больше нет. -->
-											<Button Grid.Row="1" Margin="0 8 0 0"
-											        Content="Настроить виды"
-											        HorizontalAlignment="Stretch"
-											        HorizontalContentAlignment="Center"
-											        FontSize="11" Padding="8 6" CornerRadius="6"
-											        Background="{DynamicResource AccentDefaultBrush}"
-											        Foreground="White"
-											        Click="OnConfigureThemesClick"
-											        Command="{Binding OpenThemeEditorCommand}"/>
-											</Grid>
+											<!-- Плитки видов — общий список с лентой чтения: вид один, и
+											     выбирать его нужно одинаково, где бы список ни открыли. -->
+											<shared:ThemeTilePicker Items="{Binding ThemeItems}"
+											                        SelectCommand="{Binding SelectThemeCommand}"
+											                        ConfigureCommand="{Binding OpenThemeEditorCommand}"/>
 										</Border>
 									</Flyout>
 								</Button.Flyout>
 							</Button>
-						</StackPanel>
+
+							<!-- Фон вокруг листа. Цвет — тем же кружком, что и любой цвет в
+							     программе; рядом загрузка картинки и сброс. Картинка, как и
+							     цвет, правит вид на ходу: он становится «Кастомным»,
+							     сохранить можно в окне видов. Без вида фону не на чем
+							     лежать — строка тогда недоступна. -->
+							<PathIcon Grid.Row="1" Grid.Column="0" Classes="FieldGlyph"
+							          Data="M12 22C6.49 22 2 17.51 2 12S6.49 2 12 2s10 4.04 10 9c0 3.31-2.69 6-6 6h-1.77c-.28 0-.5.22-.5.5 0 .12.05.23.13.33.41.47.64 1.06.64 1.67 0 1.38-1.12 2.5-2.5 2.5zm0-18c-4.41 0-8 3.59-8 8s3.59 8 8 8c.28 0 .5-.22.5-.5 0-.16-.08-.28-.14-.35-.41-.46-.63-1.05-.63-1.65 0-1.38 1.12-2.5 2.5-2.5H16c2.21 0 4-1.79 4-4 0-3.86-3.59-7-8-7z"/>
+							<TextBlock Grid.Row="1" Grid.Column="1" Classes="FieldCaption" Text="Фон"/>
+
+							<StackPanel Grid.Row="1" Grid.Column="2"
+							            Orientation="Horizontal" Spacing="4"
+							            VerticalAlignment="Center"
+							            IsEnabled="{Binding IsThemeApplied}">
+								<controls:ColorPickerButton Width="20" Height="20"
+								                            Margin="2 0"
+								                            VerticalAlignment="Center"
+								                            ToolTip.Tip="{x:Null}"
+								                            HexColor="{Binding BackdropColorHex, Mode=TwoWay}"
+								                            behaviours:TooltipBehavior.Tip="Цвет фона вокруг листа"
+								                            behaviours:TooltipBehavior.Description="Цвет или градиент — тот же выбор, что и у любого другого цвета в программе. Пока своего нет, фон выводится из бумаги: под светлым листом темнее, под тёмным чуть светлее"/>
+								<Button Classes="RibbonBtn"
+								        Width="24" Height="24" MinWidth="24" MinHeight="24"
+								        Padding="0"
+								        Click="OnLoadBackdropImageClick"
+								        behaviours:TooltipBehavior.Tip="Загрузить картинку фона"
+								        behaviours:TooltipBehavior.Description="Картинка с диска ляжет вокруг листа вместо цвета. Как она ложится и насколько плотная, настраивается в окне видов. Вид при этом становится «Кастомным» — сохранить его под именем можно там же">
+									<PathIcon Width="12" Height="12"
+									          Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+								</Button>
+								<Button Classes="RibbonBtn"
+								        Width="24" Height="24" MinWidth="24" MinHeight="24"
+								        Padding="0"
+								        Command="{Binding ResetBackdropCommand}"
+								        behaviours:TooltipBehavior.Tip="Вернуть фон к бумаге"
+								        behaviours:TooltipBehavior.Description="Убирает свой цвет и картинку: фон снова выводится из цвета бумаги">
+									<PathIcon Width="12" Height="12"
+									          Data="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z"/>
+								</Button>
+							</StackPanel>
+						</Grid>
 					</DockPanel>
 				</Border>
 
-				<!-- ВИД ЛИСТА — свёрнутая -->
+				<!-- ВИД ЛИСТА — свёрнутая. Во флайауте то же, что и в развёрнутой
+				     группе: плитки видов, «Настроить виды» и строка фона. Узкое окно
+				     меняет место кнопки, а не то, как выбирают вид. -->
 				<Border Classes="RibbonGroupCollapsed" IsVisible="{Binding !IsThemeGroupExpanded}">
 					<DockPanel>
 						<TextBlock DockPanel.Dock="Bottom"
@@ -159,67 +173,50 @@
 						        behaviours:TooltipBehavior.Tip="Вид листа">
 							<Button.Flyout>
 								<Flyout Placement="Bottom">
-									<Grid RowDefinitions="* Auto" Margin="10" Width="236">
-										<!-- Та же сетка плиток, что и в развёрнутой ленте: узкое окно
-										     меняет место кнопки, а не то, как выбирают вид. -->
-										<ScrollViewer Grid.Row="0"
-										              MaxHeight="330"
-										              AllowAutoHide="False"
-										              HorizontalScrollBarVisibility="Disabled"
-										              VerticalScrollBarVisibility="Auto">
-										<ItemsControl ItemsSource="{Binding ThemeItems}">
-											<ItemsControl.ItemsPanel>
-												<ItemsPanelTemplate>
-													<WrapPanel Orientation="Horizontal"/>
-												</ItemsPanelTemplate>
-											</ItemsControl.ItemsPanel>
-											<ItemsControl.ItemTemplate>
-												<DataTemplate>
-													<Button Classes="ThemeTile"
-													        Classes.active="{Binding IsSelected}"
-													        Command="{Binding $parent[ItemsControl].DataContext.SelectThemeCommand}"
-													        CommandParameter="{Binding}">
-														<Border CornerRadius="3"
-														        Background="{Binding FieldColor, Converter={x:Static converters:HexColorConverter.Instance}}">
-															<Border Margin="6"
-															        CornerRadius="2"
-															        Background="{Binding SheetColor, Converter={x:Static converters:HexColorConverter.Instance}}">
-																<StackPanel Margin="7 6" Spacing="3" VerticalAlignment="Center">
-																	<Rectangle Height="2" Width="52" HorizontalAlignment="Left"
-																	           Fill="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																	<Rectangle Height="2" Width="52" HorizontalAlignment="Left"
-																	           Fill="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																	<Rectangle Height="2" Width="34" HorizontalAlignment="Left"
-																	           Fill="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																	<TextBlock Text="{Binding Label}"
-																	           FontSize="10"
-																	           Margin="0 3 0 0"
-																	           TextTrimming="CharacterEllipsis"
-																	           Foreground="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																</StackPanel>
-															</Border>
-														</Border>
-													</Button>
-												</DataTemplate>
-											</ItemsControl.ItemTemplate>
-										</ItemsControl>
-										</ScrollViewer>
+									<Border Padding="8">
+										<Grid RowDefinitions="Auto Auto" Width="228">
+											<shared:ThemeTilePicker Grid.Row="0"
+											                        Items="{Binding ThemeItems}"
+											                        SelectCommand="{Binding SelectThemeCommand}"
+											                        ConfigureCommand="{Binding OpenThemeEditorCommand}"/>
 
-										<Button Grid.Row="1" Margin="0 8 0 0"
-										        Content="Настроить виды"
-										        HorizontalAlignment="Stretch"
-										        HorizontalContentAlignment="Center"
-										        FontSize="11" Padding="8 6" CornerRadius="6"
-										        Background="{DynamicResource AccentDefaultBrush}"
-										        Foreground="White"
-										        Click="OnConfigureThemesClick"
-											        Command="{Binding OpenThemeEditorCommand}"/>
-									</Grid>
+											<!-- Строка фона — та же, что в развёрнутой группе. -->
+											<StackPanel Grid.Row="1" Margin="0 10 0 0"
+											            Orientation="Horizontal" Spacing="5"
+											            IsEnabled="{Binding IsThemeApplied}">
+												<PathIcon Classes="FieldGlyph"
+												          Data="M12 22C6.49 22 2 17.51 2 12S6.49 2 12 2s10 4.04 10 9c0 3.31-2.69 6-6 6h-1.77c-.28 0-.5.22-.5.5 0 .12.05.23.13.33.41.47.64 1.06.64 1.67 0 1.38-1.12 2.5-2.5 2.5zm0-18c-4.41 0-8 3.59-8 8s3.59 8 8 8c.28 0 .5-.22.5-.5 0-.16-.08-.28-.14-.35-.41-.46-.63-1.05-.63-1.65 0-1.38 1.12-2.5 2.5-2.5H16c2.21 0 4-1.79 4-4 0-3.86-3.59-7-8-7z"/>
+												<TextBlock Classes="FieldCaption" Text="Фон"/>
+												<controls:ColorPickerButton Width="20" Height="20"
+												                            Margin="2 0"
+												                            VerticalAlignment="Center"
+												                            ToolTip.Tip="{x:Null}"
+												                            HexColor="{Binding BackdropColorHex, Mode=TwoWay}"
+												                            behaviours:TooltipBehavior.Tip="Цвет фона вокруг листа"/>
+												<Button Classes="RibbonBtn"
+												        Width="24" Height="24" MinWidth="24" MinHeight="24"
+												        Padding="0"
+												        Click="OnLoadBackdropImageClick"
+												        behaviours:TooltipBehavior.Tip="Загрузить картинку фона">
+													<PathIcon Width="12" Height="12"
+													          Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+												</Button>
+												<Button Classes="RibbonBtn"
+												        Width="24" Height="24" MinWidth="24" MinHeight="24"
+												        Padding="0"
+												        Command="{Binding ResetBackdropCommand}"
+												        behaviours:TooltipBehavior.Tip="Вернуть фон к бумаге">
+													<PathIcon Width="12" Height="12"
+													          Data="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z"/>
+												</Button>
+											</StackPanel>
+										</Grid>
+									</Border>
 								</Flyout>
 							</Button.Flyout>
 							<StackPanel Spacing="2" HorizontalAlignment="Center">
 								<PathIcon Width="20" Height="20"
-								          Data="M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z"/>
+								          Data="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
 								<TextBlock Text="{Binding ThemeName}"
 								           FontSize="9"
 								           MaxWidth="56"
@@ -230,153 +227,49 @@
 					</DockPanel>
 				</Border>
 
-				<!-- ═══ ФОН ═════════════════════════════════════════════════
-				     Картинка позади страниц: она лежит на поле вокруг листа, а
-				     не на самом листе, и в рукопись не попадает — ни в печать,
-				     ни в экспорт. -->
-				<Border Classes="RibbonGroup" IsVisible="{Binding IsBackdropGroupExpanded}">
-					<DockPanel>
-						<TextBlock DockPanel.Dock="Bottom"
-						           Classes="RibbonGroupLabel"
-						           Text="Фон"/>
-						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-							<!-- Кнопки выбора картинки здесь больше нет: картинка принадлежит
-							     виду, и выбирают её в окне видов. Отсюда правится только то,
-							     как уже выбранная лежит и насколько она плотная. -->
-
-							<StackPanel Spacing="3" IsEnabled="{Binding HasBackdropImage}">
-								<StackPanel Orientation="Horizontal" Spacing="4">
-									<ComboBox Classes="RibbonCombo"
-									          Width="104"
-									          ItemsSource="{Binding BackdropFits}"
-									          SelectedItem="{Binding SelectedBackdropFit, Mode=TwoWay}"
-									          behaviours:TooltipBehavior.Tip="Как ложится картинка"
-									          behaviours:TooltipBehavior.Description="Заполнить — закрыть поле целиком, лишнее обрезать. Уместить — целиком, по краям останется цвет. Растянуть — на всё поле без пропорций. Замостить — повторить в исходном размере">
-										<ComboBox.ItemTemplate>
-											<DataTemplate>
-												<TextBlock Text="{Binding Label}" FontSize="11"/>
-											</DataTemplate>
-										</ComboBox.ItemTemplate>
-									</ComboBox>
-									<Button Classes="RibbonBtn"
-									        MinWidth="24" MinHeight="24"
-									        Padding="0"
-									        Command="{Binding ClearBackdropCommand}"
-									        behaviours:TooltipBehavior.Tip="Убрать картинку">
-										<PathIcon Width="12" Height="12"
-										          Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-									</Button>
-								</StackPanel>
-
-								<StackPanel Orientation="Horizontal" Spacing="3"
-								            behaviours:TooltipBehavior.Tip="Плотность"
-								            behaviours:TooltipBehavior.Description="Картинка лежит под рукописью, и спорить с текстом за внимание ей нельзя">
-									<TextBlock Classes="RibbonParamLabel" Width="46" Text="Плотность"/>
-									<Slider Classes="RibbonSlider" Width="76"
-									        Minimum="0" Maximum="1"
-									        Value="{Binding BackdropOpacity, Mode=TwoWay}"/>
-									<TextBlock Classes="RibbonParamValue" Text="{Binding BackdropOpacityText}"/>
-								</StackPanel>
-							</StackPanel>
-						</StackPanel>
-					</DockPanel>
-				</Border>
-
-				<!-- ФОН — свёрнутая -->
-				<Border Classes="RibbonGroupCollapsed" IsVisible="{Binding !IsBackdropGroupExpanded}">
-					<DockPanel>
-						<TextBlock DockPanel.Dock="Bottom"
-						           Classes="RibbonGroupLabel"
-						           Text="Фон"/>
-						<Button Classes="RibbonBtnLarge"
-						        behaviours:TooltipBehavior.Tip="Фон позади страниц">
-							<Button.Flyout>
-								<Flyout Placement="Bottom">
-									<StackPanel Spacing="8" Margin="10">
-										<StackPanel Orientation="Horizontal" Spacing="6">
-											<Button Classes="RibbonBtn"
-											        MinHeight="22" Padding="8 0"
-											        IsEnabled="{Binding HasBackdropImage}"
-											        Command="{Binding ClearBackdropCommand}"
-											        Content="Убрать картинку"/>
-										</StackPanel>
-										<StackPanel Spacing="6" IsEnabled="{Binding HasBackdropImage}">
-											<StackPanel Orientation="Horizontal" Spacing="6">
-												<ComboBox Classes="RibbonCombo"
-												          Width="120"
-												          ItemsSource="{Binding BackdropFits}"
-												          SelectedItem="{Binding SelectedBackdropFit, Mode=TwoWay}">
-													<ComboBox.ItemTemplate>
-														<DataTemplate>
-															<TextBlock Text="{Binding Label}" FontSize="11"/>
-														</DataTemplate>
-													</ComboBox.ItemTemplate>
-												</ComboBox>
-											</StackPanel>
-											<StackPanel Orientation="Horizontal" Spacing="4">
-												<TextBlock Classes="RibbonParamLabel" Text="Плотность"/>
-												<Slider Classes="RibbonSlider" Minimum="0" Maximum="1"
-												        Value="{Binding BackdropOpacity, Mode=TwoWay}"/>
-												<TextBlock Classes="RibbonParamValue" Text="{Binding BackdropOpacityText}"/>
-											</StackPanel>
-										</StackPanel>
-									</StackPanel>
-								</Flyout>
-							</Button.Flyout>
-							<StackPanel Spacing="2" HorizontalAlignment="Center">
-								<PathIcon Width="20" Height="20"
-								          Data="M21 19V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5z"/>
-								<TextBlock Text="Фон" FontSize="9" TextAlignment="Center"/>
-							</StackPanel>
-						</Button>
-					</DockPanel>
-				</Border>
-
-				<!-- ═══ СВЕТ ════════════════════════════════════════════════ -->
+				<!-- ═══ СВЕТ ════════════════════════════════════════════════
+				     Три параметра столбиком, как в ленте чтения: они одного рода, и
+				     ставить их в ряд значит растянуть ленту втрое без всякой пользы.
+				     Рядом — «Сброс»: вернуть свет таким, каким его задаёт вид. -->
 				<Border Classes="RibbonGroup" IsVisible="{Binding IsLightGroupExpanded}">
 					<DockPanel>
 						<TextBlock DockPanel.Dock="Bottom"
 						           Classes="RibbonGroupLabel"
 						           Text="Свет"/>
-						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-							<StackPanel Spacing="1" IsEnabled="{Binding IsThemeApplied}">
-								<StackPanel Orientation="Horizontal" Spacing="3"
+						<StackPanel Orientation="Horizontal" Spacing="4"
+						            VerticalAlignment="Center"
+						            IsEnabled="{Binding IsThemeApplied}">
+							<StackPanel Spacing="1" VerticalAlignment="Center">
+								<StackPanel Orientation="Horizontal" Spacing="4"
 								            behaviours:TooltipBehavior.Tip="Яркость"
 								            behaviours:TooltipBehavior.Description="Приглушает свет над листом, не трогая цвета документа">
-									<TextBlock Classes="RibbonParamLabel" Width="46" Text="Яркость"/>
-									<Slider Classes="RibbonSlider" Width="84"
+									<TextBlock Classes="LightLabel" Text="Яркость"/>
+									<Slider Classes="RibbonSlider" Width="104"
 									        Minimum="0.35" Maximum="1"
 									        Value="{Binding Brightness, Mode=TwoWay}"/>
-									<TextBlock Classes="RibbonParamValue" Text="{Binding BrightnessText}"/>
 								</StackPanel>
-								<StackPanel Orientation="Horizontal" Spacing="3"
+								<StackPanel Orientation="Horizontal" Spacing="4"
 								            behaviours:TooltipBehavior.Tip="Контраст"
-								            behaviours:TooltipBehavior.Description="Разводит текст и бумагу. Меньше — буквы мягче, больше — резче">
-									<TextBlock Classes="RibbonParamLabel" Width="46" Text="Контраст"/>
-									<Slider Classes="RibbonSlider" Width="84"
+								            behaviours:TooltipBehavior.Description="Разводит текст и бумагу. Меньше — буквы мягче, больше — резче. Работает и на тёмной бумаге">
+									<TextBlock Classes="LightLabel" Text="Контраст"/>
+									<Slider Classes="RibbonSlider" Width="104"
 									        Minimum="0.6" Maximum="1.6"
 									        Value="{Binding Contrast, Mode=TwoWay}"/>
-									<TextBlock Classes="RibbonParamValue" Text="{Binding ContrastText}"/>
 								</StackPanel>
-								<StackPanel Orientation="Horizontal" Spacing="3"
+								<StackPanel Orientation="Horizontal" Spacing="4"
 								            behaviours:TooltipBehavior.Tip="Тёплота"
-								            behaviours:TooltipBehavior.Description="Убирает синеву, как ночной режим экрана">
-									<TextBlock Classes="RibbonParamLabel" Width="46" Text="Тёплота"/>
-									<Slider Classes="RibbonSlider" Width="84"
+								            behaviours:TooltipBehavior.Description="Убирает синеву, как ночной режим экрана. Помогает писать перед сном">
+									<TextBlock Classes="LightLabel" Text="Тёплота"/>
+									<Slider Classes="RibbonSlider" Width="104"
 									        Minimum="0" Maximum="1"
 									        Value="{Binding Warmth, Mode=TwoWay}"/>
-									<TextBlock Classes="RibbonParamValue" Text="{Binding WarmthText}"/>
 								</StackPanel>
 							</StackPanel>
 							<Button Classes="RibbonBtn"
-							        MinHeight="24" MinWidth="24"
-							        Padding="0"
-							        IsEnabled="{Binding IsThemeApplied}"
+							        Padding="6 3"
 							        Command="{Binding ResetLightCommand}"
-							        behaviours:TooltipBehavior.Tip="Вернуть свет вида">
-								<PathIcon Width="12" Height="12"
-								          Data="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z"/>
-							</Button>
+							        behaviours:TooltipBehavior.Tip="Вернуть свет к обычному"
+							        Content="Сброс"/>
 						</StackPanel>
 					</DockPanel>
 				</Border>
@@ -391,30 +284,33 @@
 						        behaviours:TooltipBehavior.Tip="Свет">
 							<Button.Flyout>
 								<Flyout Placement="Bottom">
-									<StackPanel Spacing="8" Margin="10" IsEnabled="{Binding IsThemeApplied}">
-										<StackPanel Orientation="Horizontal" Spacing="4">
-											<TextBlock Classes="RibbonParamLabel" Text="Яркость"/>
-											<Slider Classes="RibbonSlider" Minimum="0.35" Maximum="1"
-											        Value="{Binding Brightness, Mode=TwoWay}"/>
-											<TextBlock Classes="RibbonParamValue" Text="{Binding BrightnessText}"/>
-										</StackPanel>
-										<StackPanel Orientation="Horizontal" Spacing="4">
-											<TextBlock Classes="RibbonParamLabel" Text="Контраст"/>
-											<Slider Classes="RibbonSlider" Minimum="0.6" Maximum="1.6"
-											        Value="{Binding Contrast, Mode=TwoWay}"/>
-											<TextBlock Classes="RibbonParamValue" Text="{Binding ContrastText}"/>
-										</StackPanel>
-										<StackPanel Orientation="Horizontal" Spacing="4">
-											<TextBlock Classes="RibbonParamLabel" Text="Тёплота"/>
-											<Slider Classes="RibbonSlider" Minimum="0" Maximum="1"
-											        Value="{Binding Warmth, Mode=TwoWay}"/>
-											<TextBlock Classes="RibbonParamValue" Text="{Binding WarmthText}"/>
+									<StackPanel Orientation="Horizontal" Spacing="4" Margin="2"
+									            IsEnabled="{Binding IsThemeApplied}">
+										<StackPanel Spacing="1" VerticalAlignment="Center">
+											<StackPanel Orientation="Horizontal" Spacing="4">
+												<TextBlock Classes="LightLabel" Text="Яркость"/>
+												<Slider Classes="RibbonSlider" Width="104"
+												        Minimum="0.35" Maximum="1"
+												        Value="{Binding Brightness, Mode=TwoWay}"/>
+											</StackPanel>
+											<StackPanel Orientation="Horizontal" Spacing="4">
+												<TextBlock Classes="LightLabel" Text="Контраст"/>
+												<Slider Classes="RibbonSlider" Width="104"
+												        Minimum="0.6" Maximum="1.6"
+												        Value="{Binding Contrast, Mode=TwoWay}"/>
+											</StackPanel>
+											<StackPanel Orientation="Horizontal" Spacing="4">
+												<TextBlock Classes="LightLabel" Text="Тёплота"/>
+												<Slider Classes="RibbonSlider" Width="104"
+												        Minimum="0" Maximum="1"
+												        Value="{Binding Warmth, Mode=TwoWay}"/>
+											</StackPanel>
 										</StackPanel>
 										<Button Classes="RibbonBtn"
-										        HorizontalAlignment="Right"
-										        MinHeight="22" Padding="8 0"
+										        Padding="6 3"
 										        Command="{Binding ResetLightCommand}"
-										        Content="Вернуть свет"/>
+										        behaviours:TooltipBehavior.Tip="Вернуть свет к обычному"
+										        Content="Сброс"/>
 									</StackPanel>
 								</Flyout>
 							</Button.Flyout>

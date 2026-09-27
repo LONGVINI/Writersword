@@ -33,6 +33,19 @@ namespace Writersword.Modules.TextEditor.Services
                 CanvasSettings = CloneCanvasSettings(source.CanvasSettings),
                 ViewMode = source.ViewMode,
                 Zoom = source.Zoom,
+
+                // Настройки вёрстки всего документа. Снимок уходит в сохранение, и всё,
+                // что здесь не перенесено, после перезапуска пропадает: шаг табуляции
+                // возвращался к умолчанию, а документ Word терял правила совместимости —
+                // интервалы между абзацами снова складывались, и отступы росли.
+                DefaultTabStopPt = source.DefaultTabStopPt,
+                CollapseParagraphSpacing = source.CollapseParagraphSpacing,
+                JustifyWithShrinking = source.JustifyWithShrinking,
+
+                // Виды чтения, приложенные к рукописи, — копией: снимок сериализуется
+                // вне UI-потока, а живые виды тем временем могут править.
+                ReadingThemes = CloneReadingThemes(source.ReadingThemes),
+
                 Styles = new List<DocumentStyle>(source.Styles.Count),
                 Sections = new List<SectionModel>(source.Sections.Count),
                 Annotations = new List<InlineAnnotation>(source.Annotations.Count),
@@ -67,7 +80,33 @@ namespace Writersword.Modules.TextEditor.Services
             if (source is null) return null;
 
             var copy = new List<Models.Toc.TocSettings>(source.Count);
-            foreach (var toc in source) copy.Add(toc.Clone());
+            foreach (var toc in source)
+            {
+                var tocCopy = toc.Clone();
+
+                // Убранные строки — живые абзацы. Копия документа обязана держать свои:
+                // общие с оригиналом абзацы правились бы в обоих сразу.
+                if (toc.HiddenEntries is not null)
+                {
+                    tocCopy.HiddenEntries = new List<ParagraphBlock>(toc.HiddenEntries.Count);
+                    foreach (var hidden in toc.HiddenEntries)
+                        tocCopy.HiddenEntries.Add(CloneParagraph(hidden));
+                }
+
+                copy.Add(tocCopy);
+            }
+            return copy;
+        }
+
+        private static List<Models.Settings.ReadingTheme>? CloneReadingThemes(
+            List<Models.Settings.ReadingTheme>? source)
+        {
+            if (source is null) return null;
+
+            var copy = new List<Models.Settings.ReadingTheme>(source.Count);
+            foreach (var theme in source)
+                copy.Add(theme.Clone());
+
             return copy;
         }
 

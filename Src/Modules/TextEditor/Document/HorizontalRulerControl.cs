@@ -1037,6 +1037,22 @@ namespace Writersword.Modules.TextEditor.Document
             TooltipBehavior.HideSpot(this);
         }
 
+        // Захват мыши потерян посреди жеста поля (окно ушло из фокуса, всплыло другое
+        // окно) — отпускания уже не будет. Жест завершается тем, что успели натянуть:
+        // иначе на листе остались бы направляющие, а открытый шаг отмены — незакрытым.
+        // Обычное отпускание снимает флаг до Capture(null), поэтому сюда не попадает.
+        protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+        {
+            base.OnPointerCaptureLost(e);
+            if (!_isDraggingMargin) return;
+
+            _isDraggingMargin = false;
+            Cursor = new Cursor(StandardCursorType.Arrow);
+            _vm?.CommitMarginChange();
+            if (_vm is not null) _vm.IsSnapEnabled = true;
+            InvalidateVisual();
+        }
+
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
         {
             base.OnPointerReleased(e);

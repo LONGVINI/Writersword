@@ -1,0 +1,106 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Writersword.ViewModels"
+        x:Class="Writersword.Views.ProjectTypePickerView"
+        x:DataType="vm:ProjectTypePickerViewModel"
+        Title="Выберите тип проекта"
+        Width="440"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowDecorations="None"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent">
+
+	<!--
+	    Короткое окно перед созданием проекта из документа Word: по документу не
+	    понять, роман в нём или сценарий, а от типа зависит, что будет в проекте
+	    под рукой. Список и его вид — те же, что на экране приветствия.
+
+	    Enter — создать, Esc — отказаться. Окно без рамки, поэтому таскается за
+	    любое свободное место.
+	-->
+
+	<Grid>
+
+		<!-- Подложка -->
+		<Border Background="{DynamicResource BgBaseBrush}"
+		        CornerRadius="14"
+		        Margin="2"/>
+
+		<!-- Основной контент -->
+		<Border x:Name="RootPanel"
+		        Background="{DynamicResource BgAppBrush}"
+		        CornerRadius="12"
+		        Margin="8"
+		        Padding="28,24">
+
+			<StackPanel Spacing="16">
+
+				<!-- Заголовок -->
+				<StackPanel Spacing="6">
+					<TextBlock Text="Выберите тип проекта"
+					           FontSize="20"
+					           FontWeight="Bold"
+					           Foreground="{DynamicResource TextPrimaryBrush}"
+					           HorizontalAlignment="Center"/>
+					<TextBlock Text="{Binding Subtitle}"
+					           FontSize="12"
+					           Foreground="{DynamicResource TextMutedBrush}"
+					           TextWrapping="Wrap"
+					           TextAlignment="Center"
+					           HorizontalAlignment="Center"/>
+				</StackPanel>
+
+				<!-- Типы проектов: те же, что на экране приветствия -->
+				<Border Background="{DynamicResource BgSurfaceBrush}"
+				        CornerRadius="8"
+				        Padding="20,16,20,8">
+					<ItemsControl ItemsSource="{Binding ProjectTypes}">
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="vm:ProjectTypeItem">
+								<RadioButton IsChecked="{Binding IsSelected}"
+								             GroupName="ImportProjectType"
+								             Foreground="{DynamicResource TextSecondaryBrush}"
+								             FontSize="14"
+								             Margin="0,0,0,8">
+									<StackPanel Orientation="Horizontal" Spacing="6">
+										<TextBlock Text="{Binding Icon}"/>
+										<TextBlock Text="{Binding DisplayName}"/>
+									</StackPanel>
+								</RadioButton>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+				</Border>
+
+				<!-- Кнопки -->
+				<Grid ColumnDefinitions="* 10 *">
+					<Button Grid.Column="0"
+					        Content="Отмена"
+					        Background="{DynamicResource BgPanelBrush}"
+					        Foreground="{DynamicResource TextSecondaryBrush}"
+					        Padding="20,12"
+					        HorizontalAlignment="Stretch"
+					        HorizontalContentAlignment="Center"
+					        FontSize="14"
+					        Cursor="Hand"
+					        Click="CancelButton_Click"/>
+					<Button Grid.Column="2"
+					        Content="Создать проект"
+					        Background="{DynamicResource AccentDefaultBrush}"
+					        Foreground="White"
+					        Padding="20,12"
+					        HorizontalAlignment="Stretch"
+					        HorizontalContentAlignment="Center"
+					        FontSize="14"
+					        Cursor="Hand"
+					        Click="CreateButton_Click"/>
+				</Grid>
+
+			</StackPanel>
+		</Border>
+	</Grid>
+
+</Window>

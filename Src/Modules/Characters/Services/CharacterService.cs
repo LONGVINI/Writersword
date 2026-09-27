@@ -356,6 +356,24 @@ namespace Writersword.Modules.Characters.Services
 
                 bool touched = false;
 
+                // Уже заведённым значениям обновляется определение: вид,
+                // подписи, варианты, края. Правка анкеты должна доходить до
+                // всех, кто её подключил, иначе новый вид увидят только новые
+                // персонажи. Сами значения при этом не трогаются.
+                var fieldsById = new Dictionary<string, CharacterAnketaField>(StringComparer.Ordinal);
+                foreach (var field in anketa.Fields)
+                {
+                    var id = CharacterFieldId.Resolve(field);
+                    if (!string.IsNullOrEmpty(id)) fieldsById[id] = field;
+                }
+
+                foreach (var existing in character.Parameters)
+                {
+                    if (fieldsById.TryGetValue(CharacterFieldId.Resolve(existing), out var field) &&
+                        CharacterFieldDefinition.Refresh(field, existing))
+                        touched = true;
+                }
+
                 // Параметры строятся заново для каждой карточки: один список
                 // на всех означал бы общие объекты значений, и правка у одного
                 // персонажа меняла бы значение у всех.

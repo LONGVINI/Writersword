@@ -111,7 +111,9 @@ namespace Writersword.Modules.TextEditor.Document
         protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
         {
             // Ctrl + колесо — масштабирование (а не прокрутка). Шаг мультипликативный, чтобы
-            // ощущался одинаково на любом масштабе. Меняем DocVm.Zoom: канвас перерисуется, а
+            // ощущался одинаково на любом масштабе, и пропорционален величине щелчка. Масштаб
+            // доезжает до цели плавно, точка под курсором остаётся на месте
+            // (DocumentCanvas.WheelZoom.cs). Меняем DocVm.Zoom: канвас перерисуется, а
             // TextEditorViewModel подхватит изменение и обновит ползунок и линейку.
             // В чтении колесо с Ctrl подводит и отводит саму страницу, а не меняет
             // масштаб редактора: увеличивать интерфейс во время чтения незачем, а
@@ -119,17 +121,14 @@ namespace Writersword.Modules.TextEditor.Document
             // приближение у них одно и то же.
             if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && ReadingActive)
             {
-                ChangeBookZoom(e.Delta.Y >= 0 ? 1 : -1);
+                AnimateBookZoomBy(e.Delta.Y);
                 e.Handled = true;
                 return;
             }
 
             if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && DocVm is not null)
             {
-                double factor = e.Delta.Y >= 0 ? 1.1 : 1.0 / 1.1;
-                double newZoom = Math.Clamp(DocVm.Zoom * factor, 0.25, 5.0);
-                if (Math.Abs(newZoom - DocVm.Zoom) > 0.0001)
-                    DocVm.Zoom = newZoom;
+                HandleWheelZoom(e);
                 e.Handled = true;
                 return;
             }
@@ -139,6 +138,14 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 if (_spreadFlipDir == 0)
                     SpreadTurn(e.Delta.Y > 0 ? -1 : 1);
+                e.Handled = true;
+                return;
+            }
+
+            // Вертикальная прокрутка — плавная, покадровая (DocumentCanvas.WheelScroll.cs).
+            // Событие помечается обработанным, чтобы ScrollViewer не прыгнул сам.
+            if (TryHandleSmoothWheel(e))
+            {
                 e.Handled = true;
                 return;
             }
@@ -201,6 +208,16 @@ namespace Writersword.Modules.TextEditor.Document
             // закладка могла быть нарисована на соседней странице разворота.
             if (TocChipPointerPressed(
                     (float)(pt.X / zoom * PxToPt), (float)(pt.Y / zoom * PxToPt)))
+            {
+                e.Handled = true;
+                return;
+            }
+
+            // ── Стрелка свёртки заголовка ─────────────────────────────────
+            // Стоит на поле листа слева от заголовка. Нажатие по ней сворачивает или
+            // разворачивает раздел и каретку не ставит (DocumentCanvas.HeadingCollapse).
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+                && HeadingTogglePointerPressed(xPt, yPt))
             {
                 e.Handled = true;
                 return;
@@ -683,6 +700,10 @@ namespace Writersword.Modules.TextEditor.Document
                 // взять и перевернуть рукой.
                 UpdateSpreadCornerHint(rawPt);
 
+                // Курсор книги — рука над страницами и стрелка вокруг. Без этого над
+                // книгой оставалась каретка редактора.
+                UpdateSpreadCursor(rawPt);
+
                 if (SpreadPointerMoved(xPt)) e.Handled = true;
                 return;
             }
@@ -950,10 +971,16 @@ namespace Writersword.Modules.TextEditor.Document
             // ── Курсор при наведении на ручки ─────────────────────────────
             if (!_isSelecting)
             {
+                // Заголовок под указателем показывает стрелку свёртки; над самой
+                // стрелкой курсор — рука (DocumentCanvas.HeadingCollapse).
+                if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+                    UpdateHeadingToggleHover(xPt, yPt);
+
                 // Рука над закладкой блока и над строкой оглавления с зажатым Ctrl:
                 // о переходе по строке иначе никак не догадаться, а закладка без руки
                 // читается как подпись, а не как кнопка.
-                if (TocHandCursorWanted(
+                if (_headingToggleHot
+                    || TocHandCursorWanted(
                         e, rawPt,
                         (float)(rawPt.X / zoom * PxToPt), (float)(rawPt.Y / zoom * PxToPt)))
                 {
@@ -3276,10 +3303,20 @@ namespace Writersword.Modules.TextEditor.Document
             }
             else if (_caretChar == 0 && _caretPara > 0 && !IsInCell(_caretPara))
             {
-                if (string.IsNullOrEmpty(text) && IsBreakAnchor(pvm.Model))
+                if (IsBreakAnchor(pvm.Model))
                 {
-                    // Backspace на якоре разрыва страницы — удаляем разрыв.
-                    DocVm?.DeleteBreakWithAnchor(pvm);
+                    // Backspace в начале абзаца сразу за разрывом страницы убирает разрыв,
+                    // как в Word. Пустой якорь уходит вместе с разрывом: он был нужен только
+                    // как место для каретки. Абзац с текстом остаётся и поднимается на
+                    // предыдущую страницу.
+                    //
+                    // Раньше абзац с текстом сюда не попадал и сливался с абзацем над
+                    // разрывом, а сам разрыв оставался в документе: следующий абзац молча
+                    // становился новым якорем, и убрать разрыв Backspace не получалось.
+                    if (string.IsNullOrEmpty(text))
+                        DocVm?.DeleteBreakWithAnchor(pvm);
+                    else
+                        DocVm?.DeletePageBreakBefore(pvm);
                 }
                 else if (IsBlockAfterTable(pvm.Model))
                 {
@@ -3356,8 +3393,8 @@ namespace Writersword.Modules.TextEditor.Document
                     && DocVm is not null
                     && IsBlockAfterTable(next.Model);
                 // Delete в конце параграфа перед разрывом страницы = удаление разрыва.
+                // Якорь с текстом тоже: разрыв снимается, а не абзацы сливаются через него.
                 bool nextIsBreakAnchor = next is not null
-                    && string.IsNullOrEmpty(next.PlainText)
                     && DocVm is not null
                     && IsBreakAnchor(next.Model);
                 // Текущий параграф — правый якорь таблицы: Delete ничего не делает.
@@ -3375,7 +3412,12 @@ namespace Writersword.Modules.TextEditor.Document
                     // Якоря таблицы Delete не трогает.
                 }
                 else if (nextIsBreakAnchor)
-                    DocVm?.DeleteBreakWithAnchor(next!);
+                {
+                    if (string.IsNullOrEmpty(next!.PlainText))
+                        DocVm?.DeleteBreakWithAnchor(next);
+                    else
+                        DocVm?.DeletePageBreakBefore(next);
+                }
                 else if (next is not null && !IsInCell(_caretPara + 1) && !nextIsPostTableAnchor)
                 {
                     // Сливаем следующий параграф в текущий, сохраняя форматирование обоих.
@@ -3663,7 +3705,9 @@ namespace Writersword.Modules.TextEditor.Document
 
             string text = pvm.PlainText ?? string.Empty;
 
-            if (string.IsNullOrEmpty(text) && IsBreakAnchor(pvm.Model)) return false;
+            // Абзац сразу за разрывом страницы: Backspace снимает разрыв, а не сливает
+            // абзацы через него. Это правка состава блоков — путь снимка.
+            if (IsBreakAnchor(pvm.Model)) return false;
             if (IsBlockAfterTable(pvm.Model)) return false;
             if (string.IsNullOrEmpty(text) && IsBlockBeforeTable(pvm.Model)
                 && GetVmAt(_caretPara - 1) is null) return false;
@@ -3707,8 +3751,9 @@ namespace Writersword.Modules.TextEditor.Document
 
             string nextText = next.PlainText ?? string.Empty;
 
-            // Якорь разрыва страницы снимается вместе с разрывом — это не слияние.
-            if (string.IsNullOrEmpty(nextText) && IsBreakAnchor(next.Model)) return false;
+            // Перед следующим абзацем стоит разрыв страницы: Delete снимает разрыв,
+            // а не сливает абзацы через него.
+            if (IsBreakAnchor(next.Model)) return false;
 
             // Правый якорь таблицы ниже: слить его с текущим абзацем нельзя.
             if (string.IsNullOrEmpty(nextText) && IsBlockAfterTable(next.Model)) return false;
@@ -3979,13 +4024,23 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteUndo()
         {
+            _undoInvocations++;
+            _logger.Debug(
+                "[UNDO] ExecuteUndo: вход; порядок отмены {Order}, текстовый стек {TextCan}, снимки {SnapCan}, фантом {Phantom}, правка запрещена {Blocked}",
+                _undoOrder.Count, TextUndoStack?.CanUndo ?? false, UndoStack?.CanUndo ?? false,
+                !_phantomReturn.IsEmpty, IsEditingBlocked);
+
             if (IsEditingBlocked) return;
 
             // Фантомный возврат. Человек прыгнул по ссылке и с тех пор ничего не правил —
             // значит отменять нечего, а вернуться он хочет именно сюда. Первое нажатие
             // возвращает на прежнее место и рукопись не трогает; второе уже обычная
             // отмена. Напечатал букву — фантома нет, и первое же нажатие отменяет её.
-            if (TryPhantomReturn()) return;
+            if (TryPhantomReturn())
+            {
+                _logger.Debug("[UNDO] ExecuteUndo: нажатие ушло на возврат после прыжка по ссылке, правка не отменялась");
+                return;
+            }
 
             // Откатываем строго в хронологическом порядке: какой стек трогать, решает _undoOrder.
             //
@@ -4018,6 +4073,11 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteRedo()
         {
+            _redoInvocations++;
+            _logger.Debug(
+                "[UNDO] ExecuteRedo: вход; порядок повтора {Order}, текстовый стек {TextCan}, снимки {SnapCan}, правка запрещена {Blocked}",
+                _redoOrder.Count, TextUndoStack?.CanRedo ?? false, UndoStack?.CanRedo ?? false, IsEditingBlocked);
+
             if (IsEditingBlocked) return;
 
             // Симметрично фантомному возврату: Ctrl+Z увёл обратно, Ctrl+Y возвращает

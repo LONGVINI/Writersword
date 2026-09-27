@@ -111,6 +111,8 @@ namespace Writersword.Modules.TextEditor.HotKeys
                 Key.OemPlus, KeyModifiers.Control);
             Add(d, "TextEditor.Format.AllCaps", "All Caps",
                 Key.A, KeyModifiers.Control | KeyModifiers.Shift);
+            Add(d, "TextEditor.Format.CycleCase", "Change Case",
+                Key.F3, KeyModifiers.Shift);
             Add(d, "TextEditor.Format.SmallCaps", "Small Caps",
                 Key.K, KeyModifiers.Control | KeyModifiers.Shift);
             Add(d, "TextEditor.Format.ClearFormatting", "Clear Formatting",
@@ -141,6 +143,8 @@ namespace Writersword.Modules.TextEditor.HotKeys
                 Key.OemMinus, KeyModifiers.Control);
             Add(d, "TextEditor.View.ZoomReset", "Reset Zoom",
                 Key.D0, KeyModifiers.Control);
+            Add(d, "TextEditor.View.FormattingMarks", "Show Formatting Marks",
+                Key.D8, KeyModifiers.Control | KeyModifiers.Shift);
 
             // ── Tools ─────────────────────────────────────────────────────
             Add(d, "TextEditor.Tools.Find", "Find",

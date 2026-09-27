@@ -905,6 +905,53 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         /// </summary>
         public Action<string?, string?>? PushUndoableAvatarChange { get; set; }
 
+        // ── Прокрутка карточки ────────────────────────────────────────────
+        //
+        // Где автор остановился в карточке. Вью сообщает сюда прокрутку, а
+        // модуль уносит её в данные программы (CharactersPlaceStore), чтобы
+        // после перезапуска карточка открылась там же, а не у шапки.
+
+        private double _bodyScrollY;
+
+        /// <summary>Текущая прокрутка стопки блоков, в точках экрана.</summary>
+        public double BodyScrollY
+        {
+            get => _bodyScrollY;
+            set
+            {
+                if (Math.Abs(_bodyScrollY - value) < 0.5) return;
+                _bodyScrollY = value;
+                BodyScrollChanged?.Invoke();
+            }
+        }
+
+        /// <summary>Прокрутка сменилась — модулю пора запомнить место.</summary>
+        public event Action? BodyScrollChanged;
+
+        private double? _pendingScrollY;
+
+        /// <summary>
+        /// Прокрутка, которую надо вернуть, когда вью разложит карточку.
+        /// Ставится при восстановлении места; вью забирает её один раз.
+        /// </summary>
+        public void RequestScroll(double scrollY)
+        {
+            _pendingScrollY = scrollY > 0 ? scrollY : null;
+            _bodyScrollY = Math.Max(0, scrollY);
+            PendingScrollRequested?.Invoke();
+        }
+
+        /// <summary>Вью уже на экране — пусть заберёт прокрутку сразу.</summary>
+        public event Action? PendingScrollRequested;
+
+        /// <summary>Забрать прокрутку для восстановления; повторно не отдаётся.</summary>
+        public double? TakePendingScroll()
+        {
+            var value = _pendingScrollY;
+            _pendingScrollY = null;
+            return value;
+        }
+
         /// <summary>Применить аватар без записи в стек отмены — вызов из отмены.</summary>
         public void ApplyAvatarSilently(string? imageRef)
         {
@@ -1272,6 +1319,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             Title = title;
             AnketaId = anketaId;
             Items = items;
+            Groups = BuildGroups(items);
         }
 
         public string Title { get; }
@@ -1282,5 +1330,120 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public IReadOnlyList<CharacterParameterItemViewModel> Items { get; }
 
         public int Count => Items.Count;
+
+        /// <summary>
+        /// Поля раздела по группам анкеты — «Эмоции», «Черты». Группа —
+        /// подзаголовок над своими полями, а не бейдж на каждом поле: так
+        /// группа читается один раз, а не столько, сколько в ней полей.
+        /// </summary>
+        public IReadOnlyList<CharacterFieldGroupViewModel> Groups { get; }
+
+        private static IReadOnlyList<CharacterFieldGroupViewModel> BuildGroups(
+            IReadOnlyList<CharacterParameterItemViewModel> items)
+        {
+            // Группы идут в порядке первого появления своих полей: порядок
+            // полей задаёт анкета, и группы его не переставляют.
+            var order = new List<string>();
+            var byGroup = new Dictionary<string, List<CharacterParameterItemViewModel>>(StringComparer.CurrentCultureIgnoreCase);
+
+            foreach (var item in items)
+            {
+                var key = (item.GroupName ?? string.Empty).Trim();
+                if (!byGroup.TryGetValue(key, out var list))
+                {
+                    list = new List<CharacterParameterItemViewModel>();
+                    byGroup[key] = list;
+                    order.Add(key);
+                }
+                list.Add(item);
+            }
+
+            return order
+                .Select(key => new CharacterFieldGroupViewModel(key, byGroup[key]))
+                .ToList();
+        }
+    }
+
+    /// <summary>Группа полей внутри раздела анкеты.</summary>
+    public class CharacterFieldGroupViewModel
+    {
+        public CharacterFieldGroupViewModel(string title, IReadOnlyList<CharacterParameterItemViewModel> items)
+        {
+            Title = title;
+            Rows = BuildRows(items);
+        }
+
+        /// <summary>Пусто у полей без группы: над ними подзаголовка нет.</summary>
+        public string Title { get; }
+
+        public bool HasTitle => !string.IsNullOrWhiteSpace(Title);
+
+        public IReadOnlyList<CharacterFieldRowViewModel> Rows { get; }
+
+        /// <summary>
+        /// Раскладка по строкам: короткие поля идут парами в две колонки,
+        /// широкое — описание, выбор чипами, полюса — занимает строку целиком.
+        /// Пара не переносится через широкое поле: порядок полей анкеты
+        /// сохраняется слева направо и сверху вниз.
+        /// </summary>
+        private static IReadOnlyList<CharacterFieldRowViewModel> BuildRows(
+            IReadOnlyList<CharacterParameterItemViewModel> items)
+        {
+            var rows = new List<CharacterFieldRowViewModel>();
+            CharacterParameterItemViewModel? pending = null;
+
+            foreach (var item in items)
+            {
+                if (item.IsWide)
+                {
+                    if (pending != null)
+                    {
+                        rows.Add(new CharacterFieldRowViewModel(pending, null));
+                        pending = null;
+                    }
+                    rows.Add(new CharacterFieldRowViewModel(item, null, isWide: true));
+                    continue;
+                }
+
+                if (pending == null)
+                {
+                    pending = item;
+                }
+                else
+                {
+                    rows.Add(new CharacterFieldRowViewModel(pending, item));
+                    pending = null;
+                }
+            }
+
+            if (pending != null)
+                rows.Add(new CharacterFieldRowViewModel(pending, null));
+
+            return rows;
+        }
+    }
+
+    /// <summary>Строка раскладки полей: одно широкое поле или до двух коротких.</summary>
+    public class CharacterFieldRowViewModel
+    {
+        public CharacterFieldRowViewModel(
+            CharacterParameterItemViewModel first,
+            CharacterParameterItemViewModel? second,
+            bool isWide = false)
+        {
+            First = first;
+            Second = second;
+            IsWide = isWide;
+        }
+
+        public CharacterParameterItemViewModel First { get; }
+        public CharacterParameterItemViewModel? Second { get; }
+
+        public bool IsWide { get; }
+        public bool IsPair => !IsWide;
+
+        /// <summary>Широкое поле занимает обе колонки и просвет между ними.</summary>
+        public int FirstSpan => IsWide ? 3 : 1;
+        public bool HasSecond => Second != null;
     }
 }

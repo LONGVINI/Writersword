@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Core.Models.Project;
 using Writersword.ViewModels;
@@ -41,7 +42,23 @@ namespace Writersword.Views
                     _logger.LogDebug("Project selected, closing WelcomeView");
                     Close();
                 };
+
+                // Тип проекта для документа Word спрашивает окно поверх этого:
+                // экран приветствия сам модальный, и окно с владельцем-главным
+                // окном ушло бы под него.
+                viewModel.ProjectTypeRequested = AskProjectTypeAsync;
             }
+        }
+
+        /// <summary>Окно выбора типа проекта для документа Word.</summary>
+        private async Task<string?> AskProjectTypeAsync(string documentName, string preselectedProjectType)
+        {
+            var picker = new ProjectTypePickerView
+            {
+                DataContext = new ProjectTypePickerViewModel(documentName, preselectedProjectType)
+            };
+
+            return await picker.ShowDialog<string?>(this);
         }
 
         /// <summary>Обработчик кнопки закрытия окна</summary>

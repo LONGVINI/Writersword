@@ -107,6 +107,7 @@ namespace Writersword.Modules.Characters
             if (_characterService is CharacterService cs) cs.SetContext(Context);
             var trashService = new CharactersTrashService(_characterService);
             _viewModel = new CharactersViewModel(_characterService, _relationshipService, _anketaService, trashService, _avatarService);
+            _viewModel.PlaceChanged += OnPlaceChanged;
 
             // Синхронизируем культуру модуля с текущим языком приложения.
             // CharactersStrings имеет собственный статический Culture, который
@@ -139,8 +140,15 @@ namespace Writersword.Modules.Characters
                 _viewModel.IsReadOnly = context?.IsInCompareMode == true;
         }
 
-        public override Control? CreateView() =>
-            new CharactersModuleView { DataContext = _viewModel };
+        public override Control? CreateView()
+        {
+            // У проекта без данных модуля возвращать нечего, и загрузчик не
+            // зовёт применение данных — место начинает записываться с
+            // появлением вью. Если данные ещё возвращают место, ждём его.
+            if (!_placeRestorePending) _placeReady = true;
+
+            return new CharactersModuleView { DataContext = _viewModel };
+        }
 
         // ── Файлы проекта ─────────────────────────────────────────────────
 
@@ -550,6 +558,15 @@ namespace Writersword.Modules.Characters
 
                     if (isFirst)
                         _viewModel.InitializeFirstLaunch();
+
+                    // Место возвращается после того, как данные разложены, —
+                    // отдельным проходом: сразу за применением данных загрузчик
+                    // может вызвать SetSessionData, и тогда место встанет
+                    // поверх сессии там.
+                    _placeReady = false;
+                    _placeRestorePending = true;
+                    Avalonia.Threading.Dispatcher.UIThread.Post(
+                        ApplyStoredPlace, Avalonia.Threading.DispatcherPriority.Background);
                 }
             }
             catch (Exception ex)
@@ -560,6 +577,109 @@ namespace Writersword.Modules.Characters
 
         public override object? GetSessionData() => _viewModel?.GetSessionState();
 
+        // ── Место в модуле ────────────────────────────────────────────────
+        //
+        // Открытый персонаж, вкладка модуля, вкладка и прокрутка карточки
+        // запоминаются в данных программы (CharactersPlaceStore) и
+        // возвращаются при следующем открытии проекта и при пересоздании
+        // модуля. Сессия модуля этого не обеспечивала: она лежит в кеше
+        // проекта, а кеш пишется только при правках и удаляется при
+        // сохранении — открыть персонажа правкой не считается.
+
+        // Запись откладывается: прокрутка сообщает о себе на каждом шаге
+        // колеса, а файл достаточно переписать, когда она остановилась.
+        private static readonly TimeSpan PlaceSaveDelay = TimeSpan.FromMilliseconds(400);
+
+        private Avalonia.Threading.DispatcherTimer? _placeSaveTimer;
+
+        // Пока данные загружаются и место не возвращено, запись запрещена:
+        // промежуточное состояние (список, без персонажа) затёрло бы
+        // запомненное место раньше, чем его успели прочитать.
+        private bool _placeReady;
+
+        // Данные применены, а место ещё не возвращено.
+        private bool _placeRestorePending;
+
+        /// <summary>
+        /// Ключ проекта для места. В режиме сравнения версий место не пишется
+        /// и не читается: там показывается чужая версия данных.
+        /// </summary>
+        private string? PlaceKey()
+        {
+            var ctx = Context;
+            if (ctx is null || ctx.IsInCompareMode) return null;
+
+            var id = ctx.Project?.Id;
+            if (!string.IsNullOrWhiteSpace(id)) return id;
+
+            return string.IsNullOrWhiteSpace(ctx.FilePath) ? null : ctx.FilePath;
+        }
+
+        private void OnPlaceChanged()
+        {
+            if (!_placeReady) return;
+
+            if (_placeSaveTimer is null)
+            {
+                _placeSaveTimer = new Avalonia.Threading.DispatcherTimer { Interval = PlaceSaveDelay };
+                _placeSaveTimer.Tick += (_, _) =>
+                {
+                    _placeSaveTimer?.Stop();
+                    SavePlace();
+                };
+            }
+
+            _placeSaveTimer.Stop();
+            _placeSaveTimer.Start();
+        }
+
+        private void SavePlace()
+        {
+            if (!_placeReady || _viewModel is null) return;
+
+            var key = PlaceKey();
+            if (key is null) return;
+
+            try
+            {
+                CharactersPlaceStore.Save(key, _viewModel.CapturePlace());
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Save characters place failed");
+            }
+        }
+
+        /// <summary>
+        /// Вернуть запомненное место. Зовётся после применения данных и после
+        /// сессии: место в данных программы свежее сессии из кеша, потому что
+        /// пишется при каждой смене, а кеш — только при правках.
+        /// </summary>
+        private void ApplyStoredPlace()
+        {
+            if (_viewModel is null) return;
+
+            try
+            {
+                var key = PlaceKey();
+                if (key is not null && CharactersPlaceStore.Get(key) is { } place)
+                {
+                    _logger.Debug("Restoring characters place: character {Id}, tab {Tab}, card tab {CardTab}, scroll {Scroll:F0}",
+                        place.CharacterId, place.MainTabIndex, place.CardTabIndex, place.CardScrollY);
+                    _viewModel.RestorePlace(place);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Restore characters place failed");
+            }
+            finally
+            {
+                _placeRestorePending = false;
+                _placeReady = true;
+            }
+        }
+
         public override void SetSessionData(object? data)
         {
             if (data == null || _viewModel == null) return;
@@ -568,6 +688,10 @@ namespace Writersword.Modules.Characters
                 var session = data is CharactersModuleSession s ? s
                     : JsonConvert.DeserializeObject<CharactersModuleSession>(JsonConvert.SerializeObject(data));
                 if (session != null) _viewModel.RestoreSessionState(session);
+
+                // Сессия из кеша может быть старше места в данных программы:
+                // кеш пишется только при правках.
+                ApplyStoredPlace();
             }
             catch (Exception ex)
             {
@@ -588,6 +712,17 @@ namespace Writersword.Modules.Characters
             }
 
             _avatarService.AvatarRefsRemapped -= OnAvatarRefsRemapped;
+
+            // Отложенная запись места не должна пропасть при закрытии.
+            if (_placeSaveTimer is { IsEnabled: true })
+            {
+                _placeSaveTimer.Stop();
+                SavePlace();
+            }
+            _placeSaveTimer = null;
+
+            if (_viewModel is not null)
+                _viewModel.PlaceChanged -= OnPlaceChanged;
 
             if (_viewModel is System.IDisposable disposableVm)
                 disposableVm.Dispose();

@@ -275,6 +275,7 @@ namespace Writersword.Modules.TextEditor.Services
                 && a.IsSubscript == b.IsSubscript
                 && a.IsAllCaps == b.IsAllCaps
                 && a.IsSmallCaps == b.IsSmallCaps
+                && a.CharacterSpacing == b.CharacterSpacing
                 && a.TextColor == b.TextColor
                 && a.HighlightColor == b.HighlightColor
                 && a.Language == b.Language;

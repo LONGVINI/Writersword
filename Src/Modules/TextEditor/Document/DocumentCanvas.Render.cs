@@ -76,11 +76,13 @@ namespace Writersword.Modules.TextEditor.Document
 
         internal void RenderWithSKCanvas(SKCanvas canvas)
         {
-            long flipTraceTs = FlipTraceNow();
-            if (_isTransitioning) FlipTraceFrame("EMPTY:transitioning", flipTraceTs);
             if (_isTransitioning) return;
 
             long perfFrameTs = PerfNow();
+
+            // ClearType снимков этого кадра: зависит от того, как окно выводит снимок,
+            // и от того, непрозрачен ли снимок под текстом (DocumentCanvas.TextSmoothing).
+            UpdateSnapshotPixelGeometry(canvas);
 
             // Дренируем очередь битмапов ожидающих удаления.
             while (_bitmapDisposeQueue.TryDequeue(out var stale))
@@ -188,7 +190,6 @@ namespace Writersword.Modules.TextEditor.Document
                 canvas.Scale(scale, scale);
                 DrawSingleSlide(canvas, canvasHeightPt, canvasWidth);
                 canvas.Restore();
-                FlipTraceFrame("slide", flipTraceTs);
                 return;
             }
 
@@ -219,7 +220,83 @@ namespace Writersword.Modules.TextEditor.Document
                 }
 
                 canvas.Restore();
-                FlipTraceFrame("lifted", flipTraceTs);
+                return;
+            }
+
+            // Книга в покое рисуется тем же путём, что и во время переворота: прямо в
+            // канвас окна, без снимка кадра.
+            //
+            // Снимок кадра растрируется отдельно, в битмап размером в точки интерфейса,
+            // а переворот рисует неподвижные половины напрямую, в пиксели экрана. Это
+            // два разных растеризатора и две разные сетки: буквы ложатся на другие доли
+            // пикселя, меняется их толщина, а при масштабе системы больше 100% снимок
+            // вдобавок растягивается. Ровно в момент подъёма листа и в момент, когда
+            // он ложится, книга переходила с одного пути на другой — весь текст
+            // разворота на глазах вздрагивал. Один путь на покой и на переворот —
+            // одни и те же пиксели до, во время и после.
+            //
+            // Рисовать здесь немного: две страницы разворота. Ровно столько же кадр
+            // переворота рисует шестьдесят раз в секунду.
+            if (SpreadMode)
+            {
+                lock (_bitmapLock)
+                {
+                    // Снимок кадра книге не нужен. Прежний, оставшийся от правки, не
+                    // должен пережить книгу: после выхода из неё быстрый путь положил
+                    // бы его как готовый.
+                    if (_displayImage is not null)
+                    {
+                        _imageDisposeQueue.Enqueue(_displayImage);
+                        _displayImage = null;
+                    }
+                }
+
+                // Фоновая дорисовка снимка, начатая раньше, устарела так же, как и
+                // сам снимок.
+                System.Threading.Interlocked.Increment(ref _contentGeneration);
+                _fullRenderRequested = false;
+                _caretOnlyRedraw = false;
+
+                canvas.Save();
+                canvas.Scale(scale, scale);
+
+                // Перевод из точек книги в пиксели экрана запоминается: по нему
+                // снимки летящего листа выравниваются по той же сетке, в которой
+                // страница стоит сейчас (см. RememberSpreadDeviceMatrix).
+                RememberSpreadDeviceMatrix(canvas.TotalMatrix);
+
+                // Выделение кладётся поверх — так же, как в полном рендере со снимком.
+                _selectionAsOverlay = true;
+                try
+                {
+                    RenderPageMode(canvas, layouts, pages, tables, images, canvasHeightPt, canvasWidth, false);
+                }
+                finally
+                {
+                    _selectionAsOverlay = false;
+                }
+
+                DrawSelectionOverlay(canvas, layouts, pages, canvasWidth);
+                DrawHeadingToggles(canvas, layouts, pages, canvasWidth);
+
+                if (CaretDrawable)
+                    DrawCaretOnCanvas(canvas, layouts, pages, canvasWidth);
+
+                if (_spreadCornerHint > 0.01f)
+                    DrawSpreadCornerHint(canvas);
+
+                canvas.Restore();
+
+                _contentDirty = false;
+                PerfTime("r.frame.spread", perfFrameTs);
+                return;
+            }
+
+            // Жест масштаба: прежний снимок растягивается под новый масштаб, без полного
+            // рендера на каждом кадре анимации (DocumentCanvas.ZoomPreview).
+            if (TryDrawZoomPreview(canvas, layouts, pages, canvasWidth, zoom, scale))
+            {
+                PerfTime("r.frame.zoom", perfFrameTs);
                 return;
             }
 
@@ -245,8 +322,19 @@ namespace Writersword.Modules.TextEditor.Document
                     // снимка не копирует пиксели: GPU держит текстуру в кэше по uniqueID.
                     // Размеры берутся у самого снимка: снимок фоновой дорисовки может
                     // быть другой высоты, чем офскрин-битмап синхронного рендера.
+                    //
+                    // Масштаб снимка обязан совпадать с текущим. Выделение рисуется поверх
+                    // снимка по ЖИВОМУ масштабу: снимок прежнего масштаба (Ctrl+колесо, когда
+                    // событие прокрутки в том же батче перебило запрос полного кадра) давал
+                    // синие полосы, висящие мимо текста до следующего полного рендера.
+                    // Пока выделение было запечено в снимок, оно ехало вместе со старым
+                    // текстом, и расхождения видно не было.
+                    bool zoomMatches = Math.Abs(_displayImageZoom - zoom) < 1e-9;
+                    if (_displayImage is not null && !zoomMatches) PerfCount("r.why.zoom");
+
                     bool scrollInRange = _displayImage is not null
                         && _displayImage.Width == pixelW
+                        && zoomMatches
                         && (!SpreadMode || _displayImageSpreadLeft == _spreadLeftPage)
                         && scrollY >= _lastFullRenderScrollY - 0.5f
                         && scrollY + viewportPx <= _lastFullRenderScrollY + _displayImage.Height + 0.5f;
@@ -268,6 +356,7 @@ namespace Writersword.Modules.TextEditor.Document
                     canvas.Save();
                     canvas.Scale(scale, scale);
                     DrawSelectionOverlay(canvas, layouts, pages, canvasWidth);
+                    DrawHeadingToggles(canvas, layouts, pages, canvasWidth);
                     canvas.Restore();
                     PerfTime("r.overlay", perfOverlayTs);
 
@@ -294,7 +383,6 @@ namespace Writersword.Modules.TextEditor.Document
                     MaybePrefetchSnapshot(scrollY, viewportPx, docHeightPx, pixelW, scale);
 
                     PerfTime("r.frame.cache", perfFrameTs);
-                    FlipTraceFrame("cache", flipTraceTs);
                     return;
                 }
 
@@ -309,7 +397,6 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     _caretOnlyRedraw = false;
                     PerfTime("r.frame.async", perfFrameTs);
-                    FlipTraceFrame("stale-async", flipTraceTs);
                     return;
                 }
 
@@ -352,7 +439,13 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 // Рисуем прямо в SKBitmap — без SKSurface.Create и SKBitmap.FromImage.
                 // SKCanvas(bitmap) использует уже выделенную память битмапа.
-                using var offscreen = new SKCanvas(renderTarget);
+                //
+                // Для ClearType холсту нужен порядок субпикселей, а он задаётся только
+                // поверхностью. Поверхность тогда заворачивает ту же память битмапа, без
+                // копии; без ClearType холст прежний (DocumentCanvas.TextSmoothing).
+                using var offscreenSurface = ScreenTextSmoothing.CreateSurface(renderTarget, _snapshotPixelGeometry);
+                using var offscreenOwnCanvas = offscreenSurface is null ? new SKCanvas(renderTarget) : null;
+                var offscreen = offscreenSurface?.Canvas ?? offscreenOwnCanvas!;
                 offscreen.Clear(SKColors.Transparent);
                 offscreen.Save();
                 offscreen.Scale(scale, scale);
@@ -381,9 +474,15 @@ namespace Writersword.Modules.TextEditor.Document
                 }
                 PerfTime("r.full.content", perfContentTs);
 
+                // Листы, которые этот снимок действительно нарисовал: по ним подложка
+                // решает, где бумагу нужно дорисовать самой (см. RenderPageSkeleton).
+                int snapFirstPage = -1;
+                int snapLastPage = -1;
                 if (mode == EditorViewMode.Page || SpreadMode || ReadingRibbon)
                 {
                     var (perfFirstPage, perfLastPage) = GetVisiblePageRange(pages);
+                    snapFirstPage = perfFirstPage;
+                    snapLastPage = perfLastPage;
                     PerfInfo("pages", $"{perfFirstPage}..{perfLastPage}");
                 }
                 PerfInfo("bitmap", $"{pixelW}x{pixelH}");
@@ -411,6 +510,9 @@ namespace Writersword.Modules.TextEditor.Document
                     oldImage = _displayImage;
                     _displayImage = newImage;
                     _displayImageZoom = zoom;
+                    _displayImageLeftPx = ContentLeftPx(canvasWidth, zoom);
+                    _displayImageFirstPage = snapFirstPage;
+                    _displayImageLastPage = snapLastPage;
                     // Сохраняем bitmapTopY — верхний край отрисованного снимка.
                     // Используется в cache check: scroll внутри [bitmapTopY, bitmapTopY+H]?
                     _lastFullRenderScrollY = bitmapTopY;
@@ -431,6 +533,7 @@ namespace Writersword.Modules.TextEditor.Document
                 canvas.Save();
                 canvas.Scale(scale, scale);
                 DrawSelectionOverlay(canvas, layouts, pages, canvasWidth);
+                DrawHeadingToggles(canvas, layouts, pages, canvasWidth);
                 canvas.Restore();
                 PerfTime("r.overlay", perfOverlayTs);
 
@@ -451,7 +554,6 @@ namespace Writersword.Modules.TextEditor.Document
                 }
 
                 PerfTime("r.frame.full", perfFrameTs);
-                FlipTraceFrame("full", flipTraceTs);
             }
             else
             {
@@ -466,7 +568,6 @@ namespace Writersword.Modules.TextEditor.Document
                 DrawSpreadCornerHint(canvas);
                 canvas.Restore();
                 _contentDirty = false;
-                FlipTraceFrame("fallback", flipTraceTs);
             }
         }
 
@@ -834,6 +935,12 @@ namespace Writersword.Modules.TextEditor.Document
             float curPageXPt = Math.Max((canvasWPt - GetPageWidthPt()) / 2f, 0f);
             float pageXShiftPt = curPageXPt - _layoutPageXPt;
 
+            // Подложка раньше клала только цвет бумаги. Пока снимок не подъехал
+            // (быстрая прокрутка), лист с картинкой бумаги выглядел голым цветным
+            // прямоугольником. Картинку кладём на листы, которые видны на экране и
+            // которые готовый снимок не покрывает целиком, — под снимком она не нужна.
+            var skeletonPaper = CaptureSkeletonPaperState(scale);
+
             if (_pagesPerRow <= 1)
             {
                 canvas.Save();
@@ -845,6 +952,14 @@ namespace Writersword.Modules.TextEditor.Document
                     if (page.Ypt + page.HeightPt < loPt || page.Ypt > hiPt) continue;
                     canvas.DrawRect(page.PadLeftPt + 3, page.Ypt + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
                     canvas.DrawRect(page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, PagePaint());
+
+                    // Картинка бумаги — там, где её не закроет готовый снимок.
+                    if (skeletonPaper.NeedsPaper(pi, page.Ypt, page.HeightPt, scrollTopPt, viewPt))
+                        DrawReadingPaperImage(canvas, page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, pi);
+
+                    // Рамка листа (DocumentCanvas.SheetFrame) — и на подложке: при быстрой
+                    // прокрутке лист без неё мигал бы голым краем, пока не подъедет снимок.
+                    DrawSheetFrame(canvas, page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt);
                 }
                 canvas.Restore();
 
@@ -861,6 +976,11 @@ namespace Writersword.Modules.TextEditor.Document
                 if (visY + page.HeightPt < loPt || visY > hiPt) continue;
                 canvas.DrawRect(visX + 3, visY + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
                 canvas.DrawRect(visX, visY, page.WidthPt, page.HeightPt, PagePaint());
+
+                if (skeletonPaper.NeedsPaper(pi, visY, page.HeightPt, scrollTopPt, viewPt))
+                    DrawReadingPaperImage(canvas, visX, visY, page.WidthPt, page.HeightPt, pi);
+
+                DrawSheetFrame(canvas, visX, visY, page.WidthPt, page.HeightPt);
             }
 
             if (EditorThemeActive) DrawReadingDim(canvas, bgWPt, bgHPt);
@@ -885,6 +1005,9 @@ namespace Writersword.Modules.TextEditor.Document
             // Лента — одна сплошная бумага без листов, и картинка у неё первая из
             // набора: чередовать не по чему.
             DrawReadingPaperImage(canvas, sheetXPt, 0f, sheetWPt, sheetHPt, 0);
+
+            // Рамка ленты — по её краям, как у листа (DocumentCanvas.SheetFrame).
+            DrawSheetFrame(canvas, sheetXPt, 0f, sheetWPt, sheetHPt);
         }
 
         /// <summary>
@@ -918,6 +1041,11 @@ namespace Writersword.Modules.TextEditor.Document
 
             canvas.DrawRect(x + 3f, y + 3f, wPt, pg.HeightPt, _paintPageShadow);
             canvas.DrawRect(x, y, wPt, pg.HeightPt, PagePaint());
+
+            // Рамка обводит книгу целиком, а не каждую половину: по корешку половины
+            // сходятся одной бумагой, и линия посреди разворота разрезала бы её
+            // надвое (DocumentCanvas.SheetFrame).
+            DrawSheetFrame(canvas, x, y, wPt, pg.HeightPt);
         }
 
         private void RenderPageMode(
@@ -934,8 +1062,12 @@ namespace Writersword.Modules.TextEditor.Document
             // (подмены чтения, обработчик картинок в строке) и общими кистями. Раньше все
             // проходы шли одним render-потоком; теперь снимок может рисовать и фоновый
             // поток прокрутки, поэтому проходы сериализуются одним замком.
+            // Диагностика: сколько проход ждал замка (фоновая дорисовка против
+            // render-потока). Ключ разный для фонового потока и для кадра.
+            long perfLockTs = PerfNow();
             lock (ContentPassLock)
             {
+                PerfTime(t_contentViewTopPx is null ? "r.lockwait" : "bg.lockwait", perfLockTs);
                 RenderPageModeCore(canvas, layouts, pages, tables, images, canvasHeightPt, canvasWidth, drawCaret);
             }
         }
@@ -1020,6 +1152,9 @@ namespace Writersword.Modules.TextEditor.Document
                     // Своя картинка бумаги ложится поверх её цвета. Вида нет или
                     // картинка не задана — вызов ничего не рисует.
                     DrawReadingPaperImage(canvas, page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, pi);
+
+                    // Рамка листа, если её задал вид (DocumentCanvas.SheetFrame).
+                    DrawSheetFrame(canvas, page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt);
                 }
 
                 RenderPageContent(canvas, layouts, pages, tables, images, firstPage, lastPage, drawCaret);
@@ -1079,6 +1214,11 @@ namespace Writersword.Modules.TextEditor.Document
                 // Своя картинка бумаги ложится поверх её цвета: цвет остаётся видимым
                 // там, где картинка полупрозрачна или не закрывает лист целиком.
                 DrawReadingPaperImage(canvas, bgSheetX, bgY, bgSheetW, bgPage.HeightPt, pi);
+
+                // Рамка листа (DocumentCanvas.SheetFrame). У разворота книги её рисует
+                // бумага под обеими половинами — вокруг книги целиком.
+                if (!(SpreadMode && !SpreadSinglePage))
+                    DrawSheetFrame(canvas, bgX, bgY, bgPage.WidthPt, bgPage.HeightPt);
             }
 
             for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
@@ -1373,6 +1513,10 @@ namespace Writersword.Modules.TextEditor.Document
                     RenderParaLayout(canvas, i, pl, layouts, drawCaret);
                 }
             }
+
+            // Явные разрывы страницы — отметкой, когда показаны непечатаемые знаки.
+            if (FormattingMarksVisible)
+                DrawPageBreakMarks(canvas, pages, firstPage, lastPage);
 
             // Картинки поверх текста (InFront / Square / Tight) — рисуются после текста.
             foreach (var ie in images)
@@ -1931,6 +2075,73 @@ namespace Writersword.Modules.TextEditor.Document
             canvas.DrawText(name, rect.MidX - width / 2f, rect.MidY + sizePt * 0.35f, font, text);
         }
 
+        // Предел большей стороны картинки на экране, px. Лист A4 во всю ширину при
+        // масштабе 300% на экране с увеличением 150% — около 2600 точек; больше
+        // экрану не показать, а фотография в 6000 точек раскодировалась бы вчетверо
+        // дольше и заняла бы в памяти 140 МБ вместо 30.
+        private const int ScreenImageMaxSidePx = 3072;
+
+        /// <summary>
+        /// Раскодирует картинку для экрана: крупная — сразу в уменьшенном размере, силами
+        /// самого декодера (JPEG умеет раскодировать в половину, четверть и восьмушку
+        /// размера почти даром), остальные — как есть. Кадрирование задано долями, а не
+        /// точками, поэтому уменьшенная картинка режется так же, как исходная. В
+        /// выгрузку и в буфер обмена идут байты файла, а не эти пиксели.
+        /// </summary>
+        private SKBitmap? DecodeImageForScreen(byte[] bytes, string fileName)
+        {
+            long ts = System.Diagnostics.Stopwatch.GetTimestamp();
+
+            try
+            {
+                using var data = SKData.CreateCopy(bytes);
+                using var codec = SKCodec.Create(data);
+                if (codec is null) return SKBitmap.Decode(bytes);
+
+                var info = codec.Info;
+                int maxSide = Math.Max(info.Width, info.Height);
+
+                SKBitmap? bmp = null;
+                if (maxSide > ScreenImageMaxSidePx)
+                {
+                    float scale = ScreenImageMaxSidePx / (float)maxSide;
+                    var scaled = codec.GetScaledDimensions(scale);
+
+                    // Декодер умеет уменьшать не всякий формат: PNG отдаёт исходный
+                    // размер, и тогда картинка раскодируется обычным путём.
+                    if (scaled.Width > 0 && scaled.Height > 0
+                        && scaled.Width < info.Width && scaled.Height < info.Height)
+                    {
+                        var target = new SKImageInfo(
+                            scaled.Width, scaled.Height, SKImageInfo.PlatformColorType, SKAlphaType.Premul);
+                        var candidate = new SKBitmap(target);
+                        var result = codec.GetPixels(target, candidate.GetPixels());
+
+                        if (result == SKCodecResult.Success || result == SKCodecResult.IncompleteInput)
+                            bmp = candidate;
+                        else
+                            candidate.Dispose();
+                    }
+                }
+
+                bmp ??= SKBitmap.Decode(bytes);
+
+                double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - ts) * 1000.0
+                    / System.Diagnostics.Stopwatch.Frequency;
+                if (bmp is not null)
+                    _logger.Debug(
+                        "[IMG] Картинка {File} раскодирована за {Ms:F0} мс: {SrcW}×{SrcH} → {W}×{H}",
+                        fileName, ms, info.Width, info.Height, bmp.Width, bmp.Height);
+
+                return bmp;
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "[IMG] Уменьшенное раскодирование не удалось: {File}", fileName);
+                return SKBitmap.Decode(bytes);
+            }
+        }
+
         private SKImage? GetImageBitmap(string fileName)
         {
             if (string.IsNullOrEmpty(fileName)) return null;
@@ -1962,7 +2173,10 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     var ctx = Writersword.Core.Services.CoreServices
                         .GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()?.ActiveTab?.Context;
-                    var bytes = ctx?.ReadFile($"TextEditor/Images/{fileName}");
+                    // Картинка недавнего импорта может ещё писаться в проект — её байты
+                    // тогда лежат в буфере импорта.
+                    var bytes = Writersword.Modules.TextEditor.Services.PendingProjectImages.Read(
+                        ctx, $"TextEditor/Images/{fileName}");
                     if (bytes is { Length: > 0 })
                     {
                         // Картинка раскодируется сразу в пиксели, а не остаётся
@@ -1979,7 +2193,7 @@ namespace Writersword.Modules.TextEditor.Document
                         // снимок.
                         //
                         // Растровый образ рисуется куда угодно.
-                        bmp = SKBitmap.Decode(bytes);
+                        bmp = DecodeImageForScreen(bytes, fileName);
                         if (bmp is not null) img = SKImage.FromBitmap(bmp);
                     }
                 }
@@ -2093,8 +2307,10 @@ namespace Writersword.Modules.TextEditor.Document
             double canvasWidth,
             bool drawCaret)
         {
+            long perfLockTs = PerfNow();
             lock (ContentPassLock)
             {
+                PerfTime(t_contentViewTopPx is null ? "r.lockwait" : "bg.lockwait", perfLockTs);
                 RenderFlowModeCore(canvas, mode, layouts, tables, images, canvasHeightPt, canvasWidth, drawCaret);
             }
         }
@@ -2144,6 +2360,7 @@ namespace Writersword.Modules.TextEditor.Document
                 canvas.DrawRect(sheetX + 3f, 3f, sheetW, sheetH, _paintPageShadow);
                 canvas.DrawRect(sheetX, 0f, sheetW, sheetH, PagePaint());
                 DrawReadingPaperImage(canvas, sheetX, 0f, sheetW, sheetH, 0);
+                DrawSheetFrame(canvas, sheetX, 0f, sheetW, sheetH);
             }
             else if (EditorThemeActive)
             {
@@ -2377,6 +2594,9 @@ namespace Writersword.Modules.TextEditor.Document
             // подложка забивала бы их собой.
             DrawTocField(canvas, idx, pl, layouts, renderLayout, absX, absY);
 
+            // Рамка абзаца — тоже под текстом.
+            DrawParagraphBorders(canvas, idx, pl, layouts, renderLayout, absX, absY);
+
             // Маркер списка: выступ = фактический левый край текста − позиция маркера (в pt).
             // Левый край берём из раскладки (renderLayout.LeftIndentPt), т.е. с учётом отступа,
             // выставленного линейкой/диалогом — тогда маркер держит выступ при любом отступе текста.
@@ -2443,6 +2663,10 @@ namespace Writersword.Modules.TextEditor.Document
                 markerText: markerText,
                 markerHangingPt: markerHanging,
                 markerMinGapPt: markerMinGap);
+
+            // Непечатаемые знаки поверх текста, под выделением и кареткой.
+            if (FormattingMarksVisible)
+                DrawFormattingMarks(canvas, pl, renderLayout, absX, absY);
 
             // Выделение рисуем ПОВЕРХ содержимого (после заливки текста и глифов), иначе
             // непрозрачная заливка HighlightColor перекрывает полупрозрачную подсветку
@@ -2984,7 +3208,7 @@ namespace Writersword.Modules.TextEditor.Document
             float extra = lineIndex < sl.Lines.Count
                 ? SKTextRenderer.JustifyExtraPerSpace(sl, lineIndex, fragmentIndex)
                 : 0f;
-            if (extra > 0f && lineIndex < sl.Lines.Count)
+            if (extra != 0f && lineIndex < sl.Lines.Count)
             {
                 var (fragFrom, fragTo) = FragmentCharRange(sl.Lines[lineIndex], fragmentIndex);
                 int shiftFrom = Math.Max(selFrom, fragFrom);
@@ -3346,7 +3570,7 @@ namespace Writersword.Modules.TextEditor.Document
             var line = layout.Lines[lineIndex];
 
             float extra = SKTextRenderer.JustifyExtraPerSpace(layout, lineIndex, 0);
-            if (extra <= 0f && !line.HasWrapFragments) return stretchedX;
+            if (extra == 0f && !line.HasWrapFragments) return stretchedX;
 
             // Разорванная объектом строка растягивается по отрезкам: накопленный сдвиг
             // сбрасывается на каждом переходе, и добавка берётся своя.
@@ -3367,7 +3591,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (stretchedX <= stretchedLeft + seg.Width)
                     return seg.X + (stretchedX - stretchedLeft);
 
-                if (extra > 0f)
+                if (extra != 0f)
                 {
                     int spaces = 0;
                     foreach (var c in seg.Text)
@@ -3392,7 +3616,9 @@ namespace Writersword.Modules.TextEditor.Document
             int fragment = FragmentOfChar(line, globalCharIndex);
 
             float extra = SKTextRenderer.JustifyExtraPerSpace(layout, lineIndex, fragment);
-            if (extra <= 0f) return 0f;
+
+            // Отрицательная добавка — пробелы сжаты: строка набрана по ширине со сжатием.
+            if (extra == 0f) return 0f;
 
             bool InFragment(Core.Models.Rendering.SKRunSegment seg)
                 => !line.HasWrapFragments || seg.WrapFragmentIndex == fragment;

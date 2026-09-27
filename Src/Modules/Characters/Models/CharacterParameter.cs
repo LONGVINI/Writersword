@@ -139,5 +139,57 @@ namespace Writersword.Modules.Characters.Models
 
         private string _falseLabel = "Нет";
         public string FalseLabel { get => _falseLabel; set => Set(ref _falseLabel, value); }
+
+        // ── Вид ──────────────────────────────────────────────────────────
+        //
+        // Копия настроек вида из поля анкеты. Как и края шкалы выше, живёт у
+        // значения: анкету могли отключить, а показывать значение всё равно
+        // надо. Обновляется при правке анкеты (CharacterFieldDefinition).
+
+        private CharacterFieldDisplay _display = CharacterFieldDisplay.Auto;
+        public CharacterFieldDisplay Display { get => _display; set => Set(ref _display, value); }
+
+        private string _accentColor = string.Empty;
+        public string AccentColor { get => _accentColor; set => Set(ref _accentColor, value); }
+
+        private string _unit = string.Empty;
+        public string Unit { get => _unit; set => Set(ref _unit, value); }
+
+        private CharacterNumberModes _numberModes = CharacterNumberModes.Exact;
+        public CharacterNumberModes NumberModes { get => _numberModes; set => Set(ref _numberModes, value); }
+
+        public List<CharacterNumberStage> Stages { get; set; } = new();
+
+        public List<string> Palette { get; set; } = new();
+
+        private bool _allowCustomColor = true;
+        public bool AllowCustomColor { get => _allowCustomColor; set => Set(ref _allowCustomColor, value); }
+
+        // ── Свободное число: способ и вторая граница ─────────────────────
+
+        /// <summary>
+        /// Каким способом задано число у этого персонажа. Само число — в
+        /// NumericValue: точное, примерное, нижняя граница диапазона или год
+        /// рождения, смотря по способу.
+        /// </summary>
+        private CharacterNumberMode _numberMode = CharacterNumberMode.Exact;
+        public CharacterNumberMode NumberMode { get => _numberMode; set => Set(ref _numberMode, value); }
+
+        /// <summary>Верхняя граница диапазона. Пусто, пока не вписана.</summary>
+        private double? _numericValueTo;
+        public double? NumericValueTo { get => _numericValueTo; set => Set(ref _numericValueTo, value); }
+
+        /// <summary>
+        /// Выбранный этап. Хранится словом, как и отмеченные варианты: список
+        /// этапов правят, и номер после правки показывал бы на соседа.
+        /// </summary>
+        private string _stageName = string.Empty;
+        public string StageName { get => _stageName; set => Set(ref _stageName, value); }
+
+        // ── Цвет ─────────────────────────────────────────────────────────
+
+        /// <summary>Выбранный цвет строкой #RRGGBB. Пусто — не выбран.</summary>
+        private string _colorValue = string.Empty;
+        public string ColorValue { get => _colorValue; set => Set(ref _colorValue, value); }
     }
 }

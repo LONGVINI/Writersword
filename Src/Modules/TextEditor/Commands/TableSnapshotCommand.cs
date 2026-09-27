@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Writersword.Modules.TextEditor.Models.Document;
@@ -86,6 +87,12 @@ namespace Writersword.Modules.TextEditor.Commands
             target.RowCount = source.RowCount;
             target.ColumnCount = source.ColumnCount;
             target.Columns = source.Columns;
+
+            // Заданные высоты строк — тоже часть таблицы. Без них отмена перетаскивания
+            // границы строки и поля «Высота строки» ложилась в стек (снимки «до» и
+            // «после» различались именно этим списком), но ничего не возвращала.
+            target.RowMinHeightsPt = source.RowMinHeightsPt ?? new List<double>();
+
             target.Cells = source.Cells;
             target.StyleName = source.StyleName;
             target.WidthPercent = source.WidthPercent;

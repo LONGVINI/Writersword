@@ -5,6 +5,7 @@
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
              xmlns:controls="using:Writersword.Styles.UserControls"
+             xmlns:shared="using:Writersword.Modules.TextEditor.Views.Shared"
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonHomeTab"
              x:DataType="vm:RibbonHomeTabViewModel">
 
@@ -813,6 +814,33 @@
                                         <PathIcon Data="M7 10l5 5 5-5z" Width="8" Height="8" Foreground="{DynamicResource TextMutedBrush}"/>
                                     </StackPanel>
                                 </Button>
+                                <Separator Classes="RibbonDivider"/>
+                                <!-- Рамка абзаца: кнопка ставит последнюю выбранную сторону, меню — выбор сторон и пера. -->
+                                <SplitButton Classes="RibbonSplit" Command="{Binding BorderRepeatCommand}"
+                                             behaviours:TooltipBehavior.Tip="{Binding LastBorderTip}">
+                                    <SplitButton.Content>
+                                        <PathIcon Data="{Binding LastBorderIcon}" Width="14" Height="14"/>
+                                    </SplitButton.Content>
+                                    <SplitButton.Flyout>
+                                        <!-- Образец абзаца с плюсами у сторон и кнопкой в центре, ниже — перо. -->
+                                        <Flyout Placement="Bottom">
+                                            <shared:ParagraphBorderPicker/>
+                                        </Flyout>
+                                    </SplitButton.Flyout>
+                                </SplitButton>
+                                <controls:ColorPickerButton Width="16" Height="16" VerticalAlignment="Center"
+                                                            HexColor="{Binding BorderColorPick, Mode=TwoWay}"
+                                                            behaviours:TooltipBehavior.Tip="Цвет рамки абзаца"/>
+                                <Separator Classes="RibbonDivider"/>
+                                <!-- Непечатаемые знаки: концы абзацев, пробелы, табуляции, разрывы. -->
+                                <ToggleButton IsChecked="{Binding IsFormattingMarksVisible, Mode=OneWay}"
+                                              Command="{Binding ToggleFormattingMarksCommand}"
+                                              Classes="RibbonToggle"
+                                              behaviours:TooltipBehavior.Tip="Отобразить все знаки"
+                                              behaviours:TooltipBehavior.Description="Показывает концы абзацев, пробелы, табуляции и разрывы страниц. На печать не выходят."
+                                              behaviours:TooltipBehavior.HotKey="Ctrl+Shift+8">
+                                    <PathIcon Data="M10 11a4 4 0 0 1 0-8h9v2h-2v14h-2V5h-2v14h-2v-8z" Width="14" Height="14"/>
+                                </ToggleButton>
                             </StackPanel>
                         </StackPanel>
                     </DockPanel>
@@ -888,6 +916,34 @@
                                                           Command="{Binding AlignJustifyCommand}" Classes="RibbonToggle"
                                                           behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Align_Justify}">
                                                 <PathIcon Data="M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z" Width="14" Height="14"/>
+                                            </ToggleButton>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="2">
+                                            <!-- Рамка абзаца: кнопка ставит последнюю выбранную сторону, меню — выбор сторон и пера. -->
+                                            <SplitButton Classes="RibbonSplit" Command="{Binding BorderRepeatCommand}"
+                                                         behaviours:TooltipBehavior.Tip="{Binding LastBorderTip}">
+                                                <SplitButton.Content>
+                                                    <PathIcon Data="{Binding LastBorderIcon}" Width="14" Height="14"/>
+                                                </SplitButton.Content>
+                                                <SplitButton.Flyout>
+                                                    <!-- Образец абзаца с плюсами у сторон и кнопкой в центре, ниже — перо. -->
+                                                    <Flyout Placement="Bottom">
+                                                        <shared:ParagraphBorderPicker/>
+                                                    </Flyout>
+                                                </SplitButton.Flyout>
+                                            </SplitButton>
+                                            <controls:ColorPickerButton Width="16" Height="16" VerticalAlignment="Center"
+                                                                        HexColor="{Binding BorderColorPick, Mode=TwoWay}"
+                                                                        behaviours:TooltipBehavior.Tip="Цвет рамки абзаца"/>
+                                            <Separator Classes="RibbonDivider"/>
+                                            <!-- Непечатаемые знаки: концы абзацев, пробелы, табуляции, разрывы. -->
+                                            <ToggleButton IsChecked="{Binding IsFormattingMarksVisible, Mode=OneWay}"
+                                                          Command="{Binding ToggleFormattingMarksCommand}"
+                                                          Classes="RibbonToggle"
+                                                          behaviours:TooltipBehavior.Tip="Отобразить все знаки"
+                                                          behaviours:TooltipBehavior.Description="Показывает концы абзацев, пробелы, табуляции и разрывы страниц. На печать не выходят."
+                                                          behaviours:TooltipBehavior.HotKey="Ctrl+Shift+8">
+                                                <PathIcon Data="M10 11a4 4 0 0 1 0-8h9v2h-2v14h-2V5h-2v14h-2v-8z" Width="14" Height="14"/>
                                             </ToggleButton>
                                         </StackPanel>
                                     </StackPanel>

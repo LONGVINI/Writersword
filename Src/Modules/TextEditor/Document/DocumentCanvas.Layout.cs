@@ -677,9 +677,12 @@ namespace Writersword.Modules.TextEditor.Document
             // отпускании кнопки идёт обычная пересборка со всеми итерациями.
             _wrapZoneImagesOverride = firstPassImages;
             _wrapZoneShapesOverride = firstPassShapes;
+            // Частичный проход при сдвиге поля — тоже жест: итог всё равно пересчитает
+            // полный проход после отпускания.
             int maxWrapIterations =
                 (_imageDragging || _imageResizing || _imageRotating
-                 || _shapeDragging || _shapeResizing || _shapeRotating) ? 1 : 4;
+                 || _shapeDragging || _shapeResizing || _shapeRotating
+                 || _partialFromBlock >= 0) ? 1 : 4;
             const float ConvergedTolPt = 0.5f;
 
             for (int iter = 0; iter < maxWrapIterations; iter++)
@@ -918,6 +921,10 @@ namespace Writersword.Modules.TextEditor.Document
             var newShapes = new List<ShapeEntry>();
             var newInlineTransferred = new HashSet<ImageBlock>();
 
+            // Места явных разрывов страницы — для их отметки при показе непечатаемых
+            // знаков (DocumentCanvas.FormattingMarks).
+            var newBreakMarks = new List<PageBreakMark>();
+
             // Картинки с жёсткой привязкой к странице: позиционируются после основного
             // потока, когда известно общее число страниц и достроены недостающие.
             var pinnedImages = new List<ImageBlock>();
@@ -926,7 +933,27 @@ namespace Writersword.Modules.TextEditor.Document
             // их лист может быть ещё не создан, пока идёт основной поток.
             var pinnedShapes = new List<ShapeBlock>();
 
-            newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+            // Частичный проход — живой сдвиг поля страницы (DocumentCanvas.MarginPreview).
+            // Листы до стартового стоят на прежних местах и несут прежнее содержимое,
+            // поток начинается с верха стартового листа и идёт только до листа
+            // _partialToPage. Полный проход начинается, как всегда, с первого листа.
+            bool partialPass = _partialFromBlock >= 0;
+            if (partialPass)
+            {
+                SeedPartialPass(
+                    newPages, newLayouts, newTables, newImages, newShapes, newInlineTransferred,
+                    newBreakMarks,
+                    pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb);
+
+                pageIdx = _partialFromPage;
+                pageYPt = newPages[pageIdx].Ypt;
+                pageBottomPt = pageYPt + pageHeightPt - mb;
+                contentYPt = pageYPt + mt;
+            }
+            else
+            {
+                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+            }
 
             // Первичная отправка идёт по левому краю потока: раскладка ещё строится, и
             // на какой лист попадёт каретка, пока неизвестно. Точное значение по листу
@@ -946,6 +973,13 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             var blocks = DocVm!.Document.Sections[0].Blocks;
+
+            // Схлопывание интервалов между абзацами (см. DocumentModel.CollapseParagraphSpacing):
+            // сколько интервала после оставил предыдущий абзац и где он кончился. Абзац,
+            // начавшийся ровно там же, забирает из своего интервала до уже пройденную часть.
+            bool collapseSpacing = DocVm.Document.CollapseParagraphSpacing;
+            float collapsePrevAfterPt = 0f;
+            float collapseEndYPt = float.NaN;
 
             // Нумерация списков за один проход по блокам в порядке следования.
             var markerMap = Rendering.ListNumberingEngine.Compute(blocks);
@@ -967,12 +1001,22 @@ namespace Writersword.Modules.TextEditor.Document
             float lastTableRightPt = textXPt;
             float lastTableBotPt = contentYPt;
 
-            for (int bi = 0; bi < blocks.Count; bi++)
+            for (int bi = partialPass ? _partialFromBlock : 0; bi < blocks.Count; bi++)
             {
+                // Частичный проход кончается, как только поток ушёл за последний
+                // нужный лист: дальше видимой области вёрстка не нужна.
+                if (partialPass && pageIdx > _partialToPage) break;
+
                 var block = blocks[bi];
+
+                // Раздел под свёрнутым заголовком на лист не ложится
+                // (DocumentCanvas.HeadingCollapse).
+                if (IsCollapsedBlock(block)) continue;
 
                 if (block is BreakBlock bb && bb.BreakType == BreakType.Page)
                 {
+                    newBreakMarks.Add(new PageBreakMark(pageIdx, contentYPt));
+
                     pageYPt = pageYPt + pageHeightPt + PageGapPt;
                     pageBottomPt = pageYPt + pageHeightPt - mb;
                     contentYPt = pageYPt + mt;
@@ -1578,6 +1622,56 @@ namespace Writersword.Modules.TextEditor.Document
                     MigrateCorruptListMarker(paraBlock, textWidthPt);
                 }
 
+                // Интервал между абзацами — больший из «после» и «до», а не сумма: часть
+                // интервала до, уже пройденная интервалом после предыдущего абзаца, не
+                // добавляется второй раз. Только если абзац встаёт прямо за предыдущим:
+                // после таблицы, картинки или перехода на новый лист складывать нечего.
+                float collapseAppliedPt = 0f;
+                if (collapseSpacing && !float.IsNaN(collapseEndYPt)
+                    && Math.Abs(contentYPt - collapseEndYPt) < 0.01f)
+                {
+                    float collapseBeforePt = GetOrBuildLayout(pvm, textWidthPt).SpaceBeforePt;
+                    collapseAppliedPt = Math.Min(collapsePrevAfterPt, collapseBeforePt);
+                    contentYPt -= collapseAppliedPt;
+                }
+                collapseEndYPt = float.NaN;
+
+                // Правила Word, по которым абзац начинает новую страницу, ещё не дойдя
+                // до её низа. На верху листа оба ничего не делают: абзац уже там.
+                //
+                // «С новой страницы» (w:pageBreakBefore) — абзац всегда открывает лист.
+                // Так устроены, например, заголовки частей: у них это записано в стиле,
+                // и без этого правила часть начиналась посреди страницы с хвостом
+                // предыдущей.
+                //
+                // «Не отрывать от следующего» (w:keepNext) — абзац стоит на одной
+                // странице с началом следующего. Заголовок не остаётся один внизу листа,
+                // а переезжает вместе с текстом, который он озаглавливает. Цепочка
+                // таких абзацев переезжает целиком. Если цепочка не помещается даже на
+                // пустой лист, правило не соблюсти — абзац остаётся где был, как в Word.
+                bool paraAtPageTop = contentYPt <= pageYPt + mt + 0.5f;
+                if (!paraAtPageTop)
+                {
+                    bool breakBefore = paraBlock.Properties.PageBreakBefore;
+
+                    if (!breakBefore && paraBlock.Properties.KeepWithNext)
+                    {
+                        float chainPt = KeepWithNextChainHeight(blocks, bi, pvmByBlock, textWidthPt)
+                            - collapseAppliedPt;
+                        float pageTextPt = pageBottomPt - (pageYPt + mt);
+                        breakBefore = chainPt > pageBottomPt - contentYPt && chainPt <= pageTextPt;
+                    }
+
+                    if (breakBefore)
+                    {
+                        pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                        pageBottomPt = pageYPt + pageHeightPt - mb;
+                        contentYPt = pageYPt + mt;
+                        pageIdx++;
+                        newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                    }
+                }
+
                 // Обтекание текстом: если рядом с вертикалью параграфа лежит плавающая
                 // картинка в режиме Square/Tight — строим раскладку с зонами исключения,
                 // строки обходят габарит картинки. Такой лейаут не кешируется.
@@ -1679,9 +1773,11 @@ namespace Writersword.Modules.TextEditor.Document
                 // что здесь якорь занимает строку (contentYPt += FallbackLinePt), а там нет:
                 // абзац между таблицами подходит под оба условия, попадал в это, первое, и
                 // раздвигал таблицы на пустую строку, убрать которую было нечем.
+                // Таблица, скрытая свёрнутым заголовком, соседом не считается: её нет на листе.
                 bool isBeforeTableAnchor = string.IsNullOrEmpty(pvm.PlainText)
                     && bi + 1 < blocks.Count && blocks[bi + 1] is TableBlock
-                    && !(bi > 0 && blocks[bi - 1] is TableBlock);
+                    && !IsCollapsedBlock(blocks[bi + 1])
+                    && !(bi > 0 && blocks[bi - 1] is TableBlock && !IsCollapsedBlock(blocks[bi - 1]));
                 if (isBeforeTableAnchor)
                 {
                     float anchorXPt = textXPt + (float)((TableBlock)blocks[bi + 1]).LeftIndentPt;
@@ -1701,7 +1797,8 @@ namespace Writersword.Modules.TextEditor.Document
 
                 // Якорь после таблицы: пустой параграф, предыдущий блок — таблица.
                 bool isAfterTableAnchor = string.IsNullOrEmpty(pvm.PlainText)
-                    && bi > 0 && blocks[bi - 1] is TableBlock;
+                    && bi > 0 && blocks[bi - 1] is TableBlock
+                    && !IsCollapsedBlock(blocks[bi - 1]);
                 if (isAfterTableAnchor)
                 {
                     float anchorY = lastTableBotPt - FallbackLinePt;
@@ -1958,11 +2055,15 @@ namespace Writersword.Modules.TextEditor.Document
                     contentYPt - lineGroupYPt,
                     pageIdx, lineFrom, layout.Lines.Count,
                     AbsXPt: absXPt, Marker: paraMarker));
+
+                collapsePrevAfterPt = layout.SpaceAfterPt;
+                collapseEndYPt = contentYPt;
             }
 
             // Сверка вёрстки с внешним редактором: лист, строки и незанятое место
             // внизу страниц. Запись обновляется, когда меняется что-то из измеряемого.
-            if (newLayouts.Count > 0)
+            // Частичный проход видит лишь кусок документа — сверять его не с чем.
+            if (newLayouts.Count > 0 && !partialPass)
                 LogPaginationProbe(newLayouts, newPages, pageWidthPt, pageHeightPt, ml, mt, mr, mb, textWidthPt);
 
             // ── Картинки с жёсткой привязкой к странице ──────────────────────
@@ -2103,6 +2204,21 @@ namespace Writersword.Modules.TextEditor.Document
             // известна только по готовым строкам.
             CollectInlineImageEntries(newLayouts, newImages);
 
+            // Частичный проход не знает, сколько листов выйдет у всего документа.
+            // Листы за его концом остаются пустыми, но остаются: иначе холст на время
+            // жеста укоротился бы, и прокрутка прыгнула бы вверх.
+            if (partialPass)
+            {
+                int keepPages;
+                lock (_renderLock) keepPages = _pages.Count;
+
+                while (newPages.Count < keepPages)
+                {
+                    pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                    newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                }
+            }
+
             float newCanvasH = pageYPt + pageHeightPt + PageGapPt;
 
             // Страницы рядом: высота канваса определяется числом визуальных рядов,
@@ -2128,6 +2244,10 @@ namespace Writersword.Modules.TextEditor.Document
             if (_passRibbonBandHeights.Length > 0)
                 newCanvasH = ReadingRibbonHeightPt(newPages, _passRibbonBandHeights);
 
+            // Высота холста во время частичного прохода не уменьшается — по той же причине.
+            if (partialPass)
+                newCanvasH = Math.Max(newCanvasH, _canvasHeightPt);
+
             // Результат прохода: промежуточные проходы сходимости обтекания его только
             // копят, наружу уходит последний. Иначе рендер успевает поймать промежуточный
             // кадр — в первом проходе абзац ещё не знает про картинку и верстается во всю
@@ -2138,9 +2258,103 @@ namespace Writersword.Modules.TextEditor.Document
             _passImages = newImages;
             _passShapes = newShapes;
             _passInlineTransferred = newInlineTransferred;
+            _passBreakMarks = newBreakMarks;
             _passCanvasHeightPt = newCanvasH;
 
             if (_publishPassResults) PublishPassResults();
+        }
+
+        // Сколько абзацев подряд с «не отрывать от следующего» проверяется за раз.
+        // Длиннее цепочки в живых документах не бывает, а потолок не даёт проверке
+        // уйти по всему документу, где правило стоит у каждого абзаца.
+        private const int MaxKeepWithNextChain = 16;
+
+        /// <summary>
+        /// Высота, которая должна поместиться на странице вместе с абзацем bi, чтобы
+        /// «не отрывать от следующего» было соблюдено: сам абзац и все следующие за
+        /// ним абзацы цепочки целиком, плюс начало абзаца, который цепочку замыкает.
+        ///
+        /// Начало — две первые строки, а не одна: абзац, от которого на странице
+        /// осталась бы одна строка, пагинация и так уносит на следующий лист целиком
+        /// (запрет висячих строк), и заголовок снова остался бы один. Абзац из одной
+        /// или двух строк берётся целиком. За таблицей — её первая строка.
+        ///
+        /// Разрыв страницы или абзац «с новой страницы» внутри цепочки её обрывают:
+        /// следующий текст всё равно начнёт новый лист, и держаться не за что — тогда
+        /// правило ничего не требует, и возвращается ноль.
+        /// </summary>
+        private float KeepWithNextChainHeight(
+            IReadOnlyList<BlockModel> blocks,
+            int startIndex,
+            Dictionary<ParagraphBlock, ParagraphViewModel> pvmByBlock,
+            float textWidthPt)
+        {
+            float total = 0f;
+            bool collapseSpacing = DocVm?.Document.CollapseParagraphSpacing == true;
+            float chainPrevAfterPt = float.NaN;
+
+            // Скрытые свёрнутым заголовком блоки в цепочку не входят: на листе их нет, и
+            // заголовок держится за то, что под ним видно. Длина цепочки считается по
+            // видимым блокам.
+            int chainSeen = 0;
+            for (int k = startIndex; k < blocks.Count && chainSeen < MaxKeepWithNextChain; k++)
+            {
+                var block = blocks[k];
+
+                if (k > startIndex && IsCollapsedBlock(block)) continue;
+                chainSeen++;
+
+                if (block is BreakBlock) return 0f;
+
+                if (block is TableBlock table)
+                {
+                    var tableLayout = GetOrBuildTableLayout(table, textWidthPt);
+                    if (tableLayout.Rows.Count > 0)
+                        total += tableLayout.Rows[0].HeightPt;
+                    return total;
+                }
+
+                if (block is not ParagraphBlock para) return total;
+                if (k > startIndex && para.Properties.PageBreakBefore) return 0f;
+                if (!pvmByBlock.TryGetValue(para, out var vm)) return total;
+
+                var layout = GetOrBuildLayout(vm, textWidthPt);
+                bool continuesChain = k == startIndex || para.Properties.KeepWithNext;
+
+                // Интервал до, уже покрытый интервалом после предыдущего абзаца цепочки,
+                // при схлопывании второй раз не считается — как и в самой вёрстке.
+                float chainBeforePt = layout.SpaceBeforePt;
+                if (collapseSpacing && !float.IsNaN(chainPrevAfterPt))
+                    chainBeforePt = Math.Max(0f, chainBeforePt - chainPrevAfterPt);
+                total += chainBeforePt;
+
+                if (layout.Lines.Count == 0)
+                {
+                    total += FallbackLinePt;
+                    if (!continuesChain || !para.Properties.KeepWithNext) return total;
+                    total += layout.SpaceAfterPt;
+                    chainPrevAfterPt = float.NaN;
+                    continue;
+                }
+
+                if (k > startIndex && !para.Properties.KeepWithNext)
+                {
+                    // Замыкающий абзац: только его начало.
+                    int lines = layout.Lines.Count <= 2 ? layout.Lines.Count : 2;
+                    for (int li = 0; li < lines; li++)
+                        total += layout.Lines[li].Height;
+                    return total;
+                }
+
+                foreach (var line in layout.Lines)
+                    total += line.Height;
+                total += layout.SpaceAfterPt;
+                chainPrevAfterPt = layout.SpaceAfterPt;
+
+                if (!continuesChain) return total;
+            }
+
+            return total;
         }
 
         // Результат последнего выполненного прохода раскладки страниц.
@@ -2180,6 +2394,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _images = _passImages;
                 _shapes = _passShapes;
                 _inlineTransferredImages = _passInlineTransferred;
+                _breakMarks = _passBreakMarks;
                 _canvasHeightPt = _passCanvasHeightPt;
                 _canvasHeight = _passCanvasHeightPt * PtToPx;
             }
@@ -2191,7 +2406,19 @@ namespace Writersword.Modules.TextEditor.Document
             // Число страниц и строк меняется ровно здесь, вместе с видимой раскладкой.
             // Уведомление идёт за пределами замка: получатель работает со строкой
             // состояния, и держать на нём замок рендера незачем.
-            NotifyPagination();
+            //
+            // Частичный проход числа страниц не знает: строка состояния ждёт полного.
+            if (_partialFromBlock < 0)
+            {
+                NotifyPagination();
+                LogFirstPagesComposition();
+
+                // Документ разложен целиком — можно вернуть человека туда, где он был.
+                // Отдельным шагом: сейчас идёт пересборка, и каретку она ещё двигает.
+                if (_pendingViewRestore is not null)
+                    Avalonia.Threading.Dispatcher.UIThread.Post(
+                        ApplyPendingViewRestore, Avalonia.Threading.DispatcherPriority.Loaded);
+            }
         }
 
         /// <summary>
@@ -2263,7 +2490,7 @@ namespace Writersword.Modules.TextEditor.Document
                             }
                         }
 
-                        if (extraPerSpace > 0f)
+                        if (extraPerSpace != 0f)
                         {
                             int segSpaces = 0;
                             foreach (var c in seg.Text)
@@ -2360,6 +2587,13 @@ namespace Writersword.Modules.TextEditor.Document
 
             var blocks = DocVm!.Document.Sections[0].Blocks;
 
+            // Схлопывание интервалов между абзацами (см. DocumentModel.CollapseParagraphSpacing):
+            // сколько интервала после оставил предыдущий абзац и где он кончился. Абзац,
+            // начавшийся ровно там же, забирает из своего интервала до уже пройденную часть.
+            bool collapseSpacing = DocVm.Document.CollapseParagraphSpacing;
+            float collapsePrevAfterPt = 0f;
+            float collapseEndYPt = float.NaN;
+
             // Нумерация списков за один проход по блокам в порядке следования.
             var markerMap = Rendering.ListNumberingEngine.Compute(blocks);
 
@@ -2386,6 +2620,10 @@ namespace Writersword.Modules.TextEditor.Document
             for (int bi = 0; bi < blocks.Count; bi++)
             {
                 var block = blocks[bi];
+
+                // Раздел под свёрнутым заголовком в поток не ложится
+                // (DocumentCanvas.HeadingCollapse).
+                if (IsCollapsedBlock(block)) continue;
 
                 if (block is TableBlock tableBlock)
                 {
@@ -2508,7 +2746,8 @@ namespace Writersword.Modules.TextEditor.Document
                 var layout = GetOrBuildLayout(pvm, textWidthPt);
 
                 // Якорь перед таблицей
-                if (string.IsNullOrEmpty(pvm.PlainText) && bi + 1 < blocks.Count && blocks[bi + 1] is TableBlock nextFlowTb)
+                if (string.IsNullOrEmpty(pvm.PlainText) && bi + 1 < blocks.Count && blocks[bi + 1] is TableBlock nextFlowTb
+                    && !IsCollapsedBlock(nextFlowTb))
                 {
                     float anchorX = padWPt + (float)nextFlowTb.LeftIndentPt - AnchorMarginPt;
                     newLayouts.Add(new ParaLayout(pvm, layout, yPt, FallbackLinePt,
@@ -2517,7 +2756,8 @@ namespace Writersword.Modules.TextEditor.Document
                 }
 
                 // Якорь после таблицы
-                if (string.IsNullOrEmpty(pvm.PlainText) && bi > 0 && blocks[bi - 1] is TableBlock)
+                if (string.IsNullOrEmpty(pvm.PlainText) && bi > 0 && blocks[bi - 1] is TableBlock prevFlowTb
+                    && !IsCollapsedBlock(prevFlowTb))
                 {
                     newLayouts.Add(new ParaLayout(pvm, layout,
                         lastTableBotPt - FallbackLinePt, FallbackLinePt,
@@ -2540,6 +2780,11 @@ namespace Writersword.Modules.TextEditor.Document
                     continue;
                 }
 
+                // Схлопывание интервалов — как в режиме страниц.
+                if (collapseSpacing && !float.IsNaN(collapseEndYPt)
+                    && Math.Abs(yPt - collapseEndYPt) < 0.01f)
+                    yPt -= Math.Min(collapsePrevAfterPt, layout.SpaceBeforePt);
+
                 float hPt = Math.Max(layout.TotalHeightPt, FallbackLinePt);
                 newLayouts.Add(new ParaLayout(
                     pvm, layout,
@@ -2547,6 +2792,9 @@ namespace Writersword.Modules.TextEditor.Document
                     0, 0, layout.Lines.Count,
                     AbsXPt: padWPt, Marker: paraMarker));
                 yPt += layout.BlockHeightPt;
+
+                collapsePrevAfterPt = layout.SpaceAfterPt;
+                collapseEndYPt = yPt;
             }
 
             float newCanvasH = yPt + padHPt;

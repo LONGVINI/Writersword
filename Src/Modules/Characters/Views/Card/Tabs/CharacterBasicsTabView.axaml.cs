@@ -1,6 +1,7 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -28,6 +29,10 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
         {
             InitializeComponent();
             DataContextChanged += OnDataContextChanged;
+
+            // Блоки, свёрнутые в этом сеансе, остаются свёрнутыми и у следующей
+            // открытой карточки.
+            ApplyStoredCollapsedBlocks();
 
             // Перенос плитки ведётся на уровне всей карточки: во время
             // переноса порядок меняется на лету, и список пересоздаёт плитки —
@@ -310,6 +315,599 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
         // Значок на месте пустого описания: щелчок по нему ставит курсор
         // в само поле. Поле лежит под значком, и без этого щелчок пришёлся бы
         // в пустоту.
+        // ── Сворачивание блоков ───────────────────────────────────────────
+
+        // Ключи свёрнутых блоков (Tag блока в разметке). Общие для всех карточек
+        // и живут до конца сеанса: свернул «Классификацию» у одного персонажа —
+        // она свёрнута и у следующего, которого откроешь.
+        private static readonly HashSet<string> CollapsedBlocks = new(StringComparer.Ordinal);
+
+        /// <summary>Щелчок по заголовку блока сворачивает его или разворачивает.</summary>
+        private void OnBlockHeaderTapped(object? sender, TappedEventArgs e)
+        {
+            if (sender is not Control header) return;
+
+            var block = FindBlockOf(header);
+            if (block is null) return;
+
+            bool collapse = !block.Classes.Contains("collapsed");
+            block.Classes.Set("collapsed", collapse);
+
+            if (block.Tag is string key)
+            {
+                if (collapse) CollapsedBlocks.Add(key);
+                else CollapsedBlocks.Remove(key);
+            }
+
+            e.Handled = true;
+        }
+
+        /// <summary>Блок, которому принадлежит заголовок.</summary>
+        private static Border? FindBlockOf(Control header)
+        {
+            for (var node = header.GetLogicalParent(); node is not null; node = node.GetLogicalParent())
+                if (node is Border border && border.Classes.Contains("block"))
+                    return border;
+
+            return null;
+        }
+
+        private void ApplyStoredCollapsedBlocks()
+        {
+            if (CollapsedBlocks.Count == 0) return;
+
+            foreach (var border in this.GetLogicalDescendants().OfType<Border>())
+            {
+                if (!border.Classes.Contains("block")) continue;
+                if (border.Tag is string key && CollapsedBlocks.Contains(key))
+                    border.Classes.Set("collapsed", true);
+            }
+        }
+
+        // ── Шапка, уезжающая вправо ───────────────────────────────────────
+        //
+        // Шапка одна и та же в обоих положениях. Развёрнутая стоит во всю ширину
+        // карточки поверх стопки, стопка начинается с отступа на её высоту.
+        // Когда стопку прокрутили настолько, что шапка закрывает уже блоки, а не
+        // пустое место над ними, шапка переезжает карточкой в правую колонку над
+        // галереей: сужается к правому краю, опускается на поле колонки,
+        // скругляется и обводится рамкой, а имя с описанием уходят под аватар.
+        // Все её поля при этом остаются живыми. Переезд идёт по времени, а не по
+        // прокрутке, и назад — так же.
+
+        // Ширина шапки-карточки: правая колонка 284 без своего правого поля 20.
+        private const double CompactHeaderWidth = 264;
+
+        // Положение шапки-карточки: на верхнем поле правой колонки, вровень с галереей.
+        private static readonly Thickness CompactHeaderMargin = new(0, 16, 20, 0);
+
+        // Поля шапки: в карточке по бокам уже, иначе имени почти не остаётся места.
+        // Верхнее поле одинаковое: от него считается свисание закладки группы.
+        private static readonly Thickness ExpandedHeaderPadding = new(20, 14, 20, 14);
+        private static readonly Thickness CompactHeaderPadding = new(12, 14, 12, 14);
+
+        private static readonly Thickness ExpandedHeaderBorder = new(0, 0, 0, 1);
+        private static readonly Thickness CompactHeaderBorder = new(1);
+
+        private const double CompactHeaderCornerRadius = 8;
+
+        // Отступ имени от аватара: справа от него в развёрнутой шапке и под ним
+        // в карточке.
+        private static readonly Thickness ExpandedTitleMargin = new(10, 0, 10, 0);
+        private static readonly Thickness CompactTitleMargin = new(0, 2, 0, 0);
+
+        // Кольцо аватара стоит на холсте не по центру: слева от него дуга с
+        // кнопками цвета и настроек. Середина кольца — 72 при ширине холста 114,
+        // то есть на 15 правее середины холста. Правое поле в 30 сдвигает холст
+        // на 15 влево, и кольцо встаёт ровно по центру карточки.
+        private static readonly Thickness CompactAvatarMargin = new(0, 0, 30, 0);
+
+        // Просвет между шапкой-карточкой и галереей.
+        private const double CompactGap = 12;
+
+        // Верхнее поле стопки под развёрнутой шапкой.
+        private const double BodyTopMargin = 16;
+
+        // Шапка переезжает не раньше, чем стопку сдвинули хотя бы на столько:
+        // у короткой карточки иначе хватало бы дрогнуть колесом.
+        private const double CompactMinEnterOffset = 24;
+
+        // Насколько выше точки переезда надо подняться, чтобы шапка вернулась.
+        // Разрыв не даёт ей метаться туда-сюда на границе.
+        private const double CompactLeaveBackOff = 32;
+
+        private static readonly TimeSpan HeaderMoveDuration = TimeSpan.FromMilliseconds(350);
+
+        // Высота развёрнутой шапки: от неё отступ стопки и точка переезда. В
+        // карточке шапка выше — имя стоит под аватаром, — но стопке до этого
+        // дела нет: её отступ не меняется, чтобы прокрутка не прыгала.
+        private double _expandedHeaderHeight;
+
+        // Высота шапки-карточки: от неё место над галереей.
+        private double _compactHeaderHeight;
+
+        private bool _headerCompact;
+
+        // Пока идёт переезд, размеры шапки меняет переход, и отвечать на них
+        // пересчётом раскладки нельзя — он оборвал бы переход на полпути.
+        private bool _headerMoving;
+
+        // Номер переезда: завершение старого переезда, начатого до смены
+        // направления, не должно трогать новый.
+        private int _headerMoveVersion;
+
+        private readonly TranslateTransform _avatarShift = new();
+        private readonly TranslateTransform _titleShift = new();
+
+        private void OnCardRootSizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            if (_headerMoving) return;
+
+            // Ширина развёрнутой шапки идёт за окном без перехода: тянуть её
+            // с запаздыванием за краем окна незачем.
+            ApplyHeaderLayout();
+        }
+
+        private void OnCardHeaderSizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            if (_headerMoving) return;
+
+            double height = e.NewSize.Height;
+
+            if (_headerCompact)
+            {
+                // В карточке высота меняется, когда появляется или пропадает
+                // описание: место над галереей идёт следом, без перехода.
+                if (Math.Abs(height - _compactHeaderHeight) < 0.5) return;
+                _compactHeaderHeight = height;
+                ApplyHeaderLayout();
+                return;
+            }
+
+            if (Math.Abs(height - _expandedHeaderHeight) < 0.5) return;
+
+            _expandedHeaderHeight = height;
+
+            // Отступ стопки — полная высота развёрнутой шапки в любом её
+            // положении: высота прокрутки не меняется при переезде, и смещение
+            // не прыгает. Когда шапка переезжает, этот отступ уже прокручен и не
+            // виден.
+            var stack = this.FindControl<StackPanel>("BodyStack");
+            if (stack != null)
+            {
+                var m = stack.Margin;
+                stack.Margin = new Thickness(m.Left, _expandedHeaderHeight + BodyTopMargin, m.Right, m.Bottom);
+            }
+
+            ApplyHeaderLayout();
+            UpdateHeaderState();
+        }
+
+        private void OnBodyScrollChanged(object? sender, ScrollChangedEventArgs e)
+        {
+            UpdateHeaderState();
+
+            if (sender is not ScrollViewer scroll) return;
+
+            // Прокрутка, которую надо вернуть, ставится, как только карточка
+            // разложилась достаточно; до этого вьюмодели не сообщается —
+            // иначе промежуточный ноль затёр бы запомненное место.
+            if (_pendingScrollY.HasValue)
+            {
+                TryApplyPendingScroll(scroll);
+                return;
+            }
+
+            if (DataContext is CharacterBasicsTabViewModel vm)
+                vm.BodyScrollY = scroll.Offset.Y;
+        }
+
+        // ── Возврат прокрутки ─────────────────────────────────────────────
+        //
+        // Место в карточке восстанавливается после перезапуска и пересоздания
+        // модуля. Разделы анкет собираются не сразу, и высота стопки растёт
+        // несколько проходов раскладки, поэтому прокрутка ставится по мере
+        // роста — но не дольше короткого окна: после него это уже прокрутка
+        // автора, а не восстановление.
+
+        private static readonly TimeSpan PendingScrollWindow = TimeSpan.FromSeconds(1.5);
+
+        private double? _pendingScrollY;
+        private DateTime _pendingScrollSince;
+        private CharacterBasicsTabViewModel? _scrollVm;
+
+        private void OnPendingScrollRequested()
+        {
+            if (_scrollVm is null) return;
+
+            var value = _scrollVm.TakePendingScroll();
+            if (!value.HasValue) return;
+
+            _pendingScrollY = value;
+            _pendingScrollSince = DateTime.UtcNow;
+
+            var scroll = this.FindControl<ScrollViewer>("BodyScroll");
+            if (scroll != null)
+                Dispatcher.UIThread.Post(() => TryApplyPendingScroll(scroll), DispatcherPriority.Loaded);
+        }
+
+        private void TryApplyPendingScroll(ScrollViewer scroll)
+        {
+            if (!_pendingScrollY.HasValue) return;
+
+            var target = _pendingScrollY.Value;
+            var max = Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height);
+
+            if (max >= target - 0.5)
+            {
+                _pendingScrollY = null;
+                scroll.Offset = new Vector(scroll.Offset.X, target);
+                return;
+            }
+
+            if (DateTime.UtcNow - _pendingScrollSince > PendingScrollWindow)
+            {
+                // Карточка стала короче, чем была: встаём так низко, как можно.
+                _pendingScrollY = null;
+                scroll.Offset = new Vector(scroll.Offset.X, max);
+                return;
+            }
+
+            scroll.Offset = new Vector(scroll.Offset.X, max);
+        }
+
+        private void UpdateHeaderState()
+        {
+            var scroll = this.FindControl<ScrollViewer>("BodyScroll");
+            if (scroll is null || _expandedHeaderHeight <= 0) return;
+
+            double spare = scroll.Extent.Height - scroll.Viewport.Height;
+            double offset = scroll.Offset.Y;
+
+            // Точка переезда — когда отступ под шапкой прокручен целиком. У
+            // короткой карточки столько не прокрутить, и тогда переезд — в самом
+            // конце прокрутки.
+            double enterAt = Math.Max(CompactMinEnterOffset, Math.Min(_expandedHeaderHeight, spare - 1));
+
+            if (!_headerCompact)
+            {
+                if (spare > CompactMinEnterOffset && offset >= enterAt)
+                    SetHeaderCompact(true);
+            }
+            else
+            {
+                double leaveAt = Math.Max(0, enterAt - CompactLeaveBackOff);
+                if (offset <= leaveAt)
+                    SetHeaderCompact(false);
+            }
+        }
+
+        /// <summary>
+        /// Переезд шапки. Раскладка внутри неё меняется сразу — имя встаёт под
+        /// аватар или обратно рядом, — а глазу это показывается переходом:
+        /// аватар и имя стартуют с прежних мест и доезжают до новых, шапка
+        /// плавно меняет ширину, высоту, поля и рамку.
+        /// </summary>
+        private void SetHeaderCompact(bool compact)
+        {
+            if (_headerCompact == compact) return;
+
+            var root = this.FindControl<Grid>("CardRoot");
+            var header = this.FindControl<Border>("CardHeader");
+            var avatar = this.FindControl<Canvas>("HeaderAvatar");
+            var title = this.FindControl<StackPanel>("HeaderTitle");
+            var spacer = this.FindControl<Border>("SideHeaderSpacer");
+            if (root is null || header is null || avatar is null || title is null) return;
+
+            double rootWidth = root.Bounds.Width;
+            if (rootWidth <= 0) return;
+
+            int version = ++_headerMoveVersion;
+            _headerMoving = true;
+
+            // Прежнее состояние: откуда стартуют переходы. Текущий сдвиг
+            // аватара и имени учитывается — переезд мог смениться обратным
+            // посреди пути.
+            // Значения снимаются до того, как переходы выключены: без них
+            // свойства сразу встали бы на конечные значения прошлого переезда.
+            double fromWidth = header.Bounds.Width;
+            double fromHeight = header.Bounds.Height;
+            Thickness fromMargin = header.Margin;
+            Thickness fromPadding = header.Padding;
+            Thickness fromBorder = header.BorderThickness;
+            CornerRadius fromCorner = header.CornerRadius;
+            Point? avatarFrom = avatar.TranslatePoint(new Point(0, 0), header);
+            Point? titleFrom = title.TranslatePoint(new Point(0, 0), header);
+            header.Transitions = null;
+
+            _headerCompact = compact;
+            root.Classes.Set("compact", compact);
+            ApplyHeaderPlacement();
+
+            // Конечная высота шапки: меряется в новой раскладке и новой ширине.
+            // Размеры ставятся конечными только на время замера и тут же
+            // возвращаются — переходы ещё выключены, поэтому ничего не мигнёт.
+            double toWidth = compact ? Math.Min(CompactHeaderWidth, rootWidth) : rootWidth;
+            Thickness toMargin = compact ? CompactHeaderMargin : default;
+            Thickness toPadding = compact ? CompactHeaderPadding : ExpandedHeaderPadding;
+            Thickness toBorder = compact ? CompactHeaderBorder : ExpandedHeaderBorder;
+            CornerRadius toCorner = compact ? new CornerRadius(CompactHeaderCornerRadius) : default;
+
+            header.Height = double.NaN;
+            header.Width = toWidth;
+            header.Margin = toMargin;
+            header.Padding = toPadding;
+            header.BorderThickness = toBorder;
+            header.Measure(new Size(rootWidth, double.PositiveInfinity));
+            double toHeight = header.DesiredSize.Height - toMargin.Top - toMargin.Bottom;
+
+            if (compact) _compactHeaderHeight = toHeight;
+
+            header.Width = fromWidth;
+            header.Height = fromHeight;
+            header.Margin = fromMargin;
+            header.Padding = fromPadding;
+            header.BorderThickness = fromBorder;
+            header.CornerRadius = fromCorner;
+
+            header.Transitions = CreateHeaderTransitions();
+            header.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
+            header.Width = toWidth;
+            header.Height = toHeight;
+            header.Margin = toMargin;
+            header.Padding = toPadding;
+            header.BorderThickness = toBorder;
+            header.CornerRadius = toCorner;
+
+            if (spacer != null)
+            {
+                spacer.Transitions = CreateSpacerTransitions();
+                spacer.Height = compact ? toHeight + CompactGap : _expandedHeaderHeight;
+            }
+
+            // Аватар и имя: новое место известно только после раскладки, поэтому
+            // она проводится сразу, до отрисовки, и сдвиг к прежнему месту
+            // ставится в том же кадре — глазу скачок не виден.
+            header.UpdateLayout();
+            StartShiftFrom(avatar, _avatarShift, avatarFrom, header);
+            StartShiftFrom(title, _titleShift, titleFrom, header);
+
+            DispatcherTimer.RunOnce(() =>
+            {
+                if (version != _headerMoveVersion) return;
+                FinishHeaderMove();
+            }, HeaderMoveDuration + TimeSpan.FromMilliseconds(40));
+        }
+
+        /// <summary>
+        /// Конец переезда: переходы снимаются, высота шапки снова идёт по
+        /// содержимому — описание можно добавить или стереть, и шапка
+        /// подстроится сама.
+        /// </summary>
+        private void FinishHeaderMove()
+        {
+            var header = this.FindControl<Border>("CardHeader");
+            var spacer = this.FindControl<Border>("SideHeaderSpacer");
+
+            if (header != null)
+            {
+                header.Transitions = null;
+                header.Height = double.NaN;
+            }
+
+            if (spacer != null)
+                spacer.Transitions = null;
+
+            _avatarShift.Transitions = null;
+            _titleShift.Transitions = null;
+            _avatarShift.X = 0;
+            _avatarShift.Y = 0;
+            _titleShift.X = 0;
+            _titleShift.Y = 0;
+
+            _headerMoving = false;
+
+            ApplyHeaderLayout();
+            UpdateHeaderState();
+        }
+
+        /// <summary>
+        /// Раскладка шапки без перехода — при смене размера окна или высоты
+        /// шапки и по окончании переезда.
+        /// </summary>
+        private void ApplyHeaderLayout()
+        {
+            var root = this.FindControl<Grid>("CardRoot");
+            var header = this.FindControl<Border>("CardHeader");
+            var spacer = this.FindControl<Border>("SideHeaderSpacer");
+            if (root is null || header is null) return;
+
+            double rootWidth = root.Bounds.Width;
+            if (rootWidth <= 0) return;
+
+            ApplyHeaderPlacement();
+
+            header.Transitions = null;
+            header.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
+            header.Width = _headerCompact ? Math.Min(CompactHeaderWidth, rootWidth) : rootWidth;
+            header.Margin = _headerCompact ? CompactHeaderMargin : default;
+            header.Padding = _headerCompact ? CompactHeaderPadding : ExpandedHeaderPadding;
+            header.BorderThickness = _headerCompact ? CompactHeaderBorder : ExpandedHeaderBorder;
+            header.CornerRadius = _headerCompact
+                ? new CornerRadius(CompactHeaderCornerRadius)
+                : default;
+
+            if (spacer != null)
+            {
+                spacer.Transitions = null;
+                spacer.Height = _headerCompact
+                    ? _compactHeaderHeight + CompactGap
+                    : _expandedHeaderHeight;
+            }
+        }
+
+        /// <summary>
+        /// Места аватара, имени и закладки группы внутри шапки. Развёрнутая:
+        /// аватар слева, имя справа от него. Карточка: аватар по центру, имя
+        /// под ним во всю ширину, закладка у правого края карточки.
+        /// </summary>
+        private void ApplyHeaderPlacement()
+        {
+            var avatar = this.FindControl<Canvas>("HeaderAvatar");
+            var title = this.FindControl<StackPanel>("HeaderTitle");
+            var flag = this.FindControl<Panel>("HeaderFlag");
+
+            if (avatar != null)
+            {
+                Grid.SetRow(avatar, 0);
+                Grid.SetColumn(avatar, 0);
+                Grid.SetColumnSpan(avatar, _headerCompact ? 2 : 1);
+                avatar.HorizontalAlignment = _headerCompact
+                    ? Avalonia.Layout.HorizontalAlignment.Center
+                    : Avalonia.Layout.HorizontalAlignment.Stretch;
+                avatar.Margin = _headerCompact ? CompactAvatarMargin : default;
+            }
+
+            if (title != null)
+            {
+                Grid.SetRow(title, _headerCompact ? 1 : 0);
+                Grid.SetColumn(title, _headerCompact ? 0 : 1);
+                Grid.SetColumnSpan(title, _headerCompact ? 2 : 1);
+                title.HorizontalAlignment = _headerCompact
+                    ? Avalonia.Layout.HorizontalAlignment.Stretch
+                    : Avalonia.Layout.HorizontalAlignment.Left;
+                title.Margin = _headerCompact ? CompactTitleMargin : ExpandedTitleMargin;
+            }
+
+            if (flag != null)
+            {
+                Grid.SetRow(flag, 0);
+                Grid.SetColumn(flag, _headerCompact ? 0 : 1);
+                Grid.SetColumnSpan(flag, _headerCompact ? 2 : 1);
+            }
+        }
+
+        /// <summary>
+        /// Сдвинуть элемент туда, где он был до смены раскладки, и дать ему
+        /// доехать до нового места.
+        /// </summary>
+        private static void StartShiftFrom(Control element, TranslateTransform shift, Point? from, Visual container)
+        {
+            if (!ReferenceEquals(element.RenderTransform, shift))
+                element.RenderTransform = shift;
+
+            shift.Transitions = null;
+
+            if (!from.HasValue) return;
+
+            // Новое место без сдвига: текущее положение минус висящий сдвиг.
+            var now = element.TranslatePoint(new Point(0, 0), container);
+            if (!now.HasValue) return;
+
+            double baseX = now.Value.X - shift.X;
+            double baseY = now.Value.Y - shift.Y;
+
+            shift.X = from.Value.X - baseX;
+            shift.Y = from.Value.Y - baseY;
+
+            var easing = new Avalonia.Animation.Easings.CubicEaseInOut();
+            shift.Transitions = new Avalonia.Animation.Transitions
+            {
+                new Avalonia.Animation.DoubleTransition
+                {
+                    Property = TranslateTransform.XProperty,
+                    Duration = HeaderMoveDuration,
+                    Easing = easing
+                },
+                new Avalonia.Animation.DoubleTransition
+                {
+                    Property = TranslateTransform.YProperty,
+                    Duration = HeaderMoveDuration,
+                    Easing = easing
+                }
+            };
+
+            shift.X = 0;
+            shift.Y = 0;
+        }
+
+        private static Avalonia.Animation.Transitions CreateHeaderTransitions()
+        {
+            var easing = new Avalonia.Animation.Easings.CubicEaseInOut();
+
+            return new Avalonia.Animation.Transitions
+            {
+                new Avalonia.Animation.DoubleTransition
+                {
+                    Property = Avalonia.Layout.Layoutable.WidthProperty,
+                    Duration = HeaderMoveDuration,
+                    Easing = easing
+                },
+                new Avalonia.Animation.DoubleTransition
+                {
+                    Property = Avalonia.Layout.Layoutable.HeightProperty,
+                    Duration = HeaderMoveDuration,
+                    Easing = easing
+                },
+                new Avalonia.Animation.ThicknessTransition
+                {
+                    Property = Avalonia.Layout.Layoutable.MarginProperty,
+                    Duration = HeaderMoveDuration,
+                    Easing = easing
+                },
+                new Avalonia.Animation.ThicknessTransition
+                {
+                    Property = Border.PaddingProperty,
+                    Duration = HeaderMoveDuration,
+                    Easing = easing
+                },
+                new Avalonia.Animation.ThicknessTransition
+                {
+                    Property = Border.BorderThicknessProperty,
+                    Duration = HeaderMoveDuration,
+                    Easing = easing
+                },
+                new Avalonia.Animation.CornerRadiusTransition
+                {
+                    Property = Border.CornerRadiusProperty,
+                    Duration = HeaderMoveDuration,
+                    Easing = easing
+                }
+            };
+        }
+
+        private static Avalonia.Animation.Transitions CreateSpacerTransitions()
+        {
+            return new Avalonia.Animation.Transitions
+            {
+                new Avalonia.Animation.DoubleTransition
+                {
+                    Property = Avalonia.Layout.Layoutable.HeightProperty,
+                    Duration = HeaderMoveDuration,
+                    Easing = new Avalonia.Animation.Easings.CubicEaseInOut()
+                }
+            };
+        }
+
+        /// <summary>
+        /// Колесо над правой колонкой, которой самой листать нечего, листает стопку
+        /// слева. Раньше обе колонки прокручивались вместе, и колесо над галереей
+        /// двигало всю карточку — эта привычка сохраняется.
+        /// </summary>
+        private void OnSideWheel(object? sender, PointerWheelEventArgs e)
+        {
+            if (e.Handled) return;
+
+            var body = this.FindControl<ScrollViewer>("BodyScroll");
+            if (body is null) return;
+
+            const double WheelStepPx = 50;
+            double max = Math.Max(0, body.Extent.Height - body.Viewport.Height);
+            double y = Math.Clamp(body.Offset.Y - e.Delta.Y * WheelStepPx, 0, max);
+            body.Offset = new Vector(body.Offset.X, y);
+            e.Handled = true;
+        }
+
         private void OnSubtitleIconClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
@@ -318,7 +916,16 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
 
         private void OnDataContextChanged(object? sender, EventArgs e)
         {
+            if (_scrollVm != null)
+                _scrollVm.PendingScrollRequested -= OnPendingScrollRequested;
+            _scrollVm = null;
+            _pendingScrollY = null;
+
             if (DataContext is not CharacterBasicsTabViewModel vm) return;
+
+            _scrollVm = vm;
+            vm.PendingScrollRequested += OnPendingScrollRequested;
+            OnPendingScrollRequested();
 
             vm.RequestPickerOpen = async () =>
             {

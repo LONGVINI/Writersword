@@ -937,8 +937,19 @@ namespace Writersword.Modules.TextEditor.Document
             _activeTableBlock.RemoveRowMinHeight(deleteRow);
             _activeTableBlock.RowCount--;
             Services.TableGridRepair.Repair(_activeTableBlock);
+
+            // Удалена последняя строка — таблица уходит целиком, и это тот же шаг
+            // отмены. Раньше шаг «Delete row» закрывался до удаления таблицы, и первая
+            // отмена возвращала таблицу без единой строки. ExecuteTableDelete внутри
+            // открытого снимка вкладывается в него (BeginEdit/CommitEdit вложенные).
+            if (_activeTableBlock.RowCount <= 0)
+            {
+                ExecuteTableDelete();
+                CommitEdit();
+                return;
+            }
+
             CommitEdit();
-            if (_activeTableBlock.RowCount <= 0) { ExecuteTableDelete(); return; }
             _activeCellRow = Clamp(_activeCellRow, 0, _activeTableBlock.RowCount - 1);
             RestoreCaretAfterTableStructure();
         }
@@ -1008,8 +1019,17 @@ namespace Writersword.Modules.TextEditor.Document
                 _activeTableBlock.Columns.RemoveAt(deleteCol);
             _activeTableBlock.ColumnCount--;
             Services.TableGridRepair.Repair(_activeTableBlock);
+
+            // Удалён последний столбец — по той же причине, что и у строк, таблица
+            // уходит тем же шагом отмены.
+            if (_activeTableBlock.ColumnCount <= 0)
+            {
+                ExecuteTableDelete();
+                CommitEdit();
+                return;
+            }
+
             CommitEdit();
-            if (_activeTableBlock.ColumnCount <= 0) { ExecuteTableDelete(); return; }
             _activeCellCol = Clamp(_activeCellCol, 0, _activeTableBlock.ColumnCount - 1);
             RestoreCaretAfterTableStructure();
         }

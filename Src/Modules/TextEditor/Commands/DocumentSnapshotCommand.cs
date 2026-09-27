@@ -67,6 +67,8 @@ namespace Writersword.Modules.TextEditor.Commands
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
+        private static readonly Serilog.ILogger _log = Serilog.Log.ForContext<DocumentSnapshotCommand>();
+
         private readonly DocumentViewModel _docVm;
         private readonly string _before;
         private string? _after;
@@ -138,18 +140,37 @@ namespace Writersword.Modules.TextEditor.Commands
 
         private void Restore(string json)
         {
+            long startTs = System.Diagnostics.Stopwatch.GetTimestamp();
             var restored = JsonSerializer.Deserialize<DocumentModel>(json, _jsonOptions);
             if (restored is null) return;
 
             var doc = _docVm.Document;
 
+            // Откат снимка возвращает документ целиком, но обычно отличается в нём один-два
+            // абзаца. Раньше все абзацы приходили новыми объектами, полотно теряло раскладку
+            // каждого и заново раскладывало всю рукопись — на большом документе это секунды,
+            // за которые на экране ничего не менялось, и отмена казалась несработавшей.
+            //
+            // Поэтому абзацы, совпадающие с текущими по идентификатору и содержимому, берутся
+            // из текущего документа — теми же объектами, и их раскладка остаётся в кеше.
+            // Это возможно, только если не менялось то, от чего зависит раскладка всех
+            // абзацев сразу: стили, шаг табуляции, лист, колонки, колонтитулы. Иначе —
+            // прежний путь с полной пересборкой.
+            bool frameChanged = LayoutFrame(doc) != LayoutFrame(restored);
+            int reused = frameChanged ? 0 : ReuseUnchangedParagraphs(doc, restored);
+
             doc.Sections.Clear();
             foreach (var section in restored.Sections)
                 doc.Sections.Add(section);
 
-            doc.Styles.Clear();
-            foreach (var style in restored.Styles)
-                doc.Styles.Add(style);
+            // Стили при неизменной рамке совпадают с текущими, и их объекты остаются
+            // прежними: резолвер стилей полотна построен на них.
+            if (frameChanged)
+            {
+                doc.Styles.Clear();
+                foreach (var style in restored.Styles)
+                    doc.Styles.Add(style);
+            }
 
             // Лист восстанавливается целиком, а не одними полями: операции вроде
             // импорта документа меняют и размер бумаги, и ориентацию, и колонки,
@@ -175,6 +196,8 @@ namespace Writersword.Modules.TextEditor.Commands
             // на месте шаг табуляции, настройки оглавления, замены и примечания —
             // то есть ровно то, ради чего шаг отмены и открывали.
             doc.DefaultTabStopPt = restored.DefaultTabStopPt;
+            doc.CollapseParagraphSpacing = restored.CollapseParagraphSpacing;
+            doc.JustifyWithShrinking = restored.JustifyWithShrinking;
             doc.TableOfContents = restored.TableOfContents;
             doc.DocumentAutoReplaceRules = restored.DocumentAutoReplaceRules;
 
@@ -182,11 +205,91 @@ namespace Writersword.Modules.TextEditor.Commands
             foreach (var annotation in restored.Annotations)
                 doc.Annotations.Add(annotation);
 
-            _docVm.RebuildParagraphViewModelsPublic();
+            if (frameChanged)
+            {
+                _docVm.RebuildParagraphViewModelsPublic();
 
-            // Геометрию листа канвас пересобирает только по уведомлению о PageSettings.
-            _docVm.RaisePageSettingsChanged();
-            _docVm.FireParagraphFormatChanged();
+                // Геометрию листа канвас пересобирает только по уведомлению о PageSettings.
+                _docVm.RaisePageSettingsChanged();
+                _docVm.FireParagraphFormatChanged();
+            }
+            else
+            {
+                // Лист и стили прежние: уведомления о них сбросили бы кеш раскладки
+                // целиком. Изменившиеся абзацы пришли новыми объектами и получат новые VM,
+                // а значит, будут разложены заново; остальные берутся из кеша.
+                _docVm.SyncParagraphViewModelsPublic();
+            }
+
+            _log.Debug(
+                "[UNDO] Восстановление снимка '{D}': рамка раскладки изменилась {Frame}, абзацев взято из текущего документа {Reused}, {Ms:F1} мс",
+                Description, frameChanged, reused,
+                System.Diagnostics.Stopwatch.GetElapsedTime(startTs).TotalMilliseconds);
+        }
+
+        /// <summary>
+        /// Всё, от чего зависит раскладка всех абзацев сразу: стили, шаг табуляции,
+        /// лист и колонки документа, а также лист, колонки и колонтитулы каждого раздела.
+        /// Строка сравнивается целиком; совпадение значит, что раскладка неизменившихся
+        /// абзацев остаётся верной.
+        /// </summary>
+        private static string LayoutFrame(DocumentModel doc)
+        {
+            var sections = new List<object?>();
+            foreach (var section in doc.Sections)
+                sections.Add(new
+                {
+                    section.PageSettings,
+                    section.ColumnSettings,
+                    section.Header,
+                    section.Footer
+                });
+
+            return JsonSerializer.Serialize(new
+            {
+                doc.Styles,
+                doc.DefaultTabStopPt,
+                doc.CollapseParagraphSpacing,
+                doc.JustifyWithShrinking,
+                doc.PageSettings,
+                doc.ColumnSettings,
+                Sections = sections
+            }, _jsonOptions);
+        }
+
+        /// <summary>
+        /// Заменяет в восстановленном документе абзацы, совпадающие с текущими, на
+        /// текущие объекты. Пара ищется по идентификатору блока, а совпадение
+        /// проверяется по сериализованному содержимому — тем же способом, каким снимок
+        /// сохраняется, поэтому подменённый абзац ничем не отличается от восстановленного.
+        /// Каждый текущий абзац используется не больше одного раза.
+        /// </summary>
+        private static int ReuseUnchangedParagraphs(DocumentModel current, DocumentModel restored)
+        {
+            int reused = 0;
+            int sectionCount = Math.Min(current.Sections.Count, restored.Sections.Count);
+            for (int si = 0; si < sectionCount; si++)
+            {
+                var currentById = new Dictionary<Guid, ParagraphBlock>();
+                foreach (var block in current.Sections[si].Blocks)
+                    if (block is ParagraphBlock para)
+                        currentById.TryAdd(para.Id, para);
+
+                var restoredBlocks = restored.Sections[si].Blocks;
+                for (int i = 0; i < restoredBlocks.Count; i++)
+                {
+                    if (restoredBlocks[i] is not ParagraphBlock restoredPara) continue;
+                    if (!currentById.Remove(restoredPara.Id, out var currentPara)) continue;
+
+                    string currentJson = JsonSerializer.Serialize(currentPara, _jsonOptions);
+                    string restoredJson = JsonSerializer.Serialize(restoredPara, _jsonOptions);
+                    if (!string.Equals(currentJson, restoredJson, StringComparison.Ordinal)) continue;
+
+                    restoredBlocks[i] = currentPara;
+                    reused++;
+                }
+            }
+            return reused;
         }
 
         private static string Serialize(DocumentModel doc)

@@ -24,6 +24,13 @@ namespace Writersword.Core.Models.Rendering
         /// <summary>Интервал до параграфа в pt.</summary>
         public float SpaceBeforePt { get; set; }
 
+        /// <summary>
+        /// Строки абзаца, выровненного по ширине, набраны со сжатием пробелов: в строку
+        /// могло войти слово, для которого нужно сжать пробелы до пятой части. Такая
+        /// строка шире области, и выравнивание её сжимает, а не растягивает.
+        /// </summary>
+        public bool AllowsJustifyShrink { get; set; }
+
         /// <summary>Интервал после параграфа в pt.</summary>
         public float SpaceAfterPt { get; set; }
 
@@ -66,6 +73,20 @@ namespace Writersword.Core.Models.Rendering
 
         /// <summary>Выравнивание текста в параграфе.</summary>
         public TextAlignment Alignment { get; set; }
+
+        /// <summary>
+        /// Рамка абзаца. null — рамки нет. Её верхняя и нижняя линии вместе с зазором
+        /// до текста уже учтены в <see cref="SpaceBeforePt"/> и <see cref="SpaceAfterPt"/>:
+        /// рамка отодвигает соседей так же, как интервалы, и разбивка на страницы,
+        /// попадание мышью и каретка считают её без особых случаев.
+        /// </summary>
+        public SKParagraphBorders? Borders { get; set; }
+
+        /// <summary>
+        /// Заливка абзаца (HEX). null — без заливки. Рисуется вместе с рамкой, под
+        /// текстом: под строками, а при рамке — всё поле внутри неё.
+        /// </summary>
+        public string? ShadingColor { get; set; }
 
         /// <summary>
         /// Суммарная высота параграфа включая интервалы до и после.

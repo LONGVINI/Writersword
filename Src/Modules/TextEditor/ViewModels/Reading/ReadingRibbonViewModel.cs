@@ -150,6 +150,199 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         /// </summary>
         public string FieldColor => ReadingTheme.FieldColorHex(Theme);
 
+        // ── Образец вида ──────────────────────────────────────────────────
+        // Плитка собирается теми же слоями и тем же расчётом, что пример в окне видов
+        // и сама книга: заливка поля, картинка поля, лист, картинка бумаги, буквы и
+        // свет поверх всего. Иначе плитка обещала бы одно, а книга рисовала другое.
+
+        /// <summary>
+        /// Цвет букв на образце — после контрастности, как в книге. Контрастность
+        /// разводит буквы и бумагу: сто процентов оставляют цвет вида как есть,
+        /// меньше сводят его к листу, больше уводят дальше от него.
+        /// </summary>
+        public string DisplayInkColor
+        {
+            get
+            {
+                var paper = ParseColor(SheetColor, SKColors.White);
+                var ink = ParseColor(InkColor, new SKColor(0x1A, 0x1A, 0x1A));
+
+                double contrast = Math.Clamp(Theme?.Contrast ?? 1.0, 0.6, 1.6);
+                if (Math.Abs(contrast - 1.0) < 0.001)
+                    return $"#{ink.Red:X2}{ink.Green:X2}{ink.Blue:X2}";
+
+                byte Spread(byte p, byte i) => (byte)Math.Clamp(p + (i - p) * contrast, 0.0, 255.0);
+
+                return $"#{Spread(paper.Red, ink.Red):X2}{Spread(paper.Green, ink.Green):X2}{Spread(paper.Blue, ink.Blue):X2}";
+            }
+        }
+
+        /// <summary>
+        /// Картинка поля на образце — первая из набора, та же, что ляжет вокруг
+        /// книги, и уложенная так же: закрыть, уместить, растянуть или замостить.
+        /// </summary>
+        public Avalonia.Media.IBrush? FieldImageBrush
+            => Theme is { BackdropImagePaths.Count: > 0 } t
+                ? ThumbBrush(t.BackdropImagePaths[0], FieldFit(t.BackdropImageFit), FieldTileScale)
+                : null;
+
+        public bool HasFieldImage => FieldImageBrush is not null;
+
+        public double FieldImageOpacity => Math.Clamp(Theme?.BackdropImageOpacity ?? 1.0, 0.0, 1.0);
+
+        /// <summary>
+        /// Картинка бумаги на образце — первая из набора. Замощённая мостится и
+        /// здесь: растянутая мелкая текстура на плитке выглядела бы совсем не так,
+        /// как на листе.
+        /// </summary>
+        public Avalonia.Media.IBrush? PaperImageBrush
+            => Theme is { ImagePaths.Count: > 0 } t
+                ? ThumbBrush(t.ImagePaths[0], t.ImageTile ? ThumbFit.Tile : ThumbFit.Cover, PaperTileScale)
+                : null;
+
+        public bool HasPaperImage => PaperImageBrush is not null;
+
+        public double PaperImageOpacity => Math.Clamp(Theme?.ImageOpacity ?? 1.0, 0.0, 1.0);
+
+        /// <summary>
+        /// Тёплота поверх образца. В книге она умножает цвета; плёнка янтаря с такой
+        /// прозрачностью даёт на белой бумаге тот же цвет — тот же приём, что в
+        /// примере окна видов.
+        /// </summary>
+        public Avalonia.Media.IBrush WarmBrush
+        {
+            get
+            {
+                double warmth = Math.Clamp(Theme?.Warmth ?? 0.0, 0.0, 1.0);
+                return new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(
+                    (byte)Math.Clamp(warmth * 127.0, 0.0, 255.0), 255, 175, 15));
+            }
+        }
+
+        /// <summary>Приглушение яркости поверх образца — последним слоем, как в книге.</summary>
+        public Avalonia.Media.IBrush DimBrush
+        {
+            get
+            {
+                double brightness = Math.Clamp(Theme?.Brightness ?? 1.0, 0.35, 1.0);
+                return new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(
+                    (byte)Math.Clamp((1.0 - brightness) * 255.0, 0.0, 200.0), 0, 0, 0));
+            }
+        }
+
+        /// <summary>
+        /// Вид правится на ходу, а плитка «Кастомное» остаётся той же: её рабочая
+        /// копия меняется на месте. Без этого образец застывал на том виде, каким
+        /// был при появлении плитки.
+        /// </summary>
+        public void RefreshLook()
+        {
+            this.RaisePropertyChanged(nameof(SheetColor));
+            this.RaisePropertyChanged(nameof(InkColor));
+            this.RaisePropertyChanged(nameof(DisplayInkColor));
+            this.RaisePropertyChanged(nameof(FieldColor));
+            this.RaisePropertyChanged(nameof(FieldImageBrush));
+            this.RaisePropertyChanged(nameof(HasFieldImage));
+            this.RaisePropertyChanged(nameof(FieldImageOpacity));
+            this.RaisePropertyChanged(nameof(PaperImageBrush));
+            this.RaisePropertyChanged(nameof(HasPaperImage));
+            this.RaisePropertyChanged(nameof(PaperImageOpacity));
+            this.RaisePropertyChanged(nameof(WarmBrush));
+            this.RaisePropertyChanged(nameof(DimBrush));
+        }
+
+        private static SKColor ParseColor(string? hex, SKColor fallback)
+            => !string.IsNullOrWhiteSpace(hex) && SKColor.TryParse(hex, out var c) ? c : fallback;
+
+        private enum ThumbFit { Cover, Contain, Stretch, Tile }
+
+        private static ThumbFit FieldFit(ReadingBackdropFit fit) => fit switch
+        {
+            ReadingBackdropFit.Contain => ThumbFit.Contain,
+            ReadingBackdropFit.Stretch => ThumbFit.Stretch,
+            ReadingBackdropFit.Tile => ThumbFit.Tile,
+            _ => ThumbFit.Cover
+        };
+
+        // Во сколько раз образец меньше того, что он изображает: лист плитки — около
+        // девяноста точек против листа книги в восемьсот, поле плитки — около ста
+        // против экрана в полторы-две тысячи. Замощённая картинка уменьшается ровно
+        // во столько же, иначе на образце уместилась бы одна её плитка и узор не
+        // читался бы вовсе.
+        private const double PaperTileScale = 0.11;
+        private const double FieldTileScale = 0.06;
+
+        // Ширина уменьшенной картинки для растянутых вариантов: образец меньше сотни
+        // точек, а картинка бумаги бывает в несколько тысяч.
+        private const int ThumbWidthPx = 160;
+
+        // Миниатюры — по адресу картинки и способу укладки. Список видов пересобирается
+        // на каждую правку вида, и читать файлы заново на каждую пересборку незачем.
+        private static readonly Dictionary<string, Avalonia.Media.IBrush?> s_thumbs =
+            new(StringComparer.Ordinal);
+
+        private static Avalonia.Media.IBrush? ThumbBrush(string? reference, ThumbFit fit, double tileScale)
+        {
+            if (string.IsNullOrWhiteSpace(reference)) return null;
+
+            string key = reference + "|" + fit;
+            if (s_thumbs.TryGetValue(key, out var cached)) return cached;
+
+            Avalonia.Media.IBrush? brush = null;
+            try
+            {
+                var data = ReadingAssets.Read(reference);
+                if (data is { Length: > 0 })
+                {
+                    if (fit == ThumbFit.Tile)
+                    {
+                        // Исходный размер нужен, чтобы уменьшить узор в той же доле,
+                        // что и весь образец.
+                        int sourceWidth;
+                        using (var codec = SKCodec.Create(new SKMemoryStream(data)))
+                            sourceWidth = codec?.Info.Width ?? ThumbWidthPx;
+
+                        int width = Math.Max(4, (int)Math.Round(sourceWidth * tileScale));
+
+                        using var stream = new System.IO.MemoryStream(data);
+                        var bitmap = Avalonia.Media.Imaging.Bitmap.DecodeToWidth(stream, width);
+
+                        brush = new Avalonia.Media.ImageBrush(bitmap)
+                        {
+                            TileMode = Avalonia.Media.TileMode.Tile,
+                            Stretch = Avalonia.Media.Stretch.None,
+                            DestinationRect = new Avalonia.RelativeRect(
+                                0, 0, bitmap.Size.Width, bitmap.Size.Height, Avalonia.RelativeUnit.Absolute)
+                        };
+                    }
+                    else
+                    {
+                        using var stream = new System.IO.MemoryStream(data);
+                        var bitmap = Avalonia.Media.Imaging.Bitmap.DecodeToWidth(stream, ThumbWidthPx);
+
+                        brush = new Avalonia.Media.ImageBrush(bitmap)
+                        {
+                            Stretch = fit switch
+                            {
+                                ThumbFit.Contain => Avalonia.Media.Stretch.Uniform,
+                                ThumbFit.Stretch => Avalonia.Media.Stretch.Fill,
+                                _ => Avalonia.Media.Stretch.UniformToFill
+                            }
+                        };
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Битая или пропавшая картинка образец не роняет: он останется
+                // заливкой цвета.
+                brush = null;
+            }
+
+            s_thumbs[key] = brush;
+            return brush;
+        }
+
         public override string ToString() => Label;
     }
 
@@ -315,6 +508,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                     {
                         existing = new ReadingThemeItem(T, CustomThemeLabel, isCustom: true);
                         ThemeItems.Insert(0, existing);
+                    }
+                    else
+                    {
+                        // Та же плитка, но вид под ней уже другой.
+                        existing.RefreshLook();
                     }
                     _selectedThemeItem = existing;
                 }
@@ -1216,6 +1414,24 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             byte Shift(byte v) => (byte)Math.Clamp(v + (target - v) * amount, 0.0, 255.0);
 
             return $"#{Shift(c.Red):X2}{Shift(c.Green):X2}{Shift(c.Blue):X2}";
+        }
+
+        /// <summary>
+        /// Картинки фона, загруженные из ленты. Набор заменяется целиком: кнопка в
+        /// ленте — это «вот этот фон», а собирать набор из нескольких по одной
+        /// удобнее в окне видов. Правка идёт по рабочей копии, как и у цвета, и вид
+        /// становится «Кастомным».
+        /// </summary>
+        public void SetBackdropImages(IReadOnlyList<string> references)
+        {
+            if (T is not { } t) return;
+            if (references.Count == 0) return;
+            if (t.BackdropImagePaths.SequenceEqual(references)) return;
+
+            t.BackdropImagePaths.Clear();
+            t.BackdropImagePaths.AddRange(references);
+
+            TouchTheme();
         }
 
         /// <summary>Возвращает поле к правилу «выводить из бумаги».</summary>

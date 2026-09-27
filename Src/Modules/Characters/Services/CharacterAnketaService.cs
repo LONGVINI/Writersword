@@ -397,6 +397,10 @@ namespace Writersword.Modules.Characters.Services
                 ScalePoints = new Dictionary<double, string>(field.ScalePoints)
             };
 
+            // Вид поля и способы задать число едут вместе с определением:
+            // значение должно показываться так, как настроено в анкете.
+            CharacterFieldDefinition.CopyDisplay(field, param);
+
             // Список вариантов нужен обоим выборам — и одиночному, и
             // множественному: разница между ними только в том, сколько из
             // этого списка можно отметить.

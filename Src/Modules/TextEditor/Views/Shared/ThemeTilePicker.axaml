@@ -1,0 +1,143 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
+             xmlns:shared="using:Writersword.Modules.TextEditor.Views.Shared"
+             x:Class="Writersword.Modules.TextEditor.Views.Shared.ThemeTilePicker">
+
+	<!--
+	    Список видов плитками и «Настроить виды» под ним. Один на всю программу:
+	    его показывают и лента чтения, и вкладка «Вид» редактора. Виды у них одни и
+	    те же, и выбирать их нужно одинаково — две копии разметки расходились при
+	    первой же правке одной из них.
+
+	    Плитка рисует сам вид теми же слоями, что книга и пример в окне видов:
+	    заливка поля, картинка поля, лист, картинка бумаги, строки и имя цветом
+	    букв, свет поверх всего.
+
+	    Что показывать и что делать по нажатию, задаёт владелец: Items — пункты
+	    (ReadingThemeItem), SelectCommand — выбор плитки, ConfigureCommand — окно
+	    видов.
+	-->
+
+	<UserControl.Styles>
+		<!-- Ширина плитки не задана: две колонки делят ширину списка поровну
+		     вместе с полосой прокрутки. С жёсткой шириной две плитки и полоса в
+		     список не влезали, и он складывался в одну колонку. -->
+		<Style Selector="Button.ThemeTile">
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="Height"          Value="72"/>
+			<Setter Property="Margin"          Value="3"/>
+			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="CornerRadius"    Value="5"/>
+			<Setter Property="BorderThickness" Value="2"/>
+			<Setter Property="BorderBrush"     Value="Transparent"/>
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="Focusable"       Value="False"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+			<Setter Property="VerticalContentAlignment"   Value="Stretch"/>
+		</Style>
+		<Style Selector="Button.ThemeTile /template/ ContentPresenter">
+			<Setter Property="CornerRadius"    Value="5"/>
+			<Setter Property="BorderThickness" Value="2"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="Padding"         Value="0"/>
+		</Style>
+		<Style Selector="Button.ThemeTile:pointerover /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.ThemeTile.active /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid RowDefinitions="* Auto" Width="228">
+		<ScrollViewer Grid.Row="0"
+		              MaxHeight="330"
+		              AllowAutoHide="False"
+		              HorizontalScrollBarVisibility="Disabled"
+		              VerticalScrollBarVisibility="Auto">
+			<ItemsControl x:Name="TilesList">
+				<ItemsControl.ItemsPanel>
+					<ItemsPanelTemplate>
+						<UniformGrid Columns="2"/>
+					</ItemsPanelTemplate>
+				</ItemsControl.ItemsPanel>
+				<ItemsControl.ItemTemplate>
+					<DataTemplate>
+						<!-- Владелец ищется как ближайший UserControl, а не по своему типу с
+						     префиксом: привязки здесь рефлексивные и разбираются уже во время
+						     работы, а своих пространств имён у разборщика тогда нет —
+						     «shared:ThemeTilePicker» он не находил и ронял программу при
+						     первом открытии списка. Между плиткой и пикером других
+						     UserControl нет, поэтому ближайший — он сам. -->
+						<Button Classes="ThemeTile"
+						        Classes.active="{Binding IsSelected}"
+						        behaviours:TooltipBehavior.Tip="{Binding Label}"
+						        Command="{Binding $parent[UserControl].SelectCommand}"
+						        CommandParameter="{Binding}">
+							<!-- Образец собран слоями, как сама книга: заливка поля, первая
+							     картинка фона, лист, первая картинка бумаги и строки поверх. -->
+							<Panel>
+								<Border CornerRadius="3"
+								        Background="{Binding FieldColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
+								<Border CornerRadius="3"
+								        ClipToBounds="True"
+								        IsVisible="{Binding HasFieldImage}"
+								        Opacity="{Binding FieldImageOpacity}"
+								        Background="{Binding FieldImageBrush}"/>
+								<Panel Margin="6">
+									<Border CornerRadius="2"
+									        Background="{Binding SheetColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
+									<Border CornerRadius="2"
+									        ClipToBounds="True"
+									        IsVisible="{Binding HasPaperImage}"
+									        Opacity="{Binding PaperImageOpacity}"
+									        Background="{Binding PaperImageBrush}"/>
+									<StackPanel Margin="7 6" Spacing="3" VerticalAlignment="Center">
+										<!-- Строк на образце две, а не три: имя вида человек придумывает
+										     сам, и на узкой плитке ему нужно место под две строки. Полное
+										     имя — в подсказке над плиткой. -->
+										<Rectangle Height="2" Width="52" HorizontalAlignment="Left"
+										           Fill="{Binding DisplayInkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
+										<Rectangle Height="2" Width="34" HorizontalAlignment="Left"
+										           Fill="{Binding DisplayInkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
+										<TextBlock Text="{Binding Label}"
+										           FontSize="10"
+										           LineHeight="12"
+										           Margin="0 3 0 0"
+										           TextWrapping="Wrap"
+										           MaxLines="2"
+										           TextTrimming="CharacterEllipsis"
+										           Foreground="{Binding DisplayInkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
+									</StackPanel>
+								</Panel>
+								<!-- Свет — последним, поверх всего, как в книге: сперва тёплая
+								     плёнка, затем приглушение. -->
+								<Border CornerRadius="3" IsHitTestVisible="False"
+								        Background="{Binding WarmBrush}"/>
+								<Border CornerRadius="3" IsHitTestVisible="False"
+								        Background="{Binding DimBrush}"/>
+							</Panel>
+						</Button>
+					</DataTemplate>
+				</ItemsControl.ItemTemplate>
+			</ItemsControl>
+		</ScrollViewer>
+
+		<!-- Настройка видов — закреплённой кнопкой внизу списка, как у палитр
+		     цвета. Она не уезжает вместе с плитками: до неё должно быть можно
+		     дотянуться, сколько бы видов человек ни завёл. -->
+		<Button Grid.Row="1" Margin="0 8 0 0"
+		        Content="Настроить виды"
+		        HorizontalAlignment="Stretch"
+		        HorizontalContentAlignment="Center"
+		        FontSize="11" Padding="8 6" CornerRadius="6"
+		        Focusable="False"
+		        Background="{DynamicResource AccentDefaultBrush}"
+		        Foreground="White"
+		        Click="OnConfigureClick"/>
+	</Grid>
+
+</UserControl>

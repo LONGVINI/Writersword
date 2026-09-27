@@ -21,7 +21,9 @@ namespace Writersword.Modules.TextEditor.Document
     /// </summary>
     public sealed partial class DocumentCanvas
     {
-        private static readonly bool PerfEnabled = true;
+        // Выключено: замеры сделали своё дело. Включить обратно — true, строки [PERF]
+        // снова пойдут в журнал раз в секунду во время работы.
+        private static readonly bool PerfEnabled = false;
 
         private sealed class PerfBucket
         {

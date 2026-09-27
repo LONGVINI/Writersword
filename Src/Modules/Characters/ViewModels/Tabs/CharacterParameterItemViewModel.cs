@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
+using Avalonia.Media;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Models.Enums;
 using Writersword.Src.Modules.Characters.Resources;
@@ -89,11 +90,32 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                 _model.ValueNote = value;
                 this.RaisePropertyChanged();
                 this.RaisePropertyChanged(nameof(HasValueNote));
+                this.RaisePropertyChanged(nameof(ShowNote));
                 Edited?.Invoke();
             }
         }
 
         public bool HasValueNote => !string.IsNullOrWhiteSpace(_model.ValueNote);
+
+        private bool _isNoteOpen;
+
+        /// <summary>
+        /// Строка примечания раскрыта значком на строке поля. Пустое
+        /// примечание в покое не показывается: у большинства значений его
+        /// нет, и пустая строка под каждым полем удваивала бы список.
+        /// </summary>
+        public bool IsNoteOpen
+        {
+            get => _isNoteOpen;
+            set
+            {
+                if (_isNoteOpen == value) return;
+                this.RaiseAndSetIfChanged(ref _isNoteOpen, value);
+                this.RaisePropertyChanged(nameof(ShowNote));
+            }
+        }
+
+        public bool ShowNote => IsApplicable && (HasValueNote || _isNoteOpen);
 
         public string GroupName => _model.GroupName;
         public bool HasGroup => !string.IsNullOrWhiteSpace(_model.GroupName);
@@ -166,6 +188,9 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             this.RaisePropertyChanged(nameof(ShowNumber));
             this.RaisePropertyChanged(nameof(ShowLongText));
             this.RaisePropertyChanged(nameof(ShowMultiChoice));
+            this.RaisePropertyChanged(nameof(ValueSummary));
+            this.RaisePropertyChanged(nameof(ShowNote));
+            RaiseDisplayVisibility();
         }
 
         // ── Шкала ────────────────────────────────────────────────────────
@@ -201,9 +226,32 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             {
                 if (Math.Abs(_model.NumericValue - value) < double.Epsilon) return;
                 _model.NumericValue = value;
-                this.RaisePropertyChanged();
-                this.RaisePropertyChanged(nameof(ValueCaption));
-                UpdateDotFill();
+                RaiseScaleValue();
+                Edited?.Invoke();
+            }
+        }
+
+        /// <summary>
+        /// Значение для ползунка. Ползунок тянется плавно, а в модель уходит
+        /// число, округлённое до шага шкалы. Округлённое обратно в ползунок не
+        /// отдаётся: он двигается маленькими шагами от своего положения, и
+        /// значение, возвращаемое к ближайшему делению после каждого шага,
+        /// держало бы его на месте — ползунок нажимался, но не ехал. Прежняя
+        /// привязка к делениям самого ползунка (IsSnapToTickEnabled) делала
+        /// ровно это.
+        /// </summary>
+        public double SliderValue
+        {
+            get => _model.NumericValue;
+            set
+            {
+                var snapped = _model.MinValue + Math.Round((value - _model.MinValue) / Step) * Step;
+                snapped = Math.Clamp(snapped, _model.MinValue, Math.Max(_model.MinValue, _model.MaxValue));
+
+                if (Math.Abs(_model.NumericValue - snapped) < double.Epsilon) return;
+
+                _model.NumericValue = snapped;
+                RaiseScaleValue();
                 Edited?.Invoke();
             }
         }
@@ -273,7 +321,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public string TextValue
         {
             get => _model.TextValue;
-            set { if (_model.TextValue == value) return; _model.TextValue = value; this.RaisePropertyChanged(); Edited?.Invoke(); }
+            set { if (_model.TextValue == value) return; _model.TextValue = value; this.RaisePropertyChanged(); this.RaisePropertyChanged(nameof(ValueSummary)); Edited?.Invoke(); }
         }
 
         // ── Выбор ────────────────────────────────────────────────────────
@@ -283,7 +331,21 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public int CurrentStateIndex
         {
             get => _model.CurrentStateIndex;
-            set { if (_model.CurrentStateIndex == value) return; _model.CurrentStateIndex = value; this.RaisePropertyChanged(); Edited?.Invoke(); }
+            set
+            {
+                if (_model.CurrentStateIndex == value) return;
+                _model.CurrentStateIndex = value;
+                this.RaisePropertyChanged();
+                this.RaisePropertyChanged(nameof(CurrentStateName));
+                this.RaisePropertyChanged(nameof(ValueSummary));
+
+                // Выбор мог прийти из выпадающего списка — чипы идут следом.
+                if (_choiceChips != null && !_syncingChoice)
+                    foreach (var chip in _choiceChips)
+                        chip.SetSelectedSilently(chip.Name == CurrentStateName);
+
+                Edited?.Invoke();
+            }
         }
 
         // ── Да или нет ───────────────────────────────────────────────────
@@ -297,6 +359,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                 _model.BoolValue = value;
                 this.RaisePropertyChanged();
                 this.RaisePropertyChanged(nameof(BoolCaption));
+                this.RaisePropertyChanged(nameof(ValueSummary));
                 Edited?.Invoke();
             }
         }
@@ -325,6 +388,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                     _model.HasNumber = false;
                     _model.NumericValue = 0;
                     this.RaisePropertyChanged();
+                    this.RaisePropertyChanged(nameof(ValueSummary));
                     Edited?.Invoke();
                     return;
                 }
@@ -345,7 +409,663 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                 _model.HasNumber = true;
                 _model.NumericValue = parsed;
                 this.RaisePropertyChanged();
+                this.RaisePropertyChanged(nameof(ValueSummary));
                 Edited?.Invoke();
+            }
+        }
+
+
+        // ── Вид поля ─────────────────────────────────────────────────────
+        //
+        // Вид задаётся в анкете, а здесь он сводится к тому, что показать:
+        // «по умолчанию» превращается в конкретный вид по типу и длине шкалы.
+
+        /// <summary>Шариков больше этого не рисуется: такая шкала становится полосой.</summary>
+        public const int MaxBalls = 12;
+
+        /// <summary>Делений у полосы не больше этого: длинная шкала сжимается в десятки.</summary>
+        public const int MaxBarSegments = 20;
+
+        public CharacterFieldDisplay EffectiveDisplay
+        {
+            get
+            {
+                var display = _model.Display;
+
+                switch (_model.Type)
+                {
+                    case CharacterParameterType.Numeric:
+                        if (display == CharacterFieldDisplay.Balls)
+                            return StepCount <= MaxBalls ? CharacterFieldDisplay.Balls : CharacterFieldDisplay.Bar;
+                        if (display == CharacterFieldDisplay.Bipolar)
+                            return StepCount + 1 <= MaxBalls ? CharacterFieldDisplay.Bipolar : CharacterFieldDisplay.Slider;
+                        if (display == CharacterFieldDisplay.Bar || display == CharacterFieldDisplay.Slider)
+                            return display;
+                        return UseDots ? CharacterFieldDisplay.Balls : CharacterFieldDisplay.Slider;
+
+                    case CharacterParameterType.StateList:
+                        if (display == CharacterFieldDisplay.Chips || display == CharacterFieldDisplay.Dropdown)
+                            return display;
+                        return _model.States.Count <= 6 ? CharacterFieldDisplay.Chips : CharacterFieldDisplay.Dropdown;
+
+                    case CharacterParameterType.MultiChoice:
+                        return CharacterFieldDisplay.Chips;
+
+                    default:
+                        return CharacterFieldDisplay.Auto;
+                }
+            }
+        }
+
+        private bool IsNumeric => _model.Type == CharacterParameterType.Numeric;
+
+        public bool ShowBalls => IsApplicable && IsNumeric && EffectiveDisplay == CharacterFieldDisplay.Balls;
+        public bool ShowBipolar => IsApplicable && IsNumeric && EffectiveDisplay == CharacterFieldDisplay.Bipolar;
+        public bool ShowBar => IsApplicable && IsNumeric && EffectiveDisplay == CharacterFieldDisplay.Bar;
+        public bool ShowSlider => IsApplicable && IsNumeric && EffectiveDisplay == CharacterFieldDisplay.Slider;
+
+        public bool ShowChoiceChips => IsApplicable && _model.Type == CharacterParameterType.StateList &&
+                                       EffectiveDisplay == CharacterFieldDisplay.Chips;
+        public bool ShowChoiceList => IsApplicable && _model.Type == CharacterParameterType.StateList &&
+                                      EffectiveDisplay == CharacterFieldDisplay.Dropdown;
+        public bool ShowMultiChips => IsApplicable && _model.Type == CharacterParameterType.MultiChoice;
+
+        public bool ShowColor => IsApplicable && _model.Type == CharacterParameterType.Color;
+
+        /// <summary>
+        /// Поле короткое и встаёт в две колонки: одна строка значения. Текст,
+        /// описание, длинные списки и полюса с подписями занимают всю ширину.
+        /// </summary>
+        public bool IsWide =>
+            _model.Type == CharacterParameterType.LongText ||
+            _model.Type == CharacterParameterType.Text ||
+            _model.Type == CharacterParameterType.MultiChoice ||
+            (_model.Type == CharacterParameterType.StateList && EffectiveDisplay == CharacterFieldDisplay.Chips) ||
+            (IsNumeric && EffectiveDisplay == CharacterFieldDisplay.Bipolar) ||
+            (_model.Type == CharacterParameterType.Number && AllowedModeCount > 1) ||
+            (_model.Type == CharacterParameterType.Color && _model.Palette.Count > 6);
+
+        private void RaiseDisplayVisibility()
+        {
+            this.RaisePropertyChanged(nameof(ShowBalls));
+            this.RaisePropertyChanged(nameof(ShowBipolar));
+            this.RaisePropertyChanged(nameof(ShowBar));
+            this.RaisePropertyChanged(nameof(ShowSlider));
+            this.RaisePropertyChanged(nameof(ShowChoiceChips));
+            this.RaisePropertyChanged(nameof(ShowChoiceList));
+            this.RaisePropertyChanged(nameof(ShowMultiChips));
+            this.RaisePropertyChanged(nameof(ShowColor));
+            RaiseNumberModeVisibility();
+        }
+
+        /// <summary>Свой цвет поля; пусто — акцентный цвет темы.</summary>
+        public IBrush? AccentBrush => ParseBrush(_model.AccentColor);
+
+        private static IBrush? ParseBrush(string? hex) =>
+            !string.IsNullOrWhiteSpace(hex) && Color.TryParse(hex, out var color)
+                ? new SolidColorBrush(color)
+                : null;
+
+        // ── Шарики ───────────────────────────────────────────────────────
+
+        public int BallCount => Math.Max(1, StepCount);
+
+        /// <summary>Сколько шариков заполнено: ноль — край шкалы.</summary>
+        public int BallIndex
+        {
+            get => Math.Clamp((int)Math.Round((_model.NumericValue - _model.MinValue) / Step), 0, StepCount);
+            set => NumericValue = _model.MinValue + Math.Clamp(value, 0, StepCount) * Step;
+        }
+
+        private IReadOnlyList<string>? _ballCaptions;
+
+        /// <summary>
+        /// Подписи шариков: слово деления из анкеты, а без него — «3 / 5».
+        /// Нулевая пустая: ничего не выбрано, и подписывать нечего.
+        /// </summary>
+        public IReadOnlyList<string> BallCaptions => _ballCaptions ??= BuildBallCaptions();
+
+        private IReadOnlyList<string> BuildBallCaptions()
+        {
+            var count = BallCount;
+            var result = new List<string>(count + 1) { string.Empty };
+            for (int i = 1; i <= count; i++)
+            {
+                var value = _model.MinValue + i * Step;
+                result.Add(PointLabel(value) ?? i.ToString(CultureInfo.InvariantCulture) + " / " +
+                           count.ToString(CultureInfo.InvariantCulture));
+            }
+            return result;
+        }
+
+        private string? PointLabel(double value)
+        {
+            foreach (var pair in _model.ScalePoints)
+                if (Math.Abs(pair.Key - value) < 0.0001 && !string.IsNullOrWhiteSpace(pair.Value))
+                    return pair.Value;
+            return null;
+        }
+
+        // ── Полюса ───────────────────────────────────────────────────────
+        //
+        // Положений на одно больше, чем шагов: и крайний левый, и крайний
+        // правый — законные ответы. «Не отмечено» хранится признаком HasNumber,
+        // как у свободного числа: край шкалы и «не решил» — разные вещи.
+
+        public int BipolarCount => Math.Max(2, StepCount + 1);
+
+        public int BipolarIndex
+        {
+            get => _model.HasNumber
+                ? Math.Clamp((int)Math.Round((_model.NumericValue - _model.MinValue) / Step), 0, StepCount) + 1
+                : 0;
+            set
+            {
+                if (value <= 0)
+                {
+                    if (!_model.HasNumber) return;
+                    _model.HasNumber = false;
+                    _model.NumericValue = _model.MinValue;
+                }
+                else
+                {
+                    var target = _model.MinValue + (Math.Clamp(value, 1, BipolarCount) - 1) * Step;
+                    if (_model.HasNumber && Math.Abs(_model.NumericValue - target) < double.Epsilon) return;
+                    _model.HasNumber = true;
+                    _model.NumericValue = target;
+                }
+
+                RaiseScaleValue();
+                Edited?.Invoke();
+            }
+        }
+
+        private IReadOnlyList<string>? _bipolarCaptions;
+
+        public IReadOnlyList<string> BipolarCaptions => _bipolarCaptions ??= BuildBipolarCaptions();
+
+        private IReadOnlyList<string> BuildBipolarCaptions()
+        {
+            var count = BipolarCount;
+            var result = new List<string>(count + 1) { string.Empty };
+            for (int i = 1; i <= count; i++)
+                result.Add(PointLabel(_model.MinValue + (i - 1) * Step) ?? string.Empty);
+            return result;
+        }
+
+        public string LeftPole => _model.MinDescription;
+        public string RightPole => _model.MaxDescription;
+
+        // ── Полоса ───────────────────────────────────────────────────────
+
+        public int BarCount => Math.Max(1, Math.Min(StepCount, MaxBarSegments));
+
+        private double BarSpan => Math.Max(Step, _model.MaxValue - _model.MinValue);
+
+        public int BarIndex
+        {
+            get => Math.Clamp((int)Math.Round((_model.NumericValue - _model.MinValue) / BarSpan * BarCount), 0, BarCount);
+            set
+            {
+                var raw = _model.MinValue + Math.Clamp(value, 0, BarCount) * BarSpan / BarCount;
+                // Значение встаёт на шаг шкалы: у полосы деление может
+                // приходиться между шагами, а хранится всегда число шкалы.
+                var snapped = _model.MinValue + Math.Round((raw - _model.MinValue) / Step) * Step;
+                NumericValue = Math.Clamp(snapped, _model.MinValue, _model.MaxValue);
+            }
+        }
+
+        private IReadOnlyList<string>? _barCaptions;
+
+        public IReadOnlyList<string> BarCaptions => _barCaptions ??= BuildBarCaptions();
+
+        private IReadOnlyList<string> BuildBarCaptions()
+        {
+            var count = BarCount;
+            var result = new List<string>(count + 1);
+            for (int i = 0; i <= count; i++)
+            {
+                var raw = _model.MinValue + i * BarSpan / count;
+                var value = _model.MinValue + Math.Round((raw - _model.MinValue) / Step) * Step;
+                result.Add(PointLabel(value) ?? Format(value) + " / " + Format(_model.MaxValue));
+            }
+            return result;
+        }
+
+        private void RaiseScaleValue()
+        {
+            this.RaisePropertyChanged(nameof(NumericValue));
+            this.RaisePropertyChanged(nameof(ValueCaption));
+            this.RaisePropertyChanged(nameof(BallIndex));
+            this.RaisePropertyChanged(nameof(BipolarIndex));
+            this.RaisePropertyChanged(nameof(BarIndex));
+            this.RaisePropertyChanged(nameof(ValueSummary));
+            UpdateDotFill();
+        }
+
+        // ── Выбор чипами ─────────────────────────────────────────────────
+
+        private ObservableCollection<CharacterChoiceOptionViewModel>? _choiceChips;
+        private bool _syncingChoice;
+
+        /// <summary>
+        /// Варианты одиночного выбора чипами. Отмечен всегда ровно один:
+        /// одиночный выбор хранится номером, и «ничего» у него не бывает —
+        /// щелчок по отмеченному ничего не снимает.
+        /// </summary>
+        public ObservableCollection<CharacterChoiceOptionViewModel> ChoiceChips
+        {
+            get
+            {
+                if (_choiceChips != null) return _choiceChips;
+
+                _choiceChips = new ObservableCollection<CharacterChoiceOptionViewModel>();
+                for (int i = 0; i < _model.States.Count; i++)
+                {
+                    _choiceChips.Add(new CharacterChoiceOptionViewModel(
+                        _model.States[i],
+                        i == _model.CurrentStateIndex,
+                        SelectChoiceChip));
+                }
+
+                return _choiceChips;
+            }
+        }
+
+        private void SelectChoiceChip(string state, bool selected)
+        {
+            if (_syncingChoice || _choiceChips == null) return;
+
+            _syncingChoice = true;
+            try
+            {
+                if (selected)
+                {
+                    var index = _model.States.IndexOf(state);
+                    if (index >= 0) CurrentStateIndex = index;
+                }
+
+                foreach (var chip in _choiceChips)
+                    chip.SetSelectedSilently(chip.Name == CurrentStateName);
+            }
+            finally
+            {
+                _syncingChoice = false;
+            }
+
+            this.RaisePropertyChanged(nameof(ValueSummary));
+        }
+
+        public string CurrentStateName =>
+            _model.CurrentStateIndex >= 0 && _model.CurrentStateIndex < _model.States.Count
+                ? _model.States[_model.CurrentStateIndex]
+                : string.Empty;
+
+        // ── Цвет ─────────────────────────────────────────────────────────
+
+        private ObservableCollection<CharacterColorOptionViewModel>? _paletteOptions;
+
+        public ObservableCollection<CharacterColorOptionViewModel> PaletteOptions
+        {
+            get
+            {
+                if (_paletteOptions != null) return _paletteOptions;
+
+                _paletteOptions = new ObservableCollection<CharacterColorOptionViewModel>();
+                foreach (var hex in _model.Palette)
+                {
+                    var brush = ParseBrush(hex);
+                    if (brush == null) continue;
+                    _paletteOptions.Add(new CharacterColorOptionViewModel(
+                        hex, brush, SameColor(hex, _model.ColorValue), SelectPaletteColor));
+                }
+
+                return _paletteOptions;
+            }
+        }
+
+        public bool HasPalette => _model.Palette.Count > 0;
+        public bool AllowCustomColor => _model.AllowCustomColor || _model.Palette.Count == 0;
+
+        /// <summary>Выбранный цвет строкой #RRGGBB; пусто — не выбран.</summary>
+        public string ColorValue
+        {
+            get => _model.ColorValue;
+            set
+            {
+                var hex = (value ?? string.Empty).Trim();
+                if (string.Equals(_model.ColorValue, hex, StringComparison.OrdinalIgnoreCase)) return;
+                _model.ColorValue = hex;
+
+                if (_paletteOptions != null)
+                    foreach (var option in _paletteOptions)
+                        option.SetSelectedSilently(SameColor(option.Hex, hex));
+
+                this.RaisePropertyChanged();
+                this.RaisePropertyChanged(nameof(ColorBrush));
+                this.RaisePropertyChanged(nameof(HasColor));
+                this.RaisePropertyChanged(nameof(ValueSummary));
+                Edited?.Invoke();
+            }
+        }
+
+        public bool HasColor => ParseBrush(_model.ColorValue) != null;
+        public IBrush? ColorBrush => ParseBrush(_model.ColorValue);
+
+        private void SelectPaletteColor(string hex, bool selected)
+        {
+            // Щелчок по выбранному цвету снимает выбор: так цвет можно
+            // вернуть в «не указан», не заводя отдельной кнопки.
+            ColorValue = selected ? hex : string.Empty;
+        }
+
+        private static bool SameColor(string? a, string? b) =>
+            !string.IsNullOrWhiteSpace(a) && !string.IsNullOrWhiteSpace(b) &&
+            string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
+        // ── Свободное число: способы ─────────────────────────────────────
+
+        private static readonly (CharacterNumberMode Mode, CharacterNumberModes Flag, string Label, string Hint)[] ModeTable =
+        {
+            (CharacterNumberMode.Exact, CharacterNumberModes.Exact, "Точно", "Число известно точно"),
+            (CharacterNumberMode.Approx, CharacterNumberModes.Approx, "Примерно", "«Около тридцати»: в карточке будет «около», а сравнивается само число"),
+            (CharacterNumberMode.Range, CharacterNumberModes.Range, "От — до", "Диапазон: «от 25 до 35». Для сравнения берётся середина"),
+            (CharacterNumberMode.Stage, CharacterNumberModes.Stage, "Этап", "Этап из списка анкеты: «подросток», «взрослый». Для сравнения берётся середина этапа"),
+            (CharacterNumberMode.BirthYear, CharacterNumberModes.BirthYear, "Год рождения", "Вместо возраста — год, когда персонаж родился")
+        };
+
+        private CharacterNumberModes AllowedModes =>
+            _model.NumberModes == CharacterNumberModes.None ? CharacterNumberModes.Exact : _model.NumberModes;
+
+        private int AllowedModeCount => ModeTable.Count(m => AllowedModes.HasFlag(m.Flag));
+
+        /// <summary>
+        /// Способ, которым задано число. Если анкета больше не разрешает
+        /// сохранённый способ, показывается первый разрешённый — само
+        /// значение при этом не теряется.
+        /// </summary>
+        public CharacterNumberMode NumberMode
+        {
+            get
+            {
+                var stored = ModeTable.FirstOrDefault(m => m.Mode == _model.NumberMode);
+                if (AllowedModes.HasFlag(stored.Flag)) return _model.NumberMode;
+                return ModeTable.First(m => AllowedModes.HasFlag(m.Flag)).Mode;
+            }
+            set
+            {
+                if (_model.NumberMode == value) return;
+                _model.NumberMode = value;
+
+                if (_numberModeOptions != null)
+                    foreach (var option in _numberModeOptions)
+                        option.SetSelectedSilently(option.Mode == value);
+
+                RaiseNumberModeVisibility();
+                this.RaisePropertyChanged(nameof(ValueSummary));
+                Edited?.Invoke();
+            }
+        }
+
+        private ObservableCollection<CharacterNumberModeOptionViewModel>? _numberModeOptions;
+
+        public ObservableCollection<CharacterNumberModeOptionViewModel> NumberModeOptions
+        {
+            get
+            {
+                if (_numberModeOptions != null) return _numberModeOptions;
+
+                _numberModeOptions = new ObservableCollection<CharacterNumberModeOptionViewModel>();
+                var current = NumberMode;
+                foreach (var entry in ModeTable)
+                {
+                    if (!AllowedModes.HasFlag(entry.Flag)) continue;
+                    _numberModeOptions.Add(new CharacterNumberModeOptionViewModel(
+                        entry.Mode, entry.Label, entry.Hint, entry.Mode == current,
+                        mode => NumberMode = mode));
+                }
+
+                return _numberModeOptions;
+            }
+        }
+
+        public bool ShowNumberModes => ShowNumber && AllowedModeCount > 1;
+
+        public bool ShowNumberSingle => ShowNumber &&
+            (NumberMode == CharacterNumberMode.Exact || NumberMode == CharacterNumberMode.BirthYear);
+        public bool ShowNumberApprox => ShowNumber && NumberMode == CharacterNumberMode.Approx;
+        public bool ShowNumberRange => ShowNumber && NumberMode == CharacterNumberMode.Range;
+        public bool ShowNumberStage => ShowNumber && NumberMode == CharacterNumberMode.Stage;
+
+        /// <summary>Поле для числа нужно всем способам, кроме этапа.</summary>
+        public bool ShowNumberMain => ShowNumber && NumberMode != CharacterNumberMode.Stage;
+
+        public bool ShowUnit => ShowNumberMain && HasUnit;
+
+        /// <summary>Единица рядом с полем; у года рождения единицы нет.</summary>
+        public string UnitCaption => NumberMode == CharacterNumberMode.BirthYear ? "год" : _model.Unit;
+        public bool HasUnit => !string.IsNullOrWhiteSpace(UnitCaption);
+
+        private void RaiseNumberModeVisibility()
+        {
+            this.RaisePropertyChanged(nameof(NumberMode));
+            this.RaisePropertyChanged(nameof(ShowNumberModes));
+            this.RaisePropertyChanged(nameof(ShowNumberSingle));
+            this.RaisePropertyChanged(nameof(ShowNumberApprox));
+            this.RaisePropertyChanged(nameof(ShowNumberRange));
+            this.RaisePropertyChanged(nameof(ShowNumberStage));
+            this.RaisePropertyChanged(nameof(ShowNumberMain));
+            this.RaisePropertyChanged(nameof(UnitCaption));
+            this.RaisePropertyChanged(nameof(HasUnit));
+            this.RaisePropertyChanged(nameof(ShowUnit));
+        }
+
+        /// <summary>
+        /// Верхняя граница диапазона строкой — по той же причине, что и
+        /// NumberText: пустое поле должно оставаться пустым.
+        /// </summary>
+        public string NumberToText
+        {
+            get => _model.NumericValueTo.HasValue
+                ? _model.NumericValueTo.Value.ToString("0.###", CultureInfo.CurrentCulture)
+                : string.Empty;
+            set
+            {
+                var text = (value ?? string.Empty).Trim();
+
+                if (text.Length == 0)
+                {
+                    if (!_model.NumericValueTo.HasValue) return;
+                    _model.NumericValueTo = null;
+                }
+                else
+                {
+                    if (!double.TryParse(text.Replace(',', '.'), NumberStyles.Float,
+                            CultureInfo.InvariantCulture, out var parsed))
+                    {
+                        this.RaisePropertyChanged();
+                        return;
+                    }
+
+                    if (_model.NumericValueTo.HasValue &&
+                        Math.Abs(_model.NumericValueTo.Value - parsed) < double.Epsilon) return;
+
+                    _model.NumericValueTo = parsed;
+                }
+
+                this.RaisePropertyChanged();
+                this.RaisePropertyChanged(nameof(ValueSummary));
+                Edited?.Invoke();
+            }
+        }
+
+        private ObservableCollection<CharacterChoiceOptionViewModel>? _stageOptions;
+        private bool _syncingStage;
+
+        /// <summary>Этапы анкеты чипами; отмечен тот, что выбран у персонажа.</summary>
+        public ObservableCollection<CharacterChoiceOptionViewModel> StageOptions
+        {
+            get
+            {
+                if (_stageOptions != null) return _stageOptions;
+
+                _stageOptions = new ObservableCollection<CharacterChoiceOptionViewModel>();
+                foreach (var stage in _model.Stages)
+                {
+                    if (string.IsNullOrWhiteSpace(stage.Name)) continue;
+                    _stageOptions.Add(new CharacterChoiceOptionViewModel(
+                        stage.Name, stage.Name == _model.StageName, SelectStage)
+                    {
+                        Hint = StageRange(stage)
+                    });
+                }
+
+                return _stageOptions;
+            }
+        }
+
+        public bool HasStages => _model.Stages.Any(s => !string.IsNullOrWhiteSpace(s.Name));
+
+        private static string StageRange(CharacterNumberStage stage) =>
+            stage.To.HasValue
+                ? Format(stage.From) + "–" + Format(stage.To.Value)
+                : Format(stage.From) + "+";
+
+        private void SelectStage(string name, bool selected)
+        {
+            if (_syncingStage || _stageOptions == null) return;
+
+            _syncingStage = true;
+            try
+            {
+                var target = selected ? name : string.Empty;
+                if (_model.StageName != target)
+                {
+                    _model.StageName = target;
+                    Edited?.Invoke();
+                }
+
+                foreach (var option in _stageOptions)
+                    option.SetSelectedSilently(option.Name == _model.StageName);
+            }
+            finally
+            {
+                _syncingStage = false;
+            }
+
+            this.RaisePropertyChanged(nameof(ValueSummary));
+        }
+
+        /// <summary>
+        /// Число, которым значение участвует в сравнении: примерное — как
+        /// есть, диапазон — серединой, этап — серединой этапа. Год рождения
+        /// в возраст не переводится: для этого нужен год сюжета.
+        /// </summary>
+        public double? ComparableNumber
+        {
+            get
+            {
+                if (_model.IsNotApplicable) return null;
+
+                switch (_model.Type)
+                {
+                    case CharacterParameterType.Numeric:
+                        return _model.NumericValue;
+
+                    case CharacterParameterType.Number:
+                        switch (NumberMode)
+                        {
+                            case CharacterNumberMode.Range:
+                                if (!_model.HasNumber) return _model.NumericValueTo;
+                                return _model.NumericValueTo.HasValue
+                                    ? (_model.NumericValue + _model.NumericValueTo.Value) / 2.0
+                                    : _model.NumericValue;
+                            case CharacterNumberMode.Stage:
+                                return _model.Stages.FirstOrDefault(s => s.Name == _model.StageName)?.Midpoint;
+                            case CharacterNumberMode.BirthYear:
+                                return null;
+                            default:
+                                return _model.HasNumber ? _model.NumericValue : null;
+                        }
+
+                    default:
+                        return null;
+                }
+            }
+        }
+
+        // ── Значение одной строкой ───────────────────────────────────────
+
+        /// <summary>
+        /// Значение словами — для подсказок, сравнения и мест, где поле
+        /// показывается без правки: «около 30 лет», «Холерик», «4 / 5».
+        /// </summary>
+        public string ValueSummary
+        {
+            get
+            {
+                if (_model.IsNotApplicable) return CharactersStrings.Param_NotApplicable;
+
+                switch (_model.Type)
+                {
+                    case CharacterParameterType.Numeric:
+                        if (EffectiveDisplay == CharacterFieldDisplay.Bipolar)
+                        {
+                            var index = BipolarIndex;
+                            if (index <= 0) return string.Empty;
+                            var label = BipolarCaptions[index];
+                            return string.IsNullOrWhiteSpace(label)
+                                ? index.ToString(CultureInfo.InvariantCulture) + " / " +
+                                  BipolarCount.ToString(CultureInfo.InvariantCulture)
+                                : label;
+                        }
+                        return PointLabel(_model.NumericValue) ?? ValueCaption;
+
+                    case CharacterParameterType.Number:
+                        return NumberSummary();
+
+                    case CharacterParameterType.StateList:
+                        return CurrentStateName;
+
+                    case CharacterParameterType.MultiChoice:
+                        return SelectedStatesCaption;
+
+                    case CharacterParameterType.Boolean:
+                        return BoolCaption;
+
+                    case CharacterParameterType.Color:
+                        return _model.ColorValue;
+
+                    default:
+                        return _model.TextValue;
+                }
+            }
+        }
+
+        private string NumberSummary()
+        {
+            string WithUnit(string number) =>
+                string.IsNullOrWhiteSpace(_model.Unit) ? number : number + " " + _model.Unit;
+
+            switch (NumberMode)
+            {
+                case CharacterNumberMode.Approx:
+                    return _model.HasNumber ? "около " + WithUnit(Format(_model.NumericValue)) : string.Empty;
+
+                case CharacterNumberMode.Range:
+                    if (!_model.HasNumber && !_model.NumericValueTo.HasValue) return string.Empty;
+                    var from = _model.HasNumber ? Format(_model.NumericValue) : "…";
+                    var to = _model.NumericValueTo.HasValue ? Format(_model.NumericValueTo.Value) : "…";
+                    return WithUnit(from + "–" + to);
+
+                case CharacterNumberMode.Stage:
+                    return _model.StageName;
+
+                case CharacterNumberMode.BirthYear:
+                    return _model.HasNumber ? "род. " + Format(_model.NumericValue) : string.Empty;
+
+                default:
+                    return _model.HasNumber ? WithUnit(Format(_model.NumericValue)) : string.Empty;
             }
         }
 
@@ -390,6 +1110,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             }
 
             this.RaisePropertyChanged(nameof(SelectedStatesCaption));
+            this.RaisePropertyChanged(nameof(ValueSummary));
             Edited?.Invoke();
         }
 
@@ -415,6 +1136,11 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
 
         public string Name { get; }
 
+        /// <summary>Пояснение к варианту: у этапа — его границы, «13–17».</summary>
+        public string Hint { get; init; } = string.Empty;
+
+        public bool HasHint => !string.IsNullOrWhiteSpace(Hint);
+
         private bool _isSelected;
         public bool IsSelected
         {
@@ -426,5 +1152,91 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                 _toggle(Name, value);
             }
         }
+
+        /// <summary>
+        /// Поставить отметку без оповещения владельца — когда её меняет он
+        /// сам: соседний вариант одиночного выбора, выбор из списка.
+        /// </summary>
+        public void SetSelectedSilently(bool value) =>
+            this.RaiseAndSetIfChanged(ref _isSelected, value, nameof(IsSelected));
+    }
+
+    /// <summary>Цвет палитры поля — кружком в карточке.</summary>
+    public class CharacterColorOptionViewModel : ReactiveObject
+    {
+        private readonly Action<string, bool> _toggle;
+
+        public CharacterColorOptionViewModel(string hex, IBrush brush, bool isSelected, Action<string, bool> toggle)
+        {
+            Hex = hex;
+            Brush = brush;
+            _isSelected = isSelected;
+            _toggle = toggle;
+        }
+
+        public string Hex { get; }
+        public IBrush Brush { get; }
+
+        private bool _isSelected;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected == value) return;
+                this.RaiseAndSetIfChanged(ref _isSelected, value);
+                _toggle(Hex, value);
+            }
+        }
+
+        public void SetSelectedSilently(bool value) =>
+            this.RaiseAndSetIfChanged(ref _isSelected, value, nameof(IsSelected));
+    }
+
+    /// <summary>
+    /// Способ задать число — кнопкой переключателя. Отмечен всегда один:
+    /// щелчок по отмеченному ничего не снимает.
+    /// </summary>
+    public class CharacterNumberModeOptionViewModel : ReactiveObject
+    {
+        private readonly Action<CharacterNumberMode> _select;
+
+        public CharacterNumberModeOptionViewModel(
+            CharacterNumberMode mode, string label, string hint, bool isSelected,
+            Action<CharacterNumberMode> select)
+        {
+            Mode = mode;
+            Label = label;
+            Hint = hint;
+            _isSelected = isSelected;
+            _select = select;
+        }
+
+        public CharacterNumberMode Mode { get; }
+        public string Label { get; }
+        public string Hint { get; }
+
+        private bool _isSelected;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (!value)
+                {
+                    // Снять отметку щелчком нельзя: способ задан всегда.
+                    // Оповещение возвращает кнопке прежнее состояние.
+                    this.RaisePropertyChanged();
+                    return;
+                }
+
+                if (_isSelected) return;
+                this.RaiseAndSetIfChanged(ref _isSelected, value);
+                _select(Mode);
+            }
+        }
+
+        public void SetSelectedSilently(bool value) =>
+            this.RaiseAndSetIfChanged(ref _isSelected, value, nameof(IsSelected));
     }
 }

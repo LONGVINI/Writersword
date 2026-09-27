@@ -36,6 +36,12 @@ namespace Writersword.Modules.Characters.Models.Enums
         LongText,
 
         /// <summary>Несколько вариантов из списка разом.</summary>
-        MultiChoice
+        MultiChoice,
+
+        /// <summary>
+        /// Цвет: глаза, волосы, кожа. Выбирается из палитры анкеты или любой
+        /// свой, если анкета это разрешает. Хранится строкой вида #RRGGBB.
+        /// </summary>
+        Color
     }
 }

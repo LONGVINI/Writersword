@@ -7,6 +7,8 @@ using SkiaSharp;
 using IBrush = Avalonia.Media.IBrush;
 using SolidColorBrush = Avalonia.Media.SolidColorBrush;
 using Color = Avalonia.Media.Color;
+using Geometry = Avalonia.Media.Geometry;
+using StreamGeometry = Avalonia.Media.StreamGeometry;
 using Writersword.Modules.TextEditor.Models.Styles;
 using Writersword.Modules.TextEditor.Contracts;
 
@@ -94,6 +96,19 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private bool _isSpaceBefore;
         private bool _isSpaceAfter;
         private int _outlineLevel;
+
+        // --- Рамка абзаца ---
+
+        // Перо рамки: им кнопка «Рамка» ставит новые линии и перерисовывает стоящие.
+        // Когда каретка стоит в абзаце с рамкой, перо берёт вид его линии — тогда
+        // отметки в меню и цвет рядом с кнопкой показывают рамку под кареткой.
+        private BorderStylePen _borderPen = BorderStylePen.Default;
+
+        // Какие стороны рамки видны у выделения — для отметок в меню.
+        private ParagraphBorderSides _borderSides;
+
+        // Сторона, которую ставит сама кнопка (без меню): последняя выбранная, как в Word.
+        private ParagraphBorderSides _lastBorderSides = ParagraphBorderSides.Bottom;
 
         // --- Адаптивное отображение ---
 
@@ -564,6 +579,228 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// <summary>Свечение текста — заготовка для будущей реализации.</summary>
         public ICommand TextGlowCommand { get; }
 
+        // --- Рамка абзаца ---
+
+        /// <summary>
+        /// Изменяемое состояние пера в ленте. Отдельная запись, а не поля по одному:
+        /// перо меняется целиком, когда каретка приходит в абзац с рамкой.
+        /// </summary>
+        private sealed record BorderStylePen(
+            Models.Document.BorderStyle Style,
+            double WidthPt,
+            double? SpacePt,
+            string? Color)
+        {
+            public static readonly BorderStylePen Default =
+                new(Models.Document.BorderStyle.Single, 0.5, null, null);
+
+            public ParagraphBorderPen ToPen() => new()
+            {
+                Style = Style,
+                WidthPt = WidthPt,
+                SpacePt = SpacePt,
+                Color = Color
+            };
+        }
+
+        // Точечная рамка-подложка значков: какие стороны сплошные, видно на её фоне.
+        private const string BorderIconFrame =
+            "M3 3h2v2h-2zM3 7h2v2h-2zM3 11h2v2h-2zM3 15h2v2h-2zM3 19h2v2h-2z"
+            + "M7 3h2v2h-2zM7 11h2v2h-2zM7 19h2v2h-2z"
+            + "M11 3h2v2h-2zM11 7h2v2h-2zM11 11h2v2h-2zM11 15h2v2h-2zM11 19h2v2h-2z"
+            + "M15 3h2v2h-2zM15 11h2v2h-2zM15 19h2v2h-2z"
+            + "M19 3h2v2h-2zM19 7h2v2h-2zM19 11h2v2h-2zM19 15h2v2h-2zM19 19h2v2h-2z";
+
+        /// <summary>Значок стороны рамки: точечная подложка и сплошные нужные стороны.</summary>
+        private static string BorderIconData(ParagraphBorderSides sides)
+        {
+            // F1 — заливка «ненулевая»: точки подложки под сплошной линией не
+            // выбивают в ней дыр, как было бы при правиле «чёт-нечет».
+            var data = new System.Text.StringBuilder("F1 ");
+            data.Append(BorderIconFrame);
+            if (sides.HasFlag(ParagraphBorderSides.Top)) data.Append("M3 3h18v2H3z");
+            if (sides.HasFlag(ParagraphBorderSides.Bottom)) data.Append("M3 19h18v2H3z");
+            if (sides.HasFlag(ParagraphBorderSides.Left)) data.Append("M3 3h2v18H3z");
+            if (sides.HasFlag(ParagraphBorderSides.Right)) data.Append("M19 3h2v18h-2z");
+            return data.ToString();
+        }
+
+        /// <summary>Значок кнопки «Рамка» — сторона, которую она поставит.</summary>
+        public Geometry LastBorderIcon => StreamGeometry.Parse(BorderIconData(_lastBorderSides));
+
+        /// <summary>Подсказка кнопки «Рамка» — что она поставит.</summary>
+        public string LastBorderTip => _lastBorderSides switch
+        {
+            ParagraphBorderSides.Top => "Рамка абзаца: верхняя граница",
+            ParagraphBorderSides.Left => "Рамка абзаца: левая граница",
+            ParagraphBorderSides.Right => "Рамка абзаца: правая граница",
+            ParagraphBorderSides.Box => "Рамка абзаца: все границы",
+            _ => "Рамка абзаца: нижняя граница"
+        };
+
+        public bool IsBorderTop => _borderSides.HasFlag(ParagraphBorderSides.Top);
+        public bool IsBorderBottom => _borderSides.HasFlag(ParagraphBorderSides.Bottom);
+        public bool IsBorderLeft => _borderSides.HasFlag(ParagraphBorderSides.Left);
+        public bool IsBorderRight => _borderSides.HasFlag(ParagraphBorderSides.Right);
+        public bool IsBorderBox => (_borderSides & ParagraphBorderSides.Box) == ParagraphBorderSides.Box;
+        public bool IsBorderNone => _borderSides == ParagraphBorderSides.None;
+
+        /// <summary>Вид линии пера — ключом для отметки в меню.</summary>
+        public string BorderPenStyleKey => _borderPen.Style.ToString();
+
+        /// <summary>Толщина пера — ключом для отметки в меню (точка, без культуры).</summary>
+        public string BorderPenWidthKey
+            => _borderPen.WidthPt.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+        /// <summary>Зазор пера — ключом для отметки в меню; «auto» — как в Word.</summary>
+        public string BorderPenSpaceKey => _borderPen.SpacePt is double space
+            ? space.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)
+            : "auto";
+
+        /// <summary>Цвет пера «авто» — цвет текста листа.</summary>
+        public bool IsBorderColorAuto => _borderPen.Color is null;
+
+        // Цвет рядом с кнопкой «Рамка». При «авто» показывает цвет текста по умолчанию.
+        private string _borderColorPick = "#1A1A1A";
+        public string BorderColorPick
+        {
+            get => _borderColorPick;
+            set
+            {
+                if (string.Equals(_borderColorPick, value, StringComparison.OrdinalIgnoreCase)) return;
+                this.RaiseAndSetIfChanged(ref _borderColorPick, value);
+                if (string.IsNullOrWhiteSpace(value)) return;
+
+                SetBorderPen(_borderPen with { Color = value });
+            }
+        }
+
+        // --- Непечатаемые знаки ---
+
+        private bool _isFormattingMarksVisible;
+
+        /// <summary>Показаны ли непечатаемые знаки — состояние кнопки «¶».</summary>
+        public bool IsFormattingMarksVisible
+        {
+            get => _isFormattingMarksVisible;
+            private set => this.RaiseAndSetIfChanged(ref _isFormattingMarksVisible, value);
+        }
+
+        /// <summary>Кнопка «¶»: показать или скрыть непечатаемые знаки.</summary>
+        public ICommand ToggleFormattingMarksCommand { get; }
+
+        /// <summary>
+        /// Состояние кнопки «¶» по редактору. Зовётся после переключения — и с
+        /// кнопки, и с клавиатуры, — и при смене контекста курсора.
+        /// </summary>
+        public void RefreshFormattingMarks()
+            => IsFormattingMarksVisible = _target.AreFormattingMarksVisible();
+
+        public ICommand BorderSideCommand { get; }
+        public ICommand BorderRepeatCommand { get; }
+        public ICommand BorderNoneCommand { get; }
+        public ICommand BorderStyleCommand { get; }
+        public ICommand BorderWidthCommand { get; }
+        public ICommand BorderSpaceCommand { get; }
+        public ICommand BorderColorAutoCommand { get; }
+
+        /// <summary>
+        /// Кнопка в центре образца абзаца. Пока ни одной стороны нет, на ней плюс, и
+        /// она ставит рамку со всех сторон. Как только стоит хоть одна сторона, плюс
+        /// поворачивается в крест, и кнопка снимает рамку целиком.
+        /// </summary>
+        public ICommand BorderCenterCommand { get; }
+
+        /// <summary>Цвет линий в образце абзаца, когда у пера свой цвет, а не «как у текста».</summary>
+        public IBrush BorderPenBrush
+        {
+            get
+            {
+                string? code = _borderPen.Color;
+                if (string.IsNullOrWhiteSpace(code))
+                    return new SolidColorBrush(Color.FromArgb(0, 0, 0, 0));
+
+                // Градиент линия рамки не рисует — образец показывает тот же сплошной
+                // цвет, которым ляжет линия.
+                var solid = Writersword.Modules.TextEditor.Rendering.SKTextRenderer
+                    .GradientSolidColor(code, SKColors.Black);
+                return new SolidColorBrush(Color.FromArgb(solid.Alpha, solid.Red, solid.Green, solid.Blue));
+            }
+        }
+
+        /// <summary>
+        /// Толщина линий в образце абзаца, в точках экрана: растёт с толщиной пера,
+        /// но не тоньше полутора точек — иначе тонкую линию в образце не видно — и не
+        /// толще пяти, чтобы образец не превращался в брусок.
+        /// </summary>
+        public double BorderPreviewThickness => Math.Clamp(_borderPen.WidthPt * 1.4, 1.5, 5.0);
+
+        /// <summary>
+        /// Новое перо: запоминается для следующих линий и сразу ложится на линии,
+        /// которые уже стоят у выделенных абзацев.
+        /// </summary>
+        private void SetBorderPen(BorderStylePen pen)
+        {
+            _borderPen = pen;
+            RaiseBorderPenChanged();
+            _target.RestyleParagraphBorders(pen.ToPen());
+        }
+
+        private void RaiseBorderPenChanged()
+        {
+            this.RaisePropertyChanged(nameof(BorderPenStyleKey));
+            this.RaisePropertyChanged(nameof(BorderPenWidthKey));
+            this.RaisePropertyChanged(nameof(BorderPenSpaceKey));
+            this.RaisePropertyChanged(nameof(IsBorderColorAuto));
+            this.RaisePropertyChanged(nameof(BorderPenBrush));
+            this.RaisePropertyChanged(nameof(BorderPreviewThickness));
+        }
+
+        private void ApplyBorderSides(ParagraphBorderSides sides)
+        {
+            if (sides == ParagraphBorderSides.None) return;
+
+            _lastBorderSides = sides;
+            this.RaisePropertyChanged(nameof(LastBorderIcon));
+            this.RaisePropertyChanged(nameof(LastBorderTip));
+
+            _target.ToggleParagraphBorders(sides, _borderPen.ToPen());
+            RefreshBorderSides();
+        }
+
+        /// <summary>Отметки сторон в меню — по выделению.</summary>
+        private void RefreshBorderSides()
+        {
+            _borderSides = _target.GetSelectedParagraphBorderSides();
+            this.RaisePropertyChanged(nameof(IsBorderTop));
+            this.RaisePropertyChanged(nameof(IsBorderBottom));
+            this.RaisePropertyChanged(nameof(IsBorderLeft));
+            this.RaisePropertyChanged(nameof(IsBorderRight));
+            this.RaisePropertyChanged(nameof(IsBorderBox));
+            this.RaisePropertyChanged(nameof(IsBorderNone));
+        }
+
+        /// <summary>
+        /// Перо по рамке абзаца под кареткой: вид, толщина, зазор и цвет первой
+        /// видимой линии. У абзаца без рамки перо остаётся прежним.
+        /// </summary>
+        private void SyncBorderPenFromCaret(ParagraphProperties? props)
+        {
+            var borders = props?.Borders;
+            if (borders is null || borders.IsEmpty) return;
+
+            var line = borders.Left is { IsVisible: true } ? borders.Left
+                : borders.Bottom is { IsVisible: true } ? borders.Bottom
+                : borders.Top is { IsVisible: true } ? borders.Top
+                : borders.Right;
+            if (line is not { IsVisible: true }) return;
+
+            _borderPen = new BorderStylePen(line.Style, line.WidthPt, line.SpacePt, line.Color);
+            _borderColorPick = line.Color ?? "#1A1A1A";
+            RaiseBorderPenChanged();
+            this.RaisePropertyChanged(nameof(BorderColorPick));
+        }
+
         // --- Команды: форматирование абзаца ---
 
         public ICommand BulletListCommand { get; }
@@ -792,6 +1029,68 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                     _target.SetOutlineLevel(lvl);
             });
 
+            // Рамка абзаца. Стороны приходят именем из ParagraphBorderSides, толщина и
+            // зазор — числом с точкой: CommandParameter в разметке от культуры не зависит.
+            BorderSideCommand = ReactiveCommand.Create<string>(param =>
+            {
+                if (Enum.TryParse<ParagraphBorderSides>(param, out var sides))
+                    ApplyBorderSides(sides);
+            });
+            BorderRepeatCommand = ReactiveCommand.Create(() => ApplyBorderSides(_lastBorderSides));
+            ToggleFormattingMarksCommand = ReactiveCommand.Create(() =>
+            {
+                _target.ToggleFormattingMarks();
+                RefreshFormattingMarks();
+            });
+            BorderNoneCommand = ReactiveCommand.Create(() =>
+            {
+                _target.ClearParagraphBorders();
+                RefreshBorderSides();
+            });
+            BorderStyleCommand = ReactiveCommand.Create<string>(param =>
+            {
+                if (Enum.TryParse<Models.Document.BorderStyle>(param, out var style)
+                    && style != Models.Document.BorderStyle.None)
+                    SetBorderPen(_borderPen with { Style = style });
+            });
+            BorderWidthCommand = ReactiveCommand.Create<string>(param =>
+            {
+                if (double.TryParse(param, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double width)
+                    && width > 0)
+                    SetBorderPen(_borderPen with { WidthPt = width });
+            });
+            BorderSpaceCommand = ReactiveCommand.Create<string>(param =>
+            {
+                if (string.Equals(param, "auto", StringComparison.OrdinalIgnoreCase))
+                {
+                    SetBorderPen(_borderPen with { SpacePt = null });
+                    return;
+                }
+
+                if (double.TryParse(param, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double space)
+                    && space >= 0)
+                    SetBorderPen(_borderPen with { SpacePt = space });
+            });
+            BorderCenterCommand = ReactiveCommand.Create(() =>
+            {
+                if (_borderSides == ParagraphBorderSides.None)
+                {
+                    ApplyBorderSides(ParagraphBorderSides.Box);
+                    return;
+                }
+
+                _target.ClearParagraphBorders();
+                RefreshBorderSides();
+            });
+            BorderColorAutoCommand = ReactiveCommand.Create(() =>
+            {
+                _borderColorPick = "#1A1A1A";
+                this.RaisePropertyChanged(nameof(BorderColorPick));
+                SetBorderPen(_borderPen with { Color = null });
+            });
+
             CutCommand = ReactiveCommand.Create(() => _target.Cut());
             CopyCommand = ReactiveCommand.Create(() => _target.Copy());
             PasteCommand = ReactiveCommand.Create(() => _target.Paste());
@@ -837,7 +1136,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             // уровень структуры — из собственных свойств абзаца.
             _isSpaceBefore = ctx.HasSpaceBefore;
             _isSpaceAfter = ctx.HasSpaceAfter;
-            _outlineLevel = _target.GetActiveParagraphProperties()?.OutlineLevel ?? 0;
+            var activeProps = _target.GetActiveParagraphProperties();
+            _outlineLevel = activeProps?.OutlineLevel ?? 0;
+
+            // Рамка: отметки сторон по выделению, перо — по рамке абзаца под кареткой.
+            SyncBorderPenFromCaret(activeProps);
+            RefreshBorderSides();
+            RefreshFormattingMarks();
 
             this.RaisePropertyChanged(nameof(IsBold));
             this.RaisePropertyChanged(nameof(IsItalic));

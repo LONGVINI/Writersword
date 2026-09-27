@@ -94,6 +94,24 @@ namespace Writersword.Modules.TextEditor.Contracts
         // Ставит выделенным абзацам структурный уровень (0 — основной текст, 1…9).
         void SetOutlineLevel(int level);
 
+        // ── Рамка абзаца ──────────────────────────────────────────────────
+        // Ставит линии рамки выделенным абзацам пером pen, а если все эти стороны у них
+        // уже видны — снимает. Выделение из нескольких абзацев — одна рамка: линия
+        // сверху у первого, снизу у последнего, боковые у всех.
+        void ToggleParagraphBorders(ParagraphBorderSides sides, ParagraphBorderPen pen);
+        // Снимает рамку у выделенных абзацев целиком.
+        void ClearParagraphBorders();
+        // Меняет вид, цвет, толщину и зазор уже видимых линий выделенных абзацев.
+        void RestyleParagraphBorders(ParagraphBorderPen pen);
+        // Какие стороны рамки видны у выделенных абзацев — для отметок в меню кнопки.
+        ParagraphBorderSides GetSelectedParagraphBorderSides();
+
+        // ── Непечатаемые знаки ────────────────────────────────────────────
+        // Включает и выключает показ знаков конца абзаца, пробелов, табуляций и разрывов.
+        void ToggleFormattingMarks();
+        // Показаны ли непечатаемые знаки — для кнопки «¶».
+        bool AreFormattingMarksVisible();
+
         // ── Списки ────────────────────────────────────────────────────────
         void ToggleBulletList();
         void ToggleNumberedList();

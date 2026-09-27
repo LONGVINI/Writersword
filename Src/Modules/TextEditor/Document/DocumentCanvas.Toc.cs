@@ -25,6 +25,19 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         public Dictionary<Guid, int> GetBlockPageNumbers()
         {
+            // Пока свёрнут хоть один заголовок, раскладка короче настоящей и заголовков
+            // из свёрнутых разделов в ней нет. Номера берутся снятые до свёртки —
+            // иначе оглавление с самообновлением переписало бы свои числа неверными
+            // (DocumentViewModel.CollapsedPageMap).
+            if (DocVm is { HasCollapsedHeadings: true, CollapsedPageMap: { } frozen })
+                return new Dictionary<Guid, int>(frozen);
+
+            return LiveBlockPageNumbers();
+        }
+
+        /// <summary>Карта «абзац — номер страницы» по текущей раскладке, как она есть.</summary>
+        private Dictionary<Guid, int> LiveBlockPageNumbers()
+        {
             List<ParaLayout> layouts;
             lock (_renderLock) { layouts = _layouts; }
 
@@ -146,6 +159,9 @@ namespace Writersword.Modules.TextEditor.Document
             if (DocVm is null) return;
             if (paragraphIndex < 0 || paragraphIndex >= DocVm.Paragraphs.Count) return;
             if (_layouts.Count == 0) return;
+
+            // Абзац в свёрнутом разделе — раздел раскрывается (DocumentCanvas.HeadingCollapse).
+            RevealCollapsedParagraph(DocVm.Paragraphs[paragraphIndex]);
 
             // Раскладка обязана знать этот абзац: поиск слайса на ненайденный отвечает
             // нулём, и каретка уезжает в начало книги вместе с видом.

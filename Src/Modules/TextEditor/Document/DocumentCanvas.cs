@@ -1201,7 +1201,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _substituteMissingGlyphs,
                 _substituteFontFamily,
                 _breakOnHyphen,
-                (float)DocVm.Document.DefaultTabStopPt);
+                (float)DocVm.Document.DefaultTabStopPt,
+                DocVm.Document.JustifyWithShrinking);
 
         // ── Логирование ───────────────────────────────────────────────────
         private static readonly ILogger _logger = Log.ForContext<DocumentCanvas>();
@@ -1323,6 +1324,11 @@ namespace Writersword.Modules.TextEditor.Document
         // Блок-якорь на который нужно переместить каретку после ближайшего rebuild.
         // Устанавливается при вставке разрыва страницы, потребляется в ScheduleRebuild.
         private ParagraphBlock? _pendingFocusBlock;
+
+        // Место каретки, которое шаг отмены вставки блока просит занять. Шаг меняет
+        // состав абзацев, и нужного абзаца в нынешней раскладке может ещё не быть —
+        // поэтому место ставится после пересборки, как и якорь разрыва.
+        private (Guid ParaId, int CharPos)? _pendingCaretRestore;
 
         // ── Callbacks ────────────────────────────────────────────────────
         public Action<double>? RecommendedZoomChanged { get; set; }
@@ -1620,9 +1626,24 @@ namespace Writersword.Modules.TextEditor.Document
             // когда работал над серединой рукописи, никто не станет.
             if (_spreadNeedsCaretSync)
             {
-                _spreadNeedsCaretSync = false;
-                if (_caretPara >= 0 && _caretPara < _layouts.Count)
-                    _spreadLeftPage = _layouts[_caretPara].PageIndex;
+                // Первый вход в книгу после запуска открывает её там, где читали в
+                // прошлый раз. Каретка к этому времени стоит там, куда её поставила
+                // сессия, а сессия прочитанного места не переживает (см.
+                // ReadingBookmarkStore).
+                if (TryResolveReadingBookmark(out int bookmarkPage, out bool bookmarkPending))
+                {
+                    _spreadNeedsCaretSync = false;
+                    _spreadLeftPage = bookmarkPage;
+
+                    // Каретка — тоже закладка: выйдя из книги, читатель окажется там же.
+                    SyncCaretToSpread();
+                }
+                else if (!bookmarkPending)
+                {
+                    _spreadNeedsCaretSync = false;
+                    if (_caretPara >= 0 && _caretPara < _layouts.Count)
+                        _spreadLeftPage = _layouts[_caretPara].PageIndex;
+                }
             }
 
             _spreadLeftPage = SpreadLeftOf(Clamp(_spreadLeftPage, 0, last));
@@ -1691,6 +1712,8 @@ namespace Writersword.Modules.TextEditor.Document
             LostFocus -= OnLostFocusHandler;
             LostFocus += OnLostFocusHandler;
 
+            AttachUndoKeyProbe();
+
             if (IsFocused)
             {
                 _caretVisible = true;
@@ -1710,10 +1733,23 @@ namespace Writersword.Modules.TextEditor.Document
             Dispatcher.UIThread.Post(
                 InvalidateMeasure,
                 DispatcherPriority.Loaded);
+
+            // Прежнее полотно снова на экране — возвращаем место, где оно было
+            // (DocumentCanvas.ViewRestore). Отложено: модуль, если он восстанавливает
+            // место сам, успевает сделать это раньше, и его место главнее.
+            Dispatcher.UIThread.Post(
+                RestoreDetachedViewState,
+                DispatcherPriority.Loaded);
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
+            // Место в документе отдаётся модулю, пока прокрутка ещё своя: дальше вью
+            // уходит с экрана, и её ScrollViewer может сброситься к началу. Полотно
+            // запоминает его и для себя — на случай, если его прикрепят снова.
+            RememberDetachedViewState();
+            FlushViewStateChanged();
+
             _isTransitioning = true;
             if (ReferenceEquals(FocusedInstance, this)) FocusedInstance = null;
             base.OnDetachedFromVisualTree(e);
@@ -1726,6 +1762,11 @@ namespace Writersword.Modules.TextEditor.Document
             ReleaseReadingResources();
             GotFocus -= OnGotFocusHandler;
             LostFocus -= OnLostFocusHandler;
+            DetachUndoKeyProbe();
+
+            // Анимация масштаба колесом держит кадры окна и открытый жест документа.
+            StopWheelZoomAnimation();
+            StopBookZoomAnimation(raiseVisual: false);
 
             // Отписываемся от DocumentViewModel и всех ParagraphViewModel.
             if (_docVm is not null)
@@ -1736,6 +1777,9 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
                 _docVm.StructureChanged -= OnStructureChanged;
+                _docVm.BlocksChangedWithoutParagraphs -= OnBlocksChangedWithoutParagraphs;
+                _docVm.ZoomAnimationRequested -= OnZoomAnimationRequested;
+                _docVm.HeadingCollapseChanged -= OnHeadingCollapseChanged;
                 _docVm.StylesChanged -= OnStylesChanged;
                 _docVm.TocPageNumbersStale -= OnTocPageNumbersStale;
                 _docVm.BeginFontPreviewDelegate = null;
@@ -1743,6 +1787,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.EndFontPreviewDelegate = null;
                 _docVm.FocusEditorDelegate = null;
                 _docVm.OnPageBreakInserted = null;
+                _docVm.CanPushBlockSpliceDelegate = null;
+                _docVm.PushBlockSpliceDelegate = null;
                 _docVm.UndoDelegate = null;
                 _docVm.RedoDelegate = null;
                 _docVm.CutDelegate = null;
@@ -1815,7 +1861,6 @@ namespace Writersword.Modules.TextEditor.Document
         {
             FocusedInstance = this;
             _ = PrefetchClipboardAsync();
-            FlipTraceEvent("got focus");
 
             // Возобновляем мигание каретки.
             _caretVisible = true;
@@ -1962,7 +2007,13 @@ namespace Writersword.Modules.TextEditor.Document
 
         /// <summary>
         /// Номер страницы (1-based) у верха вьюпорта при заданном вертикальном смещении прокрутки (px).
-        /// Используется всплывающей подсказкой при перетаскивании ползунка.
+        /// Используется всплывающей подсказкой при перетаскивании ползунка и вертикальной линейкой.
+        ///
+        /// Сравнение идёт по ВИЗУАЛЬНОМУ верху листа, а не по логическому Ypt раскладки.
+        /// Раскладка всегда кладёт страницы столбиком, а при нескольких страницах в ряду
+        /// на экране они стоят рядами: смещение прокрутки соответствует номеру ряда, и
+        /// сравнение с логическим Ypt давало номер страницы в разы меньше настоящего.
+        /// Из ряда, пересекающего верх вьюпорта, берётся первый (левый) лист.
         /// </summary>
         public int GetPageAtOffset(double offsetYPx)
         {
@@ -1971,11 +2022,27 @@ namespace Writersword.Modules.TextEditor.Document
             if (pages.Count == 0) return 1;
             double zoom = Zoom;
             float viewTopPt = (float)(offsetYPx / zoom * PxToPt);
+
             int page = 1;
+            float bestTopPt = float.NegativeInfinity;
+            bool found = false;
             for (int i = 0; i < pages.Count; i++)
             {
-                if (pages[i].Ypt <= viewTopPt + 1f) page = i + 1;
-                else break;
+                var (_, dy) = PageVisualDelta(i, pages);
+
+                // Листы, уведённые разворотом за пределы холста, на экране не стоят.
+                if (dy >= SpreadHiddenOffsetPt * 0.5f) continue;
+
+                float visTopPt = pages[i].Ypt + dy;
+                if (visTopPt > viewTopPt + 1f) continue;
+
+                // Строго больше: из листов одного ряда остаётся первый по порядку.
+                if (!found || visTopPt > bestTopPt + 0.5f)
+                {
+                    bestTopPt = visTopPt;
+                    page = i + 1;
+                    found = true;
+                }
             }
             return page;
         }
@@ -2024,8 +2091,13 @@ namespace Writersword.Modules.TextEditor.Document
         private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
         {
             if (sender is not ScrollViewer sv) return;
+            PerfCount("ui.scroll");
             _scrollOffsetY = sv.Offset.Y;
             _viewportHeight = sv.Viewport.Height;
+
+            // Место в документе сменилось — модуль запомнит его после паузы
+            // (DocumentCanvas.ViewRestore).
+            ScheduleViewStateChanged();
 
             // Горизонтальная позиция листа для линейки зависит от Offset.X, но публикуется
             // в линейку только при пересборке раскладки (RebuildPageModePass). При скролле
@@ -2036,6 +2108,11 @@ namespace Writersword.Modules.TextEditor.Document
             // Лента меряет место долей длины: прокрутили — доля изменилась, и поле с
             // ползунком в ленте чтения обязаны показать это сразу.
             NotifyReadingPercent();
+
+            // Поле страницы только что сдвинуто, а полная раскладка ещё греется:
+            // открывшиеся листы верстаются частичным проходом, не дожидаясь её.
+            if (_marginSettlePending)
+                ScheduleMarginLiveRelayout();
 
             // Контент не менялся — скролл лишь сдвигает окно по уже отрисованному
             // overscan-битмапу. Ветка _caretOnlyRedraw в RenderWithSKCanvas переиспользует
@@ -2063,6 +2140,9 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
                 _docVm.StructureChanged -= OnStructureChanged;
+                _docVm.BlocksChangedWithoutParagraphs -= OnBlocksChangedWithoutParagraphs;
+                _docVm.ZoomAnimationRequested -= OnZoomAnimationRequested;
+                _docVm.HeadingCollapseChanged -= OnHeadingCollapseChanged;
                 _docVm.StylesChanged -= OnStylesChanged;
                 _docVm.TocPageNumbersStale -= OnTocPageNumbersStale;
                 _docVm.BeginFontPreviewDelegate = null;
@@ -2070,6 +2150,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.EndFontPreviewDelegate = null;
                 _docVm.FocusEditorDelegate = null;
                 _docVm.OnPageBreakInserted = null;
+                _docVm.CanPushBlockSpliceDelegate = null;
+                _docVm.PushBlockSpliceDelegate = null;
                 _docVm.UndoDelegate = null;
                 _docVm.RedoDelegate = null;
                 _docVm.CutDelegate = null;
@@ -2137,6 +2219,9 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.PropertyChanged -= OnDocVmPropertyChanged;
             DocVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
             DocVm.StructureChanged -= OnStructureChanged;
+            DocVm.BlocksChangedWithoutParagraphs -= OnBlocksChangedWithoutParagraphs;
+            DocVm.ZoomAnimationRequested -= OnZoomAnimationRequested;
+            DocVm.HeadingCollapseChanged -= OnHeadingCollapseChanged;
 
             DocVm.ReadingSettingsChanged -= ApplyReadingSettings;
             DocVm.ReadingSettingsChanged += ApplyReadingSettings;
@@ -2147,12 +2232,22 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
             DocVm.PropertyChanged += OnDocVmPropertyChanged;
             DocVm.ParagraphFormatChanged += OnParagraphFormatChanged;
+            // Жест по полю прежней вью-модели к этой отношения не имеет.
+            ResetMarginLiveState();
+
+            // Непечатаемые знаки — как у этой вью-модели.
+            _showFormattingMarks = DocVm.ShowFormattingMarks;
             DocVm.StructureChanged += OnStructureChanged;
+            DocVm.BlocksChangedWithoutParagraphs += OnBlocksChangedWithoutParagraphs;
+            DocVm.ZoomAnimationRequested += OnZoomAnimationRequested;
+            DocVm.HeadingCollapseChanged += OnHeadingCollapseChanged;
             DocVm.BeginFontPreviewDelegate = BeginFontPreviewSession;
             DocVm.PreviewFontFamilyDelegate = PreviewFontFamilySession;
             DocVm.EndFontPreviewDelegate = EndFontPreviewSession;
             DocVm.FocusEditorDelegate = FocusEditorFromHost;
             DocVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
+            DocVm.CanPushBlockSpliceDelegate = CanPushBlockSplice;
+            DocVm.PushBlockSpliceDelegate = PushBlockSplice;
             DocVm.UndoDelegate = ExecuteUndo;
             DocVm.RedoDelegate = ExecuteRedo;
             DocVm.CutDelegate = ExecuteCut;
@@ -3103,11 +3198,58 @@ namespace Writersword.Modules.TextEditor.Document
         // Структурное изменение (вставка/удаление картинки и т.п.): пересобираем раскладку
         // БЕЗ очистки кэша абзацев — текст абзацев не менялся, переформировывать их не нужно,
         // поэтому операция быстрая даже на большом документе.
+        /// <summary>
+        /// Блок встал между абзацами, не добавив и не убрав ни одного из них. Реакция та
+        /// же, что на изменение коллекции абзацев: отложенный полный пересбор, после
+        /// которого каретка встаёт на якорь только что вставленного разрыва.
+        /// </summary>
+        /// <summary>
+        /// Можно ли записать вставку блока лёгким шагом. Нельзя, пока открыт снимок
+        /// рукописи или таблицы: составная операция пишет себя одним шагом, и отдельная
+        /// запись внутри неё разошлась бы с ним по порядку отмены.
+        /// </summary>
+        private bool CanPushBlockSplice()
+            => TextUndoStack is not null && _pendingSnapshot is null && _pendingTableEdit is null;
+
+        /// <summary>Кладёт шаг вставки блока в общий стек отмены.</summary>
+        private void PushBlockSplice(DocumentViewModel.BlockSplice splice, string description)
+        {
+            if (DocVm is null) return;
+
+            var cmd = new BlockSpliceCommand(DocVm, splice, description)
+            {
+                RestoreCaretCallback = (paraId, charPos) => _pendingCaretRestore = (paraId, charPos)
+            };
+
+            PushTextCommand(cmd);
+
+            // Снимок сообщал о правке сам, при закрытии шага. Лёгкий шаг текст абзацев
+            // может и не менять, а изменение надо отметить: иначе оно не попадёт в
+            // сохранение.
+            DocVm.RaiseContentModified();
+        }
+
+        private void OnBlocksChangedWithoutParagraphs()
+        {
+            _logger.Debug("[BLOCK] Состав блоков изменился без изменения абзацев — пересборка");
+            ScheduleRebuild(0);
+        }
+
         private void OnStructureChanged()
         {
+            double oldCanvasH = _canvasHeight;
             RebuildLayouts();
             _caretLineHint = -1;
             SnapCaretToCorrectSlice();
+
+            // Состав абзацев сменился целиком (снято или вставлено оглавление, возврат
+            // отменой) — высота документа другая. Без InvalidateMeasure холст оставался
+            // прежнего размера, и прокрутка упиралась в устаревшую высоту: снятое
+            // оглавление укорачивало книгу, а полоса прокрутки об этом не знала.
+            // Так же поступает ScheduleRebuild.
+            if (Math.Abs(_canvasHeight - oldCanvasH) > 0.5)
+                InvalidateMeasure();
+
             InvalidateFull();
         }
 
@@ -3165,6 +3307,22 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void OnDocVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
+            // Край поля тянут на линейке: видимые листы перекладываются под новое поле
+            // частичным проходом, полная пересборка придёт после отпускания
+            // (DocumentCanvas.MarginPreview).
+            if (e.PropertyName == nameof(DocumentViewModel.MarginPreview))
+            {
+                OnMarginPreviewChanged();
+                return;
+            }
+
+            // Непечатаемые знаки: раскладка та же, перерисовывается только кадр.
+            if (e.PropertyName == nameof(DocumentViewModel.ShowFormattingMarks))
+            {
+                OnFormattingMarksChanged();
+                return;
+            }
+
             // Изменение масштаба. Ключевое: НЕ чистим кэш раскладки. В режиме страниц ширина
             // текста от зума не зависит (она равна ширине страницы), поэтому кэш абзацев валиден,
             // и RebuildLayouts только пере-позиционирует страницы (центрирование pageXPt) и берёт
@@ -3173,12 +3331,13 @@ namespace Writersword.Modules.TextEditor.Document
             // поэтому пере-растеризация не нужна.
             if (e.PropertyName == nameof(DocumentViewModel.Zoom))
             {
-                // Скролл при зуме НЕ трогаем. Горизонтально лист центрирует рендер (сдвиг по
-                // живому _canvasWidth). Вертикально — контент просто масштабируется от текущей
-                // прокрутки. Раньше тут синхронно ставилось вертикальное смещение, но ScrollViewer
-                // ещё не знал новую высоту контента (она обновляется в Measure следующим кадром),
-                // поэтому на увеличении смещение обрезалось по старой высоте: на один кадр текст
-                // прыгал вниз и сверху мелькала пустота. Без этой привязки мерцания нет.
+                // Горизонтально лист центрирует рендер (сдвиг по живому _canvasWidth).
+                // Вертикально место в документе держит привязка: плавный масштаб держит точку
+                // под курсором или середину окна сам (DocumentCanvas.WheelZoom), мгновенная смена
+                // масштаба извне — середину окна. Смещение ставится в том же кадре, после прохода
+                // раскладки: до него ScrollViewer не знает новую высоту контента и обрезал бы
+                // смещение по старой.
+                double previousZoom = _lastZoom;
                 _lastZoom = Zoom;
 
                 // Тяжёлый RebuildLayouts (пагинация всех абзацев) откладываем: во время жеста
@@ -3188,6 +3347,21 @@ namespace Writersword.Modules.TextEditor.Document
                 InvalidateMeasure();
                 InvalidateVisual();
                 ScheduleZoomSettle();
+
+                // Привязка — после того как флаг жеста поднят: её проход раскладки не
+                // должен запускать полную пересборку.
+                if (!ReadingActive)
+                    AnchorExternalZoomChange(previousZoom, _lastZoom);
+                return;
+            }
+
+            // Итог жеста по полю на линейке. Кеш раскладок не чистится: он проверяется
+            // по ширине, и видимые абзацы уже построены под новое поле. Видимые листы
+            // встают сразу, остальной документ догоняет прогревом, не держа интерфейс.
+            if (e.PropertyName == nameof(DocumentViewModel.PageSettings) && _marginGestureEnding)
+            {
+                _marginGestureEnding = false;
+                SettleMarginChange();
                 return;
             }
 
@@ -3243,9 +3417,22 @@ namespace Writersword.Modules.TextEditor.Document
             _zoomSettleTimer?.Stop();
             if (!_zooming) return;
             _zooming = false;
+
+            // Число листов в ряду было заморожено на время жеста. Если под итоговый
+            // масштаб оно другое, листы перекладываются — место в документе держится
+            // по листу, который стоял в точке привязки (DocumentCanvas.WheelZoom).
+            int perRowBefore = _pagesPerRow;
+            var (anchorViewX, anchorViewY) = SettleAnchorViewPoint();
+            var pageAnchor = CapturePageAnchor(anchorViewX, anchorViewY);
+            UpdateEffectivePagesPerRow();
+            bool perRowChanged = _pagesPerRow != perRowBefore;
+
             RebuildLayouts();
             InvalidateMeasure();
             InvalidateFull();
+
+            if (perRowChanged && pageAnchor is { } anchor)
+                RestorePageAnchor(anchor);
         }
 
         private void OnParagraphsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -3287,6 +3474,9 @@ namespace Writersword.Modules.TextEditor.Document
             if (DocVm is null) return;
             int idx = DocVm.Paragraphs.IndexOf(pvm);
             if (idx < 0) return;
+
+            // Каретку ведут в свёрнутый раздел — он раскрывается (DocumentCanvas.HeadingCollapse).
+            RevealCollapsedParagraph(pvm);
             _caretPara = FindFirstSliceForDocVmParagraph(idx);
             _caretChar = pvm.PlainText?.Length ?? 0;
             NotifyLeftCell();
@@ -3300,6 +3490,9 @@ namespace Writersword.Modules.TextEditor.Document
             if (DocVm is null) return;
             int idx = DocVm.Paragraphs.IndexOf(pvm);
             if (idx < 0) return;
+
+            // Каретку ведут в свёрнутый раздел — он раскрывается (DocumentCanvas.HeadingCollapse).
+            RevealCollapsedParagraph(pvm);
             _caretPara = FindFirstSliceForDocVmParagraph(idx);
             _caretChar = Clamp(pos, 0, pvm.PlainText?.Length ?? 0);
             NotifyLeftCell();
@@ -3349,10 +3542,15 @@ namespace Writersword.Modules.TextEditor.Document
                         // Быстрый путь для редактирования: обновляем только один параграф.
                         QuickUpdateParagraphLayout(dirtyPvm);
                     }
-                    else if (sliceCount == 0)
+                    else if (sliceCount == 0 && DocVm.HasCollapsedHeadings != true)
                     {
                         // Новый параграф (Enter): вставляем в _layouts с оценочной высотой
                         // чтобы ScrollToCaret мог найти его позицию немедленно.
+                        //
+                        // При свёрнутых разделах быстрый путь не годится: он ищет место
+                        // вставки, считая абзацы раскладки подряд с абзацами документа, а
+                        // скрытых абзацев в раскладке нет — и слайса нет у скрытого абзаца,
+                        // который поменялся. Их обоих разложит полный пересчёт ниже.
                         QuickInsertParagraphLayout(dirtyParaIdx, dirtyPvm);
                     }
                     // sliceCount > 1: пропускаем быстрый путь, полный пересчёт ниже.
@@ -3372,7 +3570,14 @@ namespace Writersword.Modules.TextEditor.Document
                 if (cts.IsCancellationRequested) return;
 
                 double oldCanvasH = _canvasHeight;
+                bool pageBreakFocus = _pendingFocusBlock is not null;
+                long rebuildTs = System.Diagnostics.Stopwatch.GetTimestamp();
                 RebuildLayouts();
+                if (pageBreakFocus)
+                    _logger.Debug(
+                        "[PAGEBREAK] Пересборка после вставки: {Ms:F1} мс, прогрев {Warmup}, слайсов {Slices}, страниц {Pages}, кеш {Cache}",
+                        System.Diagnostics.Stopwatch.GetElapsedTime(rebuildTs).TotalMilliseconds,
+                        _layoutWarmupActive, _layouts.Count, _pages.Count, _layoutCache.Count);
                 SnapCaretToCorrectSlice(); 
 
                 if (_pendingFocusBlock is not null && DocVm is not null)
@@ -3391,10 +3596,31 @@ namespace Writersword.Modules.TextEditor.Document
                         _caretVisible = true;
                         _caretTimer.Stop();
                         _caretTimer.Start();
-                        if (_caretPara >= 0 && _caretPara < _layouts.Count)
+                        bool caretOnLayout = _caretPara >= 0 && _caretPara < _layouts.Count;
+                        _logger.Debug(
+                            "[PAGEBREAK] Каретка на якорь: VM {PvmIdx}, слайс {Slice}, страница {Page}, раскладка актуальна {Fresh}",
+                            pvmIdx, _caretPara,
+                            caretOnLayout ? _layouts[_caretPara].PageIndex : -1,
+                            caretOnLayout && ReferenceEquals(_layouts[_caretPara].Vm, anchorVm));
+                        if (caretOnLayout)
                             CaretPageChanged?.Invoke(_layouts[_caretPara].PageIndex);
-                        ScrollToCenterCaret();
+
+                        // Прокрутка — та же, что при наборе: ScrollToCaret ниже двигает
+                        // лист ровно настолько, чтобы каретка оказалась в окне, и делает
+                        // это плавно. Раньше здесь каретка ставилась в середину окна:
+                        // лист прыгал на полэкрана, а следом ScrollToCaret перенацеливал
+                        // ту же анимацию на свою цель — вид дёргался дважды.
                     }
+                    else
+                    {
+                        _logger.Warning("[PAGEBREAK] Якорь разрыва не найден среди VM — каретка не переставлена");
+                    }
+                }
+
+                if (_pendingCaretRestore is { } caretRestore)
+                {
+                    _pendingCaretRestore = null;
+                    RestoreCaretToParagraph(caretRestore.ParaId, caretRestore.CharPos);
                 }
 
                 if (Math.Abs(_canvasHeight - oldCanvasH) > 0.5)
@@ -3434,6 +3660,19 @@ namespace Writersword.Modules.TextEditor.Document
         // ── Measure / Layout ──────────────────────────────────────────────
         protected override Size MeasureOverride(Size available)
         {
+            long perfTs = PerfNow();
+            try
+            {
+                return MeasureOverrideCore(available);
+            }
+            finally
+            {
+                PerfTime("ui.measure", perfTs);
+            }
+        }
+
+        private Size MeasureOverrideCore(Size available)
+        {
             double availW = double.IsInfinity(available.Width) ? 800 : Math.Max(available.Width, 1);
             double viewportW = _parentScrollViewer?.Viewport.Width > 0
                 ? _parentScrollViewer.Viewport.Width : availW;
@@ -3446,8 +3685,12 @@ namespace Writersword.Modules.TextEditor.Document
             _canvasWidth = CanvasWidthFor(viewportW, zoom);
 
             // Авто-режим страниц в ряду зависит от ширины канваса и масштаба — обе
-            // величины только что посчитаны, здесь и пересчитываем.
-            UpdateEffectivePagesPerRow();
+            // величины только что посчитаны, здесь и пересчитываем. Во время жеста
+            // масштаба число заморожено: перекладка листов посреди анимации рассыпала
+            // документ на пустые листы, а высота холста оставалась от прежней раскладки.
+            // Пересчёт — в FinishZoomImmediately, когда масштаб встал.
+            if (!_zooming)
+                UpdateEffectivePagesPerRow();
 
             if (_styleResolver is null && DocVm is not null)
                 _styleResolver = CreateStyleResolver();
@@ -3515,6 +3758,19 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         protected override Size ArrangeOverride(Size finalSize)
+        {
+            long perfTs = PerfNow();
+            try
+            {
+                return ArrangeOverrideCore(finalSize);
+            }
+            finally
+            {
+                PerfTime("ui.arrange", perfTs);
+            }
+        }
+
+        private Size ArrangeOverrideCore(Size finalSize)
         {
             double viewportW = _parentScrollViewer?.Viewport.Width > 0
                 ? _parentScrollViewer.Viewport.Width : finalSize.Width;
@@ -3694,11 +3950,16 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             SetWarmupActive(true);
+            _warmupStartedTs = System.Diagnostics.Stopwatch.GetTimestamp();
             // Один раз перед прогревом выставляем тексты маркеров списков (и чиним битые позиции),
             // чтобы раскладка учла ширину цифры уже в кэше. Раньше это делалось каждый проход.
             ApplyListMarkerTexts();
             _logger.Debug("Layout warmup started: {Count} paragraphs, cache={CacheCount}",
                 DocVm?.Paragraphs.Count ?? 0, _layoutCache.Count);
+
+            // Документ без раскладки (импорт, открытие) — первые листы сразу, не
+            // дожидаясь прогрева всей книги (DocumentCanvas.FirstPages).
+            ShowFirstPagesBeforeWarmup();
             Dispatcher.UIThread.Post(PumpLayoutWarmup, WarmupPassPriority);
         }
 
@@ -3874,6 +4135,17 @@ namespace Writersword.Modules.TextEditor.Document
             SetWarmupActive(false);
             _logger.Debug("Layout warmup finished: cache={CacheCount} — scheduling rebuild", _layoutCache.Count);
 
+            // Замер для импорта и открытия: сколько считались строки всего документа.
+            if (_warmupStartedTs != 0)
+            {
+                double warmupMs = (System.Diagnostics.Stopwatch.GetTimestamp() - _warmupStartedTs) * 1000.0
+                    / System.Diagnostics.Stopwatch.Frequency;
+                _warmupStartedTs = 0;
+                _logger.Information(
+                    "[LAYOUT] Строки всего документа посчитаны за {Ms:F0} мс: абзацев {Count}",
+                    warmupMs, DocVm?.Paragraphs.Count ?? 0);
+            }
+
             // Пересчёт через measure: раскладка соберётся из тёплого кеша.
             InvalidateMeasure();
             InvalidateFull();
@@ -3885,6 +4157,19 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         private void RebuildLayouts()
+        {
+            long perfTs = PerfNow();
+            try
+            {
+                RebuildLayoutsCore();
+            }
+            finally
+            {
+                PerfTime("ui.rebuild", perfTs);
+            }
+        }
+
+        private void RebuildLayoutsCore()
         {
             if (DocVm is null)
             {
@@ -3942,6 +4227,14 @@ namespace Writersword.Modules.TextEditor.Document
             PushReadingTextOverrides();
             InvalidateOwnNumbering();
 
+            // Первый полный проход после сдвига поля: номера слайсов у каретки и
+            // выделения после него другие, их место запоминается абзацем.
+            var marginSettleAnchor = BeginMarginSettlePass();
+
+            // Разделы под свёрнутыми заголовками на лист не ложатся
+            // (DocumentCanvas.HeadingCollapse).
+            RefreshCollapsedBlocks();
+
             switch (DocVm.ViewMode)
             {
                 case EditorViewMode.Page:
@@ -3970,6 +4263,8 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             rebuildStopwatch.Stop();
+
+            FinishMarginSettlePass(marginSettleAnchor);
 
             // Порог поднят со ста миллисекунд и запись переведена в отладочную: на
             // книге в триста страниц пересборка дольше пятидесяти миллисекунд — не

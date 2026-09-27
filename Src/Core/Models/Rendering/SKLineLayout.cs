@@ -80,6 +80,12 @@ namespace Writersword.Core.Models.Rendering
         public float BaselineShiftPt { get; init; }
 
         /// <summary>
+        /// Межбуквенный интервал в pt: прибавка к ширине каждого знака сегмента.
+        /// Положительный разрежает текст, отрицательный уплотняет, 0 — обычный.
+        /// </summary>
+        public float CharacterSpacingPt { get; init; }
+
+        /// <summary>
         /// Id встроенной картинки, если сегмент — объект в строке, а не текст.
         /// Такой сегмент всегда состоит ровно из одного символа-заполнителя:
         /// ширина берётся из <see cref="ObjectWidthPt"/>, а не из шрифта, и

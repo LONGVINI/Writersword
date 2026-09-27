@@ -138,6 +138,20 @@ namespace Writersword.Modules.TextEditor.Models.Styles
         public List<TabStop>? TabStops { get; set; }
 
         /// <summary>
+        /// Рамка абзаца: черта слева у цитаты, линия под заголовком, рамка вокруг
+        /// врезки. null — рамки нет.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public ParagraphBorders? Borders { get; set; }
+
+        /// <summary>
+        /// Заливка абзаца (HEX, #RRGGBB): фон под строками, а при рамке — всё поле
+        /// внутри рамки. null — без заливки.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ShadingColor { get; set; }
+
+        /// <summary>
         /// Создаёт копию свойств.
         ///
         /// Позиции табуляции копируются поимённо, а не ссылкой: почленное копирование
@@ -154,6 +168,9 @@ namespace Writersword.Modules.TextEditor.Models.Styles
                 foreach (var tab in TabStops) tabs.Add(tab.Clone());
                 copy.TabStops = tabs;
             }
+
+            // Рамка копируется своей: общая у копии и оригинала менялась бы сразу у обоих.
+            copy.Borders = Borders?.Clone();
 
             return copy;
         }
@@ -193,6 +210,9 @@ namespace Writersword.Modules.TextEditor.Models.Styles
             TocOwnerId = src.TocOwnerId;
             TocEntryLevel = src.TocEntryLevel;
             TocTargetBlockId = src.TocTargetBlockId;
+
+            Borders = src.Borders?.Clone();
+            ShadingColor = src.ShadingColor;
         }
     }
 }

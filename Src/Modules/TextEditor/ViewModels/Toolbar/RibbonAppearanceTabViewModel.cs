@@ -6,6 +6,7 @@ using System.Linq;
 using System.Windows.Input;
 using ReactiveUI;
 using Writersword.Modules.TextEditor.Models.Settings;
+using Writersword.Modules.TextEditor.ViewModels.Reading;
 
 namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 {
@@ -75,58 +76,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         string CaretColor { get; set; }
     }
 
-    /// <summary>
-    /// Пункт списка видов на вкладке «Вид»: цветной образец бумаги и имя.
-    /// </summary>
-    public sealed class EditorThemeItem : ReactiveObject
-    {
-        public EditorThemeItem(ReadingTheme? theme, string label,
-                               bool isNone = false, bool isCustom = false)
-        {
-            Theme = theme;
-            Label = label;
-            IsNone = isNone;
-            IsCustom = isCustom;
-        }
-
-        /// <summary>Вид. null — у пункта «Без вида».</summary>
-        public ReadingTheme? Theme { get; }
-
-        public string Label { get; }
-
-        /// <summary>Пункт «Без вида»: белый лист и серое поле, как до вкладки.</summary>
-        public bool IsNone { get; }
-
-        /// <summary>
-        /// Пункт «Кастомное» — не вид, а состояние: лента увела рабочую копию от
-        /// сохранённого вида, и на экране уже не он.
-        /// </summary>
-        public bool IsCustom { get; }
-
-        /// <summary>Цвет листа для образца. У «Без вида» — белый.</summary>
-        public string SheetColor => Theme?.SheetColor ?? "#FFFFFF";
-
-        /// <summary>Цвет букв на образце.</summary>
-        public string InkColor => Theme?.InkColor ?? "#1A1A1A";
-
-        /// <summary>
-        /// Цвет поля вокруг листа — тем же расчётом, что и в книге: своя заливка вида,
-        /// а нет её — цвет, выведенный из бумаги.
-        /// </summary>
-        public string FieldColor => IsNone ? "#E8E8E8" : ReadingTheme.FieldColorHex(Theme);
-
-        private bool _isSelected;
-
-        /// <summary>
-        /// Этим видом лист нарисован сейчас. Плитки стоят сеткой, и отметить выбранную
-        /// нечем, кроме неё самой.
-        /// </summary>
-        public bool IsSelected
-        {
-            get => _isSelected;
-            set => this.RaiseAndSetIfChanged(ref _isSelected, value);
-        }
-    }
+    // Пункт списка видов — тот же ReadingThemeItem, что у ленты чтения: список видов
+    // один, и плитка вида обязана выглядеть одинаково, где бы её ни показали. Свой
+    // класс пункта здесь был копией, и копия отстала — плитки правки остались без
+    // картинок, света и двух колонок, которые давно были у чтения.
+    //
+    // «Без вида» — пункт без вида за ним (Theme = null), не действие и не
+    // «Кастомное»: образец у него — белый лист на сером поле, как до вкладки.
 
     /// <summary>
     /// Вкладка «Вид»: чем залит лист при правке, каким светом, что лежит позади
@@ -166,7 +122,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             _host = host;
 
-            ThemeItems = new ObservableCollection<EditorThemeItem>();
+            ThemeItems = new ObservableCollection<ReadingThemeItem>();
             BackdropFits = new ObservableCollection<BackdropFitItem>
             {
                 new(ReadingBackdropFit.Cover,   "Заполнить"),
@@ -177,13 +133,14 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             OpenThemeEditorCommand = ReactiveCommand.Create(() => _host.OpenReadingThemes());
             CreateThemeCommand = ReactiveCommand.Create(() => _host.CreateReadingTheme());
-            SelectThemeCommand = ReactiveCommand.Create<EditorThemeItem?>(item =>
+            SelectThemeCommand = ReactiveCommand.Create<ReadingThemeItem?>(item =>
             {
                 if (item is null) return;
                 SelectedThemeItem = item;
             });
             ResetLightCommand = ReactiveCommand.Create(ResetLight);
             ClearBackdropCommand = ReactiveCommand.Create(() => _host.ClearBackdropImage());
+            ResetBackdropCommand = ReactiveCommand.Create(ResetBackdrop);
 
             RebuildThemeItems();
             RefreshAll();
@@ -217,9 +174,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         /// <summary>
         /// Сворачивает группы по остатку ширины. Развёрнутая вкладка укладывается
-        /// примерно в семьсот точек, поэтому до этой отметки не сворачивается
+        /// примерно в семьсот сорок точек, поэтому до этой отметки не сворачивается
         /// ничего. Дальше группы уходят в обратном порядке важности: последним
         /// сворачивается вид листа, ради которого вкладку и открывают.
+        ///
+        /// Фон отдельной группой больше не стоит — он строкой в группе вида, как в
+        /// ленте чтения, и сворачивается вместе с ней. Признак его группы остаётся
+        /// и повторяет признак вида: отдельной ширины у фона теперь нет.
         ///
         /// Группа «Фокус» не сворачивается вовсе: она шириной в кнопку с тремя
         /// значками, и прятать её во флайаут значит убрать то, к чему на этой
@@ -236,15 +197,15 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 return;
             }
 
-            IsShowGroupExpanded = availableWidth >= 660;
-            IsBackdropGroupExpanded = availableWidth >= 540;
-            IsLightGroupExpanded = availableWidth >= 380;
-            IsThemeGroupExpanded = availableWidth >= 240;
+            IsShowGroupExpanded = availableWidth >= 700;
+            IsLightGroupExpanded = availableWidth >= 600;
+            IsThemeGroupExpanded = availableWidth >= 440;
+            IsBackdropGroupExpanded = IsThemeGroupExpanded;
         }
 
         // ── Виды ──────────────────────────────────────────────────────────
 
-        public ObservableCollection<EditorThemeItem> ThemeItems { get; }
+        public ObservableCollection<ReadingThemeItem> ThemeItems { get; }
 
         public ICommand OpenThemeEditorCommand { get; }
 
@@ -259,12 +220,15 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand ResetLightCommand { get; }
         public ICommand ClearBackdropCommand { get; }
 
+        /// <summary>Вернуть фон к бумаге: убрать свой цвет поля и картинку.</summary>
+        public ICommand ResetBackdropCommand { get; }
+
         private EditorViewSettings? V => _host.EditorView;
 
         /// <summary>Вид, которым сейчас рисуется лист.</summary>
         private ReadingTheme? Active => V?.Active;
 
-        private EditorThemeItem? _selectedThemeItem;
+        private ReadingThemeItem? _selectedThemeItem;
 
         // Список сейчас разбирает щелчок по строке. Всё, что меняет состав пунктов,
         // на это время откладывается — см. SyncCustomThemeItem.
@@ -274,7 +238,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// Выбранный вид. «Кастомное» видом не становится — выбрать его нечем, оно
         /// и так уже на экране; список просто остаётся на нём.
         /// </summary>
-        public EditorThemeItem? SelectedThemeItem
+        public ReadingThemeItem? SelectedThemeItem
         {
             get => _selectedThemeItem;
             set
@@ -288,7 +252,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 SyncSelectedMark();
                 this.RaisePropertyChanged();
 
-                if (value.IsNone)
+                if (IsNoneItem(value))
                 {
                     // «Без вида» не удаляет выбранный вид, а снимает его применение:
                     // вернувшись, человек находит свой лист, а не белый.
@@ -317,6 +281,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             }
         }
 
+        /// <summary>
+        /// Пункт «Без вида»: за ним нет вида, и это не «Кастомное» — у того за плиткой
+        /// стоит рабочая копия.
+        /// </summary>
+        private static bool IsNoneItem(ReadingThemeItem item)
+            => item.Theme is null && !item.IsCustom && !item.IsCommand;
+
         /// <summary>Пересобирает список: виды могли добавиться, уехать или сменить имя.</summary>
         public void RebuildThemeItems()
         {
@@ -332,10 +303,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             try
             {
                 ThemeItems.Clear();
-                ThemeItems.Add(new EditorThemeItem(null, NoneThemeLabel, isNone: true));
+                ThemeItems.Add(new ReadingThemeItem(null, NoneThemeLabel));
 
                 foreach (var theme in _host.VisibleReadingThemes(V?.ThemeId))
-                    ThemeItems.Add(new EditorThemeItem(theme, theme.Name));
+                    ThemeItems.Add(new ReadingThemeItem(theme, theme.Name));
             }
             finally
             {
@@ -392,8 +363,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 {
                     if (existing is null)
                     {
-                        existing = new EditorThemeItem(Active, CustomThemeLabel, isCustom: true);
+                        existing = new ReadingThemeItem(Active, CustomThemeLabel, isCustom: true);
                         ThemeItems.Insert(1, existing);
+                    }
+                    else
+                    {
+                        // Та же плитка, но вид под ней уже другой: свет, фон, картинка.
+                        existing.RefreshLook();
                     }
                     _selectedThemeItem = existing;
                 }
@@ -404,11 +380,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                     bool off = V is null || !V.ThemeEnabled;
 
                     _selectedThemeItem = off
-                        ? ThemeItems.FirstOrDefault(i => i.IsNone)
+                        ? ThemeItems.FirstOrDefault(IsNoneItem)
                         : ThemeItems.FirstOrDefault(
                               i => i.Theme is { } t
                                 && string.Equals(t.Id, V?.ThemeId, StringComparison.Ordinal))
-                          ?? ThemeItems.FirstOrDefault(i => i.IsNone);
+                          ?? ThemeItems.FirstOrDefault(IsNoneItem);
                 }
             }
             finally
@@ -517,6 +493,80 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         }
 
         public string BackdropOpacityText => Percent(BackdropOpacity);
+
+        /// <summary>
+        /// Заливка поля вокруг листа — тем же кружком, что и в ленте чтения. Значение
+        /// то же, что у любого цвета в программе: HEX или код градиента. Пока своего
+        /// не выбрано, кружок показывает цвет, который поле выводит из бумаги.
+        ///
+        /// Правится рабочая копия вида, а не сохранённый вид: как и у света, вид
+        /// после правки становится «Кастомным», сохранить его под именем можно в окне
+        /// видов.
+        /// </summary>
+        public string BackdropColorHex
+        {
+            get
+            {
+                string? own = Active?.BackdropColor;
+                return string.IsNullOrWhiteSpace(own)
+                    ? ReadingTheme.FieldColorHex(Active)
+                    : own!;
+            }
+            set
+            {
+                if (_suspend || !IsThemeApplied) return;
+                if (Active is not { } theme) return;
+                if (string.IsNullOrWhiteSpace(value)) return;
+                if (string.Equals(value, theme.BackdropColor, StringComparison.OrdinalIgnoreCase)) return;
+
+                // Пока поле выводится из бумаги, кружок показывает выведенный цвет, и
+                // двусторонняя привязка тут же отдаёт его обратно сюда. Принять такое
+                // значение молча значит выключить «от бумаги», ничего не нажимая.
+                if (theme.BackdropColor is null
+                    && string.Equals(value, ReadingTheme.FieldColorHex(theme), StringComparison.OrdinalIgnoreCase)) return;
+
+                theme.BackdropColor = value;
+                this.RaisePropertyChanged();
+
+                SyncCustomThemeItem();
+                this.RaisePropertyChanged(nameof(ThemeName));
+                Apply(persist: true);
+            }
+        }
+
+        /// <summary>
+        /// Картинки фона, загруженные из ленты. Набор заменяется целиком: кнопка в
+        /// ленте — это «вот этот фон», а собирать набор из нескольких и настраивать,
+        /// как они ложатся и насколько плотные, удобнее в окне видов. Правка идёт по
+        /// рабочей копии, и вид становится «Кастомным».
+        /// </summary>
+        public void SetBackdropImages(IReadOnlyList<string> references)
+        {
+            if (!IsThemeApplied || Active is not { } theme) return;
+            if (references.Count == 0) return;
+            if (theme.BackdropImagePaths.SequenceEqual(references)) return;
+
+            theme.BackdropImagePaths.Clear();
+            theme.BackdropImagePaths.AddRange(references);
+
+            RaiseThemeDependent();
+            SyncCustomThemeItem();
+            Apply(persist: true);
+        }
+
+        /// <summary>Возвращает поле к правилу «выводить из бумаги».</summary>
+        private void ResetBackdrop()
+        {
+            if (!IsThemeApplied || Active is not { } theme) return;
+            if (theme.BackdropColor is null && !theme.HasBackdropImage) return;
+
+            theme.BackdropColor = null;
+            theme.BackdropImagePaths.Clear();
+
+            RaiseThemeDependent();
+            SyncCustomThemeItem();
+            Apply(persist: true);
+        }
 
         // ── Свет ──────────────────────────────────────────────────────────
 
@@ -725,6 +775,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             this.RaisePropertyChanged(nameof(SelectedBackdropFit));
             this.RaisePropertyChanged(nameof(BackdropOpacity));
             this.RaisePropertyChanged(nameof(BackdropOpacityText));
+            this.RaisePropertyChanged(nameof(BackdropColorHex));
         }
 
         /// <summary>

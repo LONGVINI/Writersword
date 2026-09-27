@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -47,6 +47,39 @@ namespace Writersword.Infrastructure.Services.UI
             return files.Count > 0 ? files[0].Path.LocalPath : null;
         }
 
+        /// <summary>
+        /// Выбор проекта или документа Word. Первым в списке типов стоит общий:
+        /// окно сразу показывает и проекты, и документы, отдельно их можно отобрать
+        /// вторым и третьим пунктом.
+        /// </summary>
+        public async Task<string?> OpenProjectOrDocumentAsync()
+        {
+            if (_mainWindow == null) return null;
+
+            var files = await _mainWindow.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Открыть проект или документ",
+                AllowMultiple = false,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("Проекты Writersword и документы Word")
+                    {
+                        Patterns = new[] { "*.writersword", "*.docx" }
+                    },
+                    new FilePickerFileType("Writersword Project")
+                    {
+                        Patterns = new[] { "*.writersword" }
+                    },
+                    new FilePickerFileType("Документ Word")
+                    {
+                        Patterns = new[] { "*.docx" }
+                    }
+                }
+            });
+
+            return files.Count > 0 ? files[0].Path.LocalPath : null;
+        }
+
         public async Task<string?> SaveFileAsync(string? defaultFileName = null)
         {
             if (_mainWindow == null) return null;
@@ -68,13 +101,13 @@ namespace Writersword.Infrastructure.Services.UI
             return file?.Path.LocalPath;
         }
 
-        /// <summary>�������� ��������� ������������</summary>
+        /// <summary>Показать сообщение пользователю</summary>
         public async Task ShowMessageAsync(string title, string message)
         {
             await ShowMessageAsync(title, message, MessageBoxType.Info, MessageBoxButtons.OK);
         }
 
-        /// <summary>�������� ��������� � ������� ���� � ������</summary>
+        /// <summary>Показать сообщение с выбором типа и кнопок</summary>
         public async Task<MessageBoxResult> ShowMessageAsync(
             string title,
             string message,
@@ -93,7 +126,7 @@ namespace Writersword.Infrastructure.Services.UI
         }
 
         /// <summary>
-        /// �������� ������ �������������� ������� �� ��������������
+        /// Показать диалог восстановления проекта из автосохранения
         /// </summary>
         public async Task<RecoveryDialogResult> ShowRecoveryDialogAsync(DateTime cacheDate, DateTime saveDate)
         {
@@ -103,7 +136,7 @@ namespace Writersword.Infrastructure.Services.UI
                 return RecoveryDialogResult.Cancel;
             }
 
-            // ������ ������ � ������
+            // Создаём диалог с датами
             var messageBox = new MessageBoxView(
                 Strings.MessageBox_Recovery_Title,
                 Strings.MessageBox_Recovery_Message,
@@ -113,7 +146,7 @@ namespace Writersword.Infrastructure.Services.UI
 
             await messageBox.ShowDialog(_mainWindow);
 
-            // ����������� MessageBoxResult � RecoveryDialogResult
+            // Преобразуем MessageBoxResult в RecoveryDialogResult
             return messageBox.Result switch
             {
                 MessageBoxResult.Restore => RecoveryDialogResult.Restore,

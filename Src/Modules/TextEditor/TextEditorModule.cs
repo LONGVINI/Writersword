@@ -165,12 +165,14 @@ namespace Writersword.Modules.TextEditor
 
         public void Undo()
         {
+            _logger.Debug("[UNDO-KEY] Отмена через модуль в обход полотна: снимков для отмены {Can}", _undoStack.CanUndo);
             _undoStack.Undo();
             _viewModel?.DocumentViewModel?.FireCursorContextChanged();
         }
 
         public void Redo()
         {
+            _logger.Debug("[UNDO-KEY] Повтор через модуль в обход полотна: снимков для повтора {Can}", _undoStack.CanRedo);
             _undoStack.Redo();
             _viewModel?.DocumentViewModel?.FireCursorContextChanged();
         }
@@ -209,6 +211,8 @@ namespace Writersword.Modules.TextEditor
             SetHistoryBaseline(CombinedHistoryState());
             _undoStack.StateChanged += OnHistoryStateChanged;
             _textUndoStack.StateChanged += OnHistoryStateChanged;
+
+            SharedReadingSettingsSaved += OnSharedReadingSettingsSaved;
         }
 
         // ── Отслеживание правок ───────────────────────────────────────────
@@ -249,6 +253,123 @@ namespace Writersword.Modules.TextEditor
             Services.ProjectFonts.Invalidate();
 
             ApplyReadOnlyFromContext();
+
+            // Контекст мог прийти после создания вида: закладка ищется по книге,
+            // а книгу называет именно он.
+            BindReadingBookmark();
+
+            // Тот же случай и у документа Word, из которого сделан проект: какой
+            // документ вливать, известно только по файлу проекта.
+            SchedulePendingImport();
+        }
+
+        // Импорт документа, из которого сделан проект, уже запущен. Второй вызов
+        // (контекст пришёл после вида, вид пересоздан) его не повторяет.
+        private bool _pendingImportScheduled;
+
+        /// <summary>
+        /// Проект создан экраном приветствия из документа Word, и документ ещё не
+        /// влит. Импорт откладывается на следующий такт: вид к этому моменту уже
+        /// построен, а загрузка модуля доведена до конца — иначе вливаемый
+        /// документ могла бы перекрыть пустая болванка нового проекта.
+        /// </summary>
+        private void SchedulePendingImport()
+        {
+            if (_pendingImportScheduled) return;
+            if (_viewModel?.DocumentViewModel is null || _lastCreatedView is null) return;
+
+            var context = Context;
+            if (context is null || context.IsInCompareMode) return;
+            if (!PendingFileImports.IsPending(context.FilePath)) return;
+
+            _pendingImportScheduled = true;
+            Dispatcher.UIThread.Post(() => _ = RunPendingImportAsync(context), DispatcherPriority.Background);
+        }
+
+        /// <summary>
+        /// Вливает документ в проект и сразу сохраняет проект: файл на диске должен
+        /// содержать текст с первой же минуты, а не пустоту до первого Ctrl+S —
+        /// закрой человек программу, не сохранившись, он нашёл бы пустой проект
+        /// там, где ждал свою рукопись.
+        /// </summary>
+        private async System.Threading.Tasks.Task RunPendingImportAsync(DocumentContext context)
+        {
+            try
+            {
+                // Контекст успел смениться — документ принадлежит другому проекту.
+                if (!ReferenceEquals(Context, context)) return;
+
+                var docVm = _viewModel?.DocumentViewModel;
+                if (docVm is null) return;
+
+                if (!PendingFileImports.TryTake(context.FilePath, out var sourcePath)) return;
+
+                _logger.Information("Importing the source document into the new project: {Source} -> {Project}",
+                    sourcePath, context.FilePath);
+
+                bool imported = await docVm.ImportIntoNewProjectAsync(sourcePath, context);
+                if (!imported) return;
+
+                var tab = CoreServices.GetService<ITabCollection>()?.FindByPath(context.FilePath);
+                var workflow = CoreServices.GetService<IProjectWorkflow>();
+                if (tab is null || workflow is null) return;
+
+                await workflow.SaveDocumentAsync(tab, showNotification: false);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to import the source document into the new project: {Project}",
+                    context.FilePath);
+            }
+        }
+
+        // Канвас и книга, для которых закладка уже передана. Повторная передача той
+        // же книге того же канваса вернула бы книгу на запомненное место посреди чтения.
+        private DocumentCanvas? _readingBookmarkCanvas;
+        private string? _readingBookmarkKey;
+
+        /// <summary>
+        /// Имя книги для закладки чтения: идентификатор проекта, а без него — путь к
+        /// файлу. Идентификатор переживает переименование и перенос файла. В режиме
+        /// сравнения версий закладка не ведётся: там читают не книгу, а её версию.
+        /// </summary>
+        private string? ReadingBookmarkKey()
+        {
+            var ctx = Context;
+            if (ctx is null || ctx.IsInCompareMode) return null;
+
+            var id = ctx.Project?.Id;
+            if (!string.IsNullOrWhiteSpace(id)) return id;
+
+            return string.IsNullOrWhiteSpace(ctx.FilePath) ? null : ctx.FilePath;
+        }
+
+        /// <summary>
+        /// Связывает канвас с закладкой чтения: отдаёт ему место, запомненное с
+        /// прошлого раза, и запоминает каждое новое место, куда книгу перелистнули.
+        /// </summary>
+        private void BindReadingBookmark()
+        {
+            var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
+            if (canvas is null) return;
+
+            canvas.ReadingPositionChanged = (paragraph, line) =>
+            {
+                var book = ReadingBookmarkKey();
+                if (book is null) return;
+
+                ReadingBookmarkStore.Save(book, paragraph, line);
+            };
+
+            var key = ReadingBookmarkKey();
+            if (key is null) return;
+            if (ReferenceEquals(canvas, _readingBookmarkCanvas) && key == _readingBookmarkKey) return;
+
+            _readingBookmarkCanvas = canvas;
+            _readingBookmarkKey = key;
+
+            if (ReadingBookmarkStore.Get(key) is { } mark)
+                canvas.SetReadingBookmark(mark.Paragraph, mark.Line);
         }
 
         private void ApplyReadOnlyFromContext()
@@ -286,6 +407,10 @@ namespace Writersword.Modules.TextEditor
 
             BindCanvasTextUndoStack(view);
 
+            // Полотно сообщает, когда место в документе сменилось: сессионный кэш
+            // освежается на UI-потоке, и фоновое сохранение получает свежее место.
+            BindCanvasViewState(view);
+
             // Передаём карту шрифтов по скриптам в канвас при создании View.
             ApplyScriptFontMapToCanvas();
 
@@ -293,6 +418,15 @@ namespace Writersword.Modules.TextEditor
             // восстанавливаем позицию каретки сейчас — view уже существует.
             if (_cachedSessionData is not null)
                 RestoreCaretFromCache();
+            else
+                RestoreEditingPlaceFromStore();
+
+            // Место, где книгу читали в прошлый раз, — книга откроется с него.
+            BindReadingBookmark();
+
+            // Проект сделан из документа Word — документ вливается, как только
+            // модулю есть где его показать.
+            SchedulePendingImport();
 
             return view;
         }
@@ -308,6 +442,100 @@ namespace Writersword.Modules.TextEditor
 
             canvas.SetHotKeyService(_hotKeyService!);
             _logger.Debug("HotKeyService bound to PageCanvas");
+        }
+
+        // Полотно, чьи сообщения о смене места слушает модуль. Вью пересоздаётся при
+        // переключениях, и подписка переходит на новое полотно.
+        private DocumentCanvas? _viewStateCanvas;
+
+        private void BindCanvasViewState(TextEditorView view)
+        {
+            var canvas = view.FindControl<DocumentCanvas>("PageCanvas");
+
+            if (_viewStateCanvas is not null)
+                _viewStateCanvas.ViewStateChanged -= OnCanvasViewStateChanged;
+
+            _viewStateCanvas = canvas;
+
+            if (canvas is not null)
+                canvas.ViewStateChanged += OnCanvasViewStateChanged;
+        }
+
+        /// <summary>
+        /// Место в документе сменилось. Кэш освежается только по текущему полотну:
+        /// прежнее, уходящее с экрана, могло сообщить уже после создания новой вью,
+        /// а у новой место ещё ждёт раскладки и отдаётся им самим.
+        /// </summary>
+        private void OnCanvasViewStateChanged(object? sender, EventArgs e)
+        {
+            var current = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
+            if (sender is DocumentCanvas canvas && !ReferenceEquals(canvas, current)) return;
+
+            RefreshSessionCacheOnUIThread();
+
+            // Место уходит и в данные программы: кеш проекта с сессией удаляется при
+            // сохранении и при закрытии, и без этой записи рукопись после перезапуска
+            // открывалась бы в начале (Services.EditingPlaceStore).
+            if (current is not null) SaveEditingPlace(current);
+        }
+
+        /// <summary>Запоминает место в рукописи в данных программы.</summary>
+        private void SaveEditingPlace(DocumentCanvas canvas)
+        {
+            var key = ReadingBookmarkKey();
+            if (key is null) return;
+
+            var dvm = _viewModel?.DocumentViewModel;
+            if (dvm is null) return;
+
+            var (para, ch, scrollY) = canvas.GetCaretState();
+            EditingPlaceStore.Save(key, new EditingPlaceStore.Place(
+                para, ch, scrollY, dvm.Zoom, dvm.ViewMode.ToString()));
+        }
+
+        /// <summary>
+        /// Место из данных программы, приведённое к текущему виду. Прокрутка снята в
+        /// точках экрана: при другом масштабе она пересчитывается, при другом режиме
+        /// сбрасывается в ноль — тогда полотно ставит вид по каретке.
+        /// </summary>
+        private (int Para, int Char, double ScrollY)? StoredEditingPlace()
+        {
+            var key = ReadingBookmarkKey();
+            if (key is null) return null;
+
+            if (EditingPlaceStore.Get(key) is not { } place) return null;
+
+            var dvm = _viewModel?.DocumentViewModel;
+            if (dvm is null) return null;
+
+            double scroll = place.ScrollY;
+            if (!string.Equals(place.ViewMode, dvm.ViewMode.ToString(), StringComparison.Ordinal))
+                scroll = 0;
+            else if (place.Zoom > 0.01 && Math.Abs(place.Zoom - dvm.Zoom) > 0.0001)
+                scroll = scroll * dvm.Zoom / place.Zoom;
+
+            return (place.Paragraph, place.Char, scroll);
+        }
+
+        /// <summary>
+        /// Возвращает рукопись на место из данных программы, когда сессии нет: кеш
+        /// проекта после сохранения и закрытия удалён, а место осталось.
+        /// </summary>
+        private void RestoreEditingPlaceFromStore()
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (StoredEditingPlace() is not { } place) return;
+
+                var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
+                if (canvas is null) return;
+
+                _logger.Debug(
+                    "[VIEW] Место из данных программы: абзац {Para}, символ {Char}, прокрутка {Scroll:F0}",
+                    place.Para, place.Char, place.ScrollY);
+
+                canvas.RestoreViewState(place.Para, place.Char, place.ScrollY);
+            }, Avalonia.Threading.DispatcherPriority.Loaded);
         }
 
         private void BindCanvasTextUndoStack(TextEditorView view)
@@ -735,7 +963,9 @@ namespace Writersword.Modules.TextEditor
             foreach (var name in names)
             {
                 var path = $"TextEditor/Images/{name}";
-                var bytes = ctx?.ReadFile(path);
+
+                // Картинка недавнего импорта может ещё писаться в проект.
+                var bytes = PendingProjectImages.Read(ctx, path);
 
                 yield return new Writersword.Core.Models.Project.ProjectAssetRef
                 {
@@ -1252,6 +1482,13 @@ namespace Writersword.Modules.TextEditor
                     // «не сохранялись». Виды переносятся тем же порядком: заведённый
                     // «везде» обязан быть под рукой и в чужой рукописи.
                     CarryOverReadingPreferences(_globalSettings, _localSettings);
+
+                    // Вид листа при правке — тоже предпочтение человека, а не
+                    // рукописи. Копия в файле проекта снята в момент его последнего
+                    // сохранения, а смена вида проект изменённым не делает: выбранный
+                    // после этого вид в файл не попадал, и при следующем открытии
+                    // проекта лист возвращался к старому — вид «слетал».
+                    CarryOverEditorViewPreferences(_globalSettings, _localSettings);
                     _logger.Debug("Local settings restored: MonitorSizeInches={V}",
                         _localSettings.MonitorSizeInches);
                 }
@@ -1571,13 +1808,19 @@ namespace Writersword.Modules.TextEditor
                     }
 
 
+                    // Каретку и прокрутку ставит само полотно, когда документ разложен.
+                    // Вью после переключения вкладки или воркмода создаётся заново, и
+                    // раскладка готовится ещё секунду-две: прокрутка, выставленная сразу,
+                    // упиралась в пустой холст и прижималась к началу документа.
                     var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
-                    canvas?.RestoreCaretState(docParaIdx, charIdx);
 
-                    var sv = _lastCreatedView?
-                        .FindControl<Avalonia.Controls.ScrollViewer>("DocumentScrollViewer");
-                    if (sv is not null && scrollY > 0)
-                        sv.Offset = new Avalonia.Vector(sv.Offset.X, scrollY);
+                    // Место из данных программы свежее сессии: сессия лежит в кеше,
+                    // который на диск пишется только при правках, а место — после
+                    // каждой остановки прокрутки и каретки.
+                    if (StoredEditingPlace() is { } stored)
+                        canvas?.RestoreViewState(stored.Para, stored.Char, stored.ScrollY);
+                    else
+                        canvas?.RestoreViewState(docParaIdx, charIdx, scrollY);
 
                 }, Avalonia.Threading.DispatcherPriority.Loaded);
             }
@@ -1598,6 +1841,9 @@ namespace Writersword.Modules.TextEditor
             var (docParaIdx, charIdx, scrollY) = canvas.GetCaretState();
             var dvm = _viewModel?.DocumentViewModel;
             double zoom = dvm?.Zoom ?? 1.0;
+
+            _logger.Debug("[VIEW] Место в документе запомнено: абзац {Para}, символ {Char}, прокрутка {Scroll:F0}",
+                docParaIdx, charIdx, scrollY);
 
             _cachedSessionData = System.Text.Json.JsonSerializer.Serialize(new
             {
@@ -1645,6 +1891,11 @@ namespace Writersword.Modules.TextEditor
         {
             var canvas = DocumentCanvas.FocusedInstance
                 ?? _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
+
+            if (id is "TextEditor.UndoRedo.Undo" or "TextEditor.UndoRedo.Redo")
+                _logger.Debug(
+                    "[UNDO-KEY] Горячая клавиша {Id}: холст в фокусе {Focused}, холст найден {Found}",
+                    id, DocumentCanvas.FocusedInstance is not null, canvas is not null);
 
             if (canvas is not null)
             {
@@ -1740,6 +1991,8 @@ namespace Writersword.Modules.TextEditor
                         _viewModel.ToggleSubscript(); return;
                     case "TextEditor.Format.AllCaps":
                         _viewModel.ToggleAllCaps(); return;
+                    case "TextEditor.Format.CycleCase":
+                        _viewModel.CycleCase(); return;
                     case "TextEditor.Format.SmallCaps":
                         _viewModel.ToggleSmallCaps(); return;
                     case "TextEditor.Format.ClearFormatting":
@@ -1768,6 +2021,8 @@ namespace Writersword.Modules.TextEditor
                         _viewModel.ZoomOut(); return;
                     case "TextEditor.View.ZoomReset":
                         _viewModel.ZoomReset(); return;
+                    case "TextEditor.View.FormattingMarks":
+                        _viewModel.ToggleFormattingMarks(); return;
 
                     case "TextEditor.Tools.Find":
                         _viewModel.OpenFind(); return;
@@ -2026,6 +2281,8 @@ namespace Writersword.Modules.TextEditor
 
         public override void Dispose()
         {
+            SharedReadingSettingsSaved -= OnSharedReadingSettingsSaved;
+
             if (_hotKeyService is not null)
                 _hotKeyService.UnbindExecutor(moduleType);
 
@@ -2038,6 +2295,12 @@ namespace Writersword.Modules.TextEditor
 
             _undoStack.StateChanged -= OnHistoryStateChanged;
             _textUndoStack.StateChanged -= OnHistoryStateChanged;
+
+            if (_viewStateCanvas is not null)
+            {
+                _viewStateCanvas.ViewStateChanged -= OnCanvasViewStateChanged;
+                _viewStateCanvas = null;
+            }
 
             _viewModel?.Dispose();
             _viewModel = null;
@@ -2106,6 +2369,48 @@ namespace Writersword.Modules.TextEditor
         }
 
         /// <summary>
+        /// Переносит предпочтения вкладки «Вид» из одного набора в другой: вид листа
+        /// при правке и его рабочую копию, что убирать в фокусе, свёрнутость ленты,
+        /// строку состояния и цвет каретки. Всё это общее для всех документов —
+        /// вкладка записывает его в общие настройки при каждой правке.
+        ///
+        /// Линейка и масштаб сюда не входят: у них есть значение проекта в окне
+        /// настроек, и перекрывать его общим значением нельзя.
+        ///
+        /// Рабочая копия вида клонируется: два редактора не должны держать один и
+        /// тот же объект — ползунок в одном менял бы лист другого в обход записи.
+        /// </summary>
+        private static void CarryOverEditorViewPreferences(TextEditorSettings from, TextEditorSettings to)
+        {
+            to.EditorThemeEnabled = from.EditorThemeEnabled;
+            to.EditorThemeId = from.EditorThemeId;
+            to.EditorTheme = from.EditorTheme?.Clone();
+            to.FocusHidesRuler = from.FocusHidesRuler;
+            to.FocusHidesStatusBar = from.FocusHidesStatusBar;
+            to.FocusRibbonOnHover = from.FocusRibbonOnHover;
+            to.RibbonCollapsed = from.RibbonCollapsed;
+            to.ShowStatusBar = from.ShowStatusBar;
+            to.CaretColor = from.CaretColor;
+        }
+
+        /// <summary>
+        /// Совпадают ли в двух наборах предпочтения вкладки «Вид». Нужно, чтобы не
+        /// перерисовывать чужой редактор, когда общие настройки записаны по другому
+        /// поводу: смена подачи или вида чтения его листа не касается.
+        /// </summary>
+        private static bool SameEditorViewPreferences(TextEditorSettings a, TextEditorSettings b)
+            => a.EditorThemeEnabled == b.EditorThemeEnabled
+               && string.Equals(a.EditorThemeId, b.EditorThemeId, StringComparison.Ordinal)
+               && ReadingTheme.SameLook(a.EditorTheme, b.EditorTheme)
+               && a.FocusHidesRuler == b.FocusHidesRuler
+               && a.FocusHidesStatusBar == b.FocusHidesStatusBar
+               && a.FocusRibbonOnHover == b.FocusRibbonOnHover
+               && a.RibbonCollapsed == b.RibbonCollapsed
+               && a.ShowStatusBar == b.ShowStatusBar
+               && string.Equals(a.CaretColor ?? string.Empty, b.CaretColor ?? string.Empty,
+                                StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
         /// Сохраняет общие настройки модуля. Нужно видам чтения: вид, помеченный
         /// как общий для всех проектов, обязан пережить закрытие программы, а куда
         /// его писать, знает модуль — вью-модель про хранилище настроек не знает.
@@ -2122,6 +2427,62 @@ namespace Writersword.Modules.TextEditor
             catch (Exception ex)
             {
                 _logger.Warning(ex, "Failed to save the module shared settings");
+            }
+
+            // Остальные открытые редакторы узнают о записи сразу же.
+            SharedReadingSettingsSaved?.Invoke(this, settings);
+        }
+
+        /// <summary>
+        /// Общие настройки записаны одним из редакторов. Модуль заводится на каждый
+        /// открытый проект, и у каждого своя копия общих настроек — снятая из
+        /// хранилища в тот момент, когда он создавался.
+        ///
+        /// Без этого события виды чтения терялись. Вид, заведённый в одном проекте,
+        /// попадал в хранилище, а редактор другого проекта продолжал держать список
+        /// без него. Стоило второму записать общие настройки по любому поводу — сменить
+        /// подачу, передвинуть ползунок света, открыть и закрыть окно видов, — и в
+        /// хранилище уходил его устаревший список: новый вид пропадал, спрятанные
+        /// снова появлялись, порядок откатывался. Со стороны это и выглядело как «виды
+        /// сами исчезают».
+        ///
+        /// Теперь каждая запись разносится по всем редакторам: они перенимают виды и
+        /// предпочтения чтения из только что записанного набора, и следующая запись
+        /// любого из них несёт уже полный список.
+        /// </summary>
+        private static event Action<TextEditorModule, TextEditorSettings>? SharedReadingSettingsSaved;
+
+        private void OnSharedReadingSettingsSaved(TextEditorModule sender, TextEditorSettings saved)
+        {
+            if (ReferenceEquals(sender, this)) return;
+
+            try
+            {
+                // Своя копия: списки видов не должны быть общими объектами двух
+                // редакторов — правка в одном меняла бы другой в обход записи.
+                var snapshot = saved.Clone();
+
+                // Вид листа при правке разносится тем же путём, что и виды чтения.
+                // Без этого редактор другого проекта держал прежний вид в своей копии
+                // общих настроек и при первой же своей записи — масштаб, режим,
+                // подача чтения — возвращал его в хранилище: выбранный вид «слетал»
+                // и после перезапуска, и при переходе в другой проект.
+                bool editorViewChanged = !SameEditorViewPreferences(snapshot, _localSettings);
+
+                CarryOverReadingPreferences(snapshot, _globalSettings);
+                CarryOverEditorViewPreferences(snapshot, _globalSettings);
+                if (!ReferenceEquals(_localSettings, _globalSettings))
+                {
+                    CarryOverReadingPreferences(snapshot, _localSettings);
+                    CarryOverEditorViewPreferences(snapshot, _localSettings);
+                }
+
+                _viewModel?.RefreshSharedReadingThemes();
+                if (editorViewChanged) _viewModel?.RefreshSharedEditorView();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Failed to take over the shared reading settings");
             }
         }
     }

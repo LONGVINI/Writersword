@@ -198,6 +198,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         /// <inheritdoc/>
+        public void ReapplyActiveTocSettings(Models.Toc.TocSettings before)
+        {
+            var toc = ActiveToc;
+            if (toc is null || before is null) return;
+
+            DocumentViewModel?.ReapplyTocSettings(toc, before);
+        }
+
+        /// <inheritdoc/>
         public void ApplyCharacterStyle(string? styleName)
             => DocumentViewModel?.ApplyCharacterStyle(styleName);
 
@@ -738,6 +747,49 @@ namespace Writersword.Modules.TextEditor.ViewModels
             GlobalSettingsChanged?.Invoke(Settings);
         }
 
+        /// <summary>
+        /// Виды чтения поменялись в другом открытом редакторе и уже перенесены в
+        /// настройки этого (см. TextEditorModule.OnSharedReadingSettingsSaved).
+        /// Здесь только обновляются списки: записывать нечего — запись уже сделана
+        /// тем, кто виды правил.
+        /// </summary>
+        public void RefreshSharedReadingThemes()
+        {
+            ReadingRibbon.RefreshAll();
+            Ribbon.Appearance.RebuildThemeItems();
+            Ribbon.Appearance.RefreshAll();
+        }
+
+        /// <summary>
+        /// Вид листа при правке сменили в другом открытом редакторе, и он уже
+        /// перенесён в настройки этого (см. TextEditorModule.OnSharedReadingSettingsSaved).
+        /// Здесь он доносится до листа, линеек и ленты. Записывать ничего не нужно:
+        /// запись сделал тот, кто вид правил, и повторная отсюда только гоняла бы
+        /// одно и то же между редакторами.
+        /// </summary>
+        public void RefreshSharedEditorView()
+        {
+            if (DocumentViewModel?.EditorView is not { } view) return;
+
+            ApplyEditorViewPreferences(view);
+
+            // Цвет каретки канвас читает из своих настроек, а не из общих: кладётся
+            // туда напрямую, мимо ApplyCaretColor — тот записал бы настройки снова.
+            if (DocumentViewModel.CanvasSettings is { } canvas)
+                canvas.CaretColor = Settings.CaretColor;
+
+            this.RaisePropertyChanged(nameof(IsCaretColorCustom));
+            this.RaisePropertyChanged(nameof(CaretColor));
+            this.RaisePropertyChanged(nameof(ShowStatusBar));
+            this.RaisePropertyChanged(nameof(IsStatusBarVisible));
+
+            ApplyEditorViewVisual();
+            RefreshSpreadState();
+
+            Ribbon.Appearance.RebuildThemeItems();
+            Ribbon.Appearance.RefreshAll();
+        }
+
         /// <summary>Открывает окно видов чтения.</summary>
         public void OpenReadingThemes() => ReadingThemesRequested?.Invoke();
 
@@ -801,6 +853,23 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public (string FieldHex, string? ImageRef,
                 Models.Settings.ReadingBackdropFit Fit, double Opacity)? WindowBackdrop()
         {
+            // Лента чтения прокручивается, как правка: холст у неё высотой во всю
+            // рукопись. Картинка поля, вписанная в такой холст, растягивалась на всю
+            // длину ленты — на экране оставался один размытый её кусок, и выглядело
+            // это так, будто фон пропал. Поэтому у ленты фон лежит на том же слое под
+            // прокруткой, что и у правки, и берётся из вида чтения. Книга страницами
+            // холстом равна окну и свой фон рисует сама.
+            if (IsReadingMode && !IsPagedReading)
+            {
+                if (Reading?.Active is not { } readingTheme) return null;
+                if (readingTheme.BackdropImageFor() is not { Length: > 0 } readingRef) return null;
+
+                return (Models.Settings.ReadingTheme.FieldColorHex(readingTheme),
+                        readingRef,
+                        readingTheme.BackdropImageFit,
+                        Math.Clamp(readingTheme.BackdropImageOpacity, 0.0, 1.0));
+            }
+
             if (EditorView is not { ThemeEnabled: true } v) return null;
             if (v.Active is not { } theme) return null;
             if (theme.BackdropImageFor() is not { Length: > 0 } backdropRef) return null;
@@ -1158,6 +1227,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ApplyReadingVisual()
         {
             DocumentViewModel?.RaiseReadingVisualChanged();
+
+            // Картинка поля у ленты лежит на слое под прокруткой (см. WindowBackdrop):
+            // сменился вид, картинка или её плотность — слой перекладывается.
+            BackdropLayerChanged?.Invoke();
         }
 
         /// <summary>Листание: -1 назад, +1 вперёд.</summary>
@@ -1215,6 +1288,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             IsReadingMode = reading;
             IsPagedReading = paged;
+
+            // Вход в чтение, выход из него и смена подачи меняют, чей фон лежит на
+            // слое под прокруткой: правки, ленты чтения или ничей.
+            BackdropLayerChanged?.Invoke();
 
             // Горизонтальная линейка нужна везде, где есть текстовая колонка: отступы
             // абзаца и табуляции работают в любом режиме. В чтении её нет вместе со
@@ -1428,8 +1505,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 if (ev.PropertyName != nameof(docVm.Zoom)) return;
                 double z = docVm.Zoom;
-                if (Math.Abs(StatusBar.Zoom - z) > 0.0001)
-                    StatusBar.Zoom = z;
+
+                // Строка состояния показывает, к какому масштабу документ идёт, а не
+                // промежуточные кадры плавного жеста: иначе ползунок под рукой отъезжал
+                // бы назад. Линейка идёт вместе с листом — кадр в кадр.
+                double shown = docVm.ZoomTarget;
+                if (Math.Abs(StatusBar.Zoom - shown) > 0.0001)
+                    StatusBar.Zoom = shown;
                 Ruler.Zoom = z;
             };
             // Устанавливаем начальный активный параграф чтобы команды тулбара
@@ -1510,6 +1592,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // значения, пока пользователь не переключится на другой режим и обратно.
             StatusBar.SyncViewMode(document.ViewMode);
 
+            // Число листов в ряду — туда же. ApplyViewPreferences выше уже поставило его
+            // документу и канвасу, а строка состояния оставалась со своим дефолтом «один
+            // лист»: после перезапуска в режиме сетки горела кнопка одной страницы.
+            // ApplyRestoredViewState это значение синхронизирует, но зовётся он только
+            // когда число листов лежит в сессионных данных документа.
+            StatusBar.SyncPagesPerRow(DocumentViewModel?.PagesPerRow ?? 1);
+
             SyncRulerToDocument(document);
             Ruler.Zoom = StatusBar.Zoom;
             Ruler.Units = Settings.RulerUnits;
@@ -1533,10 +1622,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 Ruler.PagesPerRow = pagesPerRow;
             };
 
+            // Ползунок, поле процентов и кнопка вписывания: масштаб доезжает до
+            // значения плавно. Линейку ведёт сам масштаб документа, кадр за кадром.
             StatusBar.ZoomChanged = zoom =>
             {
-                DocumentViewModel?.SetZoom(zoom);
-                Ruler.Zoom = zoom;
+                var target = DocumentViewModel;
+                if (target is null)
+                {
+                    Ruler.Zoom = zoom;
+                    return;
+                }
+
+                target.AnimateZoomTo(zoom);
+                Ruler.Zoom = target.Zoom;
             };
 
             // Нажатие на счётчики в строке состояния открывает то же окно, что и
@@ -2049,26 +2147,99 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         }
 
+        // Поля страницы на момент начала жеста по линейке. По ним считается ширина
+        // текста, под которую замораживаются колонки таблиц, и по ним видно, сдвинул
+        // ли жест хоть что-то.
+        private (double Top, double Bottom, double Left, double Right)? _marginDragStart;
+
+        // Колонки таблиц уже заморожены в этом жесте.
+        private bool _marginDragFrozen;
+
+        // Жест хоть раз сдвинул поле.
+        private bool _marginDragMoved;
+
         // Начало перетаскивания поля — делаем снапшот документа, чтобы Ctrl+Z вернул поля.
         private void OnRulerMarginDragStarted()
-            => DocumentViewModel?.BeginPageEdit("Изменение полей страницы");
+        {
+            if (DocumentViewModel is not null)
+            {
+                var ps = DocumentViewModel.Document.PageSettings;
+                _marginDragStart = (ps.MarginTopMm, ps.MarginBottomMm, ps.MarginLeftMm, ps.MarginRightMm);
+            }
+            _marginDragFrozen = false;
+            _marginDragMoved = false;
 
+            DocumentViewModel?.BeginPageEdit("Изменение полей страницы");
+        }
+
+        // Движение края поля на линейке. Поля в документе меняются сразу, и текст на
+        // видимых листах идёт за краем — как в Word. Полотно при этом перекладывает
+        // только видимые листы, а весь документ пересобирает один раз, после
+        // отпускания (OnRulerMarginCommitted). Раньше каждое движение мыши вызывало
+        // полную пересборку, и на большом документе край шёл за мышью рывками.
+        //
+        // Линейку с документом здесь не сверяем: край на линейке уже стоит там, куда
+        // его ведут, а сверка лишь вернула бы в него то же значение с округлением.
         private void OnRulerMarginChanged(double marginLeftMm, double marginRightMm)
         {
             if (DocumentViewModel is null) return;
 
-            // Фиксируем Auto-колонки всех таблиц до изменения поля.
-            // Без этого ComputeColumnWidths пересчитывает их под новую ширину текстовой зоны
-            // и таблица визуально растягивается/сжимается.
-            var ps = DocumentViewModel.Document.PageSettings;
-            double oldTextWidthMm = ps.GetPhysicalWidthMm()
-                - ps.MarginLeftMm - ps.MarginGutterMm - ps.MarginRightMm;
-            double oldTextWidthPt = oldTextWidthMm * 72.0 / 25.4;
-            FreezeAutoColumns(oldTextWidthPt);
+            // Фиксируем Auto-колонки всех таблиц до первого изменения поля — по ширине
+            // текста до жеста. Без этого ComputeColumnWidths пересчитывает их под новую
+            // ширину текстовой зоны, и таблица растягивается или сжимается.
+            if (!_marginDragFrozen)
+            {
+                FreezeAutoColumns(TextWidthPtOf(DocumentViewModel.Document.PageSettings));
+                _marginDragFrozen = true;
+            }
 
-            DocumentViewModel.SetPageMargins(
+            double visibleLeftMm = FloorRulerLeftToGutter(marginLeftMm);
+
+            DocumentViewModel.ShowMarginPreview(
                 Ruler.MarginTopMm, Ruler.MarginBottomMm,
-                marginLeftMm, marginRightMm);
+                RulerLeftToDocumentLeft(visibleLeftMm), marginRightMm);
+            _marginDragMoved = true;
+        }
+
+        // Ширина текстовой зоны листа в пунктах: лист без полей и переплёта.
+        private static double TextWidthPtOf(TextEditorPageSettings ps)
+        {
+            double textWidthMm = ps.GetPhysicalWidthMm()
+                - ps.MarginLeftMm - ps.MarginGutterMm - ps.MarginRightMm;
+            return textWidthMm * 72.0 / 25.4;
+        }
+
+        // Линейка показывает левое поле вместе с переплётом: текст на листе начинается
+        // за обоими (см. SyncRulerToDocument), и край на линейке стоит там, где начинается
+        // текст. В документе же левое поле и переплёт хранятся отдельно. Значение с
+        // линейки нельзя класть в левое поле как есть: переплёт прибавился бы к нему ещё
+        // раз, текст уезжал бы вправо на ширину переплёта, а линейка после сверки
+        // прыгала бы туда же — край не вставал туда, куда его поставили. Заметно это
+        // только в документах с переплётом, например пришедших из Word.
+        private double RulerLeftToDocumentLeft(double rulerLeftMm)
+        {
+            double gutterMm = DocumentViewModel?.Document.PageSettings.MarginGutterMm ?? 0.0;
+            return Math.Max(0.0, rulerLeftMm - gutterMm);
+        }
+
+        // Левее переплёта текст не встаёт: переплёт — отдельная настройка страницы, и
+        // жест по линейке его не отменяет. Край на линейке упирается в переплёт, а не
+        // проскакивает дальше, чтобы после отпускания отпрыгнуть назад.
+        private double FloorRulerLeftToGutter(double rulerLeftMm)
+        {
+            double gutterMm = DocumentViewModel?.Document.PageSettings.MarginGutterMm ?? 0.0;
+            if (gutterMm <= 0.0 || rulerLeftMm >= gutterMm) return rulerLeftMm;
+
+            Ruler.MarginLeftMm = gutterMm;
+            return gutterMm;
+        }
+
+        // Абзацы и таблицы не могут уйти левее левого края страницы: при уменьшении
+        // левого поля отрицательные отступы поджимаются к новому краю.
+        // Возвращает true, если хоть один отступ изменился.
+        private bool ClampIndentsToPageEdge(double marginLeftMm)
+        {
+            if (DocumentViewModel is null) return false;
 
             double minIndentPt = -marginLeftMm * 72.0 / 25.4;
             bool changed = false;
@@ -2104,10 +2275,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     }
                 }
 
-            if (changed)
-                DocumentViewModel.FireParagraphFormatChanged();
-
-            SyncRulerToDocument(DocumentViewModel.Document);
+            return changed;
         }
 
         // Конвертирует все Auto-колонки всех таблиц в Fixed с текущими вычисленными значениями.
@@ -2158,26 +2326,112 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 }
         }
 
+        // Отпустили край поля: итог жеста кладётся в документ обычным путём смены
+        // полей — по нему полотно пересобирает весь документ, — затем отступы
+        // поджимаются к новому краю и шаг отмены закрывается.
         private void OnRulerMarginCommitted(double marginLeftMm, double marginRightMm)
         {
             if (DocumentViewModel is null) return;
-            DocumentViewModel.SetPageMargins(
-                Ruler.MarginTopMm, Ruler.MarginBottomMm,
-                marginLeftMm, marginRightMm);
+
+            // Жест закончен: дальше полотно ждёт итоговой смены полей.
+            DocumentViewModel.HideMarginPreview();
+
+            var ps = DocumentViewModel.Document.PageSettings;
+            double topMm = Ruler.MarginTopMm;
+            double bottomMm = Ruler.MarginBottomMm;
+
+            // С линейки левое поле приходит вместе с переплётом, в документ оно
+            // пишется без него (см. RulerLeftToDocumentLeft).
+            double visibleLeftMm = FloorRulerLeftToGutter(marginLeftMm);
+            double documentLeftMm = RulerLeftToDocumentLeft(visibleLeftMm);
+
+            // Сравнение идёт с полями до жеста: во время жеста документ уже получал
+            // промежуточные значения.
+            var start = _marginDragStart
+                ?? (ps.MarginTopMm, ps.MarginBottomMm, ps.MarginLeftMm, ps.MarginRightMm);
+
+            const double MarginEpsMm = 1e-6;
+            bool marginsChanged =
+                Math.Abs(start.Top - topMm) > MarginEpsMm
+                || Math.Abs(start.Bottom - bottomMm) > MarginEpsMm
+                || Math.Abs(start.Left - documentLeftMm) > MarginEpsMm
+                || Math.Abs(start.Right - marginRightMm) > MarginEpsMm;
+
+            // Жест мог увести поле и вернуть на место — тогда документ всё равно
+            // получает итог: видимые листы переложены промежуточными полями, и
+            // вернуть раскладку к целому может только полная пересборка.
+            if (marginsChanged || _marginDragMoved)
+            {
+                // Щелчок без движения колонки не замораживал: у поля, сдвинутого
+                // не жестом, это делается здесь, по ширине до изменения.
+                if (!_marginDragFrozen)
+                {
+                    FreezeAutoColumns(TextWidthPtOf(ps));
+                    _marginDragFrozen = true;
+                }
+
+                DocumentViewModel.SetPageMargins(topMm, bottomMm, documentLeftMm, marginRightMm);
+
+                // Предел отступа — край листа, то есть всё видимое поле целиком:
+                // левое поле вместе с переплётом.
+                if (ClampIndentsToPageEdge(visibleLeftMm))
+                    DocumentViewModel.FireParagraphFormatChanged();
+            }
+
+            _marginDragStart = null;
+            _marginDragMoved = false;
+
             SyncRulerToDocument(DocumentViewModel.Document);
             // Закрываем снапшот, начатый в OnRulerMarginDragStarted — теперь Ctrl+Z вернёт поля.
             DocumentViewModel.CommitPageEdit();
         }
 
 
+        // Шаг отмены жеста по линейке таблицы (ширины столбцов, левый край). Линейка
+        // сообщает о каждом движении мыши и отдельно об отпускании, а начала жеста не
+        // сообщает. Поэтому шаг открывается на первом сообщении жеста и закрывается на
+        // отпускании: жест целиком — один шаг отмены.
+        //
+        // Раньше ширины шли через TableSetColumnWidth, который открывал и закрывал свой
+        // шаг на каждый столбец и каждое движение мыши: протяжка давала сотни шагов, и
+        // отмена возвращала столбцы по одному на долю миллиметра. Левый край таблицы
+        // шага не открывал вовсе и не отменялся.
+        //
+        // Шаги отдельных столбцов внутри открытого шага вкладываются в него: снимок
+        // таблицы вложенный, внутренние Begin/Commit лишь меняют глубину.
+        private bool _rulerTableUndoOpen;
+
+        private void OpenRulerTableUndo(TableBlock table, string description)
+        {
+            if (_rulerTableUndoOpen || DocumentViewModel is null) return;
+            DocumentViewModel.BeginTableUndoStepDelegate?.Invoke(table, description);
+            _rulerTableUndoOpen = true;
+        }
+
+        private void CloseRulerTableUndo()
+        {
+            if (!_rulerTableUndoOpen) return;
+            _rulerTableUndoOpen = false;
+            DocumentViewModel?.CommitTableUndoStepDelegate?.Invoke();
+        }
+
         private void OnRulerAllColumnWidthsChanging(IReadOnlyDictionary<int, double> widths)
         {
+            if (DocumentViewModel?.ActiveTable is { } table)
+                OpenRulerTableUndo(table, "Resize column");
+
             ApplyAllColumnWidths(widths);
         }
 
         private void OnRulerAllColumnWidthsChanged(IReadOnlyDictionary<int, double> widths)
         {
+            // Отпускание без движения тоже правит модель (столбцы «авто» становятся
+            // фиксированными) — поэтому и оно идёт одним шагом.
+            if (DocumentViewModel?.ActiveTable is { } table)
+                OpenRulerTableUndo(table, "Resize column");
+
             ApplyAllColumnWidths(widths);
+            CloseRulerTableUndo();
             _logger.Debug("All column widths changed: {Count} columns", widths.Count);
         }
 
@@ -2207,6 +2461,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             var table = DocumentViewModel?.ActiveTable;
             if (table is null) return;
+            OpenRulerTableUndo(table, "Move table");
             table.LeftIndentPt = leftEdgeMm * 72.0 / 25.4;
             DocumentViewModel?.FireParagraphFormatChanged();
         }
@@ -2217,8 +2472,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private void OnRulerTableLeftEdgeChanged(double leftEdgeMm)
         {
             var table = DocumentViewModel?.ActiveTable;
-            if (table is null) return;
+            if (table is null)
+            {
+                // Таблица пропала посреди жеста (каретка ушла) — шаг всё равно закрываем,
+                // иначе он остался бы открытым и поглотил следующие правки таблиц.
+                CloseRulerTableUndo();
+                return;
+            }
+            OpenRulerTableUndo(table, "Move table");
             table.LeftIndentPt = leftEdgeMm * 72.0 / 25.4;
+            CloseRulerTableUndo();
             DocumentViewModel?.FireParagraphFormatChanged();
             _logger.Debug("Table left edge changed: {W}mm", leftEdgeMm);
         }
@@ -2233,6 +2496,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ToggleSubscript() => DocumentViewModel?.ToggleSubscript();
         public void ToggleAllCaps() => DocumentViewModel?.ToggleAllCaps();
         public void ChangeCase(Contracts.TextCaseMode mode) => DocumentViewModel?.ChangeCase(mode);
+
+        /// <summary>Регистр по кругу, как Shift+F3 в Word.</summary>
+        public void CycleCase() => DocumentViewModel?.CycleCase();
         public void ToggleSmallCaps() => DocumentViewModel?.ToggleSmallCaps();
         public void ClearFormatting() => DocumentViewModel?.ClearFormatting();
 
@@ -2261,6 +2527,25 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ApplyParagraphSettings(ParagraphProperties settings)
             => DocumentViewModel?.ApplyParagraphSettings(settings);
         public void SetOutlineLevel(int level) => DocumentViewModel?.SetOutlineLevel(level);
+
+        public void ToggleParagraphBorders(ParagraphBorderSides sides, ParagraphBorderPen pen)
+            => DocumentViewModel?.ToggleParagraphBorders(sides, pen);
+        public void ClearParagraphBorders() => DocumentViewModel?.ClearParagraphBorders();
+        public void RestyleParagraphBorders(ParagraphBorderPen pen)
+            => DocumentViewModel?.RestyleParagraphBorders(pen);
+        public ParagraphBorderSides GetSelectedParagraphBorderSides()
+            => DocumentViewModel?.GetSelectedParagraphBorderSides() ?? ParagraphBorderSides.None;
+
+        // Кнопка «¶» и Ctrl+Shift+8 приходят сюда оба, поэтому кнопку ленты
+        // освежаем здесь же: переключение с клавиатуры должно отражаться на ней.
+        public void ToggleFormattingMarks()
+        {
+            DocumentViewModel?.ToggleFormattingMarks();
+            Ribbon.Home.RefreshFormattingMarks();
+        }
+
+        public bool AreFormattingMarksVisible()
+            => DocumentViewModel?.AreFormattingMarksVisible() ?? false;
 
         public void ToggleBulletList() => DocumentViewModel?.ToggleBulletList();
         public void ToggleNumberedList() => DocumentViewModel?.ToggleNumberedList();
@@ -2400,13 +2685,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void TableDistributeRows() => DocumentViewModel?.TableDistributeRows();
         public void TableSort(int columnIndex, bool ascending) => DocumentViewModel?.TableSort(columnIndex, ascending);
 
-        public void TableToggleRepeatHeader()
-        {
-            var table = DocumentViewModel?.ActiveTable;
-            if (table is null) return;
-            table.RepeatHeader = !table.RepeatHeader;
-            DocumentViewModel?.FireParagraphFormatChanged();
-        }
+        // Через модель документа: там переключение открывает шаг отмены. Раньше флаг
+        // менялся здесь напрямую, и Ctrl+Z кнопку «Повторять заголовок» не откатывал.
+        public void TableToggleRepeatHeader() => DocumentViewModel?.TableToggleRepeatHeader();
 
         public bool TableGetRepeatHeader()
             => DocumentViewModel?.ActiveTable?.RepeatHeader ?? false;
@@ -2473,13 +2754,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (DocumentViewModel is null) return;
             double[] steps = { 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0 };
-            double current = StatusBar.Zoom;
+            // Шаг — от цели идущей анимации: второе нажатие посреди неё идёт дальше,
+            // а не повторяет тот же шаг от промежуточного значения.
+            double current = DocumentViewModel.ZoomTarget;
             foreach (double step in steps)
                 if (step > current + 0.01)
                 {
-                    DocumentViewModel.SetZoom(step);
+                    DocumentViewModel.AnimateZoomTo(step);
                     StatusBar.Zoom = step;
-                    Ruler.Zoom = step;
                     return;
                 }
         }
@@ -2488,13 +2770,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (DocumentViewModel is null) return;
             double[] steps = { 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0 };
-            double current = StatusBar.Zoom;
+            double current = DocumentViewModel.ZoomTarget;
             for (int i = steps.Length - 1; i >= 0; i--)
                 if (steps[i] < current - 0.01)
                 {
-                    DocumentViewModel.SetZoom(steps[i]);
+                    DocumentViewModel.AnimateZoomTo(steps[i]);
                     StatusBar.Zoom = steps[i];
-                    Ruler.Zoom = steps[i];
                     return;
                 }
         }
@@ -2502,9 +2783,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ZoomReset()
         {
             if (DocumentViewModel is null) return;
-            DocumentViewModel.SetZoom(1.0);
+            DocumentViewModel.AnimateZoomTo(1.0);
             StatusBar.Zoom = 1.0;
-            Ruler.Zoom = 1.0;
         }
 
         // ── Инструменты ──────────────────────────────────────────────────

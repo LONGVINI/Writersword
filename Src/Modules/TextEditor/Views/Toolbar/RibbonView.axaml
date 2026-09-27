@@ -28,6 +28,14 @@
 		<Style Selector="DropDownButton">
 			<Setter Property="Focusable" Value="False"/>
 		</Style>
+		<!-- Заголовки вкладок — по той же причине. Щелчок по «Вставке» забирал фокус
+		     на заголовок вкладки, кнопки его не возвращали (они сами фокус не берут),
+		     и Ctrl+Z с остальными клавишами редактора уходили в заголовок: окно не
+		     находило модуль в фокусе, и нажатие пропадало без следа. Вкладка
+		     переключается щелчком и без фокуса. -->
+		<Style Selector="TabItem">
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
 	</UserControl.Styles>
 
 	<UserControl.Resources>

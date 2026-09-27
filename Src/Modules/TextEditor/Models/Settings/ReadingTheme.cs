@@ -65,6 +65,15 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// <summary>Цвет текста, у которого нет своего (HEX).</summary>
         public string InkColor { get; set; } = "#2E2A24";
 
+        /// <summary>
+        /// Цвет рамки листа (HEX): линия в один пиксель экрана вокруг страницы.
+        /// Пусто — рамки нет; так у всех видов по умолчанию, встроенных в том числе.
+        ///
+        /// Рамка — часть вида, а не страницы: она отделяет лист от поля на экране и
+        /// на печать не идёт, как и всё остальное в виде.
+        /// </summary>
+        public string? FrameColor { get; set; }
+
         // ── Только для правки ─────────────────────────────────────────────
         // Всё, что ниже, видно за письмом и в чтении не значит ничего: там не
         // правят, линейки нет, и позиции табуляции показывать нечему. Пусто в любом
@@ -314,6 +323,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             IsBuiltIn = IsBuiltIn,
             SheetColor = SheetColor,
             InkColor = InkColor,
+            FrameColor = FrameColor,
             CaretColor = CaretColor,
             RulerSheetColor = RulerSheetColor,
             RulerInkColor = RulerInkColor,
@@ -367,6 +377,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
 
             return Same(a.SheetColor, b.SheetColor, Ci)
                 && Same(a.InkColor, b.InkColor, Ci)
+                && Same(a.FrameColor, b.FrameColor, Ci)
                 && Same(a.CaretColor, b.CaretColor, Ci)
                 && Same(a.RulerSheetColor, b.RulerSheetColor, Ci)
                 && Same(a.RulerInkColor, b.RulerInkColor, Ci)

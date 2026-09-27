@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Writersword.Modules.TextEditor.Models.Document;
 
 namespace Writersword.Modules.TextEditor.Models.Toc
 {
@@ -82,8 +83,30 @@ namespace Writersword.Modules.TextEditor.Models.Toc
         /// </summary>
         public bool AutoUpdate { get; set; } = true;
 
-        /// <summary>Создаёт копию настроек.</summary>
-        public TocSettings Clone() => (TocSettings)MemberwiseClone();
+        /// <summary>
+        /// Строки, убранные из списка правкой настроек, — вместе с правками человека в
+        /// них. Сузил уровни с «1-5» до «1-3» — строки четвёртого и пятого уровня уходят
+        /// сюда; вернул «1-5» — возвращаются отсюда такими, какими были, а не строятся
+        /// заново из заголовков. Без этого правка в строке пропадала, стоило один раз
+        /// переключить уровни туда и обратно.
+        ///
+        /// Кнопка «Обновить» с полной пересборкой этот запас обнуляет: она по смыслу
+        /// выравнивает оглавление по рукописи с чистого листа.
+        ///
+        /// null — запаса нет (так и записывается в файл, поле не появляется).
+        /// </summary>
+        public List<ParagraphBlock>? HiddenEntries { get; set; }
+
+        /// <summary>
+        /// Создаёт копию настроек. Список убранных строк копируется своим списком:
+        /// общий список у копии и оригинала менялся бы сразу у обоих.
+        /// </summary>
+        public TocSettings Clone()
+        {
+            var copy = (TocSettings)MemberwiseClone();
+            copy.HiddenEntries = HiddenEntries is null ? null : new List<ParagraphBlock>(HiddenEntries);
+            return copy;
+        }
 
         /// <summary>Уровень попадает в это оглавление.</summary>
         public bool AcceptsLevel(int level)

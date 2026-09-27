@@ -874,7 +874,9 @@ namespace Writersword.Modules.TextEditor.Document
                 var ctx = Writersword.Core.Services.CoreServices
                     .GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()?.ActiveTab?.Context;
                 // Байты — для вставки в другой проект (файл переносится в его хранилище).
-                data = ctx?.ReadFile($"TextEditor/Images/{img.ImageFileName}");
+                // Картинка недавнего импорта может ещё писаться в проект.
+                data = Writersword.Modules.TextEditor.Services.PendingProjectImages.Read(
+                    ctx, $"TextEditor/Images/{img.ImageFileName}");
             }
             catch (Exception ex)
             {
@@ -2527,7 +2529,6 @@ namespace Writersword.Modules.TextEditor.Document
         private void InvalidateFull([CallerMemberName] string perfCaller = "")
         {
             PerfCount("inv.full<-" + perfCaller);
-            FlipTraceEvent("InvalidateFull<-" + perfCaller);
 
             // Содержимое изменилось: фоновый снимок прокрутки, начатый до этого, устарел.
             System.Threading.Interlocked.Increment(ref _contentGeneration);
@@ -2698,6 +2699,10 @@ namespace Writersword.Modules.TextEditor.Document
             _caretTimer.Start();
             ScrollToCaret();
             NotifyInputMethod();
+
+            // Каретка переехала — модуль запомнит новое место после паузы
+            // (DocumentCanvas.ViewRestore).
+            ScheduleViewStateChanged();
 
             // Уведомляем вертикальную линейку о странице каретки
             if (_caretPara >= 0 && _caretPara < _layouts.Count)
@@ -2939,6 +2944,12 @@ namespace Writersword.Modules.TextEditor.Document
 
         public (int docParaIdx, int charIdx, double scrollY) GetCaretState()
         {
+            // Место, которое ещё ждёт раскладки, и есть текущее: пока документ не
+            // разложен, прокрутка прижата к началу, и её сохранение увело бы вид туда
+            // при следующем переключении.
+            if (_pendingViewRestore is { } pending)
+                return (pending.Para, pending.Char, pending.ScrollY);
+
             int docIdx = 0;
             if (_caretPara >= 0 && _caretPara < _layouts.Count
                 && DocVm is not null && !IsInCell(_caretPara))
@@ -2971,6 +2982,10 @@ namespace Writersword.Modules.TextEditor.Document
             Dispatcher.UIThread.Post(() =>
             {
                 if (_layouts.Count == 0) return;
+
+                // Абзац в свёрнутом разделе — раздел раскрывается (DocumentCanvas.HeadingCollapse).
+                if (DocVm is not null && docParaIdx >= 0 && docParaIdx < DocVm.Paragraphs.Count)
+                    RevealCollapsedParagraph(DocVm.Paragraphs[docParaIdx]);
 
                 // Раскладка может ещё не знать этого абзаца. Пересборка оглавления
                 // заводит новые вью-модели строк, а её раскладка отложена на приоритет

@@ -108,7 +108,15 @@ namespace Writersword.Modules.TextEditor.Document
         private int _spreadLeftPage
         {
             get => SpreadFrame is { } f ? f.LeftPage : _spreadLeftPageLive;
-            set => _spreadLeftPageLive = value;
+            set
+            {
+                if (_spreadLeftPageLive == value) return;
+
+                _spreadLeftPageLive = value;
+
+                // Разворот сменился — новое место в книге запоминается (см. ReadingBookmark).
+                ScheduleReadingPositionReport();
+            }
         }
 
         // Сдвиг книги относительно центра видимой области, в пунктах. Пока книга

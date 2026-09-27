@@ -9,6 +9,7 @@ using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
 using Writersword.Core.Enums;
+using Writersword.Core.Services;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;
@@ -58,6 +59,14 @@ namespace Writersword.ViewModels
 
         /// <summary>Событие: проект выбран, нужно закрыть окно</summary>
         public event Action? ProjectSelected;
+
+        /// <summary>
+        /// Спросить тип проекта для документа Word. Принимает имя файла документа и
+        /// тип, отмеченный на экране; возвращает выбранный тип или null, если
+        /// человек передумал. Окно показывает вью — модель про окна не знает.
+        /// Не задано — берётся тип, отмеченный на экране.
+        /// </summary>
+        public Func<string, string, Task<string?>>? ProjectTypeRequested { get; set; }
 
         public WelcomeViewModel(
             IDialogService dialogService,
@@ -169,9 +178,17 @@ namespace Writersword.ViewModels
         /// <summary>Открыть существующий проект</summary>
         private async Task OpenExistingProject()
         {
-            var path = await _dialogService.OpenFileAsync();
+            // Кроме проектов окно выбора показывает и документы Word: из документа
+            // тут же делается новый проект.
+            var path = await _dialogService.OpenProjectOrDocumentAsync();
             if (string.IsNullOrEmpty(path))
                 return;
+
+            if (IsWordDocument(path))
+            {
+                await CreateProjectFromWordDocument(path);
+                return;
+            }
 
             var tabCollection = App.Services.GetRequiredService<ITabCollection>();
 
@@ -197,6 +214,131 @@ namespace Writersword.ViewModels
             }
 
             ProjectSelected?.Invoke();
+        }
+
+        /// <summary>Документ Word, из которого делается новый проект.</summary>
+        private static bool IsWordDocument(string path)
+            => string.Equals(Path.GetExtension(path), ".docx", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Новый проект из документа Word. Проект ложится рядом с документом под
+        /// его же именем: «Книга.docx» даёт «Книга.writersword». Сам документ не
+        /// трогается — текст из него вливается в проект модулем правки, когда тот
+        /// поднимется (см. PendingFileImports).
+        ///
+        /// Тип проекта спрашивается отдельным окном: по документу не понять, роман
+        /// в нём или сценарий, а от типа зависит, что будет в проекте под рукой.
+        /// </summary>
+        private async Task CreateProjectFromWordDocument(string documentPath)
+        {
+            if (_isProcessing)
+            {
+                _logger.LogDebug("Already processing project open");
+                return;
+            }
+
+            _isProcessing = true;
+            string? projectPath = null;
+
+            try
+            {
+                string documentName = Path.GetFileNameWithoutExtension(documentPath);
+
+                string? projectType = ProjectTypeRequested is null
+                    ? SelectedProjectType
+                    : await ProjectTypeRequested(Path.GetFileName(documentPath), SelectedProjectType);
+
+                // Окно выбора закрыли — человек передумал, экран остаётся открытым.
+                if (string.IsNullOrEmpty(projectType))
+                    return;
+
+                projectPath = FreeProjectPathNextTo(documentPath);
+
+                var project = _projectService.CreateNew(documentName, projectType);
+
+                // Рядом с документом записать не вышло (папка только для чтения,
+                // сетевой диск) — место для проекта выбирает человек.
+                if (!await _projectService.SaveAsync(project, projectPath))
+                {
+                    _logger.LogWarning("Cannot save the project next to the document: {Path}", projectPath);
+
+                    projectPath = await _dialogService.SaveFileAsync(documentName);
+                    if (string.IsNullOrEmpty(projectPath))
+                        return;
+
+                    if (!await _projectService.SaveAsync(project, projectPath))
+                    {
+                        await _dialogService.ShowMessageAsync(
+                            "Документ Word",
+                            $"Не удалось создать проект.\n\n{projectPath}",
+                            MessageBoxType.Error,
+                            MessageBoxButtons.OK);
+                        return;
+                    }
+                }
+
+                var tabCollection = App.Services.GetRequiredService<ITabCollection>();
+                var tabVM = new DocumentTabViewModel(project, projectPath);
+
+                _projectWorkflow.RegisterStorage(projectPath, tabVM);
+
+                // Документ ставится в очередь до открытия вкладки: модуль правки
+                // может подняться сразу же, как вкладка станет активной.
+                PendingFileImports.Register(projectPath, documentPath);
+
+                // Та же последовательность, что и у создания проекта: Add сам
+                // активирует первую вкладку, присваивание нужно при уже открытых.
+                tabCollection.Add(tabVM);
+                tabCollection.ActiveTab = tabVM;
+
+                _settingsService.AddRecentProject(projectPath);
+
+                LoadRecentProjects();
+
+                _logger.LogInformation("Project created from Word document: {Document} -> {Project} ({Type})",
+                    documentPath, projectPath, projectType);
+
+                ProjectSelected?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create a project from Word document: {Path}", documentPath);
+
+                // Проект не открылся — документ никто не заберёт.
+                PendingFileImports.Cancel(projectPath);
+
+                await _dialogService.ShowMessageAsync(
+                    "Документ Word",
+                    $"Не удалось создать проект из документа.\n\n{documentPath}\n\n{ex.Message}",
+                    MessageBoxType.Error,
+                    MessageBoxButtons.OK);
+            }
+            finally
+            {
+                _isProcessing = false;
+            }
+        }
+
+        /// <summary>
+        /// Путь для проекта рядом с документом. Занято — к имени добавляется номер:
+        /// «Книга (2).writersword». Чужой проект с тем же именем не перезаписывается
+        /// никогда: в нём может быть работа, о которой сейчас никто не помнит.
+        /// </summary>
+        private static string FreeProjectPathNextTo(string documentPath)
+        {
+            string folder = Path.GetDirectoryName(documentPath) ?? string.Empty;
+            string name = Path.GetFileNameWithoutExtension(documentPath);
+
+            string candidate = Path.Combine(folder, name + ".writersword");
+            int number = 2;
+
+            while (File.Exists(candidate))
+            {
+                candidate = Path.Combine(folder, $"{name} ({number}).writersword");
+                number++;
+            }
+
+            return candidate;
         }
 
         /// <summary>Открыть недавний проект</summary>

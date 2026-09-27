@@ -48,6 +48,59 @@ namespace Writersword.Modules.TextEditor.Document
         // на экран при выходе за его край только при том же масштабе.
         private double _displayImageZoom = double.NaN;
 
+        // Диапазон листов, нарисованных в текущем снимке (-1 — не страничный режим).
+        // Подложка кладёт картинку бумаги только на листы вне этого диапазона.
+        private int _displayImageFirstPage = -1;
+        private int _displayImageLastPage = -1;
+
+        /// <summary>
+        /// Что покрывает текущий снимок — для решения подложки, где дорисовать бумагу.
+        /// Снимается один раз на кадр под _bitmapLock.
+        /// </summary>
+        private readonly record struct SkeletonPaperState(
+            bool SnapshotUsable, int FirstPage, int LastPage, float TopPt, float BottomPt)
+        {
+            /// <summary>
+            /// Нужна ли картинка бумаги листу: он виден на экране и снимок не покрывает
+            /// его целиком (лист вне нарисованного снимком диапазона или выходит за
+            /// полосу снимка).
+            /// </summary>
+            public bool NeedsPaper(int pageIndex, float pageTopPt, float pageHeightPt,
+                                   float viewTopPt, float viewHeightPt)
+            {
+                float pageBottomPt = pageTopPt + pageHeightPt;
+                if (pageBottomPt < viewTopPt || pageTopPt > viewTopPt + viewHeightPt) return false;
+
+                bool covered = SnapshotUsable
+                    && pageIndex >= FirstPage && pageIndex <= LastPage
+                    && pageTopPt >= TopPt && pageBottomPt <= BottomPt;
+
+                return !covered;
+            }
+        }
+
+        private SkeletonPaperState CaptureSkeletonPaperState(float scale)
+        {
+            if (scale <= 0f) return new SkeletonPaperState(false, -1, -1, 0f, 0f);
+
+            lock (_bitmapLock)
+            {
+                bool usable = _displayImage is not null
+                    && _displayImage.Width == (int)Math.Max(Bounds.Width, 1)
+                    && Math.Abs(_displayImageZoom - Zoom) < 1e-9
+                    && _displayImageFirstPage >= 0;
+
+                if (!usable) return new SkeletonPaperState(false, -1, -1, 0f, 0f);
+
+                return new SkeletonPaperState(
+                    true,
+                    _displayImageFirstPage,
+                    _displayImageLastPage,
+                    _lastFullRenderScrollY / scale,
+                    (_lastFullRenderScrollY + _displayImage!.Height) / scale);
+            }
+        }
+
         // 1 — фоновая дорисовка уже идёт; вторая не запускается.
         private int _bgSnapshotBusy;
 
@@ -142,6 +195,7 @@ namespace Writersword.Modules.TextEditor.Document
             canvas.Save();
             canvas.Scale(scale, scale);
             DrawSelectionOverlay(canvas, layouts, pages, canvasWidth);
+            DrawHeadingToggles(canvas, layouts, pages, canvasWidth);
             canvas.Restore();
 
             if (CaretDrawable)
@@ -228,6 +282,13 @@ namespace Writersword.Modules.TextEditor.Document
                 canvasWidth = _canvasWidth;
             }
 
+            // Левый край содержимого снимка — для растяжения снимка во время жеста
+            // масштаба (DocumentCanvas.ZoomPreview).
+            double leftPxAtStart = ContentLeftPx(canvasWidth, zoomAtStart);
+
+            // ClearType снимка — тот, что решён для текущего кадра (DocumentCanvas.TextSmoothing).
+            var pixelGeometry = _snapshotPixelGeometry;
+
             Task.Run(() =>
             {
                 long perfTs = PerfNow();
@@ -244,6 +305,8 @@ namespace Writersword.Modules.TextEditor.Document
                     }
 
                     float bandTopPt = scale > 0f ? bandTopPx / scale : 0f;
+                    int snapFirstPage = -1;
+                    int snapLastPage = -1;
 
                     // Окно прохода — вся полоса снимка: иначе проход взял бы листы вокруг
                     // текущего вьюпорта, а края снимка остались бы пустыми.
@@ -253,7 +316,9 @@ namespace Writersword.Modules.TextEditor.Document
 
                     try
                     {
-                        using var offscreen = new SKCanvas(bitmap);
+                        using var offscreenSurface = ScreenTextSmoothing.CreateSurface(bitmap, pixelGeometry);
+                        using var offscreenOwnCanvas = offscreenSurface is null ? new SKCanvas(bitmap) : null;
+                        var offscreen = offscreenSurface?.Canvas ?? offscreenOwnCanvas!;
                         offscreen.Clear(SKColors.Transparent);
                         offscreen.Save();
                         offscreen.Scale(scale, scale);
@@ -265,6 +330,10 @@ namespace Writersword.Modules.TextEditor.Document
                             RenderFlowMode(offscreen, mode, layouts, tables, images, canvasHeightPt, canvasWidth, false);
 
                         offscreen.Restore();
+
+                        // Какие листы попали в снимок — окно прохода ещё полосы снимка.
+                        if (mode == EditorViewMode.Page || SpreadMode || ReadingRibbon)
+                            (snapFirstPage, snapLastPage) = GetVisiblePageRange(pages);
                     }
                     finally
                     {
@@ -285,7 +354,14 @@ namespace Writersword.Modules.TextEditor.Document
                     {
                         // Содержимое не менялось с начала дорисовки, масштаб тот же —
                         // снимок верен и подменяет прежний.
+                        //
+                        // Ширина тоже: пока дорисовка шла, сплиттер мог сменить ширину
+                        // канваса — снимок прежней ширины кадр всё равно не взял бы.
+                        bool widthMatches = (int)Math.Max(Bounds.Width, 1) == pixelW;
+                        if (!widthMatches) PerfCount("r.async.width");
+
                         if (newImage is not null
+                            && widthMatches
                             && Volatile.Read(ref _contentGeneration) == generation
                             && !_contentDirty
                             && Math.Abs(Zoom - zoomAtStart) < 1e-9)
@@ -293,6 +369,9 @@ namespace Writersword.Modules.TextEditor.Document
                             var old = _displayImage;
                             _displayImage = newImage;
                             _displayImageZoom = zoomAtStart;
+                            _displayImageLeftPx = leftPxAtStart;
+                            _displayImageFirstPage = snapFirstPage;
+                            _displayImageLastPage = snapLastPage;
                             _lastFullRenderScrollY = bandTopPx;
                             _displayImageSpreadLeft = -1;
                             newImage = null;

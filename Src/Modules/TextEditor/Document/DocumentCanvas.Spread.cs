@@ -88,6 +88,88 @@ namespace Writersword.Modules.TextEditor.Document
         // переворота бессмысленно и очень дорого.
         private readonly HashSet<int> _spreadSnapshotFailed = new();
 
+        // Снимки страниц, выровненные по пикселям экрана. Нужны летящему листу в те
+        // мгновения, когда он лежит почти плашмя: в момент подъёма и в момент, когда
+        // ложится. Снимок с запасом по разрешению (_spreadPageCache) в эти мгновения
+        // подменял векторную страницу растром другой сетки — буквы съезжали на доли
+        // пикселя и меняли толщину, и страница вздрагивала ровно тогда, когда её
+        // берут или отпускают. Выровненный снимок снят в масштабе экрана и с той же
+        // долей пикселя, на которой страница стоит в развороте, поэтому плашмя он
+        // совпадает со страницей в покое точка в точку. Дальше, в полёте, его
+        // сменяет снимок с запасом — плавно, растворением (см. DrawSpreadFlip).
+        private readonly Dictionary<int, AlignedPageSnapshot> _spreadAlignedCache = new();
+
+        // Страницы, выровненный снимок которых не получился при этом переводе в
+        // пиксели. Повторять попытку на каждом кадре незачем.
+        private readonly HashSet<int> _spreadAlignedFailed = new();
+
+        // Перевод из точек книги в пиксели экрана, снятый последним кадром книги.
+        // Снимок, заготовленный заранее на потоке интерфейса, выравнивается по нему;
+        // кадр переворота всё равно сверяет выравнивание со своим переводом и при
+        // расхождении переснимает. Читается и пишется под _spreadCacheLock.
+        private SKMatrix _spreadDeviceMatrix = SKMatrix.Identity;
+        private bool _spreadDeviceMatrixKnown;
+
+        // Угол, за которым выровненный снимок листа полностью уступает снимку с
+        // запасом. Растворение идёт от порога подъёма до этого угла — и так же у
+        // другого конца пути, когда лист ложится.
+        private const float SpreadAlignedBlendDeg = 10f;
+
+        /// <summary>Снимок страницы в пикселях экрана и его привязка к сетке.</summary>
+        private sealed class AlignedPageSnapshot
+        {
+            public SKImage Image = null!;
+
+            // Пикселей снимка на точку книги по осям.
+            public float ScaleX;
+            public float ScaleY;
+
+            // Доля пикселя, на которой в снимке лежит левый верхний угол листа.
+            public float PhaseX;
+            public float PhaseY;
+        }
+
+        /// <summary>
+        /// Откуда полосы листа берут картинку и как точки листа переводятся в
+        /// пиксели этой картинки: пиксель = смещение + точка × масштаб.
+        /// </summary>
+        private readonly struct LeafSource
+        {
+            public readonly SKImage? Image;
+            public readonly float ScaleX;
+            public readonly float ScaleY;
+            public readonly float OffsetX;
+            public readonly float OffsetY;
+
+            public LeafSource(SKImage? image, float scaleX, float scaleY, float offsetX, float offsetY)
+            {
+                Image = image;
+                ScaleX = scaleX;
+                ScaleY = scaleY;
+                OffsetX = offsetX;
+                OffsetY = offsetY;
+            }
+
+            /// <summary>Снимок натягивается на лист целиком — так кладётся снимок с запасом.</summary>
+            public static LeafSource Stretched(SKImage? image, float widthPt, float heightPt)
+                => image is null
+                    ? default
+                    : new LeafSource(
+                        image,
+                        image.Width / Math.Max(widthPt, 0.001f),
+                        image.Height / Math.Max(heightPt, 0.001f),
+                        0f, 0f);
+
+            /// <summary>Выровненный снимок: масштаб экрана и своя доля пикселя.</summary>
+            public static LeafSource Aligned(AlignedPageSnapshot? snapshot)
+                => snapshot is null
+                    ? default
+                    : new LeafSource(
+                        snapshot.Image,
+                        snapshot.ScaleX, snapshot.ScaleY,
+                        snapshot.PhaseX, snapshot.PhaseY);
+        }
+
         // Страницы, которые обычный проход не рисует: они летят как отдельный лист.
         // Объявлены в DocumentCanvas.SpreadFrame.cs (_spreadFlyFront, _spreadFlyBack):
         // кадр читает их копию.
@@ -247,7 +329,11 @@ namespace Writersword.Modules.TextEditor.Document
             // на глазах.
             CacheSpreadPage(_spreadFlyFront);
             CacheSpreadPage(_spreadFlyBack);
-            FlipTraceStart(FormattableString.Invariant($"begin target={targetLeft} dir={dir}"));
+
+            // Лицо лежит плашмя там, откуда поднимается, изнанка — там, куда ляжет.
+            // Вперёд лист уходит с правой половины на левую, назад — наоборот.
+            CacheAlignedSpreadPage(_spreadFlyFront, dir < 0);
+            CacheAlignedSpreadPage(_spreadFlyBack, dir > 0);
             return true;
         }
 
@@ -302,7 +388,6 @@ namespace Writersword.Modules.TextEditor.Document
             _spreadReleaseStartTicks = DateTime.UtcNow.Ticks;
 
             StartSpreadTimer();
-            FlipTraceStart(FormattableString.Invariant($"release-anim from={_spreadReleaseFrom:0.00} to={_spreadReleaseTo:0} ms={_spreadReleaseMs:0}"));
 
             // Лист пошёл до конца — место в книге уже определено, и объявить о нём
             // можно сейчас же. Подпись и бегунок идут вместе с бумагой.
@@ -313,7 +398,6 @@ namespace Writersword.Modules.TextEditor.Document
         /// <summary>Завершение переворота: разворот меняется, снимки освобождаются.</summary>
         private void FinishSpreadFlip(bool committed)
         {
-            FlipTraceStart(committed ? "finish commit (before)" : "finish back (before)");
             lock (_spreadFrameLock)
             {
                 if (committed && _spreadFlipTargetLeft >= 0)
@@ -358,7 +442,6 @@ namespace Writersword.Modules.TextEditor.Document
 
             InvalidateFull();
             SchedulePrefetchSpreadNeighbours();
-            FlipTraceStart("finish (after)");
         }
 
         /// <summary>
@@ -416,7 +499,6 @@ namespace Writersword.Modules.TextEditor.Document
         public void SpreadTurn(int dir)
         {
             if (!SpreadMode || dir == 0) return;
-            FlipTraceStart(FormattableString.Invariant($"turn dir={dir}"));
 
             if (SpreadSinglePage)
             {
@@ -428,11 +510,14 @@ namespace Writersword.Modules.TextEditor.Document
             ReleaseSpreadFlip(true);
         }
 
-        /// <summary>Подводит книгу на шаг ближе или дальше.</summary>
+        /// <summary>
+        /// Подводит книгу на шаг ближе или дальше. Приближение доезжает до цели плавно
+        /// (DocumentCanvas.BookZoom).
+        /// </summary>
         public void ChangeBookZoom(int direction)
         {
             if (DocVm is null || direction == 0) return;
-            SetBookZoom(DocVm.Reading.Zoom * (direction > 0 ? 1.12 : 1.0 / 1.12));
+            AnimateBookZoomBy(direction > 0 ? 1.0 : -1.0);
         }
 
         /// <summary>
@@ -710,9 +795,23 @@ namespace Writersword.Modules.TextEditor.Document
             // Снимок держится под замком всё время, пока им рисуют — см. _spreadCacheLock.
             lock (_spreadCacheLock)
             {
-                CacheSpreadPageLocked(leafPage);
-                _spreadPageCache.TryGetValue(leafPage, out var img);
-                DrawLeafStrips(canvas, img, null, Strips, w, h, true, true, leafAlpha);
+                // Плоская часть листа лежит там же, где страница стояла в покое, и
+                // должна остаться теми же пикселями — иначе страница вздрагивает в
+                // первый же кадр скольжения. Выровненный снимок так и лежит; валик
+                // занимает узкую полосу, и запас по разрешению ему не нужен.
+                var aligned = GetAlignedSnapshotLocked(leafPage, true, canvas.TotalMatrix);
+                if (aligned is not null)
+                {
+                    DrawLeafStrips(
+                        canvas, LeafSource.Aligned(aligned), default, Strips,
+                        w, h, true, true, leafAlpha, false);
+                }
+                else
+                {
+                    CacheSpreadPageLocked(leafPage);
+                    _spreadPageCache.TryGetValue(leafPage, out var img);
+                    DrawLeafStrips(canvas, img, null, Strips, w, h, true, true, leafAlpha);
+                }
             }
 
             DrawReadingDim(canvas, bgWPt, bgHPt);
@@ -725,9 +824,25 @@ namespace Writersword.Modules.TextEditor.Document
 
             canvas.DrawRect(x + 3f, y + 3f, w, h, _paintPageShadow);
 
+            // Рамка ложится снаружи листа, и бумага со снимком её не закрывают —
+            // поэтому она здесь, до всех веток ниже (DocumentCanvas.SheetFrame).
+            DrawSheetFrame(canvas, x, y, w, h);
+
             // Снимок держится под замком всё время, пока им рисуют — см. _spreadCacheLock.
             lock (_spreadCacheLock)
             {
+                // Страница под листом неподвижна: в конце скольжения она становится
+                // страницей в покое и обязана быть теми же пикселями. Выровненный
+                // снимок кладётся без ресемплинга; снимок с запасом — только если
+                // выровненного нет.
+                var aligned = GetAlignedSnapshotLocked(pageIdx, true, canvas.TotalMatrix);
+                if (aligned is not null)
+                {
+                    canvas.DrawRect(x, y, w, h, PagePaint());
+                    DrawAlignedSnapshotFlat(canvas, aligned, x, y);
+                    return;
+                }
+
                 CacheSpreadPageLocked(pageIdx);
                 _spreadPageCache.TryGetValue(pageIdx, out var img);
 
@@ -913,7 +1028,6 @@ namespace Writersword.Modules.TextEditor.Document
             if (!_spreadSnapshotFailed.Add(pageIdx)) return;
 
             var page = _pages[pageIdx];
-            long flipSnapTs = FlipTraceNow();
 
             // Снимок берётся с запасом по разрешению: поднятый край листа идёт к
             // читателю и увеличивается, а снятая один в один страница на этом
@@ -952,50 +1066,220 @@ namespace Writersword.Modules.TextEditor.Document
                 var c = surface.Canvas;
                 c.Clear(SKColors.Transparent);
                 c.Scale(snapScaleX, snapScaleY);
-                c.DrawRect(0, 0, page.WidthPt, page.HeightPt, PagePaint());
-                DrawReadingPaperImage(c, 0, 0, page.WidthPt, page.HeightPt, pageIdx);
-
-                int savedOffscreen = _spreadOffscreenPagePlusOne;
-                _spreadOffscreenPagePlusOne = pageIdx + 1;
-                try
-                {
-                    c.Save();
-                    c.Translate(-page.PadLeftPt, -page.Ypt);
-                    RenderPageContent(c, _layouts, _pages, _tables, _images, pageIdx, pageIdx, false);
-                    c.Restore();
-                }
-                finally
-                {
-                    _spreadOffscreenPagePlusOne = savedOffscreen;
-                }
-
-                // Тень сгиба запекается прямо в снимок. Отдельным проходом поверх
-                // разворота она держалась только пока страницы стоят на месте: стоило
-                // листу подняться, как половины начинали двигаться, а тень оставалась
-                // висеть по центру экрана — и переворот терял объём в самый заметный
-                // момент. В снимке она принадлежит странице и едет вместе с ней.
-                // Сгиб есть только у разворота: у одиночной страницы тень вдоль
-                // края читалась бы как грязь на бумаге.
-                if (!SpreadSinglePage)
-                    DrawSpineShadowOnPage(c, pageIdx, page.WidthPt, page.HeightPt);
-
-                // Номер запекается в снимок вместе со страницей: он часть листа и
-                // обязан лететь с ним, а не оставаться висеть на месте.
-                DrawReadingPageNumber(c, pageIdx, 0, 0, page.WidthPt, page.HeightPt);
+                DrawSpreadPageSnapshotContent(c, pageIdx, page);
 
                 _spreadPageCache[pageIdx] = surface.Snapshot();
                 _spreadSnapshotFailed.Remove(pageIdx);
-                FlipTraceEvent(FormattableString.Invariant($"snapshot page={pageIdx} {FlipTraceMs(flipSnapTs, FlipTraceNow()):0.0}ms th={Environment.CurrentManagedThreadId}"));
             }
             catch (Exception ex)
             {
                 _logger.Warning(ex, "Failed to capture the spread page snapshot: page={Page}", pageIdx);
-                FlipTraceEvent(FormattableString.Invariant($"snapshot FAILED page={pageIdx}"));
             }
             finally
             {
                 surface?.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Рисует страницу книги в снимок: бумагу, картинку бумаги, содержимое, тень
+        /// сгиба и номер. Координаты локальные — от левого верхнего угла листа;
+        /// масштаб и сдвиг снимка задаёт вызывающий. Один рисунок на оба снимка —
+        /// с запасом и выровненный: разойдись они хоть в мелочи, лист менялся бы на
+        /// глазах, когда один снимок сменяет другой.
+        /// </summary>
+        private void DrawSpreadPageSnapshotContent(SKCanvas c, int pageIdx, PageRect page)
+        {
+            c.DrawRect(0, 0, page.WidthPt, page.HeightPt, PagePaint());
+            DrawReadingPaperImage(c, 0, 0, page.WidthPt, page.HeightPt, pageIdx);
+
+            int savedOffscreen = _spreadOffscreenPagePlusOne;
+            _spreadOffscreenPagePlusOne = pageIdx + 1;
+            try
+            {
+                c.Save();
+                c.Translate(-page.PadLeftPt, -page.Ypt);
+                RenderPageContent(c, _layouts, _pages, _tables, _images, pageIdx, pageIdx, false);
+                c.Restore();
+            }
+            finally
+            {
+                _spreadOffscreenPagePlusOne = savedOffscreen;
+            }
+
+            // Тень сгиба запекается прямо в снимок. Отдельным проходом поверх
+            // разворота она держалась только пока страницы стоят на месте: стоило
+            // листу подняться, как половины начинали двигаться, а тень оставалась
+            // висеть по центру экрана — и переворот терял объём в самый заметный
+            // момент. В снимке она принадлежит странице и едет вместе с ней.
+            // Сгиб есть только у разворота: у одиночной страницы тень вдоль
+            // края читалась бы как грязь на бумаге.
+            if (!SpreadSinglePage)
+                DrawSpineShadowOnPage(c, pageIdx, page.WidthPt, page.HeightPt);
+
+            // Номер запекается в снимок вместе со страницей: он часть листа и
+            // обязан лететь с ним, а не оставаться висеть на месте.
+            DrawReadingPageNumber(c, pageIdx, 0, 0, page.WidthPt, page.HeightPt);
+        }
+
+        /// <summary>
+        /// Годится ли перевод в пиксели для выровненного снимка: только масштаб и
+        /// сдвиг, без поворота и перспективы. Иначе у снимка нет единой сетки, по
+        /// которой его можно было бы совместить со страницей.
+        /// </summary>
+        private static bool IsAxisAlignedDeviceMatrix(SKMatrix m)
+        {
+            return MathF.Abs(m.SkewX) < 1e-4f
+                && MathF.Abs(m.SkewY) < 1e-4f
+                && MathF.Abs(m.Persp0) < 1e-6f
+                && MathF.Abs(m.Persp1) < 1e-6f
+                && MathF.Abs(m.Persp2 - 1f) < 1e-4f
+                && m.ScaleX > 0.01f
+                && m.ScaleY > 0.01f;
+        }
+
+        /// <summary>
+        /// Запоминает перевод из точек книги в пиксели экрана, по которому нарисован
+        /// кадр. Если он изменился — сдвинулась книга, сменился масштаб, — заранее
+        /// снятые выровненные снимки больше не совпадают со страницами, и соседей
+        /// разворота стоит снять заново в простое, а не в первом кадре переворота.
+        /// </summary>
+        private void RememberSpreadDeviceMatrix(SKMatrix device)
+        {
+            bool changed;
+            lock (_spreadCacheLock)
+            {
+                var old = _spreadDeviceMatrix;
+                changed = !_spreadDeviceMatrixKnown
+                    || MathF.Abs(old.ScaleX - device.ScaleX) > 1e-4f
+                    || MathF.Abs(old.ScaleY - device.ScaleY) > 1e-4f
+                    || MathF.Abs(old.TransX - device.TransX) > 0.01f
+                    || MathF.Abs(old.TransY - device.TransY) > 0.01f
+                    || MathF.Abs(old.SkewX - device.SkewX) > 1e-4f
+                    || MathF.Abs(old.SkewY - device.SkewY) > 1e-4f;
+
+                _spreadDeviceMatrix = device;
+                _spreadDeviceMatrixKnown = true;
+            }
+
+            // Кадр рисуется не на потоке интерфейса, а заготовка снимков живёт там.
+            if (changed)
+                Dispatcher.UIThread.Post(SchedulePrefetchSpreadNeighbours, DispatcherPriority.Background);
+        }
+
+        /// <summary>
+        /// Заготовка выровненного снимка на потоке интерфейса — по переводу в пиксели,
+        /// снятому последним кадром. Пока кадра не было, заготавливать не по чему.
+        /// </summary>
+        private void CacheAlignedSpreadPage(int pageIdx, bool leftSlot)
+        {
+            if (pageIdx < 0 || pageIdx >= _pages.Count) return;
+
+            lock (_spreadCacheLock)
+            {
+                if (!_spreadDeviceMatrixKnown) return;
+                GetAlignedSnapshotLocked(pageIdx, leftSlot, _spreadDeviceMatrix);
+            }
+        }
+
+        /// <summary>
+        /// Выровненный снимок страницы для места в развороте, где она лежит плашмя.
+        /// Готовый снимок отдаётся, если снят в том же масштабе и с той же долей
+        /// пикселя; иначе переснимается. Вызывается под _spreadCacheLock.
+        /// </summary>
+        private AlignedPageSnapshot? GetAlignedSnapshotLocked(int pageIdx, bool leftSlot, SKMatrix device)
+        {
+            if (pageIdx < 0 || pageIdx >= _pages.Count) return null;
+            if (!IsAxisAlignedDeviceMatrix(device)) return null;
+
+            float scaleX = device.ScaleX;
+            float scaleY = device.ScaleY;
+
+            // Где в пикселях экрана окажется левый верхний угол листа. Целая часть
+            // снимку безразлична, важна дробная: на той же доле пикселя глифы
+            // растрируются так же, как на странице в покое.
+            var (xPt, yPt) = SpreadPlacement(pageIdx, leftSlot);
+            var origin = device.MapPoint(xPt, yPt);
+            float phaseX = origin.X - MathF.Floor(origin.X);
+            float phaseY = origin.Y - MathF.Floor(origin.Y);
+
+            if (_spreadAlignedCache.TryGetValue(pageIdx, out var ready))
+            {
+                if (MathF.Abs(ready.ScaleX - scaleX) < 1e-4f
+                    && MathF.Abs(ready.ScaleY - scaleY) < 1e-4f
+                    && MathF.Abs(ready.PhaseX - phaseX) < 0.01f
+                    && MathF.Abs(ready.PhaseY - phaseY) < 0.01f)
+                    return ready;
+
+                // Снимок чужой сетки. Рисуют снимками только под этим же замком,
+                // поэтому освобождать его здесь безопасно.
+                _spreadAlignedCache.Remove(pageIdx);
+                ready.Image.Dispose();
+                _spreadAlignedFailed.Remove(pageIdx);
+            }
+
+            // Неудача запоминается, как и у снимка с запасом: переснимать страницу на
+            // каждом кадре — это полная её отрисовка шестьдесят раз в секунду.
+            if (!_spreadAlignedFailed.Add(pageIdx)) return null;
+
+            var page = _pages[pageIdx];
+            int wPx = (int)MathF.Ceiling(phaseX + page.WidthPt * scaleX);
+            int hPx = (int)MathF.Ceiling(phaseY + page.HeightPt * scaleY);
+            if (wPx <= 0 || hPx <= 0 || (long)wPx * hPx > 64_000_000L) return null;
+
+            SKSurface? surface = null;
+            try
+            {
+                surface = SKSurface.Create(new SKImageInfo(wPx, hPx, SKColorType.Bgra8888, SKAlphaType.Premul));
+                if (surface is null) return null;
+
+                // Масштаб здесь ровно экранный, без подгонки под целый размер
+                // поверхности: снимок кладётся пиксель в пиксель, а не натягивается на
+                // лист, и прозрачный остаток у края никуда не растягивается — под ним
+                // и так лежит бумага листа.
+                var c = surface.Canvas;
+                c.Clear(SKColors.Transparent);
+                c.Translate(phaseX, phaseY);
+                c.Scale(scaleX, scaleY);
+                DrawSpreadPageSnapshotContent(c, pageIdx, page);
+
+                var snapshot = new AlignedPageSnapshot
+                {
+                    Image = surface.Snapshot(),
+                    ScaleX = scaleX,
+                    ScaleY = scaleY,
+                    PhaseX = phaseX,
+                    PhaseY = phaseY
+                };
+
+                _spreadAlignedCache[pageIdx] = snapshot;
+                _spreadAlignedFailed.Remove(pageIdx);
+                return snapshot;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Failed to capture the aligned spread page snapshot: page={Page}", pageIdx);
+                return null;
+            }
+            finally
+            {
+                surface?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Кладёт выровненный снимок плоско, пиксель в пиксель: левый верхний угол
+        /// листа — на ту же долю пикселя, на которой он снят. Без ресемплинга, то
+        /// есть ровно теми же пикселями, какими страница стоит в покое.
+        /// </summary>
+        private static void DrawAlignedSnapshotFlat(SKCanvas canvas, AlignedPageSnapshot snapshot, float xPt, float yPt)
+        {
+            var origin = canvas.TotalMatrix.MapPoint(xPt, yPt);
+
+            canvas.Save();
+            canvas.ResetMatrix();
+            canvas.DrawImage(snapshot.Image, MathF.Floor(origin.X), MathF.Floor(origin.Y));
+            canvas.Restore();
         }
 
         /// <summary>
@@ -1039,7 +1323,8 @@ namespace Writersword.Modules.TextEditor.Document
         {
             lock (_spreadCacheLock)
             {
-                if (_spreadPageCache.Count == 0 && _spreadSnapshotFailed.Count == 0) return;
+                if (_spreadPageCache.Count == 0 && _spreadSnapshotFailed.Count == 0
+                    && _spreadAlignedCache.Count == 0 && _spreadAlignedFailed.Count == 0) return;
                 ClearSpreadCache();
             }
 
@@ -1053,6 +1338,10 @@ namespace Writersword.Modules.TextEditor.Document
                 foreach (var img in _spreadPageCache.Values) img.Dispose();
                 _spreadPageCache.Clear();
                 _spreadSnapshotFailed.Clear();
+
+                foreach (var aligned in _spreadAlignedCache.Values) aligned.Image.Dispose();
+                _spreadAlignedCache.Clear();
+                _spreadAlignedFailed.Clear();
             }
         }
 
@@ -1076,6 +1365,8 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void TrimSpreadCacheLocked()
         {
+            TrimAlignedSpreadCacheLocked();
+
             if (_spreadPageCache.Count == 0) return;
 
             List<int>? drop = null;
@@ -1095,6 +1386,28 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
+        /// <summary>Те же правила для выровненных снимков: держатся только соседи разворота.</summary>
+        private void TrimAlignedSpreadCacheLocked()
+        {
+            if (_spreadAlignedCache.Count == 0) return;
+
+            List<int>? drop = null;
+            foreach (var key in _spreadAlignedCache.Keys)
+            {
+                if (IsSpreadPageWorthKeeping(key)) continue;
+                (drop ??= new List<int>()).Add(key);
+            }
+
+            if (drop is null) return;
+
+            foreach (int key in drop)
+            {
+                if (!_spreadAlignedCache.Remove(key, out var aligned)) continue;
+                aligned.Image.Dispose();
+                _spreadAlignedFailed.Remove(key);
+            }
+        }
+
         /// <summary>
         /// Заранее снимает страницы, которые понадобятся следующему перевороту.
         /// Делается в простое диспетчера: в момент нажатия снимок уже готов, и
@@ -1110,7 +1423,6 @@ namespace Writersword.Modules.TextEditor.Document
             Dispatcher.UIThread.Post(() =>
             {
                 _spreadPrefetchQueued = false;
-                FlipTraceEvent("prefetch");
                 if (!SpreadMode || _spreadFlipDir != 0 || _singleSlideDir != 0) return;
 
                 // Одиночной странице нужны соседи по обе стороны: скольжение берёт
@@ -1120,6 +1432,11 @@ namespace Writersword.Modules.TextEditor.Document
                     CacheSpreadPage(_spreadLeftPage);
                     CacheSpreadPage(_spreadLeftPage + 1);
                     CacheSpreadPage(_spreadLeftPage - 1);
+
+                    // Одиночный лист стоит на одном месте, какой бы он ни был.
+                    CacheAlignedSpreadPage(_spreadLeftPage, true);
+                    CacheAlignedSpreadPage(_spreadLeftPage + 1, true);
+                    CacheAlignedSpreadPage(_spreadLeftPage - 1, true);
                     TrimSpreadCache();
                     InvalidateVisual();
                     return;
@@ -1132,11 +1449,20 @@ namespace Writersword.Modules.TextEditor.Document
                 CacheSpreadPage(fwdFront);
                 CacheSpreadPage(fwdFront + 1);
 
+                // Выровненные снимки — для того места, где лист лежит плашмя: лицо —
+                // там, откуда поднимается (правая половина), изнанка — там, куда
+                // ляжет (левая половина следующего разворота).
+                CacheAlignedSpreadPage(fwdFront, false);
+                CacheAlignedSpreadPage(fwdFront + 1, true);
+
                 // Назад: уходит левая половина, под ней открывается правая предыдущего.
                 if (_spreadLeftPage - step >= 0)
                 {
                     CacheSpreadPage(_spreadLeftPage);
                     CacheSpreadPage(_spreadLeftPage - 1);
+
+                    CacheAlignedSpreadPage(_spreadLeftPage, true);
+                    CacheAlignedSpreadPage(_spreadLeftPage - 1, false);
                 }
 
                 TrimSpreadCache();
@@ -1240,10 +1566,38 @@ namespace Writersword.Modules.TextEditor.Document
         /// снимок содержимого — сквозь сглаженные кромки полос ничего постороннего
         /// проступать не должно.
         /// </summary>
-        private void DrawLeafPaper(SKCanvas canvas, int n)
+        private void DrawLeafPaper(SKCanvas canvas, int n) => DrawLeafPaper(canvas, n, false);
+
+        /// <summary>
+        /// То же, но с запасом за край: coverEdge — бумага заливается без
+        /// сглаживания и выходит за силуэт на пару пикселей экрана. Так она кладётся
+        /// в слой листа, который потом обрезается по силуэту сам (см. DrawSpreadFlip):
+        /// крайние пиксели должны быть закрыты бумагой целиком, долю покрытия им
+        /// назначит обрез, а не заливка.
+        /// </summary>
+        private void DrawLeafPaper(SKCanvas canvas, int n, bool coverEdge)
         {
             using var path = BuildLeafPath(n);
             if (path.IsEmpty) return;
+
+            if (coverEdge)
+            {
+                var m = canvas.TotalMatrix;
+                float pxPerPt = MathF.Sqrt(m.ScaleX * m.ScaleX + m.SkewY * m.SkewY);
+                float edgePt = 2f / Math.Max(pxPerPt, 0.01f);
+
+                using var coverPaint = new SKPaint
+                {
+                    Color = ReadingPaperColor(),
+                    IsAntialias = false,
+                    Style = SKPaintStyle.StrokeAndFill,
+                    StrokeWidth = edgePt,
+                    StrokeJoin = SKStrokeJoin.Round
+                };
+
+                canvas.DrawPath(path, coverPaint);
+                return;
+            }
 
             // Только заливка, ровно по силуэту.
             //
@@ -1450,6 +1804,24 @@ namespace Writersword.Modules.TextEditor.Document
             SKCanvas canvas, SKImage? frontImg, SKImage? backImg, int n,
             float widthPt, float heightPt,
             bool frontSpineLeft, bool backSpineLeft, float leafAlpha)
+            => DrawLeafStrips(
+                canvas,
+                LeafSource.Stretched(frontImg, widthPt, heightPt),
+                LeafSource.Stretched(backImg, widthPt, heightPt),
+                n, widthPt, heightPt,
+                frontSpineLeft, backSpineLeft, leafAlpha, false);
+
+        /// <summary>
+        /// То же, но картинки полос заданы вместе со своей привязкой к листу (см.
+        /// <see cref="LeafSource"/>). skipMissing — полоса, для стороны которой
+        /// картинки нет, пропускается, а не закрывается бумагой: так кладётся второй
+        /// слой листа поверх первого, и пустая сторона второго слоя не должна
+        /// затирать то, что под ней уже нарисовано.
+        /// </summary>
+        private void DrawLeafStrips(
+            SKCanvas canvas, LeafSource frontSrc, LeafSource backSrc, int n,
+            float widthPt, float heightPt,
+            bool frontSpineLeft, bool backSpineLeft, float leafAlpha, bool skipMissing)
         {
             if (n < 1) return;
             n = Math.Min(n, LeafStripsMax);
@@ -1502,12 +1874,16 @@ namespace Writersword.Modules.TextEditor.Document
 
                 // Снимка изнанки может и не быть — так у одиночного листа, который
                 // сворачивается сам в себя. Тогда полосу закрывает бумага.
-                bool hasBack = backImg is not null;
-                var img = showsBack && hasBack ? backImg : frontImg;
+                bool hasBack = backSrc.Image is not null;
+                var source = showsBack && hasBack ? backSrc : frontSrc;
+                var img = source.Image;
                 bool spineOnLeftOfImage = showsBack && hasBack ? backSpineLeft : frontSpineLeft;
                 bool washPaper = showsBack && !hasBack;
 
-                float sc = img is null ? 1f : img.Width / Math.Max(widthPt, 0.001f);
+                // Второй слой рисует только то, для чего у него есть картинка.
+                if (skipMissing && (img is null || washPaper)) { i = j; continue; }
+
+                float sc = img is null ? 1f : source.ScaleX;
 
                 // Углы полосы в порядке, которого ждёт QuadMatrix: левый верх, правый
                 // верх, правый низ, левый низ — считая по исходной картинке. Если
@@ -1584,12 +1960,16 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (img is not null)
                 {
+                    // Точка листа переводится в пиксель картинки её собственной
+                    // привязкой: снимок с запасом натянут на лист целиком, у
+                    // выровненного экранный масштаб и своя доля пикселя.
                     float imgW = img.Width;
+                    float imgH = img.Height;
                     var src = new SKRect(
-                        Math.Clamp(sxA, 0f, imgW),
-                        0f,
-                        Math.Clamp(sxB + over * sc, 0f, imgW),
-                        img.Height);
+                        Math.Clamp(source.OffsetX + sxA, 0f, imgW),
+                        Math.Clamp(source.OffsetY, 0f, imgH),
+                        Math.Clamp(source.OffsetX + sxB + over * sc, 0f, imgW),
+                        Math.Clamp(source.OffsetY + heightPt * source.ScaleY, 0f, imgH));
 
                     if (src.Width > 0.5f)
                     {
@@ -1648,6 +2028,14 @@ namespace Writersword.Modules.TextEditor.Document
 
         // ── Отрисовка ─────────────────────────────────────────────────────
 
+        /// <summary>Плавная ступень от 0 до 1 между edge0 и edge1 — без рывка на концах.</summary>
+        private static float SmoothStep(float edge0, float edge1, float x)
+        {
+            if (edge1 <= edge0) return x < edge0 ? 0f : 1f;
+            float t = Math.Clamp((x - edge0) / (edge1 - edge0), 0f, 1f);
+            return t * t * (3f - 2f * t);
+        }
+
         /// <summary>
         /// Рисует летящий лист поверх уже отрисованного разворота. Вызывается в конце
         /// прохода страниц: под листом к этому моменту лежит то, что из-под него
@@ -1705,20 +2093,37 @@ namespace Writersword.Modules.TextEditor.Document
 
             DrawLeafShadow(canvas, 0, Strips, lift);
 
-            // Силуэт листа заливается бумагой до содержимого. Полосы снимка кладутся
-            // сглаженными, и на их кромках просвечивало то, что лежит под книгой:
-            // тонкая щель по корешку, заметная сразу, как только лист берут рукой.
-            // У настоящего листа под текстом бумага, а не поле, — здесь так же.
-            DrawLeafPaper(canvas, Strips);
-
-            // Полосы снимка режутся по тому же силуэту. Полосы шире листа намеренно —
-            // соседние заходят друг на друга, чтобы между ними не оставалось швов, — и
-            // у крайних этот запас выходил за край листа. Клип его снимает, и край
-            // страницы получается там, где ему положено, без обводки поверх тени.
+            // Силуэт листа: по нему лист и обрезается, и сглаживается.
             using var leafClip = BuildLeafPath(Strips);
 
-            canvas.Save();
-            if (!leafClip.IsEmpty) canvas.ClipPath(leafClip, SKClipOperation.Intersect, true);
+            // Лист собирается в отдельном слое и обрезается по силуэту один раз, в
+            // самом конце.
+            //
+            // Прежде бумага под листом заливалась сглаженно, а полосы снимка поверх
+            // неё резались тем же силуэтом тоже сглаженно. Крайний пиксель при этом
+            // покрывался дважды: сначала бумагой на долю c, потом снимком на ту же
+            // долю c. Поля под краем оставалось (1 − c)², а не 1 − c, и место
+            // недостающего поля занимала светлая бумага — на тёмном поле вокруг
+            // листа это читалось как белая нитка по всему контуру, пока лист летит.
+            //
+            // В слое бумага и полосы кладутся без обреза, с запасом за край, а
+            // сглаживание силуэта применяется к готовому листу единожды: всё, что за
+            // силуэтом, стирается, крайний пиксель получает ровно свою долю c.
+            // Бумага под снимком по-прежнему закрывает швы между полосами и щель у
+            // корешка — ради неё она и лежит.
+            bool masked = !leafClip.IsEmpty;
+            if (masked)
+            {
+                var layerRect = leafClip.Bounds;
+                layerRect.Inflate(4f, 4f);
+                canvas.SaveLayer(layerRect, null);
+                DrawLeafPaper(canvas, Strips, true);
+            }
+            else
+            {
+                canvas.Save();
+                DrawLeafPaper(canvas, Strips);
+            }
 
             // Снимки держатся под замком всё время, пока ими рисуют: освободить их
             // может поток правки, и между взятием ссылки и отрисовкой её хватило бы,
@@ -1735,10 +2140,100 @@ namespace Writersword.Modules.TextEditor.Document
                 if (_spreadFlyFront >= 0) _spreadPageCache.TryGetValue(_spreadFlyFront, out frontImg);
                 if (_spreadFlyBack >= 0) _spreadPageCache.TryGetValue(_spreadFlyBack, out backImg);
 
-                DrawLeafStrips(
-                    canvas, frontImg, backImg, Strips,
-                    widthPt, anchor.HeightPt,
-                    frontSpineLeft, backSpineLeft, 1f);
+                // Доля выровненного снимка. Плашмя лист обязан быть той же страницей,
+                // что лежала в покое, — пиксель в пиксель, иначе он вздрагивает в
+                // момент, когда его берут, и в момент, когда он ложится. В полёте
+                // нужен снимок с запасом: ближний край идёт к читателю и растёт.
+                // Между ними — растворение по углу, на одном и том же хребте, так что
+                // сменяется только резкость, а не положение букв.
+                float flat = angle < 90f
+                    ? 1f - SmoothStep(SpreadLeafLiftedDeg, SpreadAlignedBlendDeg, angle)
+                    : SmoothStep(180f - SpreadAlignedBlendDeg, 180f - SpreadLeafLiftedDeg, angle);
+
+                // Плашмя видна одна сторона: лицо — в начале пути, на своём месте,
+                // изнанка — в конце, на том месте, куда лист ложится. Вперёд лист
+                // уходит с правой половины на левую, назад — наоборот.
+                AlignedPageSnapshot? alignedFront = null;
+                AlignedPageSnapshot? alignedBack = null;
+                if (flat > 0.004f)
+                {
+                    var device = canvas.TotalMatrix;
+                    if (angle < 90f)
+                    {
+                        if (_spreadFlyFront >= 0)
+                            alignedFront = GetAlignedSnapshotLocked(_spreadFlyFront, _spreadFlipDir < 0, device);
+                    }
+                    else if (_spreadFlyBack >= 0)
+                    {
+                        alignedBack = GetAlignedSnapshotLocked(_spreadFlyBack, _spreadFlipDir > 0, device);
+                    }
+                }
+
+                bool hasAligned = alignedFront is not null || alignedBack is not null;
+
+                if (!hasAligned || flat < 0.996f)
+                {
+                    DrawLeafStrips(
+                        canvas, frontImg, backImg, Strips,
+                        widthPt, anchor.HeightPt,
+                        frontSpineLeft, backSpineLeft, 1f);
+                }
+
+                if (hasAligned)
+                {
+                    var alignedFrontSrc = LeafSource.Aligned(alignedFront);
+                    var alignedBackSrc = LeafSource.Aligned(alignedBack);
+
+                    if (flat >= 0.996f)
+                    {
+                        DrawLeafStrips(
+                            canvas, alignedFrontSrc, alignedBackSrc, Strips,
+                            widthPt, anchor.HeightPt,
+                            frontSpineLeft, backSpineLeft, 1f, true);
+                    }
+                    else
+                    {
+                        // Растворение — одним слоем на весь лист, а не прозрачностью
+                        // каждой полосы. Соседние полосы заходят друг на друга, и
+                        // полупрозрачный нахлёст лёг бы дважды: по листу пошли бы
+                        // тёмные и светлые столбцы. В слое полосы кладутся непрозрачно,
+                        // а прозрачность применяется к результату один раз.
+                        using var layerPaint = new SKPaint
+                        {
+                            Color = new SKColor(0, 0, 0, (byte)Math.Clamp(flat * 255f, 0f, 255f))
+                        };
+
+                        var layerBounds = leafClip.Bounds;
+                        if (layerBounds.IsEmpty) canvas.SaveLayer(layerPaint);
+                        else canvas.SaveLayer(layerBounds, layerPaint);
+
+                        DrawLeafStrips(
+                            canvas, alignedFrontSrc, alignedBackSrc, Strips,
+                            widthPt, anchor.HeightPt,
+                            frontSpineLeft, backSpineLeft, 1f, true);
+
+                        canvas.Restore();
+                    }
+                }
+            }
+
+            // Обрез по силуэту — один раз, по готовому листу: стирается всё, что
+            // лежит снаружи, а крайний пиксель остаётся ровно на свою долю.
+            if (masked)
+            {
+                using var outside = new SKPath(leafClip)
+                {
+                    FillType = leafClip.FillType == SKPathFillType.EvenOdd
+                        ? SKPathFillType.InverseEvenOdd
+                        : SKPathFillType.InverseWinding
+                };
+                using var cut = new SKPaint
+                {
+                    BlendMode = SKBlendMode.DstOut,
+                    IsAntialias = true,
+                    Color = SKColors.Black
+                };
+                canvas.DrawPath(outside, cut);
             }
 
             canvas.Restore();
@@ -1882,7 +2377,6 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private bool SpreadPointerPressed(float xPt, float yPt)
         {
-            FlipTraceStart(FormattableString.Invariant($"press x={xPt:0.0} y={yPt:0.0}"));
             if (!SpreadMode || _spreadFlipDir != 0) return false;
             if (_pages.Count == 0) return false;
 
@@ -1924,7 +2418,6 @@ namespace Writersword.Modules.TextEditor.Document
             _spreadFlipAngle = 0f;
             _spreadDragTargetAngle = 0f;
 
-            FlipTraceEvent("grab");
             InvalidateVisual();
             return true;
         }
@@ -1940,7 +2433,6 @@ namespace Writersword.Modules.TextEditor.Document
             // Рука задаёт только цель. Сам лист подтягивается к ней в такте таймера,
             // ровными шагами — иначе каждый скачок указателя виден как рывок бумаги.
             _spreadDragTargetAngle = angle;
-            FlipTraceEvent(FormattableString.Invariant($"move x={xPt:0.0} aim={angle:0.00}"));
             StartSpreadTimer();
             return true;
         }
@@ -1954,7 +2446,6 @@ namespace Writersword.Modules.TextEditor.Document
             if (!_spreadDragging || _spreadFlipDir == 0) return false;
 
             bool commit = !_spreadDragMoved || _spreadFlipAngle >= SpreadCommitAngle;
-            FlipTraceEvent(commit ? "release commit" : "release back");
             ReleaseSpreadFlip(commit);
             return true;
         }

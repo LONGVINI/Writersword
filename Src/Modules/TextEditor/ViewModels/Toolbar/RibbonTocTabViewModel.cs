@@ -22,6 +22,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         void RebuildActiveToc();
 
         /// <summary>
+        /// Приводит оглавление под кареткой к его настройкам после правки в ленте, не
+        /// спрашивая и не стирая правок в строках. before — настройки до правки: по ним
+        /// видно, какие отступы строк стоят «по настройкам», а какие человек подвинул сам.
+        /// </summary>
+        void ReapplyActiveTocSettings(TocSettings before);
+
+        /// <summary>
         /// Проставить строкам свежие номера страниц, не пересобирая список.
         ///
         /// Нужно отдельно от пересборки, потому что последствия у них разные.
@@ -491,8 +498,14 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             var toc = Toc;
             if (toc is null) return;
 
+            // Правка настроек — не просьба «обновить оглавление по рукописи»: человек
+            // сменил вид или набор уровней. Поэтому здесь не пересборка с вопросом (она
+            // сносила строки со всеми правками и спрашивала на каждом движении поля),
+            // а приведение строк к настройкам с сохранением их текста и оформления.
+            // Кнопка «Обновить» по-прежнему идёт через RebuildActiveToc.
+            var before = toc.Clone();
             change(toc);
-            _host.RebuildActiveToc();
+            _host.ReapplyActiveTocSettings(before);
             RefreshAll();
         }
 

@@ -55,6 +55,16 @@ namespace Writersword.Modules.TextEditor.Document
         private static readonly Avalonia.Input.Cursor ReadingRibbonCursor =
             new Avalonia.Input.Cursor(StandardCursorType.Arrow);
 
+        // Рука над книгой: лист берётся в любом месте страницы, и указатель должен
+        // обещать именно это, а не правку. Создаётся один раз по той же причине,
+        // что и стрелка выше.
+        private static readonly Avalonia.Input.Cursor ReadingHandCursor =
+            new Avalonia.Input.Cursor(StandardCursorType.Hand);
+
+        // Какой курсор книга поставила последним: 0 — никакой, 1 — стрелка, 2 — рука.
+        // Курсор меняется только при смене вида, а не на каждое движение указателя.
+        private int _spreadCursorKind;
+
         /// <summary>
         /// Клавиатура ленты. Читалка, а не редактор: наружу уходит только прокрутка,
         /// всё остальное здесь и заканчивается — иначе горячие клавиши правки работали
@@ -176,12 +186,15 @@ namespace Writersword.Modules.TextEditor.Document
         /// перерисовывается не на каждый её пиксель, а слой окна не прокручивается
         /// вовсе. Поэтому здесь поле просто не заливается: сквозь него виден слой.
         ///
-        /// Чтения это не касается — там холст равен окну, книга не прокручивается,
-        /// и фон остаётся на канвасе, где и был.
+        /// Книги страницами это не касается — там холст равен окну, книга не
+        /// прокручивается, и фон остаётся на канвасе. А лента чтения прокручивается
+        /// так же, как правка, и её картинка поля лежит на том же слое окна.
         /// </summary>
         private bool WindowBackdropActive
-            => EditorThemeActive
-               && EditorView?.Active is { HasBackdropImage: true };
+            => (EditorThemeActive
+                && EditorView?.Active is { HasBackdropImage: true })
+               || (ReadingRibbon
+                   && Reading?.Active is { HasBackdropImage: true });
 
         /// <summary>
         /// Лист правки перекрашен выбранным видом. Чтение сюда не входит: там свой
@@ -462,8 +475,9 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
 
-            // В чтении картинка поля остаётся на канвасе: холст там равен окну,
-            // книга не прокручивается, и дрожать нечему.
+            // В книге страницами картинка поля остаётся на канвасе: холст там равен
+            // окну, книга не прокручивается, и дрожать нечему. У ленты сюда не
+            // доходит — её картинку кладёт слой окна (см. WindowBackdropActive).
             if (t.HasBackdropImage)
                 DrawBackdropImage(canvas, new SKRect(0, 0, widthPt, heightPt), t);
         }
@@ -1612,6 +1626,47 @@ namespace Writersword.Modules.TextEditor.Document
             SetSpreadCornerHint(side, hint);
         }
 
+        /// <summary>
+        /// Курсор над книгой. Над страницами — рука: в развороте лист берётся в
+        /// любом месте страницы, у одиночной страницы щелчок по ней листает. Вокруг
+        /// книги — обычная стрелка. Каретки здесь нет вовсе: она обещала бы правку,
+        /// которой в чтении нет, а осталась она от редактора — книга свой курсор до
+        /// сих пор ставила только у уголка.
+        /// </summary>
+        private void UpdateSpreadCursor(Point pointerPx)
+        {
+            if (!SpreadMode || _pages.Count == 0)
+            {
+                SetSpreadCursor(false);
+                return;
+            }
+
+            double zoom = Math.Max(Zoom, 0.01);
+            float xPt = (float)(pointerPx.X / zoom * PxToPt);
+            float yPt = (float)(pointerPx.Y / zoom * PxToPt);
+
+            int idx = Math.Clamp(_spreadLeftPage, 0, _pages.Count - 1);
+            var pg = _pages[idx];
+            var (x, y) = SpreadPlacement(idx, true);
+            float bookW = pg.WidthPt * (SpreadSinglePage ? 1f : 2f);
+
+            bool overBook = xPt >= x && xPt <= x + bookW
+                         && yPt >= y && yPt <= y + pg.HeightPt;
+
+            // Лист в руке — рука остаётся, даже если указатель ушёл за край книги.
+            SetSpreadCursor(overBook || _spreadCornerCursor || _spreadDragging);
+        }
+
+        private void SetSpreadCursor(bool hand)
+        {
+            int kind = hand ? 2 : 1;
+            if (_spreadCursorKind == kind && ReferenceEquals(Cursor, hand ? ReadingHandCursor : ReadingRibbonCursor))
+                return;
+
+            _spreadCursorKind = kind;
+            Cursor = hand ? ReadingHandCursor : ReadingRibbonCursor;
+        }
+
         private static float Distance(float x1, float y1, float x2, float y2)
         {
             float dx = x1 - x2;
@@ -1626,19 +1681,14 @@ namespace Writersword.Modules.TextEditor.Document
             bool sameEnough = _spreadCornerSide == side
                 && MathF.Abs(_spreadCornerHint - hint) < 0.02f;
 
-            bool wantCursor = hint > 0.12f;
-            if (wantCursor != _spreadCornerCursor)
-            {
-                _spreadCornerCursor = wantCursor;
-                Cursor = new Avalonia.Input.Cursor(
-                    wantCursor ? StandardCursorType.Hand : StandardCursorType.Arrow);
-            }
+            // Какой курсор ставить, решает UpdateSpreadCursor: он знает и об уголке,
+            // и о том, над страницей ли указатель.
+            _spreadCornerCursor = hint > 0.12f;
 
             if (sameEnough) return;
 
             _spreadCornerSide = side;
             _spreadCornerHint = hint;
-            FlipTraceEvent(FormattableString.Invariant($"hint side={side} {hint:0.00}"));
 
             // Уголок рисуется поверх готового снимка страницы — как каретка. Полная
             // пересборка кадра ради него не нужна, иначе книга перерисовывалась бы
@@ -1649,16 +1699,11 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void ClearSpreadCornerHint()
         {
-            if (_spreadCornerCursor)
-            {
-                _spreadCornerCursor = false;
-                Cursor = new Avalonia.Input.Cursor(StandardCursorType.Arrow);
-            }
+            _spreadCornerCursor = false;
 
             if (_spreadCornerHint <= 0f) return;
 
             _spreadCornerHint = 0f;
-            FlipTraceEvent("hint clear");
             _caretOnlyRedraw = true;
             InvalidateVisual();
         }
@@ -1769,6 +1814,9 @@ namespace Writersword.Modules.TextEditor.Document
         {
             base.OnPointerExited(e);
             ClearSpreadCornerHint();
+
+            // Стрелка свёртки у заголовка видна, только пока указатель над ним.
+            ClearHeadingToggleHover();
         }
 
         /// <summary>
@@ -1781,6 +1829,7 @@ namespace Writersword.Modules.TextEditor.Document
             ResetReadingPan();
             _spreadCornerHint = 0f;
             _spreadCornerCursor = false;
+            _spreadCursorKind = 0;
             ReleaseReadingPaperImage();
         }
     }

@@ -4,6 +4,7 @@
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:controls="using:Writersword.Styles.UserControls"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
+             xmlns:shared="using:Writersword.Modules.TextEditor.Views.Shared"
              x:Class="Writersword.Modules.TextEditor.Views.Reading.ReadingRibbonView"
              x:DataType="vm:ReadingRibbonViewModel">
 
@@ -231,34 +232,8 @@
 			<Setter Property="IsHitTestVisible" Value="False"/>
 		</Style>
 
-		<!-- Плитка вида: небольшой прямоугольник, по две в ряд. Размер подобран так,
-		     чтобы в ряд помещалось ровно две, а имя внизу читалось целиком у обычных
-		     названий. -->
-		<Style Selector="Button.ThemeTile">
-			<Setter Property="Width"           Value="104"/>
-			<Setter Property="Height"          Value="72"/>
-			<Setter Property="Margin"          Value="3"/>
-			<Setter Property="Padding"         Value="0"/>
-			<Setter Property="CornerRadius"    Value="5"/>
-			<Setter Property="BorderThickness" Value="2"/>
-			<Setter Property="BorderBrush"     Value="Transparent"/>
-			<Setter Property="Background"      Value="Transparent"/>
-			<Setter Property="Cursor"          Value="Hand"/>
-			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-			<Setter Property="VerticalContentAlignment"   Value="Stretch"/>
-		</Style>
-		<Style Selector="Button.ThemeTile /template/ ContentPresenter">
-			<Setter Property="CornerRadius"    Value="5"/>
-			<Setter Property="BorderThickness" Value="2"/>
-			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
-			<Setter Property="Padding"         Value="0"/>
-		</Style>
-		<Style Selector="Button.ThemeTile:pointerover /template/ ContentPresenter">
-			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
-		</Style>
-		<Style Selector="Button.ThemeTile.active /template/ ContentPresenter">
-			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-		</Style>
+		<!-- Плитки видов живут в общем списке Views/Shared/ThemeTilePicker — вместе
+		     со своим оформлением. Тот же список показывает вкладка «Вид» редактора. -->
 
 		<Style Selector="ComboBox.RibbonCombo">
 			<Setter Property="MinHeight"         Value="0"/>
@@ -565,7 +540,7 @@
 						           Classes="RibbonGroupLabel"
 						           Text="Вид чтения"/>
 						<StackPanel Orientation="{Binding GroupOrientation}"
-						            Spacing="6"
+						            Spacing="8"
 						            Classes="GroupBody">
 
 							<!-- Форма листа. Плитка со стрелкой во всю ширину: за ней
@@ -580,19 +555,14 @@
 									          HorizontalAlignment="Center"
 									          Data="{Binding SelectedFormatGlyph}"/>
 									<TextBlock Text="Лист" FontSize="9" TextAlignment="Center"/>
-									<!-- Стрелка цветом ленты, а не подписи: это единственная плитка
-									     со списком за ней, и отличать её от прочих должно быть видно
-									     сразу, без наведения. -->
-									<Path Data="M 0,0 L 5,4 L 10,0"
-									      Stroke="{DynamicResource AccentDefaultBrush}"
-									      StrokeThickness="2"
-									      StrokeLineCap="Round"
-									      StrokeJoin="Round"
-									      Stretch="Fill"
-									      Height="5"
-									      Width="34"
-									      Margin="0 1 0 0"
-									      HorizontalAlignment="Center"/>
+									<!-- Стрелка тем же значком, что у списка видов справа: за плиткой
+									     тоже список, и знак у них должен быть один. Цветная дуга во всю
+									     ширину читалась как подчёркивание подписи, а не как стрелка. -->
+									<PathIcon Width="8" Height="8"
+									          HorizontalAlignment="Center"
+									          Margin="0 1 0 0"
+									          Foreground="{DynamicResource TextSecondaryBrush}"
+									          Data="M7 10l5 5 5-5z"/>
 								</StackPanel>
 								<Button.Flyout>
 									<Flyout Placement="BottomEdgeAlignedLeft">
@@ -662,135 +632,98 @@
 								</Button.Flyout>
 							</Button>
 
-							<StackPanel Spacing="3" VerticalAlignment="Center">
+							<!-- Два поля одной сеткой: значок, подпись, значение. Сетка, а не
+							     две строки порознь: значки, подписи и значения встают в столбцы.
+							     Обе строки высотой 24 с зазором 4 — ровно высота плитки слева,
+							     и группа читается одним блоком. -->
+							<Grid ColumnDefinitions="Auto Auto 120"
+							      RowDefinitions="Auto Auto"
+							      ColumnSpacing="5" RowSpacing="4"
+							      VerticalAlignment="Center">
 
-								<!-- Виды чтения. Сетка плиток, по две в ряд: плитка и есть вид,
-								     нарисованный так, как он будет выглядеть, с именем прямо на
-								     нём. Строкой в списке вид не показать — он про цвет бумаги,
-								     цвет букв и поле вокруг, а не про своё название.
-								     Свои виды идут следом за встроенными, в том же порядке, в
-								     каком их отдаёт список. Кнопка с палитрой рядом открывает
-								     окно видов — там их заводят и правят. -->
-								<StackPanel Orientation="Horizontal" Spacing="4">
-									<PathIcon Classes="FieldGlyph"
-									          Data="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
-									<TextBlock Classes="FieldCaption" Text="Вид" Width="52"/>
+								<!-- Виды чтения. Плитки с видами открываются из списка, окно видов —
+								     кнопкой внизу этого списка. -->
+								<PathIcon Grid.Row="0" Grid.Column="0" Classes="FieldGlyph"
+								          Data="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+								<TextBlock Grid.Row="0" Grid.Column="1" Classes="FieldCaption" Text="Вид"/>
 
-									<!-- Ширина кнопки задана и не зависит от имени вида: имя человек
-									     придумывает сам, и длинное растягивало кнопку, сдвигая всё,
-									     что стоит в ленте правее. Не поместилось — обрежется
-									     многоточием, полное имя есть в списке. -->
-									<Button Classes="RibbonBtn"
-									        MinHeight="24" Width="120"
-									        Padding="8 0"
-									        HorizontalContentAlignment="Stretch"
-									        behaviours:TooltipBehavior.Tip="Вид чтения"
-									        behaviours:TooltipBehavior.Description="Оформление книги: цвет бумаги, цвет букв, поле вокруг и свет. Правка ползунками на ходу превращает вид в «Кастомное» — сохранить её под именем можно в окне видов">
-										<Grid ColumnDefinitions="* Auto">
-											<TextBlock Grid.Column="0"
-											           Text="{Binding SelectedThemeItem.Label}"
-											           VerticalAlignment="Center"
-											           TextTrimming="CharacterEllipsis"/>
-											<PathIcon Grid.Column="1" Width="8" Height="8" Margin="6 0 0 0"
-											          VerticalAlignment="Center"
-											          Data="M7 10l5 5 5-5z"/>
-										</Grid>
+								<!-- Ширина кнопки задана и не зависит от имени вида: имя человек
+								     придумывает сам, и длинное растягивало кнопку, сдвигая всё,
+								     что стоит в ленте правее. Не поместилось — обрежется
+								     многоточием, полное имя есть в списке. -->
+								<Button Grid.Row="0" Grid.Column="2"
+								        Classes="RibbonBtn"
+								        MinHeight="24" Height="24" Width="120"
+								        Padding="8 0"
+								        HorizontalContentAlignment="Stretch"
+								        behaviours:TooltipBehavior.Tip="Вид чтения"
+								        behaviours:TooltipBehavior.Description="Оформление книги: цвет бумаги, цвет букв, поле вокруг и свет. Правка ползунками на ходу превращает вид в «Кастомное» — сохранить её под именем можно в окне видов">
+									<Grid ColumnDefinitions="* Auto">
+										<TextBlock Grid.Column="0"
+										           Text="{Binding SelectedThemeItem.Label}"
+										           VerticalAlignment="Center"
+										           TextTrimming="CharacterEllipsis"/>
+										<PathIcon Grid.Column="1" Width="8" Height="8" Margin="6 0 0 0"
+										          VerticalAlignment="Center"
+										          Data="M7 10l5 5 5-5z"/>
+									</Grid>
 
-										<Button.Flyout>
-											<Flyout Placement="Bottom">
-												<Border Padding="8">
-													<Grid RowDefinitions="* Auto" Width="228">
-													<ScrollViewer Grid.Row="0"
-													              MaxHeight="330"
-													              AllowAutoHide="False"
-													              HorizontalScrollBarVisibility="Disabled"
-													              VerticalScrollBarVisibility="Auto">
-													<ItemsControl ItemsSource="{Binding ThemeItems}">
-														<ItemsControl.ItemsPanel>
-															<ItemsPanelTemplate>
-																<WrapPanel Orientation="Horizontal"/>
-															</ItemsPanelTemplate>
-														</ItemsControl.ItemsPanel>
-														<ItemsControl.ItemTemplate>
-															<DataTemplate>
-																<Button Classes="ThemeTile"
-																        Classes.active="{Binding IsSelected}"
-																        Command="{Binding $parent[ItemsControl].DataContext.SelectThemeCommand}"
-																        CommandParameter="{Binding}">
-																	<!-- Плитка рисует сам вид: поле, лист на нём,
-																	     строки на листе и имя внизу — тем же цветом,
-																	     каким вид набирает текст. -->
-																	<Border CornerRadius="3"
-																	        Background="{Binding FieldColor, Converter={x:Static converters:HexColorConverter.Instance}}">
-																		<Border Margin="6"
-																		        CornerRadius="2"
-																		        Background="{Binding SheetColor, Converter={x:Static converters:HexColorConverter.Instance}}">
-																			<StackPanel Margin="7 6" Spacing="3" VerticalAlignment="Center">
-																				<Rectangle Height="2" Width="52" HorizontalAlignment="Left"
-																				           Fill="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																				<Rectangle Height="2" Width="52" HorizontalAlignment="Left"
-																				           Fill="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																				<Rectangle Height="2" Width="34" HorizontalAlignment="Left"
-																				           Fill="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																				<TextBlock Text="{Binding Label}"
-																				           FontSize="10"
-																				           Margin="0 3 0 0"
-																				           TextTrimming="CharacterEllipsis"
-																				           Foreground="{Binding InkColor, Converter={x:Static converters:HexColorConverter.Instance}}"/>
-																			</StackPanel>
-																		</Border>
-																	</Border>
-																</Button>
-															</DataTemplate>
-														</ItemsControl.ItemTemplate>
-													</ItemsControl>
-													</ScrollViewer>
+									<Button.Flyout>
+										<Flyout Placement="Bottom">
+											<Border Padding="8">
+												<!-- Плитки видов — общий список с вкладкой «Вид» редактора: вид один,
+												     и выбирать его нужно одинаково, где бы список ни открыли. -->
+												<shared:ThemeTilePicker Items="{Binding ThemeItems}"
+												                        SelectCommand="{Binding SelectThemeCommand}"
+												                        ConfigureCommand="{Binding OpenThemesCommand}"/>
+											</Border>
+										</Flyout>
+									</Button.Flyout>
+								</Button>
 
-											<!-- Настройка видов — закреплённой кнопкой внизу списка, как у палитр
-											     цвета. Она не уезжает вместе с плитками: до неё должно быть можно
-											     дотянуться, сколько бы видов человек ни завёл. -->
-											<Button Grid.Row="1" Margin="0 8 0 0"
-											        Content="Настроить виды"
-											        HorizontalAlignment="Stretch"
-											        HorizontalContentAlignment="Center"
-											        FontSize="11" Padding="8 6" CornerRadius="6"
-											        Background="{DynamicResource AccentDefaultBrush}"
-											        Foreground="White"
-											        Click="OnConfigureThemesClick"
-											        Command="{Binding OpenThemesCommand}"/>
-													</Grid>
-												</Border>
-											</Flyout>
-										</Button.Flyout>
-									</Button>
-								</StackPanel>
+								<!-- Фон вокруг книги. Занимает больше места на экране, чем
+								     сама книга, и от него зависит, устают ли от чтения глаза.
+								     Цвет — тем же кружком, что и любой цвет в программе; рядом
+								     загрузка картинки и сброс. Картинка, как и цвет, правит вид на
+								     ходу: он становится «Кастомным», сохранить можно в окне видов. -->
+								<PathIcon Grid.Row="1" Grid.Column="0" Classes="FieldGlyph"
+								          Data="M12 22C6.49 22 2 17.51 2 12S6.49 2 12 2s10 4.04 10 9c0 3.31-2.69 6-6 6h-1.77c-.28 0-.5.22-.5.5 0 .12.05.23.13.33.41.47.64 1.06.64 1.67 0 1.38-1.12 2.5-2.5 2.5zm0-18c-4.41 0-8 3.59-8 8s3.59 8 8 8c.28 0 .5-.22.5-.5 0-.16-.08-.28-.14-.35-.41-.46-.63-1.05-.63-1.65 0-1.38 1.12-2.5 2.5-2.5H16c2.21 0 4-1.79 4-4 0-3.86-3.59-7-8-7z"/>
+								<TextBlock Grid.Row="1" Grid.Column="1" Classes="FieldCaption" Text="Фон"/>
 
-								<!-- Поле вокруг книги. Занимает больше места на экране, чем
-								     сама книга, и от него зависит, устают ли от чтения глаза. -->
-								<StackPanel Orientation="Horizontal" Spacing="4">
-									<PathIcon Classes="FieldGlyph"
-									          Data="M12 22C6.49 22 2 17.51 2 12S6.49 2 12 2s10 4.04 10 9c0 3.31-2.69 6-6 6h-1.77c-.28 0-.5.22-.5.5 0 .12.05.23.13.33.41.47.64 1.06.64 1.67 0 1.38-1.12 2.5-2.5 2.5zm0-18c-4.41 0-8 3.59-8 8s3.59 8 8 8c.28 0 .5-.22.5-.5 0-.16-.08-.28-.14-.35-.41-.46-.63-1.05-.63-1.65 0-1.38 1.12-2.5 2.5-2.5H16c2.21 0 4-1.79 4-4 0-3.86-3.59-7-8-7z"/>
-									<TextBlock Classes="FieldCaption" Text="Заливка" Width="52"/>
+								<StackPanel Grid.Row="1" Grid.Column="2"
+								            Orientation="Horizontal" Spacing="4"
+								            VerticalAlignment="Center">
 									<controls:ColorPickerButton Width="20" Height="20"
+									                            Margin="2 0"
 									                            VerticalAlignment="Center"
 									                            ToolTip.Tip="{x:Null}"
 									                            HexColor="{Binding BackdropColorHex, Mode=TwoWay}"
-									                            behaviours:TooltipBehavior.Tip="Заливка поля вокруг книги"
-									                            behaviours:TooltipBehavior.Description="Цвет или градиент — тот же выбор, что и у любого другого цвета в программе. Пока своего нет, поле выводится из бумаги: под светлой книгой темнее, под тёмной чуть светлее"/>
-									<Button Classes="RibbonBtn" MinHeight="20" MinWidth="20"
-									        Padding="2 0"
+									                            behaviours:TooltipBehavior.Tip="Цвет фона вокруг книги"
+									                            behaviours:TooltipBehavior.Description="Цвет или градиент — тот же выбор, что и у любого другого цвета в программе. Пока своего нет, фон выводится из бумаги: под светлой книгой темнее, под тёмной чуть светлее"/>
+									<Button Classes="RibbonBtn"
+									        Width="24" Height="24" MinWidth="24" MinHeight="24"
+									        Padding="0"
+									        Click="OnLoadBackdropImageClick"
+									        behaviours:TooltipBehavior.Tip="Загрузить картинку фона"
+									        behaviours:TooltipBehavior.Description="Картинка с диска ляжет вокруг книги вместо цвета. Вид при этом становится «Кастомным» — сохранить его под именем можно в окне видов">
+										<PathIcon Width="12" Height="12"
+										          Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+									</Button>
+									<Button Classes="RibbonBtn"
+									        Width="24" Height="24" MinWidth="24" MinHeight="24"
+									        Padding="0"
 									        Command="{Binding ResetBackdropCommand}"
-									        behaviours:TooltipBehavior.Tip="Вернуть фон к бумаге">
+									        behaviours:TooltipBehavior.Tip="Вернуть фон к бумаге"
+									        behaviours:TooltipBehavior.Description="Убирает свой цвет и картинку: фон снова выводится из цвета бумаги">
 										<PathIcon Width="12" Height="12"
 										          Data="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z"/>
 									</Button>
 								</StackPanel>
-							</StackPanel>
+							</Grid>
 
-							<!-- Картинки поля здесь больше нет. Её место — в окне видов:
-							     картинка принадлежит виду и уезжает вместе с ним, а вторая
-							     точка входа в ленте вела в отдельную библиотеку фонов и
-							     задавала то же самое мимо вида. -->
+							<!-- Набор картинок фона собирается и настраивается в окне видов: подгонка,
+							     прозрачность, порядок. Из ленты картинка только загружается — быстрый
+							     «вот этот фон», который превращает вид в «Кастомное». -->
 						</StackPanel>
 					</DockPanel>
 				</Border>

@@ -11,6 +11,7 @@ using Avalonia.Media.Transformation;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
@@ -156,6 +157,7 @@ namespace Writersword.Modules.TextEditor.Views.Reading
         private TextBlock _scopeHint = null!;
         private ColorPickerButton _sheetColorBtn = null!;
         private ColorPickerButton _inkColorBtn = null!;
+        private ColorPickerButton _frameColorBtn = null!;
         private ColorPickerButton _caretColorBtn = null!;
         private Button _caretResetBtn = null!;
         private ColorPickerButton _rulerSheetColorBtn = null!;
@@ -190,6 +192,12 @@ namespace Writersword.Modules.TextEditor.Views.Reading
 
         /// <summary>Прежний бирюзовый: им табуляция рисуется, пока вид не задал свой.</summary>
         private const string DefaultTabMarkHex = "#0E7A7A";
+
+        /// <summary>
+        /// «Без цвета» палитры — перечёркнутый образец. Им показывается рамка листа,
+        /// которой нет, и его же выбирают, чтобы рамку убрать.
+        /// </summary>
+        private const string NoFrameHex = "#00000000";
         private ColorPickerButton _backColorBtn = null!;
         private ComboBox _backFitCombo = null!;
         private WrapPanel _backGallery = null!;
@@ -231,8 +239,17 @@ namespace Writersword.Modules.TextEditor.Views.Reading
         private Border _previewBackdropImage = null!;
         private Border _previewPaper = null!;
         private Border _previewPaperImage = null!;
+        private Border _previewSheetFrame = null!;
         private Border _previewWarm = null!;
         private Border _previewDim = null!;
+
+        // Перенос картинок наборов: призрак под курсором, прокрутка правой колонки
+        // и карточки, на которые можно бросить файлы извне.
+        private Canvas _galleryGhostCanvas = null!;
+        private Border _galleryGhost = null!;
+        private ScrollViewer _fieldsScroll = null!;
+        private Border _paperCard = null!;
+        private Border _backCard = null!;
         private TextBlock _previewHead = null!;
         private TextBlock _previewBody = null!;
 
@@ -254,6 +271,7 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             _scopeHint = this.FindControl<TextBlock>("ScopeHint")!;
             _sheetColorBtn = this.FindControl<ColorPickerButton>("SheetColorBtn")!;
             _inkColorBtn = this.FindControl<ColorPickerButton>("InkColorBtn")!;
+            _frameColorBtn = this.FindControl<ColorPickerButton>("FrameColorBtn")!;
             _caretColorBtn = this.FindControl<ColorPickerButton>("CaretColorBtn")!;
             _caretResetBtn = this.FindControl<Button>("CaretResetBtn")!;
             _rulerSheetColorBtn = this.FindControl<ColorPickerButton>("RulerSheetColorBtn")!;
@@ -296,8 +314,14 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             _previewBackdropImage = this.FindControl<Border>("PreviewBackdropImage")!;
             _previewPaper = this.FindControl<Border>("PreviewPaper")!;
             _previewPaperImage = this.FindControl<Border>("PreviewPaperImage")!;
+            _previewSheetFrame = this.FindControl<Border>("PreviewSheetFrame")!;
             _previewWarm = this.FindControl<Border>("PreviewWarm")!;
             _previewDim = this.FindControl<Border>("PreviewDim")!;
+            _galleryGhostCanvas = this.FindControl<Canvas>("GalleryGhostCanvas")!;
+            _galleryGhost = this.FindControl<Border>("GalleryGhost")!;
+            _fieldsScroll = this.FindControl<ScrollViewer>("FieldsScroll")!;
+            _paperCard = this.FindControl<Border>("PaperCard")!;
+            _backCard = this.FindControl<Border>("BackCard")!;
             _previewHead = this.FindControl<TextBlock>("PreviewHead")!;
             _previewBody = this.FindControl<TextBlock>("PreviewBody")!;
 
@@ -312,7 +336,6 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             this.FindControl<Button>("OkBtn")!.Click += OnOk;
             this.FindControl<Button>("CloseBtn")!.Click += OnCancel;
             this.FindControl<Button>("AddBtn")!.Click += OnAdd;
-            this.FindControl<Button>("BrowseBtn")!.Click += OnBrowse;
             this.FindControl<Button>("ClearImageBtn")!.Click += OnClearImage;
             _duplicateBtn.Click += OnDuplicate;
             _deleteBtn.Click += OnDelete;
@@ -324,6 +347,7 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             _scopeGlobalBtn.Click += (_, _) => SetScope(global: true);
             _sheetColorBtn.PropertyChanged += OnColorButtonChanged;
             _inkColorBtn.PropertyChanged += OnColorButtonChanged;
+            _frameColorBtn.PropertyChanged += OnColorButtonChanged;
             _caretColorBtn.PropertyChanged += OnEditorColorChanged;
             _rulerSheetColorBtn.PropertyChanged += OnEditorColorChanged;
             _rulerInkColorBtn.PropertyChanged += OnEditorColorChanged;
@@ -338,7 +362,6 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             _backColorBtn.PropertyChanged += OnColorButtonChanged;
             _backFitCombo.SelectionChanged += (_, _) => OnFieldsChanged();
             _backOpacitySlider.PropertyChanged += OnSliderChanged;
-            this.FindControl<Button>("BackBrowseBtn")!.Click += OnBrowseBackdrop;
             this.FindControl<Button>("BackClearImageBtn")!.Click += OnClearBackdropImage;
             this.FindControl<Button>("BackResetBtn")!.Click += OnResetBackdrop;
             _brightnessSlider.PropertyChanged += OnSliderChanged;
@@ -347,6 +370,20 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             _opacitySlider.PropertyChanged += OnSliderChanged;
             _tileCheck.IsCheckedChanged += (_, _) => OnFieldsChanged();
             _paperFlowCombo.SelectionChanged += (_, _) => OnFieldsChanged();
+
+            // Перенос плиток ведётся на уровне всего окна, как в галерее персонажа:
+            // во время переноса плитки переставляются, и указатель, захваченный
+            // самой плиткой, терялся бы вместе с ней. Обработчики туннельные — они
+            // получают событие раньше прокрутки и кнопок.
+            AddHandler(PointerPressedEvent, OnGalleryPointerPressed, RoutingStrategies.Tunnel);
+            AddHandler(PointerMovedEvent, OnGalleryPointerMoved, RoutingStrategies.Tunnel);
+            AddHandler(PointerReleasedEvent, OnGalleryPointerReleased, RoutingStrategies.Tunnel);
+            AddHandler(PointerWheelChangedEvent, OnGalleryPointerWheel, RoutingStrategies.Tunnel);
+
+            // Файлы извне бросаются на карточку целиком: целиться в плитку
+            // добавления незачем, раздел и так понятен.
+            WireCardDrop(_paperCard, _paperImages);
+            WireCardDrop(_backCard, _backImages);
         }
 
         private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -443,6 +480,11 @@ namespace Writersword.Modules.TextEditor.Views.Reading
                 _inkColorBtn.HexColor = theme?.InkColor ?? "#1A1A1A";
                 _sheetColorBtn.IsEnabled = editable;
                 _inkColorBtn.IsEnabled = editable;
+
+                // Рамки нет — образец перечёркнут: пустой кружок читался бы как белая
+                // рамка, а не как её отсутствие.
+                _frameColorBtn.HexColor = FrameColorOf(theme) ?? NoFrameHex;
+                _frameColorBtn.IsEnabled = editable;
 
                 // Раздел правки: поле без своего цвета показывается тем, который
                 // выведется. Пустой образец не объяснил бы, что там сейчас.
@@ -551,6 +593,11 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             theme.SheetColor = _sheetColorBtn.HexColor;
             theme.InkColor = _inkColorBtn.HexColor;
 
+            // «Без цвета» — рамки нет: в вид это записывается пустым полем, как у
+            // вида, где рамку не задавали вовсе.
+            string frameHex = _frameColorBtn.HexColor;
+            theme.FrameColor = IsVisibleFrameHex(frameHex) ? frameHex : null;
+
             // Раздел правки. Пустое поле означает «вывести»: цвет тогда идёт за
             // бумагой и чернилами, а записанное значение застыло бы на месте и
             // перестало меняться вместе с видом.
@@ -622,6 +669,19 @@ namespace Writersword.Modules.TextEditor.Views.Reading
                 SpreadChannel(paper.B, ink.B, contrast));
 
             _previewPaper.Background = new SolidColorBrush(paper);
+
+            // Рамка листа: та же линия в пиксель, что и на странице.
+            string? frameHex = FrameColorOf(theme);
+            if (frameHex is not null && Color.TryParse(frameHex, out var frame))
+            {
+                _previewSheetFrame.BorderBrush = new SolidColorBrush(frame);
+                _previewSheetFrame.IsVisible = true;
+            }
+            else
+            {
+                _previewSheetFrame.BorderBrush = null;
+                _previewSheetFrame.IsVisible = false;
+            }
             _previewHead.Foreground = new SolidColorBrush(ink);
             _previewBody.Foreground = new SolidColorBrush(ink);
 
@@ -672,6 +732,20 @@ namespace Writersword.Modules.TextEditor.Views.Reading
 
         private static Color ParsePreviewColor(string? hex, Color fallback)
             => !string.IsNullOrWhiteSpace(hex) && Color.TryParse(hex, out var c) ? c : fallback;
+
+        /// <summary>
+        /// Цвет рамки листа у вида или null, если рамки нет: поле пусто или в нём
+        /// «без цвета».
+        /// </summary>
+        private static string? FrameColorOf(ReadingTheme? theme)
+        {
+            string? hex = theme?.FrameColor;
+            return IsVisibleFrameHex(hex) ? hex : null;
+        }
+
+        /// <summary>Цвет рамки виден: задан и не полностью прозрачен.</summary>
+        private static bool IsVisibleFrameHex(string? hex)
+            => !string.IsNullOrWhiteSpace(hex) && Color.TryParse(hex, out var c) && c.A > 0;
 
         // Картинка бумаги примера держится по адресу и способу укладки: пример
         // пересобирается на каждое движение ползунка, а читать и раскодировать файл
@@ -841,62 +915,57 @@ namespace Writersword.Modules.TextEditor.Views.Reading
         }
 
         /// <summary>
-        /// Показывает размеры выбранной картинки: человеку, кладущему свою бумагу,
-        /// это первое, что нужно знать.
+        /// Строка под картинкой бумаги появляется только тогда, когда с картинкой
+        /// что-то не так: файла нет или его не прочитать. Размеры, вес и место
+        /// хранения здесь больше не расписываются — что с картинкой делать,
+        /// человек видит на листе сам, а где она лежит, говорит переключатель
+        /// «Где хранить» в шапке окна.
         /// </summary>
         private void UpdateImageInfo()
         {
             var theme = _current?.Theme;
 
-            // Набор из нескольких описывается числом и первой картинкой: строка про
-            // размеры каждой из десяти заняла бы пол-окна.
-            if (theme is not null && theme.ImagePaths.Count > 1)
+            string? problem = null;
+            if (theme is not null)
             {
-                _imageInfoText.Text =
-                    $"В наборе {theme.ImagePaths.Count} картинок. Первая: {DescribeImage(theme.ImagePaths[0])}";
-                return;
+                if (theme.ImagePaths.Count > 0)
+                {
+                    foreach (var reference in theme.ImagePaths)
+                    {
+                        problem = DescribeImageProblem(reference);
+                        if (problem is not null) break;
+                    }
+                }
+                else
+                {
+                    problem = DescribeImageProblem(theme.PaperImageFor(0));
+                }
             }
 
-            _imageInfoText.Text = DescribeImage(theme?.PaperImageFor(0));
+            _imageInfoText.Text = problem ?? string.Empty;
+            _imageInfoText.IsVisible = problem is not null;
         }
 
         /// <summary>
-        /// Строка о картинке: размеры, вес и где она лежит.
-        ///
-        /// Место хранения здесь не мелочь. Картинка, оставшаяся путём к файлу на
-        /// диске, работает только на этой машине: перенесли папку — и бумага
-        /// пропала, отдали проект — и у того, кому отдали, её не было никогда.
-        /// Сказать об этом надо там, где картинку выбирают, а не выяснять потом
-        /// по пустому листу.
+        /// Что не так с картинкой, или null, если всё в порядке. Картинку, которую
+        /// не найти или не прочитать, на листе просто не видно, и без этой строки
+        /// непонятно, почему.
         /// </summary>
-        private static string DescribeImage(string? reference)
+        private static string? DescribeImageProblem(string? reference)
         {
-            if (string.IsNullOrWhiteSpace(reference))
-                return "Размеры картинки появятся здесь после выбора файла.";
+            if (string.IsNullOrWhiteSpace(reference)) return null;
 
             var data = Models.Settings.ReadingAssets.Read(reference);
             if (data is null || data.Length == 0)
                 return Models.Settings.ReadingAssets.IsDiskPath(reference)
-                    ? "Файл не найден по этому пути."
+                    ? "Файл картинки не найден по своему пути."
                     : "Картинка не найдена в хранилище вида.";
 
             try
             {
                 using var stream = new MemoryStream(data);
-                var bitmap = new Bitmap(stream);
-                var size = bitmap.PixelSize;
-
-                string place = Models.Settings.ReadingAssets.IsProjectRef(reference)
-                    ? " Лежит в проекте — уедет вместе с ним."
-                    : Models.Settings.ReadingAssets.IsAppRef(reference)
-                        ? " Лежит в программе — доступна во всех проектах."
-                        : " Файл на диске: с проектом не уедет и потеряется при переносе папки.";
-
-                string hint = size.Width < 600 || size.Height < 600
-                    ? " Для растягивания на весь лист этого мало — лучше замостить."
-                    : string.Empty;
-
-                return $"{size.Width} × {size.Height} точек, {data.Length / 1024} КБ.{hint}{place}";
+                using var bitmap = new Bitmap(stream);
+                return null;
             }
             catch (Exception ex)
             {
@@ -1315,96 +1384,822 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             _paperFlowRow.IsVisible = _paperImages.Count > 1;
         }
 
+        // Размер плитки набора. Один на обе галереи и на призрак под курсором.
+        private const double GalleryTileWidth = 74;
+        private const double GalleryTileHeight = 52;
+
+        // Доезд соседей при переносе — тот же, что у галереи персонажа.
+        private static readonly TimeSpan GalleryTileSlide = TimeSpan.FromMilliseconds(280);
+
+        private const string GalleryCloseGlyph =
+            "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z";
+
+        private const string GalleryPlusGlyph = "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z";
+
         /// <summary>
         /// Плитки набора: сама картинка, а не её путь. Путь ничего не говорит о том,
-        /// как лист будет выглядеть, а плитка говорит всё.
+        /// как лист будет выглядеть, а плитка говорит всё. Последней в той же сетке
+        /// стоит плитка добавления — у своего вида, встроенный не правится.
         /// </summary>
         private void BuildGallery(
             WrapPanel host, TextBlock hint, List<string> set, bool editable, string emptyText)
         {
             host.Children.Clear();
-            host.IsVisible = set.Count > 0;
+            host.IsVisible = set.Count > 0 || editable;
 
             hint.IsVisible = set.Count == 0;
-            hint.Text = emptyText;
+            hint.Text = editable
+                ? emptyText + " Перетащите картинки сюда или нажмите «Добавить»."
+                : emptyText;
 
             for (int i = 0; i < set.Count; i++)
                 host.Children.Add(BuildTile(set, i, editable));
+
+            if (editable)
+                host.Children.Add(BuildAddTile(set));
         }
 
         private Control BuildTile(List<string> set, int index, bool editable)
         {
             string reference = set[index];
-            bool first = index == 0;
 
-            var tile = new Border
+            var image = new Border
             {
-                Width = 74,
-                Height = 52,
-                CornerRadius = new CornerRadius(4),
-                ClipToBounds = true,
-                BorderThickness = new Thickness(first ? 2 : 1),
-                BorderBrush = new SolidColorBrush(first
-                    ? Color.FromRgb(0x6A, 0xA9, 0xFF)
-                    : Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF)),
                 Background = ThumbBrush(reference)
                     ?? new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF))
             };
+            image.Classes.Add("galleryTileImage");
+            if (index == 0) image.Classes.Add("first");
 
-            ToolTip.SetTip(tile, System.IO.Path.GetFileName(reference));
-
-            if (editable)
+            // Плитка тащится за собой, как картинка в галерее персонажа: порог
+            // сдвига тот же, поэтому обычный щелчок и меню по правой кнопке работают.
+            // Background обязателен: без заливки панель не участвует в проверке
+            // попадания, и меню по правой кнопке не открывается.
+            var shell = new Panel
             {
-                // Щелчок ставит картинку первой. Для поля это и есть выбор: на экране
-                // показывается первая. Для бумаги — начало очереди.
-                tile.PointerPressed += (_, _) =>
-                {
-                    if (index <= 0 || index >= set.Count) return;
+                Width = GalleryTileWidth,
+                Height = GalleryTileHeight,
+                Margin = new Thickness(0, 0, 6, 6),
+                Background = Brushes.Transparent,
+                Tag = reference
+            };
+            shell.Classes.Add("galleryTile");
 
-                    set.RemoveAt(index);
-                    set.Insert(0, reference);
-                    OnGalleryChanged();
-                };
-            }
-
-            var shell = new Panel { Margin = new Thickness(0, 0, 6, 6) };
-            shell.Children.Add(tile);
-
-            if (editable)
+            // Сдвиг с переходом: соседи расступаются перед местом вставки не рывком,
+            // а доездом. Вью ставит сюда разницу между старым и новым положением
+            // плитки и тут же ведёт её к нулю.
+            shell.RenderTransform = new TranslateTransform
             {
-                var remove = new Button
+                Transitions = new Transitions
                 {
-                    Content = "✕",
-                    FontSize = 10,
-                    Width = 18,
-                    Height = 18,
-                    Padding = new Thickness(0),
-                    Margin = new Thickness(0, 2, 2, 0),
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
-                    HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                    VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                    Background = new SolidColorBrush(Color.FromArgb(0xB0, 0x20, 0x20, 0x20)),
-                    Foreground = Brushes.White,
-                    BorderThickness = new Thickness(0),
-                    CornerRadius = new CornerRadius(9)
-                };
+                    new DoubleTransition
+                    {
+                        Property = TranslateTransform.XProperty,
+                        Duration = GalleryTileSlide,
+                        Easing = new CubicEaseOut()
+                    },
+                    new DoubleTransition
+                    {
+                        Property = TranslateTransform.YProperty,
+                        Duration = GalleryTileSlide,
+                        Easing = new CubicEaseOut()
+                    }
+                }
+            };
 
-                ToolTip.SetTip(remove, "Убрать картинку из набора");
+            shell.Children.Add(image);
+            ToolTip.SetTip(shell, System.IO.Path.GetFileName(reference));
 
-                remove.Click += (_, args) =>
+            if (!editable) return shell;
+
+            var remove = new Button
+            {
+                Width = 18,
+                Height = 18,
+                Padding = new Thickness(0),
+                Margin = new Thickness(0, 3, 3, 0),
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Background = new SolidColorBrush(Color.FromArgb(0xAA, 0x00, 0x00, 0x00)),
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(999),
+                Content = new Avalonia.Controls.Shapes.Path
                 {
-                    args.Handled = true;
-                    if (index < 0 || index >= set.Count) return;
+                    Data = Geometry.Parse(GalleryCloseGlyph),
+                    Fill = Brushes.White,
+                    Stretch = Stretch.Uniform,
+                    Width = 8,
+                    Height = 8
+                }
+            };
+            remove.Classes.Add("galleryTileRemove");
+            TooltipBehavior.SetTip(remove, "Убрать картинку из набора");
 
-                    set.RemoveAt(index);
-                    OnGalleryChanged();
-                };
+            remove.Click += (_, args) =>
+            {
+                args.Handled = true;
+                RemoveFromSet(set, reference);
+            };
 
-                shell.Children.Add(remove);
-            }
+            shell.Children.Add(remove);
+
+            // Меню по правой кнопке: сделать картинку первой можно и без переноса.
+            var makeFirst = new MenuItem { Header = "Сделать первой", IsEnabled = index > 0 };
+            makeFirst.Click += (_, _) => MakeFirstInSet(set, reference);
+
+            var removeItem = new MenuItem { Header = "Убрать из набора" };
+            removeItem.Click += (_, _) => RemoveFromSet(set, reference);
+
+            var menu = new ContextMenu();
+            menu.Items.Add(makeFirst);
+            menu.Items.Add(new Separator());
+            menu.Items.Add(removeItem);
+            shell.ContextMenu = menu;
 
             return shell;
+        }
+
+        /// <summary>
+        /// Плитка добавления. Стоит в общей сетке последней: так она попадает в тот
+        /// же ряд, что картинки, и читается как следующее место набора.
+        /// </summary>
+        private Control BuildAddTile(List<string> set)
+        {
+            var content = new StackPanel
+            {
+                Spacing = 2,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            };
+            content.Children.Add(new PathIcon
+            {
+                Data = Geometry.Parse(GalleryPlusGlyph),
+                Width = 14,
+                Height = 14,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = "Добавить",
+                FontSize = 10,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+            });
+
+            var add = new Button
+            {
+                Width = GalleryTileWidth,
+                Height = GalleryTileHeight,
+                Margin = new Thickness(0, 0, 6, 6),
+                Content = content
+            };
+            add.Classes.Add("galleryAdd");
+
+            TooltipBehavior.SetTip(add, "Добавить картинки");
+            TooltipBehavior.SetDescription(add,
+                "Выбрать файлы с диска — можно сразу несколько. Картинки можно и просто перетащить на этот раздел");
+
+            add.Click += (sender, args) =>
+            {
+                args.Handled = true;
+                if (ReferenceEquals(set, _paperImages)) OnBrowse(sender, args);
+                else OnBrowseBackdrop(sender, args);
+            };
+
+            return add;
+        }
+
+        /// <summary>Убирает картинку из набора. Во время переноса набор не трогается.</summary>
+        private void RemoveFromSet(List<string> set, string reference)
+        {
+            if (_galleryDragging) return;
+
+            int index = set.IndexOf(reference);
+            if (index < 0) return;
+
+            set.RemoveAt(index);
+            OnGalleryChanged();
+        }
+
+        /// <summary>Ставит картинку в начало набора.</summary>
+        private void MakeFirstInSet(List<string> set, string reference)
+        {
+            if (_galleryDragging) return;
+
+            int index = set.IndexOf(reference);
+            if (index <= 0) return;
+
+            set.RemoveAt(index);
+            set.Insert(0, reference);
+            OnGalleryChanged();
+        }
+
+        /// <summary>Набор, который показывает эта сетка.</summary>
+        private List<string>? SetOfGallery(Panel host)
+        {
+            if (ReferenceEquals(host, _paperGallery)) return _paperImages;
+            if (ReferenceEquals(host, _backGallery)) return _backImages;
+            return null;
+        }
+
+        // ── Перенос плиток набора ─────────────────────────────────────────
+        // Тот же порядок работы, что у галереи персонажа. Перенос идёт вручную,
+        // а не системным перетаскиванием: система забирает указатель себе и своего
+        // превью под курсором не рисует. Картинка уходит из сетки, вместо неё
+        // встаёт тусклая копия-место, а сама картинка летит под курсором. Соседи
+        // сдвигаются перестановкой, а вью доигрывает их перемещение приёмом FLIP —
+        // измеряет положение до перестановки, после перестановки ставит разницу
+        // сдвигом и ведёт его к нулю переходом. Набор меняется один раз — на
+        // отпускании.
+
+        private const long GalleryPreviewThrottleMs = 60;
+        private const double GalleryDragThreshold = 6.0;
+
+        private Point? _tilePressOrigin;
+        private string? _pressedTileRef;
+        private WrapPanel? _pressedTileHost;
+
+        private bool _galleryDragging;
+        private WrapPanel? _galleryDragHost;
+        private List<string>? _galleryDragSet;
+        private string? _galleryDragRef;
+        private int _galleryDragOriginalIndex = -1;
+        private long _lastGalleryPreviewTick;
+        private Point _lastGalleryDragPos;
+
+        private DispatcherTimer? _galleryAutoScrollTimer;
+        private double _galleryAutoScrollVel;
+
+        private void ClearTilePress()
+        {
+            _tilePressOrigin = null;
+            _pressedTileRef = null;
+            _pressedTileHost = null;
+        }
+
+        /// <summary>Плитка набора, внутри которой лежит источник события.</summary>
+        private static Panel? FindGalleryTileFromSource(Visual? source)
+        {
+            for (var v = source; v != null; v = v.GetVisualParent())
+                if (v is Panel panel && panel.Classes.Contains("galleryTile"))
+                    return panel;
+
+            return null;
+        }
+
+        /// <summary>Плитки сетки в её порядке, без плитки добавления.</summary>
+        private static List<Panel> GalleryTilesOf(Panel host)
+        {
+            var result = new List<Panel>(host.Children.Count);
+            foreach (var child in host.Children)
+                if (child is Panel panel && panel.Classes.Contains("galleryTile"))
+                    result.Add(panel);
+            return result;
+        }
+
+        /// <summary>Плитка, показывающая эту картинку.</summary>
+        private static Panel? FindGalleryTileByRef(Panel host, string reference)
+        {
+            foreach (var tile in GalleryTilesOf(host))
+                if (tile.Tag is string tag && string.Equals(tag, reference, StringComparison.Ordinal))
+                    return tile;
+
+            return null;
+        }
+
+        // Нажатие ловится на всём окне, а не на плитке: обработчик плитки получает
+        // событие последним, и любой узел между ней и корнем может событие погасить —
+        // тогда перенос не начался бы вовсе.
+        private void OnGalleryPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            ClearTilePress();
+
+            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+            if (_current is null || _current.Theme.IsBuiltIn) return;
+
+            var tile = FindGalleryTileFromSource(e.Source as Visual);
+            if (tile?.Tag is not string reference) return;
+            if (tile.Parent is not WrapPanel host) return;
+
+            _tilePressOrigin = e.GetPosition(_galleryGhostCanvas);
+            _pressedTileRef = reference;
+            _pressedTileHost = host;
+        }
+
+        private void OnGalleryPointerMoved(object? sender, PointerEventArgs e)
+        {
+            if (_tilePressOrigin is not { } origin) return;
+            if (_pressedTileRef is not { } reference) return;
+            if (_pressedTileHost is not { } host) return;
+
+            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            {
+                if (_galleryDragging) CancelGalleryDrag(e);
+                else ClearTilePress();
+                return;
+            }
+
+            var position = e.GetPosition(_galleryGhostCanvas);
+
+            if (!_galleryDragging)
+            {
+                double dx = position.X - origin.X;
+                double dy = position.Y - origin.Y;
+                if (Math.Sqrt(dx * dx + dy * dy) < GalleryDragThreshold) return;
+
+                var tile = FindGalleryTileByRef(host, reference);
+                var set = SetOfGallery(host);
+                if (tile is null || set is null)
+                {
+                    ClearTilePress();
+                    return;
+                }
+
+                int index = host.Children.IndexOf(tile);
+                if (index < 0)
+                {
+                    ClearTilePress();
+                    return;
+                }
+
+                // Призрак снимается с плитки до того, как она станет местом вставки:
+                // брать размер и картинку потом будет не с чего.
+                ShowGalleryGhost(tile, reference, position);
+
+                _galleryDragHost = host;
+                _galleryDragSet = set;
+                _galleryDragRef = reference;
+                _galleryDragOriginalIndex = index;
+                tile.Classes.Add("placeholder");
+
+                _galleryDragging = true;
+                _lastGalleryPreviewTick = Environment.TickCount64;
+                _lastGalleryDragPos = position;
+
+                StartGalleryAutoScroll();
+
+                // Указатель захватывается окном, а не плиткой: во время переноса
+                // плитки переставляются, и захват ушёл бы вместе с той, за которой
+                // он числился.
+                e.Pointer.Capture(this);
+                return;
+            }
+
+            _lastGalleryDragPos = position;
+            MoveGalleryGhost(position);
+            UpdateGalleryAutoScrollVelocity(position);
+
+            UpdateGalleryPreview(position);
+        }
+
+        /// <summary>
+        /// Пересчёт места вставки. Троттлинг общий на все источники движения —
+        /// указатель, автопрокрутку и колесо: перестановка тянет за собой
+        /// синхронную раскладку, и на каждом кадре её делать незачем.
+        /// </summary>
+        private void UpdateGalleryPreview(Point position)
+        {
+            if (_galleryDragHost is not { } host || _galleryDragRef is not { } reference) return;
+
+            long now = Environment.TickCount64;
+            if (now - _lastGalleryPreviewTick < GalleryPreviewThrottleMs) return;
+            _lastGalleryPreviewTick = now;
+
+            var tile = FindGalleryTileByRef(host, reference);
+            if (tile is null) return;
+
+            int current = host.Children.IndexOf(tile);
+            int target = ComputeGalleryTargetIndex(position, host, current);
+            if (target == current || current < 0) return;
+
+            var before = SnapshotGalleryTilePositions(host);
+            host.Children.Move(current, target);
+            BeginGalleryTileFlip(host, before);
+        }
+
+        // ── прокрутка правой колонки во время переноса ─────────────────────
+        // Картинку несут к краю — колонка едет сама, как страница в браузере.
+
+        private void StartGalleryAutoScroll()
+        {
+            if (_galleryAutoScrollTimer == null)
+            {
+                _galleryAutoScrollTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(16)
+                };
+                _galleryAutoScrollTimer.Tick += OnGalleryAutoScrollTick;
+            }
+
+            _galleryAutoScrollVel = 0;
+            _galleryAutoScrollTimer.Start();
+        }
+
+        private void StopGalleryAutoScroll()
+        {
+            _galleryAutoScrollTimer?.Stop();
+            _galleryAutoScrollVel = 0;
+        }
+
+        /// <summary>
+        /// Скорость тем выше, чем ближе курсор к краю колонки. У самого края она
+        /// наибольшая, в середине — ноль. За пределами колонки — тоже наибольшая:
+        /// картинку унесли за край, значит листать надо.
+        /// </summary>
+        private void UpdateGalleryAutoScrollVelocity(Point position)
+        {
+            _galleryAutoScrollVel = 0;
+
+            var topLeft = _fieldsScroll.TranslatePoint(new Point(0, 0), _galleryGhostCanvas);
+            if (topLeft is not { } scrollOrigin) return;
+
+            const double zone = 60.0;
+            const double maxSpeed = 18.0;
+
+            double top = scrollOrigin.Y;
+            double bottom = top + _fieldsScroll.Bounds.Height;
+
+            if (position.Y < top + zone)
+                _galleryAutoScrollVel = -maxSpeed * Math.Clamp((top + zone - position.Y) / zone, 0, 1);
+            else if (position.Y > bottom - zone)
+                _galleryAutoScrollVel = maxSpeed * Math.Clamp((position.Y - (bottom - zone)) / zone, 0, 1);
+        }
+
+        private void OnGalleryAutoScrollTick(object? sender, EventArgs e)
+        {
+            if (!_galleryDragging) return;
+            if (Math.Abs(_galleryAutoScrollVel) < 0.5) return;
+
+            if (!ScrollFieldsBy(_galleryAutoScrollVel)) return;
+
+            MoveGalleryGhost(_lastGalleryDragPos);
+            UpdateGalleryPreview(_lastGalleryDragPos);
+        }
+
+        /// <summary>Сдвиг колонки. Ложь — упёрлись в край или ехать нечем.</summary>
+        private bool ScrollFieldsBy(double delta)
+        {
+            var offset = _fieldsScroll.Offset;
+            double maxY = Math.Max(0, _fieldsScroll.Extent.Height - _fieldsScroll.Viewport.Height);
+            double newY = Math.Clamp(offset.Y + delta, 0, maxY);
+
+            if (Math.Abs(newY - offset.Y) < 0.1) return false;
+
+            _fieldsScroll.Offset = new Vector(offset.X, newY);
+            return true;
+        }
+
+        private void OnGalleryPointerWheel(object? sender, PointerWheelEventArgs e)
+        {
+            if (!_galleryDragging) return;
+
+            ScrollFieldsBy(-e.Delta.Y * 60.0);
+
+            var position = e.GetPosition(_galleryGhostCanvas);
+            _lastGalleryDragPos = position;
+            MoveGalleryGhost(position);
+            UpdateGalleryPreview(position);
+
+            // Во время переноса колесо листает колонку, и дальше событие не идёт.
+            e.Handled = true;
+        }
+
+        private void OnGalleryPointerReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (!_galleryDragging)
+            {
+                ClearTilePress();
+                return;
+            }
+
+            // Набор меняется один раз — здесь: картинка встаёт туда, где сейчас
+            // стоит место вставки.
+            bool moved = false;
+            if (_galleryDragHost is { } host && _galleryDragSet is { } set && _galleryDragRef is { } reference)
+            {
+                var tile = FindGalleryTileByRef(host, reference);
+                int index = tile is null ? -1 : host.Children.IndexOf(tile);
+                int from = set.IndexOf(reference);
+
+                if (index >= 0 && from >= 0 && index != from)
+                {
+                    set.RemoveAt(from);
+                    set.Insert(Math.Clamp(index, 0, set.Count), reference);
+                    moved = true;
+                }
+            }
+
+            FinishGalleryDrag(e);
+
+            if (moved) OnGalleryChanged();
+        }
+
+        /// <summary>Перенос отменён — картинка возвращается туда, где стояла.</summary>
+        private void CancelGalleryDrag(PointerEventArgs e)
+        {
+            if (_galleryDragHost is { } host && _galleryDragRef is { } reference)
+            {
+                var tile = FindGalleryTileByRef(host, reference);
+                int index = tile is null ? -1 : host.Children.IndexOf(tile);
+                int back = Math.Clamp(_galleryDragOriginalIndex, 0, Math.Max(0, GalleryTilesOf(host).Count - 1));
+
+                if (index >= 0 && index != back)
+                    host.Children.Move(index, back);
+            }
+
+            FinishGalleryDrag(e);
+        }
+
+        private void FinishGalleryDrag(PointerEventArgs e)
+        {
+            _galleryDragging = false;
+
+            StopGalleryAutoScroll();
+            e.Pointer.Capture(null);
+            HideGalleryGhost();
+
+            if (_galleryDragHost is { } host)
+            {
+                if (_galleryDragRef is { } reference)
+                    FindGalleryTileByRef(host, reference)?.Classes.Remove("placeholder");
+
+                ResetGalleryTileTransforms(host);
+            }
+
+            _galleryDragHost = null;
+            _galleryDragSet = null;
+            _galleryDragRef = null;
+            _galleryDragOriginalIndex = -1;
+
+            ClearTilePress();
+        }
+
+        /// <summary>
+        /// Положение плиток до перестановки. Меряем вместе с текущим сдвигом:
+        /// плитка в середине перехода не должна начинать доезд заново. Сетка — общая
+        /// система координат: она прокручивается вместе с плитками, и прокрутка во
+        /// время переноса не порождает ложных перемещений.
+        /// </summary>
+        private static Dictionary<string, Point> SnapshotGalleryTilePositions(Panel host)
+        {
+            var result = new Dictionary<string, Point>(StringComparer.Ordinal);
+
+            foreach (var tile in GalleryTilesOf(host))
+            {
+                if (tile.Tag is not string reference) continue;
+                if (result.ContainsKey(reference)) continue;
+
+                var pt = tile.TranslatePoint(new Point(0, 0), host);
+                if (pt.HasValue) result[reference] = pt.Value;
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Доигрывает перемещение плиток после перестановки: разница между прежним
+        /// и новым положением ставится сдвигом, а следующим кадром сводится к нулю —
+        /// плитка едет, а не прыгает.
+        /// </summary>
+        private void BeginGalleryTileFlip(Panel host, Dictionary<string, Point> before)
+        {
+            if (before.Count == 0) return;
+
+            // Раскладка прогоняется здесь же: отложенный замер вытесняется потоком
+            // событий указателя и при непрерывном переносе не успевает отработать.
+            UpdateLayout();
+
+            var pending = new List<(TranslateTransform tt, double dx, double dy)>(before.Count);
+
+            foreach (var tile in GalleryTilesOf(host))
+            {
+                if (tile.Tag is not string reference) continue;
+                if (!before.TryGetValue(reference, out var old)) continue;
+                if (tile.RenderTransform is not TranslateTransform tt) continue;
+
+                // Чистое положение по раскладке меряется без текущего сдвига, поэтому
+                // он временно снимается — но без перехода, иначе снятие само
+                // превратится в анимацию.
+                double keepX = tt.X, keepY = tt.Y;
+                var saved = tt.Transitions;
+                tt.Transitions = null;
+                tt.X = 0.0;
+                tt.Y = 0.0;
+
+                var now = tile.TranslatePoint(new Point(0, 0), host);
+                if (!now.HasValue)
+                {
+                    tt.X = keepX;
+                    tt.Y = keepY;
+                    tt.Transitions = saved;
+                    continue;
+                }
+
+                double dx = old.X - now.Value.X;
+                double dy = old.Y - now.Value.Y;
+
+                if (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5)
+                {
+                    tt.X = keepX;
+                    tt.Y = keepY;
+                    tt.Transitions = saved;
+                    continue;
+                }
+
+                tt.X = dx;
+                tt.Y = dy;
+                tt.Transitions = saved;
+                pending.Add((tt, dx, dy));
+            }
+
+            if (pending.Count == 0) return;
+
+            // Доезд к нулю — следующим кадром и с приоритетом отрисовки: он выше
+            // ввода, поэтому непрерывным переносом его не вытесняет. Сбрасываем
+            // только тот сдвиг, который сами и поставили.
+            Dispatcher.UIThread.Post(() =>
+            {
+                foreach (var (tt, dx, dy) in pending)
+                    if (tt.X == dx && tt.Y == dy) { tt.X = 0.0; tt.Y = 0.0; }
+            }, DispatcherPriority.Render);
+        }
+
+        private static void ResetGalleryTileTransforms(Panel host)
+        {
+            foreach (var tile in GalleryTilesOf(host))
+            {
+                if (tile.RenderTransform is not TranslateTransform tt) continue;
+                if (tt.X == 0.0 && tt.Y == 0.0) continue;
+
+                var saved = tt.Transitions;
+                tt.Transitions = null;
+                tt.X = 0.0;
+                tt.Y = 0.0;
+                tt.Transitions = saved;
+            }
+        }
+
+        /// <summary>
+        /// Место, куда встанет картинка, если её отпустить сейчас. Считается по
+        /// действительной геометрии плиток, а не по расчётному размеру ячейки: место
+        /// вставки держится строки курсора, переход на другую строку — только
+        /// движением курсора по вертикали. Правее последней плитки нижней строки —
+        /// конец набора, иначе последнее место оказалось бы недостижимым.
+        /// </summary>
+        private int ComputeGalleryTargetIndex(Point position, Panel host, int fallback)
+        {
+            var cells = new List<(int idx, double cx, double cy)>();
+            var rowYs = new List<double>();
+            double tileSide = 0;
+
+            var tiles = GalleryTilesOf(host);
+            foreach (var tile in tiles)
+            {
+                if (tile.Bounds.Width <= 1 || tile.Bounds.Height <= 1) continue;
+
+                int index = host.Children.IndexOf(tile);
+                if (index < 0) continue;
+
+                var center = tile.TranslatePoint(
+                    new Point(tile.Bounds.Width / 2.0, tile.Bounds.Height / 2.0), _galleryGhostCanvas);
+                if (!center.HasValue) continue;
+
+                // Центр берётся без текущего сдвига: пока плитка едет, её видимое
+                // положение к раскладке отношения не имеет.
+                double offX = 0, offY = 0;
+                if (tile.RenderTransform is TranslateTransform tt) { offX = tt.X; offY = tt.Y; }
+
+                double cx = center.Value.X - offX;
+                double cy = center.Value.Y - offY;
+
+                cells.Add((index, cx, cy));
+                if (tile.Bounds.Height > tileSide) tileSide = tile.Bounds.Height;
+                if (!rowYs.Any(y => Math.Abs(y - cy) <= 4)) rowYs.Add(cy);
+            }
+
+            if (cells.Count == 0) return fallback;
+
+            rowYs.Sort();
+            double rowPitch = double.MaxValue;
+            for (int i = 1; i < rowYs.Count; i++)
+            {
+                double d = rowYs[i] - rowYs[i - 1];
+                if (d > 1 && d < rowPitch) rowPitch = d;
+            }
+            if (rowPitch == double.MaxValue) rowPitch = tileSide > 1 ? tileSide : 100;
+            double halfRow = rowPitch / 2.0;
+
+            var row = cells.Where(c => Math.Abs(c.cy - position.Y) <= halfRow).ToList();
+            if (row.Count == 0)
+            {
+                double nearestY = cells.OrderBy(c => Math.Abs(c.cy - position.Y)).First().cy;
+                row = cells.Where(c => Math.Abs(c.cy - nearestY) <= halfRow).ToList();
+            }
+
+            var nearest = row.OrderBy(c => Math.Abs(c.cx - position.X)).First();
+            int target = nearest.idx;
+
+            bool hasRowBelow = cells.Any(c => c.cy > position.Y + halfRow);
+            if (!hasRowBelow)
+            {
+                var right = row.OrderByDescending(c => c.cx).First();
+                double colPitch = double.MaxValue;
+                var xs = row.Select(c => c.cx).OrderBy(x => x).ToList();
+                for (int i = 1; i < xs.Count; i++)
+                {
+                    double d = xs[i] - xs[i - 1];
+                    if (d > 1 && d < colPitch) colPitch = d;
+                }
+                if (colPitch == double.MaxValue) colPitch = tileSide > 1 ? tileSide : 100;
+
+                if (position.X > right.cx + colPitch / 2.0)
+                    target = right.idx + 1;
+            }
+
+            return Math.Clamp(target, 0, Math.Max(0, tiles.Count - 1));
+        }
+
+        private void ShowGalleryGhost(Control tile, string reference, Point position)
+        {
+            _galleryGhost.Background = ThumbBrush(reference);
+
+            // Призрак того же размера, что плитка — перенос читается как
+            // перекладывание самой картинки, а не абстрактного значка.
+            _galleryGhost.Width = tile.Bounds.Width;
+            _galleryGhost.Height = tile.Bounds.Height;
+
+            _galleryGhostCanvas.IsVisible = true;
+            MoveGalleryGhost(position);
+        }
+
+        private void MoveGalleryGhost(Point position)
+        {
+            Canvas.SetLeft(_galleryGhost, position.X - _galleryGhost.Width / 2.0);
+            Canvas.SetTop(_galleryGhost, position.Y - _galleryGhost.Height / 2.0);
+        }
+
+        private void HideGalleryGhost()
+        {
+            _galleryGhostCanvas.IsVisible = false;
+        }
+
+        // ── Файлы извне ───────────────────────────────────────────────────
+        // Картинки принимаются из проводника, браузера — откуда угодно, что отдаёт
+        // файл. Бросать можно на карточку раздела целиком.
+
+        private static readonly HashSet<string> GalleryImageExtensions =
+            new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".bmp", ".webp" };
+
+        private void WireCardDrop(Border card, List<string> set)
+        {
+            card.AddHandler(DragDrop.DragOverEvent, (_, e) => OnCardDragOver(card, e));
+            card.AddHandler(DragDrop.DragLeaveEvent, (_, _) => card.Classes.Remove("dropTarget"));
+            card.AddHandler(DragDrop.DropEvent, (_, e) => OnCardDrop(card, set, e));
+        }
+
+        private void OnCardDragOver(Border card, DragEventArgs e)
+        {
+            bool accepts = _current is { Theme.IsBuiltIn: false }
+                           && e.DataTransfer.Contains(DataFormat.File);
+
+            e.DragEffects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
+            card.Classes.Set("dropTarget", accepts);
+            e.Handled = true;
+        }
+
+        private void OnCardDrop(Border card, List<string> set, DragEventArgs e)
+        {
+            e.Handled = true;
+            card.Classes.Remove("dropTarget");
+
+            if (_current is null || _current.Theme.IsBuiltIn) return;
+
+            var files = e.DataTransfer.TryGetFiles();
+            if (files is null) return;
+
+            bool added = false;
+            foreach (var item in files)
+            {
+                if (item is not IStorageFile file) continue;
+
+                string? path = file.TryGetLocalPath();
+                if (string.IsNullOrWhiteSpace(path)) continue;
+                if (!GalleryImageExtensions.Contains(System.IO.Path.GetExtension(path))) continue;
+
+                try
+                {
+                    added |= AddImage(set, StoreImage(path!));
+                }
+                catch (Exception ex)
+                {
+                    // Бросить могут что угодно — ярлык, недоступный файл.
+                    System.Diagnostics.Debug.WriteLine("Gallery drop failed: " + ex.Message);
+                }
+            }
+
+            if (added) OnGalleryChanged();
         }
 
         // Разложенные в пиксели миниатюры — по адресу картинки. Окно пересобирает

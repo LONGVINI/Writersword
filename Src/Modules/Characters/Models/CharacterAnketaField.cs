@@ -56,6 +56,39 @@ namespace Writersword.Modules.Characters.Models
         public string StatesRaw { get; set; } = string.Empty;
         public string TrueLabel { get; set; } = "Да";
         public string FalseLabel { get; set; } = "Нет";
+
+        // ── Вид ──────────────────────────────────────────────────────────
+        //
+        // Всё ниже — про то, как поле выглядит и как его заполняют, а не про
+        // то, что в нём хранится. Настраивается в анкете и одинаково у всех
+        // персонажей, к которым она подключена.
+
+        /// <summary>Вид поля в карточке. Auto — вид по умолчанию для типа.</summary>
+        public CharacterFieldDisplay Display { get; set; } = CharacterFieldDisplay.Auto;
+
+        /// <summary>
+        /// Свой цвет поля — шариков, полосы, отмеченного чипа — строкой #RRGGBB.
+        /// Пусто — акцентный цвет темы.
+        /// </summary>
+        public string AccentColor { get; set; } = string.Empty;
+
+        /// <summary>Единица свободного числа: «см», «кг», «лет». Пусто — без единицы.</summary>
+        public string Unit { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Какими способами можно задать свободное число. По умолчанию только
+        /// точно — как было до появления способов.
+        /// </summary>
+        public CharacterNumberModes NumberModes { get; set; } = CharacterNumberModes.Exact;
+
+        /// <summary>Этапы свободного числа — для способа «этап»: «Ребёнок 0–12».</summary>
+        public List<CharacterNumberStage> Stages { get; set; } = new();
+
+        /// <summary>Палитра поля цвета: варианты #RRGGBB, из которых выбирают.</summary>
+        public List<string> Palette { get; set; } = new();
+
+        /// <summary>Можно ли у поля цвета выбрать цвет вне палитры.</summary>
+        public bool AllowCustomColor { get; set; } = true;
     }
 
     /// <summary>

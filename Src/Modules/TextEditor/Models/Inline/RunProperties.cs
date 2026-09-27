@@ -64,6 +64,14 @@ namespace Writersword.Modules.TextEditor.Models.Inline
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public bool IsSmallCaps { get; set; }
 
+        /// <summary>
+        /// Межбуквенный интервал в пунктах: прибавка к ширине каждого знака, как
+        /// «Интервал — разреженный/уплотнённый» в Word. Отрицательное значение сжимает
+        /// текст. Null — унаследовать от стиля (у стиля null — обычный интервал).
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? CharacterSpacing { get; set; }
+
         /// <summary>Цвет текста в формате #RRGGBB или #AARRGGBB. Null — унаследовать.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? TextColor { get; set; }
@@ -100,6 +108,7 @@ namespace Writersword.Modules.TextEditor.Models.Inline
                 && !IsSubscript
                 && !IsAllCaps
                 && !IsSmallCaps
+                && CharacterSpacing is null
                 && TextColor is null
                 && HighlightColor is null
                 && Language is null;

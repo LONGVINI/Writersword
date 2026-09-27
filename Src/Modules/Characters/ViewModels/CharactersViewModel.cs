@@ -7,6 +7,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables.Fluent;
+using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
@@ -173,6 +174,8 @@ namespace Writersword.Modules.Characters.ViewModels
                 // карточки записывало этот прежний снимок поверх правок: то
                 // есть важность, выставленная в списке, молча откатывалась.
                 if (_mainTabIndex == 1) SelectedCharacterCard?.Reload();
+
+                PlaceChanged?.Invoke();
             }
         }
         public bool IsTab0Active => _mainTabIndex == 0;
@@ -996,7 +999,81 @@ namespace Writersword.Modules.Characters.ViewModels
         public CharacterCardViewModel? SelectedCharacterCard
         {
             get => _selectedCharacterCard;
-            private set => this.RaiseAndSetIfChanged(ref _selectedCharacterCard, value);
+            private set
+            {
+                if (ReferenceEquals(_selectedCharacterCard, value)) return;
+
+                if (_selectedCharacterCard != null)
+                {
+                    _cardTabSubscription?.Dispose();
+                    _cardTabSubscription = null;
+                    _selectedCharacterCard.BasicsTab.BodyScrollChanged -= OnCardPlaceChanged;
+                }
+
+                this.RaiseAndSetIfChanged(ref _selectedCharacterCard, value);
+
+                // Место в модуле — это и открытый персонаж, и вкладка его
+                // карточки, и прокрутка: всё это уходит в CharactersPlaceStore.
+                if (value != null)
+                {
+                    _cardTabSubscription = value.WhenAnyValue(x => x.SelectedTabIndex)
+                        .Skip(1)
+                        .Subscribe(_ => OnCardPlaceChanged());
+                    value.BasicsTab.BodyScrollChanged += OnCardPlaceChanged;
+                }
+
+                PlaceChanged?.Invoke();
+            }
+        }
+
+        private IDisposable? _cardTabSubscription;
+
+        private void OnCardPlaceChanged() => PlaceChanged?.Invoke();
+
+        // ── Место в модуле ─────────────────────────────────────────────────
+        //
+        // Открытый персонаж, вкладка модуля, вкладка карточки и прокрутка.
+        // Модуль запоминает их в данных программы при каждой смене и
+        // возвращает при следующем открытии проекта: сессия модуля для этого
+        // не годится — она лежит в кеше проекта, который пишется только при
+        // правках и удаляется при сохранении.
+
+        /// <summary>Место в модуле сменилось.</summary>
+        public event Action? PlaceChanged;
+
+        public CharactersPlaceStore.Place CapturePlace() => new(
+            SelectedCharacterCard?.CharacterId,
+            MainTabIndex,
+            SelectedCharacterCard?.SelectedTabIndex ?? 0,
+            SelectedCharacterCard?.BasicsTab.BodyScrollY ?? 0);
+
+        /// <summary>
+        /// Вернуться на запомненное место. Персонаж, которого уже открыт,
+        /// заново не открывается: карточка пересоздалась бы и потеряла бы
+        /// прокрутку. Удалённый с тех пор персонаж пропускается — остаётся
+        /// только вкладка.
+        /// </summary>
+        public void RestorePlace(CharactersPlaceStore.Place place)
+        {
+            var characterId = place.CharacterId;
+
+            if (!string.IsNullOrEmpty(characterId) && _characterService.GetById(characterId) != null)
+            {
+                if (SelectedCharacterCard?.CharacterId != characterId)
+                    EditCharacter(characterId);
+
+                var card = SelectedCharacterCard;
+                if (card != null)
+                {
+                    card.SelectedTabIndex = Math.Clamp(place.CardTabIndex, 0, CharacterCardViewModel.TabCount - 1);
+                    if (place.CardScrollY > 0)
+                        card.BasicsTab.RequestScroll(place.CardScrollY);
+                }
+            }
+
+            // Вкладка ставится последней: открытие персонажа само переводит
+            // модуль на редактор, а запомненной могла быть другая вкладка.
+            MainTabIndex = Math.Clamp(place.MainTabIndex, 0, 3);
         }
 
         private bool _isCardOpen;
@@ -1940,7 +2017,6 @@ namespace Writersword.Modules.Characters.ViewModels
                 EditorSidebarWidth = session.EditorSidebarWidth;
             if (session.EditorSidebarMode >= 0 && session.EditorSidebarMode <= 2)
                 EditorSidebarMode = session.EditorSidebarMode;
-            MainTabIndex = session.MainTabIndex;
             SearchQuery = session.LastSearchQuery ?? string.Empty;
             ActiveTagFilters.Clear();
             foreach (var tag in session.ActiveTagFilters) ActiveTagFilters.Add(tag);
@@ -1948,8 +2024,13 @@ namespace Writersword.Modules.Characters.ViewModels
             foreach (var id in session.ActiveTemplateIds) ActiveTemplateIds.Add(id);
             TemplatesViewModel.Refresh();
             ApplyFilters();
-            if (!string.IsNullOrEmpty(session.LastOpenedCharacterId))
+            if (!string.IsNullOrEmpty(session.LastOpenedCharacterId) &&
+                SelectedCharacterCard?.CharacterId != session.LastOpenedCharacterId)
                 OpenCharacter(session.LastOpenedCharacterId);
+
+            // Вкладка — после открытия персонажа: оно само переводит модуль на
+            // редактор, и сохранённая вкладка иначе терялась.
+            MainTabIndex = session.MainTabIndex;
             GraphViewModel.OffsetX = session.GraphOffsetX;
             GraphViewModel.OffsetY = session.GraphOffsetY;
             GraphViewModel.Scale = session.GraphScale;

@@ -313,6 +313,21 @@ namespace Writersword.Modules.TextEditor.Document
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow);
         }
 
+        // Захват мыши потерян посреди жеста поля (окно ушло из фокуса, всплыло другое
+        // окно) — отпускания уже не будет. Жест завершается тем, что успели натянуть:
+        // иначе на листе остались бы направляющие, а открытый шаг отмены — незакрытым.
+        // Обычное отпускание снимает флаг до Capture(null), поэтому сюда не попадает.
+        protected override void OnPointerCaptureLost(Avalonia.Input.PointerCaptureLostEventArgs e)
+        {
+            base.OnPointerCaptureLost(e);
+            if (!_isDraggingMargin) return;
+
+            _isDraggingMargin = false;
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow);
+            _vm?.CommitMarginChange();
+            InvalidateVisual();
+        }
+
         protected override void OnPointerReleased(Avalonia.Input.PointerReleasedEventArgs e)
         {
             base.OnPointerReleased(e);

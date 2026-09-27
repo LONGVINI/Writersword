@@ -66,13 +66,20 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public float DefaultTabStopPt { get; }
 
+        /// <summary>
+        /// Строке, выровненной по ширине, разрешено сжать пробелы до пятой части, чтобы
+        /// вместить ещё одно слово, — как у Word 2013 и новее. Свойство документа.
+        /// </summary>
+        public bool JustifyWithShrinking { get; }
+
         public StyleResolver(
             IEnumerable<DocumentStyle> styles,
             IReadOnlyDictionary<string, string>? scriptFontMap = null,
             bool substituteMissingGlyphs = false,
             string? substituteFontFamily = null,
             bool breakOnHyphen = true,
-            float defaultTabStopPt = 35.4f)
+            float defaultTabStopPt = 35.4f,
+            bool justifyWithShrinking = false)
         {
             _index = new Dictionary<string, DocumentStyle>(
                 System.StringComparer.OrdinalIgnoreCase);
@@ -88,6 +95,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             SubstituteFontFamily = substituteFontFamily;
             BreakOnHyphen = breakOnHyphen;
             DefaultTabStopPt = defaultTabStopPt > 1f ? defaultTabStopPt : 35.4f;
+            JustifyWithShrinking = justifyWithShrinking;
         }
 
         // ── Резолверы шрифта ──────────────────────────────────────────────
@@ -142,6 +150,29 @@ namespace Writersword.Modules.TextEditor.Rendering
             return false;
         }
 
+        /// <summary>
+        /// «Все прописные» стиля абзаца по цепочке BasedOn — по тому же правилу, что
+        /// жирность и курсив: решает ближайший стиль, у которого есть свойства текста.
+        /// </summary>
+        public bool ResolveAllCaps(string? styleName)
+        {
+            foreach (var style in WalkChain(styleName))
+                if (style.RunProperties is not null)
+                    return style.RunProperties.IsAllCaps;
+
+            return false;
+        }
+
+        /// <summary>«Малые прописные» стиля абзаца по цепочке BasedOn — см. ResolveAllCaps.</summary>
+        public bool ResolveSmallCaps(string? styleName)
+        {
+            foreach (var style in WalkChain(styleName))
+                if (style.RunProperties is not null)
+                    return style.RunProperties.IsSmallCaps;
+
+            return false;
+        }
+
         // ── Символьный стиль ──────────────────────────────────────────────
         //
         // Отличаются эти четыре от резолверов выше тем, чего они НЕ делают.
@@ -192,6 +223,33 @@ namespace Writersword.Modules.TextEditor.Rendering
         }
 
         /// <summary>
+        /// Межбуквенный интервал, заданный символьным стилем. Null — цепочка его не задаёт.
+        /// </summary>
+        public float? FindCharacterSpacing(string? styleName)
+        {
+            if (string.IsNullOrEmpty(styleName)) return null;
+
+            foreach (var style in WalkChain(styleName))
+                if (style.RunProperties?.CharacterSpacing.HasValue == true)
+                    return (float)style.RunProperties.CharacterSpacing.Value;
+
+            return null;
+        }
+
+        /// <summary>
+        /// Межбуквенный интервал стиля абзаца по цепочке BasedOn. Не задан нигде —
+        /// обычный интервал, 0.
+        /// </summary>
+        public float ResolveCharacterSpacing(string? styleName)
+        {
+            foreach (var style in WalkChain(styleName))
+                if (style.RunProperties?.CharacterSpacing.HasValue == true)
+                    return (float)style.RunProperties.CharacterSpacing.Value;
+
+            return 0f;
+        }
+
+        /// <summary>
         /// Делает ли символьный стиль текст жирным.
         ///
         /// Только добавляет: снять жирность стилем нельзя. Стили, сохранённые до того, как
@@ -206,6 +264,28 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             foreach (var style in WalkChain(styleName))
                 if (style.RunProperties?.IsBold == true) return true;
+
+            return false;
+        }
+
+        /// <summary>Делает ли символьный стиль текст прописным. Только добавляет — см. AnyBold.</summary>
+        public bool AnyAllCaps(string? styleName)
+        {
+            if (string.IsNullOrEmpty(styleName)) return false;
+
+            foreach (var style in WalkChain(styleName))
+                if (style.RunProperties?.IsAllCaps == true) return true;
+
+            return false;
+        }
+
+        /// <summary>Делает ли символьный стиль текст малыми прописными. Только добавляет — см. AnyBold.</summary>
+        public bool AnySmallCaps(string? styleName)
+        {
+            if (string.IsNullOrEmpty(styleName)) return false;
+
+            foreach (var style in WalkChain(styleName))
+                if (style.RunProperties?.IsSmallCaps == true) return true;
 
             return false;
         }

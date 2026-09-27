@@ -1,0 +1,364 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
+             xmlns:controls="using:Writersword.Styles.UserControls"
+             x:Class="Writersword.Modules.TextEditor.Views.Shared.ParagraphBorderPicker">
+
+	<!--
+	    Выбор рамки абзаца — содержимое меню кнопки «Рамка» на вкладке «Главная».
+
+	    Сверху образец абзаца: серые строки, по краям линии рамки. У каждой стороны
+	    кнопка: плюс ставит линию, а когда линия стоит, плюс поворачивается в крест и
+	    снимает её. Кнопка в центре — для всей рамки разом: пока сторон нет, на ней
+	    плюс, и она ставит рамку со всех сторон; как только стоит хоть одна сторона,
+	    плюс поворачивается в крест, и она снимает всё.
+
+	    Ниже — перо, которым ставятся линии: вид линии, толщина, отступ от текста и
+	    цвет. Смена пера сразу ложится и на уже стоящую рамку выделенных абзацев.
+
+	    Данные и команды — у вкладки «Главная» (RibbonHomeTabViewModel): контрол
+	    берёт их из DataContext кнопки, к которой приделано меню.
+	-->
+
+	<UserControl.Styles>
+		<Style Selector="TextBlock.PickerCaption">
+			<Setter Property="FontSize"   Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="Margin"     Value="0,0,0,4"/>
+		</Style>
+
+		<!-- Линия рамки в образце: бледная, пока стороны нет, во всю силу — когда стоит. -->
+		<Style Selector="Rectangle.EdgeLine">
+			<Setter Property="Opacity" Value="0.18"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.15"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Rectangle.EdgeLine.on">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+
+		<!-- Круглые кнопки сторон и центра. -->
+		<Style Selector="Button.BorderRound">
+			<Setter Property="Width"           Value="22"/>
+			<Setter Property="Height"          Value="22"/>
+			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="CornerRadius"    Value="11"/>
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="Focusable"       Value="False"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		</Style>
+		<Style Selector="Button.BorderRound /template/ ContentPresenter">
+			<Setter Property="CornerRadius" Value="11"/>
+		</Style>
+		<Style Selector="Button.BorderRound:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.BorderRound.on">
+			<Setter Property="Foreground"  Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.BorderRound.cross">
+			<Setter Property="Foreground"  Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Плюс, который поворачивается в крест: крест — это тот же плюс, повёрнутый
+		     на сорок пять градусов, и поворот идёт плавно. -->
+		<Style Selector="PathIcon.Turn">
+			<Setter Property="RenderTransform" Value="rotate(0deg)"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.18"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Button.on PathIcon.Turn">
+			<Setter Property="RenderTransform" Value="rotate(45deg)"/>
+		</Style>
+		<Style Selector="Button.cross PathIcon.Turn">
+			<Setter Property="RenderTransform" Value="rotate(45deg)"/>
+		</Style>
+
+		<!-- Плитки пера: вид линии, толщина, отступ. -->
+		<Style Selector="Button.PenTile">
+			<Setter Property="Height"          Value="26"/>
+			<Setter Property="MinWidth"        Value="24"/>
+			<Setter Property="Padding"         Value="4,0"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="FontSize"        Value="11"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="Focusable"       Value="False"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		</Style>
+		<Style Selector="Button.PenTile /template/ ContentPresenter">
+			<Setter Property="CornerRadius" Value="4"/>
+		</Style>
+		<Style Selector="Button.PenTile:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.PenTile.on /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<StackPanel Width="252" Spacing="12" Margin="4">
+
+		<!-- ── Стороны ─────────────────────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Стороны"/>
+			<Grid ColumnDefinitions="30,120,30" RowDefinitions="30,84,30" HorizontalAlignment="Center">
+
+				<!-- Образец абзаца: лист, строки текста и линии рамки по краям. -->
+				<Border Grid.Row="1" Grid.Column="1"
+				        Background="{DynamicResource BgSurfaceBrush}"
+				        BorderBrush="{DynamicResource BorderSubtleBrush}"
+				        BorderThickness="1">
+					<Panel>
+						<StackPanel Margin="16,0" Spacing="7" VerticalAlignment="Center">
+							<Rectangle Height="3" RadiusX="1.5" RadiusY="1.5" Fill="{DynamicResource TextDisabledBrush}"/>
+							<Rectangle Height="3" RadiusX="1.5" RadiusY="1.5" Fill="{DynamicResource TextDisabledBrush}"/>
+							<Rectangle Height="3" RadiusX="1.5" RadiusY="1.5" Fill="{DynamicResource TextDisabledBrush}"/>
+							<Rectangle Height="3" RadiusX="1.5" RadiusY="1.5" Fill="{DynamicResource TextDisabledBrush}"
+							           Width="52" HorizontalAlignment="Left"/>
+						</StackPanel>
+
+						<Rectangle Classes="EdgeLine" Classes.on="{Binding IsBorderTop}" Height="{Binding BorderPreviewThickness}" VerticalAlignment="Top"
+						           Fill="{DynamicResource TextPrimaryBrush}" IsVisible="{Binding IsBorderColorAuto}"/>
+						<Rectangle Classes="EdgeLine" Classes.on="{Binding IsBorderTop}" Height="{Binding BorderPreviewThickness}" VerticalAlignment="Top"
+						           Fill="{Binding BorderPenBrush}" IsVisible="{Binding !IsBorderColorAuto}"/>
+						<Rectangle Classes="EdgeLine" Classes.on="{Binding IsBorderBottom}" Height="{Binding BorderPreviewThickness}" VerticalAlignment="Bottom"
+						           Fill="{DynamicResource TextPrimaryBrush}" IsVisible="{Binding IsBorderColorAuto}"/>
+						<Rectangle Classes="EdgeLine" Classes.on="{Binding IsBorderBottom}" Height="{Binding BorderPreviewThickness}" VerticalAlignment="Bottom"
+						           Fill="{Binding BorderPenBrush}" IsVisible="{Binding !IsBorderColorAuto}"/>
+						<Rectangle Classes="EdgeLine" Classes.on="{Binding IsBorderLeft}" Width="{Binding BorderPreviewThickness}" HorizontalAlignment="Left"
+						           Fill="{DynamicResource TextPrimaryBrush}" IsVisible="{Binding IsBorderColorAuto}"/>
+						<Rectangle Classes="EdgeLine" Classes.on="{Binding IsBorderLeft}" Width="{Binding BorderPreviewThickness}" HorizontalAlignment="Left"
+						           Fill="{Binding BorderPenBrush}" IsVisible="{Binding !IsBorderColorAuto}"/>
+						<Rectangle Classes="EdgeLine" Classes.on="{Binding IsBorderRight}" Width="{Binding BorderPreviewThickness}" HorizontalAlignment="Right"
+						           Fill="{DynamicResource TextPrimaryBrush}" IsVisible="{Binding IsBorderColorAuto}"/>
+						<Rectangle Classes="EdgeLine" Classes.on="{Binding IsBorderRight}" Width="{Binding BorderPreviewThickness}" HorizontalAlignment="Right"
+						           Fill="{Binding BorderPenBrush}" IsVisible="{Binding !IsBorderColorAuto}"/>
+
+						<!-- Центр: плюс ставит все стороны, крест снимает всю рамку. -->
+						<Button Classes="BorderRound"
+						        Classes.cross="{Binding !IsBorderNone}"
+						        HorizontalAlignment="Center" VerticalAlignment="Center"
+						        Command="{Binding BorderCenterCommand}"
+						        behaviours:TooltipBehavior.Tip="Со всех сторон или убрать рамку">
+							<PathIcon Classes="Turn" Data="M11 4h2v16h-2zM4 11h16v2H4z" Width="10" Height="10"/>
+						</Button>
+					</Panel>
+				</Border>
+
+				<Button Grid.Row="0" Grid.Column="1" Classes="BorderRound"
+				        Classes.on="{Binding IsBorderTop}"
+				        HorizontalAlignment="Center" VerticalAlignment="Center"
+				        Command="{Binding BorderSideCommand}" CommandParameter="Top"
+				        behaviours:TooltipBehavior.Tip="Верхняя граница">
+					<PathIcon Classes="Turn" Data="M11 4h2v16h-2zM4 11h16v2H4z" Width="10" Height="10"/>
+				</Button>
+				<Button Grid.Row="2" Grid.Column="1" Classes="BorderRound"
+				        Classes.on="{Binding IsBorderBottom}"
+				        HorizontalAlignment="Center" VerticalAlignment="Center"
+				        Command="{Binding BorderSideCommand}" CommandParameter="Bottom"
+				        behaviours:TooltipBehavior.Tip="Нижняя граница">
+					<PathIcon Classes="Turn" Data="M11 4h2v16h-2zM4 11h16v2H4z" Width="10" Height="10"/>
+				</Button>
+				<Button Grid.Row="1" Grid.Column="0" Classes="BorderRound"
+				        Classes.on="{Binding IsBorderLeft}"
+				        HorizontalAlignment="Center" VerticalAlignment="Center"
+				        Command="{Binding BorderSideCommand}" CommandParameter="Left"
+				        behaviours:TooltipBehavior.Tip="Левая граница">
+					<PathIcon Classes="Turn" Data="M11 4h2v16h-2zM4 11h16v2H4z" Width="10" Height="10"/>
+				</Button>
+				<Button Grid.Row="1" Grid.Column="2" Classes="BorderRound"
+				        Classes.on="{Binding IsBorderRight}"
+				        HorizontalAlignment="Center" VerticalAlignment="Center"
+				        Command="{Binding BorderSideCommand}" CommandParameter="Right"
+				        behaviours:TooltipBehavior.Tip="Правая граница">
+					<PathIcon Classes="Turn" Data="M11 4h2v16h-2zM4 11h16v2H4z" Width="10" Height="10"/>
+				</Button>
+			</Grid>
+		</StackPanel>
+
+		<!-- ── Вид линии ───────────────────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Вид линии"/>
+			<StackPanel Orientation="Horizontal" Spacing="4">
+				<Button Classes="PenTile" Width="44"
+				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Single}"
+				        Command="{Binding BorderStyleCommand}" CommandParameter="Single"
+				        behaviours:TooltipBehavior.Tip="Сплошная">
+					<Rectangle Width="26" Height="1.5" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="44"
+				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Double}"
+				        Command="{Binding BorderStyleCommand}" CommandParameter="Double"
+				        behaviours:TooltipBehavior.Tip="Двойная">
+					<StackPanel Spacing="2" VerticalAlignment="Center">
+						<Rectangle Width="26" Height="1" Fill="{DynamicResource TextPrimaryBrush}"/>
+						<Rectangle Width="26" Height="1" Fill="{DynamicResource TextPrimaryBrush}"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile" Width="44"
+				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Dashed}"
+				        Command="{Binding BorderStyleCommand}" CommandParameter="Dashed"
+				        behaviours:TooltipBehavior.Tip="Штрих">
+					<Line StartPoint="0,1" EndPoint="26,1" StrokeThickness="1.5" StrokeDashArray="3,2" Stroke="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="44"
+				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Dotted}"
+				        Command="{Binding BorderStyleCommand}" CommandParameter="Dotted"
+				        behaviours:TooltipBehavior.Tip="Точки">
+					<Line StartPoint="1,1.5" EndPoint="26,1.5" StrokeThickness="2" StrokeDashArray="0.01,2" StrokeLineCap="Round" Stroke="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="44"
+				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Thick}"
+				        Command="{Binding BorderStyleCommand}" CommandParameter="Thick"
+				        behaviours:TooltipBehavior.Tip="Жирная">
+					<Rectangle Width="26" Height="3.5" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+			</StackPanel>
+		</StackPanel>
+
+		<!-- ── Толщина ─────────────────────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Толщина"/>
+			<StackPanel Orientation="Horizontal" Spacing="2">
+				<Button Classes="PenTile" Width="26" Padding="0"
+				        Classes.on="{Binding BorderPenWidthKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=0.25}"
+				        Command="{Binding BorderWidthCommand}" CommandParameter="0.25"
+				        behaviours:TooltipBehavior.Tip="0,25 пт">
+					<Rectangle Width="16" Height="0.75" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="26" Padding="0"
+				        Classes.on="{Binding BorderPenWidthKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=0.5}"
+				        Command="{Binding BorderWidthCommand}" CommandParameter="0.5"
+				        behaviours:TooltipBehavior.Tip="0,5 пт">
+					<Rectangle Width="16" Height="1" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="26" Padding="0"
+				        Classes.on="{Binding BorderPenWidthKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=0.75}"
+				        Command="{Binding BorderWidthCommand}" CommandParameter="0.75"
+				        behaviours:TooltipBehavior.Tip="0,75 пт">
+					<Rectangle Width="16" Height="1.25" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="26" Padding="0"
+				        Classes.on="{Binding BorderPenWidthKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=1}"
+				        Command="{Binding BorderWidthCommand}" CommandParameter="1"
+				        behaviours:TooltipBehavior.Tip="1 пт">
+					<Rectangle Width="16" Height="1.5" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="26" Padding="0"
+				        Classes.on="{Binding BorderPenWidthKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=1.5}"
+				        Command="{Binding BorderWidthCommand}" CommandParameter="1.5"
+				        behaviours:TooltipBehavior.Tip="1,5 пт">
+					<Rectangle Width="16" Height="2" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="26" Padding="0"
+				        Classes.on="{Binding BorderPenWidthKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=2.25}"
+				        Command="{Binding BorderWidthCommand}" CommandParameter="2.25"
+				        behaviours:TooltipBehavior.Tip="2,25 пт">
+					<Rectangle Width="16" Height="2.75" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="26" Padding="0"
+				        Classes.on="{Binding BorderPenWidthKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=3}"
+				        Command="{Binding BorderWidthCommand}" CommandParameter="3"
+				        behaviours:TooltipBehavior.Tip="3 пт">
+					<Rectangle Width="16" Height="3.5" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="26" Padding="0"
+				        Classes.on="{Binding BorderPenWidthKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=4.5}"
+				        Command="{Binding BorderWidthCommand}" CommandParameter="4.5"
+				        behaviours:TooltipBehavior.Tip="4,5 пт">
+					<Rectangle Width="16" Height="4.5" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="26" Padding="0"
+				        Classes.on="{Binding BorderPenWidthKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=6}"
+				        Command="{Binding BorderWidthCommand}" CommandParameter="6"
+				        behaviours:TooltipBehavior.Tip="6 пт">
+					<Rectangle Width="16" Height="5.5" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+			</StackPanel>
+		</StackPanel>
+
+		<!-- ── Отступ от текста ────────────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Отступ от текста, пт"/>
+			<StackPanel Orientation="Horizontal" Spacing="2">
+				<Button Classes="PenTile"
+				        Classes.on="{Binding BorderPenSpaceKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=auto}"
+				        Command="{Binding BorderSpaceCommand}" CommandParameter="auto"
+				        behaviours:TooltipBehavior.Tip="Отступ от текста как в Word: 1 пт сверху и снизу, 4 пт по бокам"
+				        Content="Авто"/>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding BorderPenSpaceKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=0}"
+				        Command="{Binding BorderSpaceCommand}" CommandParameter="0"
+				        behaviours:TooltipBehavior.Tip="0 пт"
+				        Content="0"/>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding BorderPenSpaceKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=1}"
+				        Command="{Binding BorderSpaceCommand}" CommandParameter="1"
+				        behaviours:TooltipBehavior.Tip="1 пт"
+				        Content="1"/>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding BorderPenSpaceKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=2}"
+				        Command="{Binding BorderSpaceCommand}" CommandParameter="2"
+				        behaviours:TooltipBehavior.Tip="2 пт"
+				        Content="2"/>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding BorderPenSpaceKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=4}"
+				        Command="{Binding BorderSpaceCommand}" CommandParameter="4"
+				        behaviours:TooltipBehavior.Tip="4 пт"
+				        Content="4"/>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding BorderPenSpaceKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=6}"
+				        Command="{Binding BorderSpaceCommand}" CommandParameter="6"
+				        behaviours:TooltipBehavior.Tip="6 пт"
+				        Content="6"/>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding BorderPenSpaceKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=8}"
+				        Command="{Binding BorderSpaceCommand}" CommandParameter="8"
+				        behaviours:TooltipBehavior.Tip="8 пт"
+				        Content="8"/>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding BorderPenSpaceKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=12}"
+				        Command="{Binding BorderSpaceCommand}" CommandParameter="12"
+				        behaviours:TooltipBehavior.Tip="12 пт"
+				        Content="12"/>
+			</StackPanel>
+		</StackPanel>
+
+		<!-- ── Цвет ────────────────────────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Цвет"/>
+			<StackPanel Orientation="Horizontal" Spacing="8">
+				<controls:ColorPickerButton Width="22" Height="22" VerticalAlignment="Center"
+				                            HexColor="{Binding BorderColorPick, Mode=TwoWay}"
+				                            behaviours:TooltipBehavior.Tip="Цвет рамки абзаца"/>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding IsBorderColorAuto}"
+				        Command="{Binding BorderColorAutoCommand}"
+				        Content="Как у текста"
+				        behaviours:TooltipBehavior.Tip="Рамка того же цвета, что и текст листа"/>
+			</StackPanel>
+		</StackPanel>
+	</StackPanel>
+</UserControl>

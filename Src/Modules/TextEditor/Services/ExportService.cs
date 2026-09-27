@@ -379,7 +379,12 @@ namespace Writersword.Modules.TextEditor.Services
 
         /// <summary>
         /// Элементы w:pPr в порядке, требуемом схемой CT_PPr:
-        /// pStyle, keepNext, keepLines, pageBreakBefore, numPr, spacing, ind, jc, outlineLvl.
+        /// pStyle, keepNext, keepLines, pageBreakBefore, numPr, pBdr, tabs, spacing, ind,
+        /// jc, outlineLvl.
+        ///
+        /// Порядок не вкусовой: Word читает свойства абзаца строго по схеме и, встретив
+        /// элемент не на своём месте, объявляет файл повреждённым. Позиции табуляции
+        /// раньше стояли в самом конце, после outlineLvl, — там им не место.
         /// </summary>
         private List<OpenXmlElement> BuildParagraphPropertyElements(
             Models.Styles.ParagraphProperties? props,
@@ -408,6 +413,23 @@ namespace Writersword.Modules.TextEditor.Services
                 }
             }
 
+            var borders = BuildParagraphBorders(props?.Borders);
+            if (borders is not null) elements.Add(borders);
+
+            // Заливка абзаца: по схеме w:shd идёт сразу за w:pBdr.
+            if (props?.ShadingColor is { Length: > 0 } shadingColor)
+            {
+                elements.Add(new W.Shading
+                {
+                    Val = W.ShadingPatternValues.Clear,
+                    Color = "auto",
+                    Fill = shadingColor.TrimStart('#').ToUpperInvariant()
+                });
+            }
+
+            var tabs = BuildTabs(props);
+            if (tabs is not null) elements.Add(tabs);
+
             var spacing = BuildSpacing(props);
             if (spacing is not null) elements.Add(spacing);
 
@@ -424,10 +446,50 @@ namespace Writersword.Modules.TextEditor.Services
             if (outline is int outlineValue)
                 elements.Add(new W.OutlineLevel { Val = outlineValue });
 
-            var tabs = BuildTabs(props);
-            if (tabs is not null) elements.Add(tabs);
-
             return elements;
+        }
+
+        /// <summary>
+        /// Рамка абзаца (w:pBdr). Стороны идут в порядке схемы: top, left, bottom,
+        /// right. Толщина у Word в восьмых пункта, зазор — в целых пунктах; пустой
+        /// цвет — «авто», цвет текста.
+        /// </summary>
+        private static W.ParagraphBorders? BuildParagraphBorders(Models.Styles.ParagraphBorders? borders)
+        {
+            if (borders is null || borders.IsEmpty) return null;
+
+            var result = new W.ParagraphBorders();
+
+            if (borders.Top is { IsVisible: true } top)
+                result.AppendChild(FillBorder(new W.TopBorder(), top));
+            if (borders.Left is { IsVisible: true } left)
+                result.AppendChild(FillBorder(new W.LeftBorder(), left));
+            if (borders.Bottom is { IsVisible: true } bottom)
+                result.AppendChild(FillBorder(new W.BottomBorder(), bottom));
+            if (borders.Right is { IsVisible: true } right)
+                result.AppendChild(FillBorder(new W.RightBorder(), right));
+
+            return result;
+        }
+
+        private static T FillBorder<T>(T element, Models.Styles.ParagraphBorderLine line) where T : W.BorderType
+        {
+            element.Val = new EnumValue<W.BorderValues>(line.Style switch
+            {
+                BorderStyle.Double => W.BorderValues.Double,
+                BorderStyle.Dashed => W.BorderValues.Dashed,
+                BorderStyle.Dotted => W.BorderValues.Dotted,
+                BorderStyle.Thick => W.BorderValues.Thick,
+                _ => W.BorderValues.Single
+            });
+
+            element.Size = (UInt32Value)(uint)Math.Clamp(Math.Round(line.WidthPt * 8.0), 2.0, 96.0);
+            element.Space = (UInt32Value)(uint)Math.Clamp(Math.Round(line.SpacePt), 0.0, 31.0);
+            element.Color = string.IsNullOrWhiteSpace(line.Color)
+                ? "auto"
+                : line.Color!.TrimStart('#').ToUpperInvariant();
+
+            return element;
         }
 
         /// <summary>
@@ -595,6 +657,11 @@ namespace Writersword.Modules.TextEditor.Services
 
             string? textColor = HexWithoutHash(props.TextColor);
             if (textColor is not null) elements.Add(new W.Color { Val = textColor });
+
+            // Разрядка — сразу за цветом, как требует схема CT_RPr. В файле она в
+            // двадцатых долях пункта.
+            if (props.CharacterSpacing is double spacing && Math.Abs(spacing) > 0.001)
+                elements.Add(new W.Spacing { Val = (int)Math.Round(spacing * 20.0) });
 
             if (props.FontSize is double size && size > 0)
             {
