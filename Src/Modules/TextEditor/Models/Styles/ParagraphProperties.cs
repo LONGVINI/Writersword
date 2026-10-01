@@ -12,7 +12,13 @@ namespace Writersword.Modules.TextEditor.Models.Styles
         Left = 0,
         Center = 1,
         Right = 2,
-        Justify = 3
+        Justify = 3,
+
+        /// <summary>
+        /// Растянутое (w:jc="distribute", Ctrl+Shift+J у Word): как по ширине, но
+        /// растягивается и последняя строка абзаца — буквы в ней разводятся на всю ширину.
+        /// </summary>
+        Distribute = 4
     }
 
     /// <summary>
@@ -59,6 +65,15 @@ namespace Writersword.Modules.TextEditor.Models.Styles
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public double? SpaceAfter { get; set; }
 
+        /// <summary>
+        /// Не добавлять интервал между абзацами одного стиля (w:contextualSpacing): свой
+        /// интервал до абзаца пропадает, если выше стоит абзац того же стиля, интервал
+        /// после — если такой же стоит ниже. Так пункты списка идут вплотную, а от
+        /// окружающего текста отделены. null — как у стиля.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? ContextualSpacing { get; set; }
+
         /// <summary>Правило вычисления межстрочного интервала.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public LineSpacingRule? LineSpacingRule { get; set; }
@@ -70,6 +85,21 @@ namespace Writersword.Modules.TextEditor.Models.Styles
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public double? LineSpacingValue { get; set; }
+
+        /// <summary>
+        /// Выравнивание знаков разного кегля по высоте строки (w:textAlignment):
+        /// по базовой линии, по верху, середине или низу строки.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public LineTextAlignment LineTextAlignment { get; set; }
+
+        /// <summary>
+        /// Абзац набран справа налево (w:bidi): иврит, арабский. Начало строк — у правого
+        /// края, «по левому» и «по правому» меняются местами, куски текста разных
+        /// направлений встают в порядке письма справа налево.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool RightToLeft { get; set; }
 
         /// <summary>Запрет переноса абзаца на другую страницу.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -152,6 +182,20 @@ namespace Writersword.Modules.TextEditor.Models.Styles
         public string? ShadingColor { get; set; }
 
         /// <summary>
+        /// Узор заливки абзаца — имя узора Word (w:shd w:val): pct25 — четверть точек,
+        /// diagStripe — косая штриховка и т. п. Рисуется цветом узора поверх цвета
+        /// заливки. null — узора нет: заливка сплошная или её нет.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ShadingPattern { get; set; }
+
+        /// <summary>
+        /// Цвет узора заливки (HEX, #RRGGBB). null — «авто»: цвет текста листа.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ShadingPatternColor { get; set; }
+
+        /// <summary>
         /// Создаёт копию свойств.
         ///
         /// Позиции табуляции копируются поимённо, а не ссылкой: почленное копирование
@@ -187,8 +231,11 @@ namespace Writersword.Modules.TextEditor.Models.Styles
             RightIndent = src.RightIndent;
             SpaceBefore = src.SpaceBefore;
             SpaceAfter = src.SpaceAfter;
+            ContextualSpacing = src.ContextualSpacing;
             LineSpacingRule = src.LineSpacingRule;
             LineSpacingValue = src.LineSpacingValue;
+            LineTextAlignment = src.LineTextAlignment;
+            RightToLeft = src.RightToLeft;
             KeepTogether = src.KeepTogether;
             KeepWithNext = src.KeepWithNext;
             PageBreakBefore = src.PageBreakBefore;
@@ -213,6 +260,8 @@ namespace Writersword.Modules.TextEditor.Models.Styles
 
             Borders = src.Borders?.Clone();
             ShadingColor = src.ShadingColor;
+            ShadingPattern = src.ShadingPattern;
+            ShadingPatternColor = src.ShadingPatternColor;
         }
     }
 }

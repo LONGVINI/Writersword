@@ -75,9 +75,11 @@ namespace Writersword.Modules.TextEditor.Document
         // Отступ каретки якоря от границы таблицы — чтобы не перекрывалась рамкой.
         private const float AnchorMarginPt = 4f;
 
-        // Дополнительный отступ сверху для строк параграфа, продолжающегося на новой странице.
-        // Добавляется к lineGroupYPt при переносе — чтобы первая строка не прилипала к полю.
-        private const float PageContinuationTopPadPt = 4f;
+        // Отступ сверху для строк абзаца, продолжающегося на новой странице. Ноль, как в
+        // Word: у него продолжение абзаца встаёт ровно на верхнее поле. Прежние 4 пт
+        // отнимали место у каждой такой страницы, и страница, которую Word заполняет
+        // впритык, у нас теряла последнюю строку — разбивка расходилась дальше.
+        private const float PageContinuationTopPadPt = 0f;
 
         // ── CellInfo: metadata для параграфа ячейки таблицы ──────────────
         // Таблица — это просто "параграфы в тюрьме": параграфы ячеек
@@ -98,15 +100,43 @@ namespace Writersword.Modules.TextEditor.Document
             public float ClipW { get; }
             public float ClipH { get; }
 
+            // Повёрнутая ячейка: абзацы разложены как обычный горизонтальный текст,
+            // а на лист их переводит Rotation. Каретка, выделение и отрисовка ставят эту
+            // матрицу поверх клипа ячейки; попадание мышью переводит точку обратно.
+            public int TextDirection { get; }
+            public SKMatrix Rotation { get; }
+            public SKMatrix InverseRotation { get; }
+            public bool IsRotated => TextDirection != 0;
+
             public CellInfo(TableBlock table, TableCell cell, ParagraphBlock paraBlock,
                 int cellParaIndex, int tableEntryIdx,
                 float contentXPt, float contentYPt,
-                float clipX, float clipY, float clipW, float clipH)
+                float clipX, float clipY, float clipW, float clipH,
+                int textDirection = 0, SKMatrix? rotation = null)
             {
                 Table = table; Cell = cell; ParaBlock = paraBlock;
                 CellParaIndex = cellParaIndex; TableEntryIdx = tableEntryIdx;
                 ContentXPt = contentXPt; ContentYPt = contentYPt;
                 ClipX = clipX; ClipY = clipY; ClipW = clipW; ClipH = clipH;
+
+                TextDirection = textDirection;
+                Rotation = rotation ?? SKMatrix.Identity;
+                InverseRotation = Rotation.TryInvert(out var inverse) ? inverse : SKMatrix.Identity;
+            }
+
+            /// <summary>Точка листа в координатах раскладки повёрнутой ячейки.</summary>
+            public (float X, float Y) ToLocal(float xPt, float yPt)
+            {
+                if (!IsRotated) return (xPt, yPt);
+                var p = InverseRotation.MapPoint(xPt, yPt);
+                return (p.X, p.Y);
+            }
+
+            /// <summary>Ставит поворот ячейки поверх текущей матрицы холста.</summary>
+            public void ApplyRotation(SKCanvas canvas)
+            {
+                if (!IsRotated) return;
+                canvas.SetMatrix(SKMatrix.Concat(canvas.TotalMatrix, Rotation));
             }
         }
 
@@ -1202,7 +1232,16 @@ namespace Writersword.Modules.TextEditor.Document
                 _substituteFontFamily,
                 _breakOnHyphen,
                 (float)DocVm.Document.DefaultTabStopPt,
-                DocVm.Document.JustifyWithShrinking);
+                DocVm.Document.JustifyWithShrinking,
+                ShowHiddenTextInLayout);
+
+        /// <summary>
+        /// Скрытый текст (w:vanish) виден, пока показаны непечатаемые знаки, — как в Word.
+        /// В чтении и развороте знаков нет, и скрытый текст там не показывается. В PDF
+        /// он не идёт никогда, как и на печать у Word.
+        /// </summary>
+        private bool ShowHiddenTextInLayout
+            => DocVm?.ShowFormattingMarks == true && !ReadingActive && !SpreadMode && !_exportHideHiddenText;
 
         // ── Логирование ───────────────────────────────────────────────────
         private static readonly ILogger _logger = Log.ForContext<DocumentCanvas>();
@@ -1467,6 +1506,9 @@ namespace Writersword.Modules.TextEditor.Document
                 return (l * _spreadPadScale, t * _spreadPadScale,
                         r * _spreadPadScale, b * _spreadPadScale);
 
+            // Колонтитул выше поля листа отодвигает текст, как в Word, но только на тех
+            // листах, где он печатается: поле каждого листа уточняет раскладка
+            // (DocumentCanvas.BandReserve, PagePaddingForPage). Здесь — поле листа.
             return (l, t, r, b);
         }
 
@@ -1944,6 +1986,57 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         /// <summary>
+        /// Листы, попадающие в окно при прокрутке offsetYPx и высоте окна viewportPx,
+        /// — для вертикальной линейки. Полосы в точках экрана, в координатах холста.
+        ///
+        /// Позиции берутся с настоящих листов раскладки, с их визуальным сдвигом
+        /// (страницы рядом, книга), а не выводятся из размера бумаги и номера: так
+        /// шкала стоит ровно напротив листа при любом числе листов в ряду и при
+        /// любой высоте страниц. Из листов одного ряда берётся первый.
+        /// </summary>
+        public List<Writersword.Modules.TextEditor.ViewModels.Components.RulerPageBand> GetVisiblePageBands(double offsetYPx, double viewportPx)
+        {
+            var result = new List<Writersword.Modules.TextEditor.ViewModels.Components.RulerPageBand>();
+
+            List<PageRect> pages;
+            lock (_renderLock) { pages = _pages; }
+            if (pages.Count == 0 || viewportPx <= 0) return result;
+
+            double scale = PtToPx * Zoom;
+            if (scale <= 0) return result;
+
+            double viewTopPt = offsetYPx / scale;
+            double viewBotPt = (offsetYPx + viewportPx) / scale;
+
+            float lastRowTopPt = float.NaN;
+
+            for (int i = 0; i < pages.Count; i++)
+            {
+                var (_, dy) = PageVisualDelta(i, pages);
+
+                // Листы, уведённые разворотом за пределы холста, на экране не стоят.
+                if (dy >= SpreadHiddenOffsetPt * 0.5f) continue;
+
+                float topPt = pages[i].Ypt + dy;
+                float heightPt = pages[i].HeightPt;
+
+                // Второй и следующие листы того же ряда — та же полоса.
+                if (!float.IsNaN(lastRowTopPt) && Math.Abs(topPt - lastRowTopPt) < 0.5f) continue;
+
+                if (topPt + heightPt < viewTopPt) continue;
+
+                // Ряды идут сверху вниз: первый же ряд ниже окна значит, что ниже
+                // видимых листов больше нет.
+                if (topPt > viewBotPt) break;
+
+                lastRowTopPt = topPt;
+                result.Add(new Writersword.Modules.TextEditor.ViewModels.Components.RulerPageBand(i, topPt * scale, heightPt * scale));
+            }
+
+            return result;
+        }
+
+        /// <summary>
         /// Число строк текущей раскладки. Считается по разбитым на строки абзацам:
         /// сколько строк текста легло на листы, столько и показывает статистика.
         /// Знаки конца абзаца тут ни при чём — абзац на всю страницу это одна запись
@@ -2337,6 +2430,13 @@ namespace Writersword.Modules.TextEditor.Document
             // Раскладка отвечает навигатору и оглавлению, на какой странице лежит абзац
             // и как к нему уйти (DocumentCanvas.Toc).
             WireTocDelegates();
+
+            // Колонтитулы: вью-модель спрашивает лист каретки и сведения о листах,
+            // полотно перерисовывает листы по правке колонтитулов (DocumentCanvas.HeaderFooter).
+            WireHeaderFooterDelegates();
+
+            // Выгрузка в PDF рисует листы полотна (DocumentCanvas.PdfExport).
+            WirePdfExportDelegate();
 
             // Шаг табуляции по умолчанию меняется на весь документ сразу, и одними
             // затронутыми абзацами тут не обойтись (DocumentCanvas.Tabs).
@@ -3316,7 +3416,8 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
-            // Непечатаемые знаки: раскладка та же, перерисовывается только кадр.
+            // Непечатаемые знаки: раскладка та же, перерисовывается только кадр —
+            // кроме документа со скрытым текстом, у которого показ знаков меняет раскладку.
             if (e.PropertyName == nameof(DocumentViewModel.ShowFormattingMarks))
             {
                 OnFormattingMarksChanged();
@@ -3372,6 +3473,9 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 if (DocVm is not null)
                     _styleResolver = CreateStyleResolver();
+
+                // Расстояние до колонтитула могло смениться вместе с параметрами листа.
+                UpdateHeaderFooterReserve();
 
                 // Смена подачи чтения меняет размер листа, а значит и всю раскладку:
                 // кэш абзацев считан под прежнюю ширину и целиком недействителен.
@@ -3903,7 +4007,43 @@ namespace Writersword.Modules.TextEditor.Document
         {
             return _layoutCache.TryGetValue(pvm, out var cached)
                 && cached.Text == (pvm.PlainText ?? string.Empty)
-                && Math.Abs(cached.Width - widthPt) < 0.1f;
+                && Math.Abs(cached.Width - widthPt) < 0.1f
+                && SpacingSuppressionMatches(cached.Layout, pvm);
+        }
+
+        /// <summary>
+        /// Раскладка из кеша посчитана при том же соседстве абзаца: интервалы, снятые
+        /// правилом «не добавлять интервал между абзацами одного стиля», у неё те же, что
+        /// выводит соседство сейчас. Ключ кеша (текст, ширина) о соседях не знает, а смена
+        /// стиля соседнего абзаца меняет интервалы этого, не трогая его текста.
+        /// </summary>
+        private static bool SpacingSuppressionMatches(SKTextLayout layout, ParagraphViewModel pvm)
+        {
+            var model = pvm.Model;
+            bool before = model?.SuppressSpaceBefore == true;
+            bool after = model?.SuppressSpaceAfter == true;
+            return layout.SpaceBeforeSuppressed == before && layout.SpaceAfterSuppressed == after;
+        }
+
+        /// <summary>
+        /// Выставляет абзацам снятие интервалов по правилу «не добавлять интервал между
+        /// абзацами одного стиля» (<see cref="ContextualSpacingRules"/>). Вызывается перед
+        /// раскладкой — вместе с подсчётом маркеров списков: раскладка абзаца соседей не
+        /// видит и берёт вывод из самого абзаца.
+        /// </summary>
+        private void ApplyContextualSpacing(IReadOnlyList<BlockModel> blocks)
+        {
+            var resolver = _styleResolver ??= CreateStyleResolver();
+
+            bool changed = ContextualSpacingRules.Apply(blocks, paragraph =>
+                paragraph.Properties.ContextualSpacing
+                ?? resolver.ResolveContextualSpacing(paragraph.Properties.StyleName));
+
+            // Раскладки абзацев сверяются с соседством сами (SpacingSuppressionMatches),
+            // а раскладки ячеек кешируются таблицей целиком и сверять их нечем: снятие
+            // поменялось — кеши ячеек сбрасываются, таблицы перевёрстываются с новыми
+            // интервалами.
+            if (changed) InvalidateCellLayoutCaches();
         }
 
         /// <summary>
@@ -3990,6 +4130,7 @@ namespace Writersword.Modules.TextEditor.Document
             foreach (var section in DocVm.Document.Sections)
             {
                 var map = Rendering.ListNumberingEngine.Compute(section.Blocks);
+                ApplyContextualSpacing(section.Blocks);
                 foreach (var block in section.Blocks)
                     if (block is ParagraphBlock p && p.ListProperties is not null)
                     {
@@ -3998,7 +4139,7 @@ namespace Writersword.Modules.TextEditor.Document
                         MigrateCorruptListMarker(p, textWidthPt);
                     }
 
-                ApplyListMarkerTextsInTables(section.Blocks, textWidthPt);
+                ApplyListMarkerTextsInTables(section.Blocks, textWidthPt, map);
             }
         }
 
@@ -4011,8 +4152,13 @@ namespace Writersword.Modules.TextEditor.Document
         /// и начинается заново в следующей — сквозной счёт по таблице требовал бы
         /// порядка обхода, которого у ячеек нет.
         /// </summary>
+        /// <param name="flowMarkers">
+        /// Маркеры общего прохода по разделу. Пункты списков из Word считаются в нём сквозь
+        /// таблицы, как у Word, и берут маркер оттуда, а не из счёта своей ячейки.
+        /// </param>
         private void ApplyListMarkerTextsInTables(
-            IReadOnlyList<Models.Document.BlockModel> blocks, double textWidthPt)
+            IReadOnlyList<Models.Document.BlockModel> blocks, double textWidthPt,
+            IReadOnlyDictionary<ParagraphBlock, Rendering.ListMarkerInfo>? flowMarkers = null)
         {
             foreach (var block in blocks)
             {
@@ -4040,7 +4186,12 @@ namespace Writersword.Modules.TextEditor.Document
                     {
                         if (para.ListProperties is null) continue;
 
-                        if (cellMap.TryGetValue(para, out var info))
+                        Rendering.ListMarkerInfo info = default;
+                        bool hasMarker = para.ListProperties.WordLevels is not null && flowMarkers is not null
+                            ? flowMarkers.TryGetValue(para, out info)
+                            : cellMap.TryGetValue(para, out info);
+
+                        if (hasMarker)
                         {
                             para.ListProperties.ComputedMarkerText = info.Text;
                             // Сам значок рисуется не по тексту в модели, а по Marker
@@ -4327,7 +4478,8 @@ namespace Writersword.Modules.TextEditor.Document
             string text = pvm.PlainText ?? string.Empty;
             if (_layoutCache.TryGetValue(pvm, out var cached)
                 && cached.Text == text
-                && Math.Abs(cached.Width - widthPt) < 0.1f)
+                && Math.Abs(cached.Width - widthPt) < 0.1f
+                && SpacingSuppressionMatches(cached.Layout, pvm))
                 return cached.Layout;
             var layout = _renderer.BuildLayout(pvm.Model, widthPt, _styleResolver!);
             _layoutCache[pvm] = (text, widthPt, layout);

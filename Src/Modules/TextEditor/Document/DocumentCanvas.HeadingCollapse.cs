@@ -99,7 +99,8 @@ namespace Writersword.Modules.TextEditor.Document
                 ? docVm.CollapsedHeadingIds
                 : NoCollapsedHeadings;
 
-            if (ReadingActive || !docVm.HasCollapsedHeadings)
+            // Выгрузка в PDF раскладывает книгу целиком (DocumentCanvas.PdfExport).
+            if (ReadingActive || !docVm.HasCollapsedHeadings || _exportIgnoreCollapse)
             {
                 _collapsedBlocks = null;
                 return;

@@ -64,6 +64,7 @@ namespace Writersword.Modules.TextEditor.Views
             WirePageTooltip();
             WireReadingRibbon();
             WireFocusMode();
+            WireHeaderFooterEditor();
         }
 
         public TextEditorView() : this(new UndoRedoStack()) { }
@@ -357,7 +358,10 @@ namespace Writersword.Modules.TextEditor.Views
                 vm.Ruler.ScrollOffsetY = scrollViewer.Offset.Y;
                 vm.Ruler.ViewportHeight = scrollViewer.Viewport.Height;
                 if (pageCanvas is not null)
+                {
                     vm.Ruler.FocusedPageIndex = pageCanvas.GetPageAtOffset(scrollViewer.Offset.Y) - 1;
+                    UpdateRulerPages(vm, scrollViewer, pageCanvas);
+                }
 
                 scrollViewer.ScrollChanged += (_, _) =>
                 {
@@ -367,7 +371,12 @@ namespace Writersword.Modules.TextEditor.Views
                     // а не за страницей каретки: при скролле далеко от каретки шкала иначе
                     // привязывалась к невидимой странице и уезжала.
                     if (pageCanvas is not null)
+                    {
                         vm.Ruler.FocusedPageIndex = pageCanvas.GetPageAtOffset(scrollViewer.Offset.Y) - 1;
+
+                        // Шкала у каждого видимого листа (RulerViewModel.VisiblePages).
+                        UpdateRulerPages(vm, scrollViewer, pageCanvas);
+                    }
                 };
             };
         }
@@ -397,7 +406,24 @@ namespace Writersword.Modules.TextEditor.Views
                 if (origin is null) return;
 
                 vm.Ruler.ContentTopOffsetPx = origin.Value.Y + scrollViewer.Offset.Y;
+
+                // Раскладка могла сменить листы (правка, масштаб, число листов в ряду)
+                // без всякой прокрутки — шкалы линейки обязаны встать по новым листам.
+                UpdateRulerPages(vm, scrollViewer, pageCanvas);
             };
+        }
+
+        /// <summary>
+        /// Передаёт вертикальной линейке листы, видимые в окне. Прокрутка окна
+        /// переводится в координаты холста: когда документ короче окна, холст стоит
+        /// в нём ниже верха, и видимая часть холста начинается выше нуля прокрутки.
+        /// </summary>
+        private static void UpdateRulerPages(
+            TextEditorViewModel vm, ScrollViewer scrollViewer, DocumentCanvas pageCanvas)
+        {
+            double canvasTopPx = scrollViewer.Offset.Y - vm.Ruler.ContentTopOffsetPx;
+            vm.Ruler.VisiblePages = pageCanvas.GetVisiblePageBands(
+                canvasTopPx, scrollViewer.Viewport.Height);
         }
 
         private void WirePageTooltip()

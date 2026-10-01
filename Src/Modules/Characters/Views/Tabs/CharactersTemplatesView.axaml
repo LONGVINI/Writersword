@@ -1,183 +1,526 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Templates"
-             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
-             xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             xmlns:avm="using:Writersword.Modules.Characters.ViewModels.Anketas"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:controls="using:Writersword.Modules.Characters.Controls"
              x:Class="Writersword.Modules.Characters.Views.Tabs.CharactersTemplatesView"
              x:DataType="vm:CharactersTemplatesViewModel"
              Background="{DynamicResource BgSurfaceBrush}">
 
-    <UserControl.Resources>
-        <conv:IntIsZeroConverter x:Key="IntIsZeroConverter"/>
-        <conv:BoolToActiveBrushConverter x:Key="BoolToActiveBrushConverter"/>
-        <conv:BoolToActiveTemplateConverter x:Key="BoolToActiveTemplateConverter"/>
-    </UserControl.Resources>
+	<!-- Шаблоны блоками — по образцу карточек персонажей: цветная рамка,
+	     картинка, название с описанием, кнопки в углу под курсором, белая
+	     окантовка у выбранного. В блоке — до десяти значков анкет, остальное
+	     раскрывается на месте.
 
-    <Grid ColumnDefinitions="200,*">
+	     У каждого значка под курсором карандаш (слева сверху) — открыть
+	     анкету в редакторе — и крестик (справа сверху) — убрать из шаблона.
+	     «+» в конце ряда добавляет анкету; одна анкета в шаблоне бывает
+	     только раз. Встроенный шаблон не меняется: правка уходит в его копию.
 
-        <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto"
-              Background="{DynamicResource BgPanelBrush}">
-            <TextBlock Grid.Row="0"
-                       Text="{x:Static loc:CharactersStrings.Templates_FiltersHeader}"
-                       FontSize="11" FontWeight="SemiBold"
-                       Foreground="{DynamicResource TextSecondaryBrush}"
-                       Margin="12,10,12,6"/>
-            <ScrollViewer Grid.Row="1">
-                <ItemsControl ItemsSource="{Binding Filters}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="vm:TemplateFilterItemViewModel">
-                            <CheckBox IsChecked="{Binding IsChecked}"
-                                      Content="{Binding Label}"
-                                      FontSize="12"
-                                      Foreground="{DynamicResource TextPrimaryBrush}"
-                                      Margin="8,4"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
-            <Button Grid.Row="2"
-                    Content="{x:Static loc:CharactersStrings.Templates_RestartOnboarding}"
-                    Command="{Binding RestartOnboardingCommand}"
-                    HorizontalAlignment="Left"
-                    Margin="8,8" Padding="6,3" FontSize="10"
-                    Background="Transparent" BorderThickness="0"
-                    Foreground="{DynamicResource TextSecondaryBrush}"
-                    Opacity="0.5"/>
-        </Grid>
+	     Кнопки, поля и подсказки — общие стили программы (Styles/Controls). -->
 
-        <ScrollViewer Grid.Column="1" Padding="12">
-            <StackPanel Spacing="16">
+	<UserControl.DataTemplates>
+		<DataTemplate DataType="{x:Type vm:TemplateBlockViewModel}">
+			<Panel Margin="6" IsVisible="{Binding IsMatch}">
+				<Border Classes="tpl-block"
+				        Classes.active="{Binding IsActive}"
+				        Classes.drag-source="{Binding IsDragSource}"
+				        BorderBrush="{Binding ColorBrush}"
+				        PointerPressed="OnBlockPressed">
+					<Panel>
+						<!-- Шаблон проекта: та же ленточка, что у групп персонажей -->
+						<Path Classes="tpl-bookmark"
+						      IsVisible="{Binding IsProject}"
+						      IsHitTestVisible="False"
+						      ZIndex="3"
+						      HorizontalAlignment="Right"
+						      VerticalAlignment="Top"
+						      Margin="0,-1,12,0"
+						      Data="M0,0 H14 V20 L7,14 L0,20 Z"
+						      Fill="{Binding ColorBrush}"/>
 
-                <StackPanel Spacing="6">
-                    <TextBlock Text="{x:Static loc:CharactersStrings.Templates_BuiltInHeader}"
-                               FontSize="11" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-                    <ItemsControl ItemsSource="{Binding FilteredTemplates}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="vm:TemplateItemViewModel">
-                                <Border Background="{DynamicResource BgPanelBrush}"
-                                        CornerRadius="6" Margin="0,0,0,4" Padding="12,10">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <StackPanel Grid.Column="0" Spacing="2">
-                                            <TextBlock Text="{Binding Name}"
-                                                       FontSize="13" FontWeight="Medium"
-                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                            <TextBlock Text="{Binding Description}"
-                                                       FontSize="11"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                                       TextWrapping="Wrap"/>
-                                            <TextBlock FontSize="10"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                                       Margin="0,2,0,0">
-                                                <Run Text="{Binding FieldCount}"/>
-                                                <Run Text="{x:Static loc:CharactersStrings.Templates_FieldCountSuffix}"/>
-                                            </TextBlock>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1"
-                                                    Orientation="Horizontal" Spacing="6"
-                                                    VerticalAlignment="Center" Margin="12,0,0,0">
-                                            <Button Content="{x:Static loc:CharactersStrings.Templates_Copy}"
-                                                    Command="{ReflectionBinding $parent[UserControl].DataContext.DuplicateTemplateCommand}"
-                                                    CommandParameter="{Binding AnketaId}"
-                                                    FontSize="11" Padding="8,4"/>
-                                            <Button FontSize="11" Padding="8,4"
-                                                    Command="{ReflectionBinding $parent[UserControl].DataContext.ToggleTemplateCommand}"
-                                                    CommandParameter="{Binding AnketaId}"
-                                                    Background="{Binding IsActive, Converter={StaticResource BoolToActiveBrushConverter}}"
-                                                    Foreground="White">
-                                                <TextBlock Text="{Binding IsActive, Converter={StaticResource BoolToActiveTemplateConverter}}"/>
-                                            </Button>
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
+						<StackPanel>
+							<!-- Шапка: картинка, название, описание. За неё блок перетаскивают. -->
+							<Grid Classes="tpl-head"
+							      ColumnDefinitions="Auto,*"
+							      ColumnSpacing="12"
+							      Margin="12,12,12,10"
+							      Background="Transparent"
+							      PointerPressed="OnHeadPressed"
+							      PointerMoved="OnHeadMoved"
+							      PointerReleased="OnHeadReleased"
+							      PointerCaptureLost="OnHeadCaptureLost">
+								<Button Grid.Column="0" Classes="ghost tpl-image"
+								        Click="OnImageClick"
+								        behaviours:TooltipBehavior.Tip="Картинка, значок, название"
+								        behaviours:TooltipBehavior.Description="Щелчок по выбранному своему шаблону открывает настройку">
+									<Panel Width="64" Height="64">
+										<Border CornerRadius="8" Background="{Binding ColorBrush}"/>
+										<PathIcon Data="{Binding IconGeometry}" Foreground="White"
+										          Width="28" Height="28"
+										          IsVisible="{Binding HasNoImage}"/>
+										<Border CornerRadius="8" ClipToBounds="True" IsVisible="{Binding HasImage}">
+											<Image Source="{Binding Image}" Stretch="UniformToFill"/>
+										</Border>
+									</Panel>
+									<FlyoutBase.AttachedFlyout>
+										<Flyout Placement="BottomEdgeAlignedLeft">
+											<StackPanel Width="340" Spacing="8" Margin="4">
+												<TextBox Text="{Binding EditName, Mode=TwoWay}"
+												         PlaceholderText="Название шаблона"/>
+												<TextBox Text="{Binding EditDescription, Mode=TwoWay}"
+												         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48"
+												         PlaceholderText="Описание"/>
+												<StackPanel Orientation="Horizontal" Spacing="4">
+													<Button Click="OnPickImageClick"
+													        IsVisible="{Binding $parent[UserControl].DataContext.CanUseImages}"
+													        behaviours:TooltipBehavior.Tip="Картинка из файла">
+														<PathIcon Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
+														          Width="14" Height="14"/>
+													</Button>
+													<Button Click="OnClearImageClick"
+													        IsVisible="{Binding HasImage}"
+													        behaviours:TooltipBehavior.Tip="Убрать картинку">
+														<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+														          Width="11" Height="11"/>
+													</Button>
+												</StackPanel>
+												<ItemsControl ItemsSource="{Binding IconOptions}">
+													<ItemsControl.ItemsPanel>
+														<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+													</ItemsControl.ItemsPanel>
+													<ItemsControl.ItemTemplate>
+														<DataTemplate x:DataType="avm:AnketaIconOptionViewModel">
+															<ToggleButton Classes="RibbonToggle" Margin="0,0,3,3"
+															              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+															              behaviours:TooltipBehavior.Tip="{Binding Label}">
+																<controls:AnketaIconBadge Size="24" Icon="{Binding Key}" IconColor="{Binding IconColor}"/>
+															</ToggleButton>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+												<ItemsControl ItemsSource="{Binding IconColorOptions}">
+													<ItemsControl.ItemsPanel>
+														<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+													</ItemsControl.ItemsPanel>
+													<ItemsControl.ItemTemplate>
+														<DataTemplate x:DataType="avm:AnketaIconColorOptionViewModel">
+															<ToggleButton Classes="RibbonToggle" Margin="0,0,3,3"
+															              IsChecked="{Binding IsSelected, Mode=TwoWay}">
+																<controls:AnketaIconBadge Size="24" Icon="{Binding Icon}" IconColor="{Binding Hex}"/>
+															</ToggleButton>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+											</StackPanel>
+										</Flyout>
+									</FlyoutBase.AttachedFlyout>
+								</Button>
 
-                <Separator Background="{DynamicResource BorderDefaultBrush}"/>
+								<StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Top" Margin="0,2,72,0">
+									<TextBlock Text="{Binding Name}"
+									           FontSize="13" FontWeight="Medium"
+									           TextTrimming="CharacterEllipsis"
+									           Foreground="{DynamicResource TextPrimaryBrush}"/>
+									<TextBlock Text="{Binding Description}"
+									           IsVisible="{Binding HasDescription}"
+									           FontSize="11"
+									           TextWrapping="Wrap" MaxLines="2"
+									           TextTrimming="CharacterEllipsis"
+									           Foreground="{DynamicResource TextSecondaryBrush}"/>
+								</StackPanel>
+							</Grid>
 
-                <StackPanel Spacing="6">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Column="0"
-                                   Text="{x:Static loc:CharactersStrings.Templates_CustomHeader}"
-                                   FontSize="11" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                            <!-- Набор не обязательно составлять с нуля: чужой,
-                                 подробный, скачивается и правится под себя. -->
-                            <Button Content="{x:Static loc:CharactersStrings.Templates_Import}"
-                                    Click="OnImportTemplateClick"
-                                    FontSize="11" Padding="8,3"/>
-                            <Button Content="{x:Static loc:CharactersStrings.Templates_CreateCustom}"
-                                    Command="{Binding CreateCustomTemplateCommand}"
-                                    FontSize="11" Padding="8,3"/>
-                        </StackPanel>
-                    </Grid>
-                    <TextBlock Text="{x:Static loc:CharactersStrings.Templates_NoCustom}"
-                               FontSize="12"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               IsVisible="{Binding CustomTemplates.Count,
-                                   Converter={StaticResource IntIsZeroConverter}}"
-                               Margin="0,4"/>
-                    <ItemsControl ItemsSource="{Binding CustomTemplates}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="vm:TemplateItemViewModel">
-                                <Border Background="{DynamicResource BgPanelBrush}"
-                                        CornerRadius="6" Margin="0,0,0,4" Padding="12,10"
-                                        BorderBrush="{DynamicResource AccentDefaultBrush}"
-                                        BorderThickness="1">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <StackPanel Grid.Column="0" Spacing="2">
-                                            <TextBlock Text="{Binding Name}"
-                                                       FontSize="13" FontWeight="Medium"
-                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                            <TextBlock FontSize="10"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}">
-                                                <Run Text="{Binding FieldCount}"/>
-                                                <Run Text="{x:Static loc:CharactersStrings.Templates_FieldCountSuffix}"/>
-                                            </TextBlock>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1"
-                                                    Orientation="Horizontal" Spacing="6"
-                                                    VerticalAlignment="Center" Margin="12,0,0,0">
-                                            <!-- Наполнение набора полями. Без этого
-                                                 созданный набор оставался пустым:
-                                                 создать, скопировать и удалить было
-                                                 чем, а добавить поле — нечем. -->
-                                            <Button Content="{x:Static loc:CharactersStrings.Templates_Edit}"
-                                                    Click="OnEditCustomTemplateClick"
-                                                    FontSize="11" Padding="8,4"/>
-                                            <!-- Набор — определение полей, оно
-                                                 самодостаточно и переносится
-                                                 одним файлом между проектами
-                                                 и людьми. -->
-                                            <Button Content="{x:Static loc:CharactersStrings.Templates_Export}"
-                                                    Click="OnExportTemplateClick"
-                                                    FontSize="11" Padding="8,4"/>
-                                            <Button Content="{x:Static loc:CharactersStrings.Templates_Delete}"
-                                                    Command="{ReflectionBinding $parent[UserControl].DataContext.DeleteCustomTemplateCommand}"
-                                                    CommandParameter="{Binding AnketaId}"
-                                                    FontSize="11" Padding="8,4"
-                                                    Foreground="#F44336"
-                                                    Background="Transparent"
-                                                    BorderThickness="1" BorderBrush="#F44336"/>
-                                            <Button FontSize="11" Padding="8,4"
-                                                    Command="{ReflectionBinding $parent[UserControl].DataContext.ToggleTemplateCommand}"
-                                                    CommandParameter="{Binding AnketaId}"
-                                                    Background="{Binding IsActive, Converter={StaticResource BoolToActiveBrushConverter}}"
-                                                    Foreground="White">
-                                                <TextBlock Text="{Binding IsActive, Converter={StaticResource BoolToActiveTemplateConverter}}"/>
-                                            </Button>
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
+							<!-- Анкеты -->
+							<Border BorderBrush="{DynamicResource BorderDefaultBrush}"
+							        BorderThickness="0,1,0,0"
+							        Padding="12,12,12,6">
+								<Grid ColumnDefinitions="*,Auto">
+									<WrapPanel Grid.Column="0" Orientation="Horizontal">
+										<ItemsControl Classes="tpl-icons" ItemsSource="{Binding Anketas}">
+											<ItemsControl.ItemsPanel>
+												<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+											</ItemsControl.ItemsPanel>
+											<ItemsControl.ItemTemplate>
+												<DataTemplate x:DataType="vm:TemplateAnketaItemViewModel">
+													<Panel Classes="tpl-ic"
+													       Classes.drag-source="{Binding IsDragSource}"
+													       Width="32" Height="32"
+													       Margin="0,0,8,8"
+													       Background="Transparent"
+													       PointerPressed="OnIconPressed"
+													       PointerMoved="OnIconMoved"
+													       PointerReleased="OnIconReleased"
+													       PointerCaptureLost="OnIconCaptureLost"
+													       DoubleTapped="OnIconDoubleTapped"
+													       behaviours:TooltipBehavior.Tip="{Binding Name}"
+													       behaviours:TooltipBehavior.Description="{Binding Description}">
+														<controls:AnketaIconBadge Size="32" Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+														<!-- Кнопки — как у карточки персонажа: тёмная подложка, белый значок -->
+														<Button Classes="ic-mini"
+														        HorizontalAlignment="Left" VerticalAlignment="Top"
+														        Margin="-5,-5,0,0"
+														        Padding="3" MinWidth="0" MinHeight="0"
+														        Background="#88000000"
+														        BorderThickness="0" CornerRadius="4"
+														        Click="OnEditAnketaClick"
+														        behaviours:TooltipBehavior.Tip="Открыть в редакторе анкет">
+															<Button.Styles>
+																<Style Selector="Button:pointerover /template/ ContentPresenter">
+																	<Setter Property="Background" Value="#BB000000"/>
+																</Style>
+															</Button.Styles>
+															<PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+															          Width="9" Height="9" Foreground="White"/>
+														</Button>
+														<Button Classes="ic-mini"
+														        HorizontalAlignment="Right" VerticalAlignment="Top"
+														        Margin="0,-5,-5,0"
+														        Padding="3" MinWidth="0" MinHeight="0"
+														        Background="#88000000"
+														        BorderThickness="0" CornerRadius="4"
+														        Click="OnRemoveAnketaClick"
+														        behaviours:TooltipBehavior.Tip="Убрать из шаблона"
+														        behaviours:TooltipBehavior.Description="Сама анкета остаётся. У встроенного шаблона появится его копия без неё">
+															<Button.Styles>
+																<Style Selector="Button:pointerover /template/ ContentPresenter">
+																	<Setter Property="Background" Value="#BB660000"/>
+																</Style>
+															</Button.Styles>
+															<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+															          Width="9" Height="9" Foreground="White"/>
+														</Button>
+													</Panel>
+												</DataTemplate>
+											</ItemsControl.ItemTemplate>
+										</ItemsControl>
 
-            </StackPanel>
-        </ScrollViewer>
-    </Grid>
+										<Button Classes="tpl-add"
+										        IsVisible="{Binding CanAddAnketas}"
+										        behaviours:TooltipBehavior.Tip="Добавить анкету"
+										        behaviours:TooltipBehavior.Description="Из анкет проекта и встроенных. У встроенного шаблона появится его копия">
+											<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" Width="12" Height="12"/>
+											<Button.Flyout>
+												<Flyout Placement="BottomEdgeAlignedLeft" Opening="OnPickerOpening">
+													<StackPanel Width="300" Spacing="6" Margin="2">
+														<TextBox Text="{Binding PickerQuery, Mode=TwoWay}"
+														         PlaceholderText="Поиск анкеты"/>
+														<ScrollViewer MaxHeight="340">
+															<ItemsControl ItemsSource="{Binding PickerItems}">
+																<ItemsControl.ItemTemplate>
+																	<DataTemplate x:DataType="vm:TemplatePickItemViewModel">
+																		<Button Classes="ghost pick-row" Click="OnPickAnketaClick"
+																		        behaviours:TooltipBehavior.Tip="{Binding Name}"
+																		        behaviours:TooltipBehavior.Description="{Binding Description}">
+																			<Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
+																				<controls:AnketaIconBadge Grid.Column="0" Size="22"
+																				                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+																				<TextBlock Grid.Column="1" Text="{Binding Name}"
+																				           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+																				           Foreground="{DynamicResource TextPrimaryBrush}"/>
+																			</Grid>
+																		</Button>
+																	</DataTemplate>
+																</ItemsControl.ItemTemplate>
+															</ItemsControl>
+														</ScrollViewer>
+													</StackPanel>
+												</Flyout>
+											</Button.Flyout>
+										</Button>
+									</WrapPanel>
+
+									<Button Grid.Column="1" Classes="ghost more"
+									        VerticalAlignment="Bottom" Margin="0,0,0,8"
+									        IsVisible="{Binding HasMore}"
+									        Click="OnMoreClick"
+									        behaviours:TooltipBehavior.Tip="{Binding MoreCaption}">
+										<PathIcon Classes="more-chevron"
+										          Classes.open="{Binding IsExpanded}"
+										          Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"
+										          Width="12" Height="12"/>
+									</Button>
+								</Grid>
+							</Border>
+						</StackPanel>
+
+						<!-- Кнопки блока: как у карточки персонажа, видны под курсором -->
+						<StackPanel Classes="card-edit-btns"
+						            Orientation="Horizontal" Spacing="2"
+						            HorizontalAlignment="Right" VerticalAlignment="Top"
+						            Margin="0,8,8,0" ZIndex="4">
+							<Button Classes="card-btn" Click="OnStarClick"
+							        behaviours:TooltipBehavior.Tip="{Binding ProjectTip}"
+							        behaviours:TooltipBehavior.Description="Его анкеты получает каждый новый персонаж">
+								<Panel>
+									<PathIcon IsVisible="{Binding IsProject}"
+									          Data="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+									          Width="11" Height="11" Foreground="White"/>
+									<PathIcon IsVisible="{Binding !IsProject}"
+									          Data="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"
+									          Width="11" Height="11" Foreground="White"/>
+								</Panel>
+							</Button>
+							<Button Classes="card-btn" Click="OnDuplicateClick"
+							        behaviours:TooltipBehavior.Tip="Копия шаблона">
+								<PathIcon Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+								          Width="11" Height="11" Foreground="White"/>
+							</Button>
+							<Button Classes="card-btn danger"
+							        IsVisible="{Binding IsEditable}"
+							        behaviours:TooltipBehavior.Tip="Удалить шаблон"
+							        behaviours:TooltipBehavior.Description="Анкеты останутся">
+								<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+								          Width="11" Height="11" Foreground="White"/>
+								<Button.Flyout>
+									<Flyout Placement="BottomEdgeAlignedRight">
+										<StackPanel Spacing="8" Margin="2">
+											<TextBlock Text="Удалить шаблон?" FontWeight="SemiBold"/>
+											<Button Classes="primary" Content="Удалить" Click="OnDeleteClick" HorizontalAlignment="Right"/>
+										</StackPanel>
+									</Flyout>
+								</Button.Flyout>
+							</Button>
+						</StackPanel>
+					</Panel>
+				</Border>
+			</Panel>
+		</DataTemplate>
+	</UserControl.DataTemplates>
+
+	<UserControl.Styles>
+
+		<!-- Блок шаблона — как карточка персонажа (CharactersListView) -->
+		<Style Selector="Border.tpl-block">
+			<Setter Property="Width" Value="404"/>
+			<Setter Property="CornerRadius" Value="10"/>
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderThickness" Value="2"/>
+			<Setter Property="ClipToBounds" Value="False"/>
+			<Setter Property="VerticalAlignment" Value="Top"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Border.tpl-block:pointerover">
+			<Setter Property="BoxShadow" Value="0 0 10 1 #55FFFFFF"/>
+			<Setter Property="ZIndex" Value="10"/>
+		</Style>
+		<Style Selector="Border.tpl-block.active">
+			<Setter Property="BoxShadow" Value="0 0 0 2 #FF12151A, 0 0 0 5 #FFFFFFFF"/>
+			<Setter Property="ZIndex" Value="15"/>
+		</Style>
+		<Style Selector="Border.tpl-block.active:pointerover">
+			<Setter Property="BoxShadow" Value="0 0 0 2 #FF12151A, 0 0 0 5 #FFFFFFFF"/>
+			<Setter Property="ZIndex" Value="16"/>
+		</Style>
+		<Style Selector="Border.tpl-block.drag-source">
+			<Setter Property="Opacity" Value="0.35"/>
+		</Style>
+		<Style Selector="Grid.tpl-head">
+			<Setter Property="Cursor" Value="Hand"/>
+		</Style>
+
+		<Style Selector="Border.tpl-block Path.tpl-bookmark">
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Border.tpl-block:pointerover Path.tpl-bookmark">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+
+		<!-- Кнопки в углу блока — как у карточки персонажа -->
+		<Style Selector="Border.tpl-block StackPanel.card-edit-btns">
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Border.tpl-block:pointerover StackPanel.card-edit-btns">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Button.card-btn">
+			<Setter Property="Padding" Value="4,3"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Background" Value="#88000000"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="Button.card-btn /template/ ContentPresenter">
+			<Setter Property="Background" Value="#88000000"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="Button.card-btn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#BB000000"/>
+		</Style>
+		<Style Selector="Button.card-btn.danger:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#BB660000"/>
+		</Style>
+
+		<!-- Картинка шаблона — кнопка без своей подложки -->
+		<Style Selector="Button.tpl-image">
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+		</Style>
+		<Style Selector="Button.tpl-image:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+
+		<Style Selector="Button.more">
+			<Setter Property="Padding" Value="4"/>
+			<Setter Property="MinHeight" Value="0"/>
+		</Style>
+		<Style Selector="PathIcon.more-chevron.open">
+			<Setter Property="RenderTransform" Value="rotate(180deg)"/>
+		</Style>
+
+		<!-- «+» в ряду значков — тех же размеров, что значок анкеты -->
+		<Style Selector="Button.tpl-add">
+			<Setter Property="Width" Value="32"/>
+			<Setter Property="Height" Value="32"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Margin" Value="0,0,8,8"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.tpl-add /template/ ContentPresenter">
+			<Setter Property="CornerRadius" Value="6"/>
+		</Style>
+
+		<!-- Значок анкеты: карандаш и крестик появляются под курсором -->
+		<Style Selector="Panel.tpl-ic">
+			<Setter Property="Cursor" Value="Hand"/>
+		</Style>
+		<Style Selector="Panel.tpl-ic.drag-source">
+			<Setter Property="Opacity" Value="0.3"/>
+		</Style>
+		<Style Selector="Button.ic-mini">
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="IsHitTestVisible" Value="False"/>
+			<Setter Property="ZIndex" Value="2"/>
+		</Style>
+		<Style Selector="Panel.tpl-ic:pointerover Button.ic-mini">
+			<Setter Property="Opacity" Value="1"/>
+			<Setter Property="IsHitTestVisible" Value="True"/>
+		</Style>
+
+		<Style Selector="Button.pick-row">
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+			<Setter Property="Padding" Value="6,4"/>
+			<Setter Property="Margin" Value="0,1"/>
+		</Style>
+
+		<Style Selector="TextBlock.section">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="Margin" Value="8,6,0,0"/>
+		</Style>
+
+		<!-- Перетаскивание -->
+		<Style Selector="Border.ghost">
+			<Setter Property="Padding" Value="6,4,10,4"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BoxShadow" Value="0 0 16 2 #66000000"/>
+		</Style>
+		<Style Selector="Border.insert-mark">
+			<Setter Property="Width" Value="3"/>
+			<Setter Property="CornerRadius" Value="2"/>
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid RowDefinitions="Auto,*">
+
+		<!-- ── Панель: поиск, шаблон проекта, новый шаблон ─────────────── -->
+		<Border Grid.Row="0"
+		        Background="{DynamicResource BgPanelBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="0,0,0,1"
+		        Padding="8,6">
+			<Grid ColumnDefinitions="260,*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
+				<TextBox Grid.Column="0"
+				         Text="{Binding SearchQuery, Mode=TwoWay}"
+				         PlaceholderText="Поиск"/>
+
+				<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
+				            VerticalAlignment="Center"
+				            Background="Transparent"
+				            behaviours:TooltipBehavior.Tip="Шаблон проекта"
+				            behaviours:TooltipBehavior.Description="{Binding ProjectAnketasCaption}">
+					<PathIcon Data="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+					          Width="12" Height="12" Foreground="{DynamicResource AccentDefaultBrush}"/>
+					<TextBlock Text="{Binding ProjectCaption}"
+					           VerticalAlignment="Center" MaxWidth="220"
+					           TextTrimming="CharacterEllipsis"
+					           Foreground="{DynamicResource TextPrimaryBrush}"/>
+				</StackPanel>
+
+				<StackPanel Grid.Column="3" x:Name="ApplyResult" Orientation="Horizontal" Spacing="4"
+				            VerticalAlignment="Center" IsVisible="False">
+					<PathIcon Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
+					          Width="11" Height="11" Foreground="{DynamicResource AccentDefaultBrush}"/>
+					<TextBlock x:Name="ApplyResultText"
+					           Foreground="{DynamicResource AccentDefaultBrush}"/>
+				</StackPanel>
+
+				<Button Grid.Column="4" Click="OnApplyToAllClick"
+				        IsEnabled="{Binding HasProject}"
+				        behaviours:TooltipBehavior.Tip="Применить к созданным"
+				        behaviours:TooltipBehavior.Description="Добавить анкеты шаблона проекта уже созданным персонажам. Заполненное не трогается">
+					<PathIcon Data="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
+					          Width="16" Height="12"/>
+				</Button>
+
+				<Button Grid.Column="5" Click="OnNewTemplateClick"
+				        behaviours:TooltipBehavior.Tip="Новый шаблон">
+					<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" Width="12" Height="12"/>
+				</Button>
+			</Grid>
+		</Border>
+
+		<!-- ── Блоки ──────────────────────────────────────────────────── -->
+		<ScrollViewer Grid.Row="1" x:Name="BlocksScroll">
+			<StackPanel Margin="8,6,8,16">
+				<TextBlock Classes="section" Text="Мои шаблоны" IsVisible="{Binding HasCustom}"/>
+				<ItemsControl x:Name="CustomList" ItemsSource="{Binding CustomBlocks}">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+				</ItemsControl>
+
+				<TextBlock Classes="section" Text="Встроенные" Margin="8,10,0,0"/>
+				<ItemsControl x:Name="BuiltInList" ItemsSource="{Binding BuiltInBlocks}">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+				</ItemsControl>
+			</StackPanel>
+		</ScrollViewer>
+
+		<!-- ── Слой перетаскивания ────────────────────────────────────── -->
+		<Canvas Grid.Row="0" Grid.RowSpan="2" x:Name="DragLayer" IsHitTestVisible="False">
+			<Border x:Name="InsertMark" Classes="insert-mark" IsVisible="False"/>
+			<Border x:Name="Ghost" Classes="ghost" IsVisible="False">
+				<StackPanel Orientation="Horizontal" Spacing="7">
+					<controls:AnketaIconBadge x:Name="GhostBadge" Size="22"/>
+					<TextBlock x:Name="GhostText" VerticalAlignment="Center"
+					           Foreground="{DynamicResource TextPrimaryBrush}"/>
+				</StackPanel>
+			</Border>
+		</Canvas>
+	</Grid>
 </UserControl>

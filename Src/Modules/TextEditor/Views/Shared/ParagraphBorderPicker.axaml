@@ -202,38 +202,55 @@
 		<StackPanel>
 			<TextBlock Classes="PickerCaption" Text="Вид линии"/>
 			<StackPanel Orientation="Horizontal" Spacing="4">
-				<Button Classes="PenTile" Width="44"
+				<Button Classes="PenTile" Width="32"
 				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Single}"
 				        Command="{Binding BorderStyleCommand}" CommandParameter="Single"
 				        behaviours:TooltipBehavior.Tip="Сплошная">
-					<Rectangle Width="26" Height="1.5" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+					<Rectangle Width="20" Height="1.5" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
 				</Button>
-				<Button Classes="PenTile" Width="44"
+				<Button Classes="PenTile" Width="32"
 				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Double}"
 				        Command="{Binding BorderStyleCommand}" CommandParameter="Double"
 				        behaviours:TooltipBehavior.Tip="Двойная">
 					<StackPanel Spacing="2" VerticalAlignment="Center">
-						<Rectangle Width="26" Height="1" Fill="{DynamicResource TextPrimaryBrush}"/>
-						<Rectangle Width="26" Height="1" Fill="{DynamicResource TextPrimaryBrush}"/>
+						<Rectangle Width="20" Height="1" Fill="{DynamicResource TextPrimaryBrush}"/>
+						<Rectangle Width="20" Height="1" Fill="{DynamicResource TextPrimaryBrush}"/>
 					</StackPanel>
 				</Button>
-				<Button Classes="PenTile" Width="44"
+				<Button Classes="PenTile" Width="32"
 				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Dashed}"
 				        Command="{Binding BorderStyleCommand}" CommandParameter="Dashed"
 				        behaviours:TooltipBehavior.Tip="Штрих">
-					<Line StartPoint="0,1" EndPoint="26,1" StrokeThickness="1.5" StrokeDashArray="3,2" Stroke="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+					<Line StartPoint="0,1" EndPoint="20,1" StrokeThickness="1.5" StrokeDashArray="3,2" Stroke="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
 				</Button>
-				<Button Classes="PenTile" Width="44"
+				<Button Classes="PenTile" Width="32"
 				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Dotted}"
 				        Command="{Binding BorderStyleCommand}" CommandParameter="Dotted"
 				        behaviours:TooltipBehavior.Tip="Точки">
-					<Line StartPoint="1,1.5" EndPoint="26,1.5" StrokeThickness="2" StrokeDashArray="0.01,2" StrokeLineCap="Round" Stroke="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+					<Line StartPoint="1,1.5" EndPoint="20,1.5" StrokeThickness="2" StrokeDashArray="0.01,2" StrokeLineCap="Round" Stroke="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
 				</Button>
-				<Button Classes="PenTile" Width="44"
+				<Button Classes="PenTile" Width="32"
 				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Thick}"
 				        Command="{Binding BorderStyleCommand}" CommandParameter="Thick"
 				        behaviours:TooltipBehavior.Tip="Жирная">
-					<Rectangle Width="26" Height="3.5" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+					<Rectangle Width="20" Height="3.5" Fill="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+				</Button>
+				<Button Classes="PenTile" Width="32"
+				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Triple}"
+				        Command="{Binding BorderStyleCommand}" CommandParameter="Triple"
+				        behaviours:TooltipBehavior.Tip="Тройная">
+					<StackPanel Spacing="1.5" VerticalAlignment="Center">
+						<Rectangle Width="20" Height="1" Fill="{DynamicResource TextPrimaryBrush}"/>
+						<Rectangle Width="20" Height="1" Fill="{DynamicResource TextPrimaryBrush}"/>
+						<Rectangle Width="20" Height="1" Fill="{DynamicResource TextPrimaryBrush}"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile" Width="32"
+				        Classes.on="{Binding BorderPenStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Wave}"
+				        Command="{Binding BorderStyleCommand}" CommandParameter="Wave"
+				        behaviours:TooltipBehavior.Tip="Волна">
+					<Polyline Points="0,3 2.5,0 5,3 7.5,0 10,3 12.5,0 15,3 17.5,0 20,3" StrokeThickness="1"
+					          StrokeJoin="Round" Stroke="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
 				</Button>
 			</StackPanel>
 		</StackPanel>

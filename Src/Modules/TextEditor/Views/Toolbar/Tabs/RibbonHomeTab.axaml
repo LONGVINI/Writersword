@@ -570,24 +570,69 @@
                                     <TextBlock Text="{x:Static loc:TextEditorStrings.Format_Italic_Letter}"
                                                FontStyle="Italic" FontFamily="Georgia"/>
                                 </ToggleButton>
-                                <ToggleButton IsChecked="{Binding IsUnderline}" Command="{Binding UnderlineCommand}"
-                                              Classes="RibbonToggle"
-                                              behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Format_Underline}"
-                                              behaviours:TooltipBehavior.HotKey="Ctrl+U">
-                                    <TextBlock Text="{x:Static loc:TextEditorStrings.Format_Underline_Letter}"
-                                               TextDecorations="Underline"/>
-                                </ToggleButton>
-                                <ToggleButton IsChecked="{Binding IsStrikethrough}" Command="{Binding StrikethroughCommand}"
-                                              Classes="RibbonToggle"
-                                              behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Format_Strikethrough}"
-                                              behaviours:TooltipBehavior.HotKey="Ctrl+Shift+S">
-                                    <Grid Width="14" Height="14">
-                                        <TextBlock Text="{x:Static loc:TextEditorStrings.Format_Strikethrough_Letter}"
-                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        <Rectangle Height="1.5" Fill="{DynamicResource TextPrimaryBrush}"
-                                                   VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                                    </Grid>
-                                </ToggleButton>
+                                <!-- Подчёркивание: кнопка ставит последний выбранный вид линии (он
+                                     нарисован под буквой), стрелка рядом — меню видов и цвета линии. -->
+                                <StackPanel Orientation="Horizontal" Spacing="1">
+                                    <ToggleButton IsChecked="{Binding IsUnderline}" Command="{Binding UnderlineCommand}"
+                                                  Classes="RibbonToggle"
+                                                  behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Format_Underline}"
+                                                  behaviours:TooltipBehavior.HotKey="Ctrl+U">
+                                        <StackPanel Spacing="1" VerticalAlignment="Center">
+                                            <TextBlock x:Name="UnderlineLetter"
+                                                       Text="{x:Static loc:TextEditorStrings.Format_Underline_Letter}"
+                                                       HorizontalAlignment="Center"/>
+                                            <shared:UnderlineSample Kind="{Binding LastUnderlineStyle}"
+                                                                    Width="10" Height="4"
+                                                                    HorizontalAlignment="Center"
+                                                                    Stroke="{Binding #UnderlineLetter.Foreground}"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <Button Classes="RibbonBtn" MinWidth="14" Width="14" Padding="0"
+                                            behaviours:TooltipBehavior.Tip="Вид и цвет подчёркивания">
+                                        <Button.Flyout>
+                                            <!-- Плитки видов линии, ниже — цвет линии. -->
+                                            <Flyout Placement="Bottom">
+                                                <shared:UnderlinePicker/>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                        <PathIcon Data="M7 10l5 5 5-5z" Width="8" Height="8"
+                                                  Foreground="{DynamicResource TextMutedBrush}"/>
+                                    </Button>
+                                </StackPanel>
+                                <!-- Зачёркивание: кнопка ставит последний выбранный вид (он нарисован
+                                     на букве), стрелка рядом — меню видов, как у подчёркивания. -->
+                                <StackPanel Orientation="Horizontal" Spacing="1">
+                                    <ToggleButton IsChecked="{Binding IsStrikeAny, Mode=OneWay}" Command="{Binding StrikethroughCommand}"
+                                                  Classes="RibbonToggle"
+                                                  behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Format_Strikethrough}"
+                                                  behaviours:TooltipBehavior.HotKey="Ctrl+Shift+X">
+                                        <Grid Width="14" Height="14">
+                                            <TextBlock x:Name="StrikeLetter"
+                                                       Text="{x:Static loc:TextEditorStrings.Format_Strikethrough_Letter}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            <Rectangle Height="1.5" Fill="{Binding #StrikeLetter.Foreground}"
+                                                       VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                                                       IsVisible="{Binding !LastStrikeDouble}"/>
+                                            <StackPanel Spacing="1.5" VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                                                        IsVisible="{Binding LastStrikeDouble}">
+                                                <Rectangle Height="1" Fill="{Binding #StrikeLetter.Foreground}"
+                                                           HorizontalAlignment="Stretch"/>
+                                                <Rectangle Height="1" Fill="{Binding #StrikeLetter.Foreground}"
+                                                           HorizontalAlignment="Stretch"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </ToggleButton>
+                                    <Button Classes="RibbonBtn" MinWidth="14" Width="14" Padding="0"
+                                            behaviours:TooltipBehavior.Tip="Вид зачёркивания">
+                                        <Button.Flyout>
+                                            <Flyout Placement="Bottom">
+                                                <shared:StrikePicker/>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                        <PathIcon Data="M7 10l5 5 5-5z" Width="8" Height="8"
+                                                  Foreground="{DynamicResource TextMutedBrush}"/>
+                                    </Button>
+                                </StackPanel>
                                 <ToggleButton IsChecked="{Binding IsSubscript}" Command="{Binding SubscriptCommand}"
                                               Classes="RibbonToggle"
                                               behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Format_Subscript}"
@@ -619,24 +664,26 @@
                                     <PathIcon Data="M14.06 9l.94.94L5.92 19H5v-.92L14.06 9zm3.6-6c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29zm-3.6 3.19L3 17.25V21h3.75L17.81 9.94l-3.75-3.75z" Width="14" Height="14"/>
                                 </Button>
                                 <Separator Classes="RibbonDivider"/>
-                                <!-- Эффекты текста — A▾ -->
-                                <Button Classes="RibbonBtn"
+                                <!-- Эффекты текста — A▾: эффекты букв, регистр, знак ударения,
+                                     рамка знаков и скрытый текст. Черта под буквой — под кареткой
+                                     есть хоть один из этих эффектов. -->
+                                <Button x:Name="TextEffectsButton" Classes="RibbonBtn"
                                         behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.TextEffect_Title}">
                                     <Button.Flyout>
-                                        <MenuFlyout>
-                                            <MenuItem Header="{x:Static loc:TextEditorStrings.TextEffect_Outline}"
-                                                      Command="{Binding TextOutlineCommand}"/>
-                                            <MenuItem Header="{x:Static loc:TextEditorStrings.TextEffect_Shadow}"
-                                                      Command="{Binding TextShadowCommand}"/>
-                                            <MenuItem Header="{x:Static loc:TextEditorStrings.TextEffect_Reflection}"
-                                                      Command="{Binding TextReflectionCommand}"/>
-                                            <MenuItem Header="{x:Static loc:TextEditorStrings.TextEffect_Glow}"
-                                                      Command="{Binding TextGlowCommand}"/>
-                                        </MenuFlyout>
+                                        <Flyout Placement="Bottom">
+                                            <shared:TextEffectsPicker/>
+                                        </Flyout>
                                     </Button.Flyout>
                                     <StackPanel Orientation="Horizontal" Spacing="1">
-                                        <TextBlock Text="A" FontSize="12" FontWeight="Bold"
-                                                   Foreground="{DynamicResource AccentDefaultBrush}"/>
+                                        <StackPanel Spacing="1" VerticalAlignment="Center">
+                                            <TextBlock Text="A" FontSize="12" FontWeight="Bold"
+                                                       HorizontalAlignment="Center"
+                                                       Foreground="{DynamicResource AccentDefaultBrush}"/>
+                                            <Border Width="9" Height="1.5" HorizontalAlignment="Center">
+                                                <Rectangle Fill="{DynamicResource AccentDefaultBrush}"
+                                                           IsVisible="{Binding IsAnyTextEffect}"/>
+                                            </Border>
+                                        </StackPanel>
                                         <PathIcon Data="M7 10l5 5 5-5z" Width="8" Height="8"
                                                   Foreground="{DynamicResource TextMutedBrush}"/>
                                     </StackPanel>
@@ -782,6 +829,13 @@
                                               behaviours:TooltipBehavior.HotKey="Ctrl+J">
                                     <PathIcon Data="M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z" Width="14" Height="14"/>
                                 </ToggleButton>
+                                <!-- Растянутое: по ширине вместе с последней строкой, её буквы разводятся. -->
+                                <ToggleButton IsChecked="{Binding CurrentAlignment, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Distribute, Mode=OneWay}"
+                                              Command="{Binding AlignDistributeCommand}" Classes="RibbonToggle"
+                                              behaviours:TooltipBehavior.Tip="Растянуть: по ширине вместе с последней строкой"
+                                              behaviours:TooltipBehavior.HotKey="Ctrl+Shift+J">
+                                    <PathIcon Data="M3 3h18v2H3zM3 7h18v2H3zM3 11h18v2H3zM3 19l3-2.5v2h12v-2l3 2.5-3 2.5v-2H6v2z" Width="14" Height="14"/>
+                                </ToggleButton>
                                 <Separator Classes="RibbonDivider"/>
                                 <!-- Уровень структуры абзаца -->
                                 <Button Classes="RibbonBtn"
@@ -916,6 +970,11 @@
                                                           Command="{Binding AlignJustifyCommand}" Classes="RibbonToggle"
                                                           behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Align_Justify}">
                                                 <PathIcon Data="M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z" Width="14" Height="14"/>
+                                            </ToggleButton>
+                                            <ToggleButton IsChecked="{Binding CurrentAlignment, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Distribute, Mode=OneWay}"
+                                                          Command="{Binding AlignDistributeCommand}" Classes="RibbonToggle"
+                                                          behaviours:TooltipBehavior.Tip="Растянуть: по ширине вместе с последней строкой">
+                                                <PathIcon Data="M3 3h18v2H3zM3 7h18v2H3zM3 11h18v2H3zM3 19l3-2.5v2h12v-2l3 2.5-3 2.5v-2H6v2z" Width="14" Height="14"/>
                                             </ToggleButton>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Spacing="2">

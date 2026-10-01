@@ -474,6 +474,9 @@ namespace Writersword.Modules.TextEditor.Document
                 case Models.Styles.TabAlignment.Right:
                     canvas.DrawLine(xPx - arm, bottom, xPx, bottom, paint);
                     break;
+                case Models.Styles.TabAlignment.Bar:
+                    // Черта — одна ножка без полки: текст к ней не прижимается.
+                    break;
                 default:
                     canvas.DrawLine(xPx - arm + 1f, bottom, xPx + arm - 1f, bottom, paint);
                     break;
@@ -589,6 +592,7 @@ namespace Writersword.Modules.TextEditor.Document
                 Models.Styles.TabAlignment.Center => Strings.Tab_Hint_WhatCenter,
                 Models.Styles.TabAlignment.Right => Strings.Tab_Hint_WhatRight,
                 Models.Styles.TabAlignment.Decimal => Strings.Tab_Hint_WhatDecimal,
+                Models.Styles.TabAlignment.Bar => Strings.Tab_Hint_WhatBar,
                 _ => Strings.Tab_Hint_WhatLeft
             };
 
@@ -607,6 +611,7 @@ namespace Writersword.Modules.TextEditor.Document
                 Models.Styles.TabAlignment.Center => "tab-center",
                 Models.Styles.TabAlignment.Right => "tab-right",
                 Models.Styles.TabAlignment.Decimal => "tab-decimal",
+                Models.Styles.TabAlignment.Bar => "tab-bar",
                 _ => "tab-left"
             };
 
@@ -1261,7 +1266,9 @@ namespace Writersword.Modules.TextEditor.Document
                     RadioItem(Strings.Tab_AlignRight, marker.Alignment == Models.Styles.TabAlignment.Right,
                         () => vm.SetTabAlignmentAt(tabIndex, Models.Styles.TabAlignment.Right)),
                     RadioItem(Strings.Tab_AlignDecimal, marker.Alignment == Models.Styles.TabAlignment.Decimal,
-                        () => vm.SetTabAlignmentAt(tabIndex, Models.Styles.TabAlignment.Decimal))
+                        () => vm.SetTabAlignmentAt(tabIndex, Models.Styles.TabAlignment.Decimal)),
+                    RadioItem(Strings.Tab_AlignBar, marker.Alignment == Models.Styles.TabAlignment.Bar,
+                        () => vm.SetTabAlignmentAt(tabIndex, Models.Styles.TabAlignment.Bar))
                 };
                 items.Add(align);
 
@@ -1296,7 +1303,9 @@ namespace Writersword.Modules.TextEditor.Document
                 RadioItem(Strings.Tab_AlignRight, vm.NextTabAlignment == Models.Styles.TabAlignment.Right,
                     () => vm.NextTabAlignment = Models.Styles.TabAlignment.Right),
                 RadioItem(Strings.Tab_AlignDecimal, vm.NextTabAlignment == Models.Styles.TabAlignment.Decimal,
-                    () => vm.NextTabAlignment = Models.Styles.TabAlignment.Decimal)
+                    () => vm.NextTabAlignment = Models.Styles.TabAlignment.Decimal),
+                RadioItem(Strings.Tab_AlignBar, vm.NextTabAlignment == Models.Styles.TabAlignment.Bar,
+                    () => vm.NextTabAlignment = Models.Styles.TabAlignment.Bar)
             };
             items.Add(newAlign);
 

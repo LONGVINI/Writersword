@@ -37,6 +37,15 @@ namespace Writersword.Modules.Characters.Models.Enums
         Chips,
 
         /// <summary>Выбор выпадающим списком: для длинных списков вариантов.</summary>
-        Dropdown
+        Dropdown,
+
+        /// <summary>Звёзды — оценка: «харизма три звезды из пяти».</summary>
+        Stars,
+
+        /// <summary>
+        /// Свои значки — сердечки, молнии, черепа или свой рисунок из файла
+        /// (CharacterAnketaField.RatingGlyph). Заполняются так же, как шарики.
+        /// </summary>
+        Glyph
     }
 }

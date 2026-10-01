@@ -1,0 +1,211 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
+             xmlns:controls="using:Writersword.Styles.UserControls"
+             xmlns:shared="using:Writersword.Modules.TextEditor.Views.Shared"
+             x:Class="Writersword.Modules.TextEditor.Views.Shared.UnderlinePicker">
+
+	<!--
+	    Выбор подчёркивания — содержимое меню кнопки подчёркивания на вкладке «Главная».
+
+	    Сверху плитки видов линии, тот же набор, что у Word: одинарная, только слова,
+	    двойная, жирная, точки, штрихи, штрих-пунктиры и волны. Отмечена плитка вида
+	    под кареткой; «Нет» снимает подчёркивание. Выбранный вид запоминается, и дальше
+	    его ставит сама кнопка.
+
+	    Ниже — цвет линии: свой либо «как у текста».
+
+	    Данные и команды — у вкладки «Главная» (RibbonHomeTabViewModel): контрол
+	    берёт их из DataContext кнопки, к которой приделано меню.
+	-->
+
+	<UserControl.Styles>
+		<Style Selector="TextBlock.PickerCaption">
+			<Setter Property="FontSize"   Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="Margin"     Value="0,0,0,4"/>
+		</Style>
+
+		<!-- Плитки вида линии и кнопка цвета «как у текста». -->
+		<Style Selector="Button.PenTile">
+			<Setter Property="Height"          Value="26"/>
+			<Setter Property="MinWidth"        Value="24"/>
+			<Setter Property="Padding"         Value="4,0"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="FontSize"        Value="11"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="Focusable"       Value="False"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		</Style>
+		<Style Selector="WrapPanel.UnderlineTiles > Button.PenTile">
+			<Setter Property="Width"  Value="58"/>
+			<Setter Property="Margin" Value="0,0,4,4"/>
+		</Style>
+		<Style Selector="Button.PenTile /template/ ContentPresenter">
+			<Setter Property="CornerRadius" Value="4"/>
+		</Style>
+		<Style Selector="Button.PenTile:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.PenTile.on /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<StackPanel Width="252" Spacing="12" Margin="4">
+
+		<!-- ── Вид линии ───────────────────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Вид линии"/>
+			<WrapPanel Classes="UnderlineTiles" Orientation="Horizontal">
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=None}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="None"
+				        behaviours:TooltipBehavior.Tip="Без подчёркивания"
+				        Content="Нет"/>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Single}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="Single"
+				        behaviours:TooltipBehavior.Tip="Одинарное">
+					<shared:UnderlineSample Kind="Single" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Words}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="Words"
+				        behaviours:TooltipBehavior.Tip="Только слова">
+					<shared:UnderlineSample Kind="Words" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Double}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="Double"
+				        behaviours:TooltipBehavior.Tip="Двойное">
+					<shared:UnderlineSample Kind="Double" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Thick}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="Thick"
+				        behaviours:TooltipBehavior.Tip="Жирное">
+					<shared:UnderlineSample Kind="Thick" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Dotted}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="Dotted"
+				        behaviours:TooltipBehavior.Tip="Точки">
+					<shared:UnderlineSample Kind="Dotted" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=DottedHeavy}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="DottedHeavy"
+				        behaviours:TooltipBehavior.Tip="Жирные точки">
+					<shared:UnderlineSample Kind="DottedHeavy" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Dash}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="Dash"
+				        behaviours:TooltipBehavior.Tip="Штрих">
+					<shared:UnderlineSample Kind="Dash" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=DashedHeavy}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="DashedHeavy"
+				        behaviours:TooltipBehavior.Tip="Жирный штрих">
+					<shared:UnderlineSample Kind="DashedHeavy" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=DashLong}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="DashLong"
+				        behaviours:TooltipBehavior.Tip="Длинный штрих">
+					<shared:UnderlineSample Kind="DashLong" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=DashLongHeavy}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="DashLongHeavy"
+				        behaviours:TooltipBehavior.Tip="Жирный длинный штрих">
+					<shared:UnderlineSample Kind="DashLongHeavy" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=DotDash}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="DotDash"
+				        behaviours:TooltipBehavior.Tip="Штрих-пунктир">
+					<shared:UnderlineSample Kind="DotDash" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=DashDotHeavy}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="DashDotHeavy"
+				        behaviours:TooltipBehavior.Tip="Жирный штрих-пунктир">
+					<shared:UnderlineSample Kind="DashDotHeavy" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=DotDotDash}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="DotDotDash"
+				        behaviours:TooltipBehavior.Tip="Штрих и две точки">
+					<shared:UnderlineSample Kind="DotDotDash" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=DashDotDotHeavy}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="DashDotDotHeavy"
+				        behaviours:TooltipBehavior.Tip="Жирный штрих и две точки">
+					<shared:UnderlineSample Kind="DashDotDotHeavy" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Wave}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="Wave"
+				        behaviours:TooltipBehavior.Tip="Волна">
+					<shared:UnderlineSample Kind="Wave" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=WavyHeavy}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="WavyHeavy"
+				        behaviours:TooltipBehavior.Tip="Жирная волна">
+					<shared:UnderlineSample Kind="WavyHeavy" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding UnderlineStyleKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=WavyDouble}"
+				        Command="{Binding UnderlineStyleCommand}" CommandParameter="WavyDouble"
+				        behaviours:TooltipBehavior.Tip="Двойная волна">
+					<shared:UnderlineSample Kind="WavyDouble" Width="38" Height="10"
+					                        Stroke="{DynamicResource TextPrimaryBrush}"/>
+				</Button>
+			</WrapPanel>
+		</StackPanel>
+
+		<!-- ── Цвет линии ──────────────────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Цвет линии"/>
+			<StackPanel Orientation="Horizontal" Spacing="8">
+				<controls:ColorPickerButton Width="22" Height="22" VerticalAlignment="Center"
+				                            HexColor="{Binding UnderlineColorPick, Mode=TwoWay}"
+				                            behaviours:TooltipBehavior.Tip="Цвет линии подчёркивания"/>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding IsUnderlineColorAuto}"
+				        Command="{Binding UnderlineColorAutoCommand}"
+				        Content="Как у текста"
+				        behaviours:TooltipBehavior.Tip="Линия того же цвета, что и буквы"/>
+			</StackPanel>
+		</StackPanel>
+	</StackPanel>
+</UserControl>

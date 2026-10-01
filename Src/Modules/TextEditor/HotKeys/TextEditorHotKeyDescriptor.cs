@@ -115,6 +115,8 @@ namespace Writersword.Modules.TextEditor.HotKeys
                 Key.F3, KeyModifiers.Shift);
             Add(d, "TextEditor.Format.SmallCaps", "Small Caps",
                 Key.K, KeyModifiers.Control | KeyModifiers.Shift);
+            Add(d, "TextEditor.Format.HiddenText", "Hidden Text",
+                Key.H, KeyModifiers.Control | KeyModifiers.Shift);
             Add(d, "TextEditor.Format.ClearFormatting", "Clear Formatting",
                 Key.Space, KeyModifiers.Control);
             Add(d, "TextEditor.Format.IncreaseFontSize", "Increase Font Size",
@@ -131,6 +133,8 @@ namespace Writersword.Modules.TextEditor.HotKeys
                 Key.R, KeyModifiers.Control);
             Add(d, "TextEditor.Format.AlignJustify", "Justify",
                 Key.J, KeyModifiers.Control);
+            Add(d, "TextEditor.Format.AlignDistribute", "Distribute",
+                Key.J, KeyModifiers.Control | KeyModifiers.Shift);
             Add(d, "TextEditor.Format.IncreaseIndent", "Increase Indent",
                 Key.M, KeyModifiers.Control);
             Add(d, "TextEditor.Format.DecreaseIndent", "Decrease Indent",

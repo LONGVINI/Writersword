@@ -53,7 +53,7 @@ namespace Writersword.Modules.TextEditor.Services
     /// При экспорте настройки <see cref="Models.Page.CanvasSettings"/> игнорируются —
     /// используются только физические свойства страницы.
     /// </summary>
-    public sealed class ExportService
+    public sealed partial class ExportService
     {
         // Единицы измерения OOXML: twips = 1/20 пункта = 1/1440 дюйма.
         private const double TwipsPerPoint = 20.0;
@@ -162,13 +162,14 @@ namespace Writersword.Modules.TextEditor.Services
         public Task<ExportResult> ExportToDocxAsync(
             DocumentModel document,
             string outputPath,
-            Func<string, byte[]?>? resolveImage = null)
+            Func<string, byte[]?>? resolveImage = null,
+            PageFacts? pageFacts = null)
         {
             return Task.Run(() =>
             {
                 try
                 {
-                    return ExportToDocxCore(document, outputPath, resolveImage);
+                    return ExportToDocxCore(document, outputPath, resolveImage, pageFacts);
                 }
                 catch (Exception ex)
                 {
@@ -178,13 +179,17 @@ namespace Writersword.Modules.TextEditor.Services
         }
 
         private ExportResult ExportToDocxCore(
-            DocumentModel document, string outputPath, Func<string, byte[]?>? resolveImage)
+            DocumentModel document, string outputPath, Func<string, byte[]?>? resolveImage, PageFacts? pageFacts)
         {
             using (var wordDoc = WordprocessingDocument.Create(outputPath, WordprocessingDocumentType.Document))
             {
                 var mainPart = wordDoc.AddMainDocumentPart();
                 var body = new W.Body();
                 mainPart.Document = new W.Document(body);
+
+                // Эффекты букв Word 2010+ (w14) и полные настройки Writersword (wsx).
+                DocxTextEffects.DeclareNamespaces(mainPart.Document);
+                _writerswordOnlyEffectsWritten = false;
 
                 var ctx = new DocxWriteContext
                 {
@@ -197,6 +202,12 @@ namespace Writersword.Modules.TextEditor.Services
                 ctx.Numbering = new DocxNumberingBuilder();
                 ctx.Numbering.Collect(document);
                 ctx.Numbering.Write(mainPart);
+
+                // Колонтитулы: разделы Word нарезаются по оформлению листов
+                // (ExportService.HeaderFooter).
+                var hfPlan = BuildHeaderFooterPlan(document, pageFacts, ctx);
+                if (hfPlan is not null)
+                    WriteHeaderFooterSettingsPart(mainPart, hfPlan);
 
                 for (int s = 0; s < document.Sections.Count; s++)
                 {
@@ -214,13 +225,92 @@ namespace Writersword.Modules.TextEditor.Services
 
                     W.Paragraph? lastParagraph = null;
 
+                    // Последний абзац — разрыв страницы: разрыв раздела Word встаёт на
+                    // его место, иначе между разделами появился бы пустой лист.
+                    bool lastIsPageBreak = false;
+
+                    // Разрыв страницы пишется внутрь абзаца перед ним — туда, где рисуется его
+                    // отметка: так у Word один абзац с разрывом, а не абзац и за ним ещё один,
+                    // из одного разрыва. Иначе каждый круг экспорта и импорта прибавлял бы
+                    // перед разрывом пустой абзац, а текст, продолжавший абзац за разрывом,
+                    // становился бы новым абзацем.
+                    //   lastIsFlowParagraph — последний абзац тела собран из абзаца модели
+                    //     (а не заглушка за таблицей и не отдельный абзац разрыва);
+                    //   lastBreakRun — ран разрыва, дописанный в такой абзац;
+                    //   continueIntoLast — за разрывом продолжается тот же абзац Word, и
+                    //     следующий абзац модели дописывается в него же.
+                    bool lastIsFlowParagraph = false;
+                    W.Run? lastBreakRun = null;
+                    bool continueIntoLast = false;
+
                     foreach (var block in section.Blocks)
                     {
                         switch (block)
                         {
                             case ParagraphBlock para:
+                                bool startsWordSection = hfPlan is not null && hfPlan.SectionStarts.ContainsKey(para.Id);
+
+                                if (continueIntoLast && lastParagraph is not null && !startsWordSection)
+                                {
+                                    // Продолжение абзаца за разрывом: его раны и прочее содержимое
+                                    // встают в тот же w:p, свойства абзаца остаются от начала.
+                                    var continuation = BuildParagraph(para, ctx);
+                                    var moved = new List<OpenXmlElement>();
+                                    foreach (var child in continuation.ChildElements)
+                                    {
+                                        if (child is W.ParagraphProperties) continue;
+                                        moved.Add(child);
+                                    }
+
+                                    foreach (var child in moved)
+                                    {
+                                        child.Remove();
+                                        lastParagraph.AppendChild(child);
+                                    }
+
+                                    continueIntoLast = false;
+                                    lastIsPageBreak = false;
+                                    lastBreakRun = null;
+                                    lastIsFlowParagraph = true;
+                                    break;
+                                }
+
+                                continueIntoLast = false;
+
+                                if (hfPlan is not null && hfPlan.SectionStarts.TryGetValue(para.Id, out int wordSection))
+                                {
+                                    if (lastParagraph is not null)
+                                    {
+                                        var breakSectPr = BuildSectionProperties(section, document);
+                                        ApplyHeaderFooterToSection(breakSectPr, hfPlan, ctx);
+
+                                        // Разрыв раздела встаёт на место разрыва страницы. Разрыв
+                                        // внутри абзаца с текстом убирается один, текст остаётся.
+                                        if (lastIsPageBreak)
+                                        {
+                                            if (lastBreakRun is not null)
+                                                lastBreakRun.Remove();
+                                            else
+                                                lastParagraph.RemoveAllChildren<W.Run>();
+                                        }
+
+                                        var breakPPr = lastParagraph.GetFirstChild<W.ParagraphProperties>();
+                                        if (breakPPr is null)
+                                        {
+                                            breakPPr = new W.ParagraphProperties();
+                                            lastParagraph.InsertAt(breakPPr, 0);
+                                        }
+                                        breakPPr.AppendChild(breakSectPr);
+                                    }
+
+                                    hfPlan.Current = wordSection;
+                                }
+
                                 lastParagraph = BuildParagraph(para, ctx);
                                 body.AppendChild(lastParagraph);
+                                lastIsPageBreak = false;
+                                lastBreakRun = null;
+                                lastIsFlowParagraph = true;
                                 break;
 
                             case TableBlock table:
@@ -230,11 +320,30 @@ namespace Writersword.Modules.TextEditor.Services
                                 // считает файл повреждённым.
                                 lastParagraph = new W.Paragraph();
                                 body.AppendChild(lastParagraph);
+                                lastIsPageBreak = false;
+                                lastBreakRun = null;
+                                lastIsFlowParagraph = false;
+                                continueIntoLast = false;
                                 break;
 
                             case BreakBlock brk:
-                                lastParagraph = BuildBreakParagraph(brk);
-                                body.AppendChild(lastParagraph);
+                                if (lastIsFlowParagraph && lastParagraph is not null
+                                    && brk.BreakType is BreakType.Page or BreakType.Column)
+                                {
+                                    lastBreakRun = BuildBreakRun(brk);
+                                    lastParagraph.AppendChild(lastBreakRun);
+                                    continueIntoLast = brk.InParagraph && brk.ContinuesParagraph;
+                                }
+                                else
+                                {
+                                    lastParagraph = BuildBreakParagraph(brk);
+                                    body.AppendChild(lastParagraph);
+                                    lastBreakRun = null;
+                                    lastIsFlowParagraph = false;
+                                    continueIntoLast = false;
+                                }
+
+                                lastIsPageBreak = brk.BreakType != BreakType.Column;
                                 break;
 
                             case ImageBlock:
@@ -247,6 +356,8 @@ namespace Writersword.Modules.TextEditor.Services
                     }
 
                     var sectPr = BuildSectionProperties(section, document);
+                    if (hfPlan is not null)
+                        ApplyHeaderFooterToSection(sectPr, hfPlan, ctx);
 
                     if (isFinal)
                     {
@@ -277,6 +388,11 @@ namespace Writersword.Modules.TextEditor.Services
 
                 mainPart.Document.Save();
 
+                if (_writerswordOnlyEffectsWritten)
+                    ctx.Warnings.Add(
+                        "Эффекты, которых нет в Word (контур снаружи букв, длинная тень), Word покажет упрощённо. " +
+                        "Writersword при открытии этого файла восстановит их полностью.");
+
                 return ExportResult.Ok(outputPath, ctx.Warnings.Distinct().ToArray());
             }
         }
@@ -296,6 +412,7 @@ namespace Writersword.Modules.TextEditor.Services
         {
             var stylePart = mainPart.AddNewPart<StyleDefinitionsPart>();
             var styles = new W.Styles();
+            DocxTextEffects.DeclareNamespaces(styles);
 
             foreach (var style in document.Styles)
             {
@@ -379,8 +496,8 @@ namespace Writersword.Modules.TextEditor.Services
 
         /// <summary>
         /// Элементы w:pPr в порядке, требуемом схемой CT_PPr:
-        /// pStyle, keepNext, keepLines, pageBreakBefore, numPr, pBdr, tabs, spacing, ind,
-        /// jc, outlineLvl.
+        /// pStyle, keepNext, keepLines, pageBreakBefore, numPr, pBdr, tabs, bidi, spacing, ind,
+        /// contextualSpacing, jc, outlineLvl.
         ///
         /// Порядок не вкусовой: Word читает свойства абзаца строго по схеме и, встретив
         /// элемент не на своём месте, объявляет файл повреждённым. Позиции табуляции
@@ -404,7 +521,7 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (list is not null && numbering is not null)
             {
-                int? numId = numbering.GetNumberingId(list.ListId);
+                int? numId = numbering.GetNumberingId(list);
                 if (numId is int nid)
                 {
                     elements.Add(new W.NumberingProperties(
@@ -416,19 +533,36 @@ namespace Writersword.Modules.TextEditor.Services
             var borders = BuildParagraphBorders(props?.Borders);
             if (borders is not null) elements.Add(borders);
 
-            // Заливка абзаца: по схеме w:shd идёт сразу за w:pBdr.
-            if (props?.ShadingColor is { Length: > 0 } shadingColor)
+            // Заливка абзаца: по схеме w:shd идёт сразу за w:pBdr. Узор пишется своим
+            // именем в w:val и своим цветом в w:color, цвет фона — в w:fill; без узора
+            // это clear и одна заливка.
+            string? shadingFill = props?.ShadingColor is { Length: > 0 } fillColor ? fillColor : null;
+            string? shadingPattern = props?.ShadingPattern is { Length: > 0 } patternName ? patternName : null;
+            if (shadingFill is not null || shadingPattern is not null)
             {
-                elements.Add(new W.Shading
+                var shd = new W.Shading
                 {
-                    Val = W.ShadingPatternValues.Clear,
-                    Color = "auto",
-                    Fill = shadingColor.TrimStart('#').ToUpperInvariant()
-                });
+                    Color = shadingPattern is not null && props!.ShadingPatternColor is { Length: > 0 } patternColor
+                        ? patternColor.TrimStart('#').ToUpperInvariant()
+                        : "auto",
+                    Fill = shadingFill is not null
+                        ? shadingFill.TrimStart('#').ToUpperInvariant()
+                        : "auto"
+                };
+
+                if (shadingPattern is not null)
+                    shd.Val = new EnumValue<W.ShadingPatternValues> { InnerText = shadingPattern };
+                else
+                    shd.Val = W.ShadingPatternValues.Clear;
+
+                elements.Add(shd);
             }
 
             var tabs = BuildTabs(props);
             if (tabs is not null) elements.Add(tabs);
+
+            // Абзац справа налево: по схеме w:bidi стоит после w:tabs, перед w:spacing.
+            if (props?.RightToLeft == true) elements.Add(new W.BiDi());
 
             var spacing = BuildSpacing(props);
             if (spacing is not null) elements.Add(spacing);
@@ -436,8 +570,23 @@ namespace Writersword.Modules.TextEditor.Services
             var indentation = BuildIndentation(props, list);
             if (indentation is not null) elements.Add(indentation);
 
+            // «Не добавлять интервал между абзацами одного стиля»: по схеме — сразу за w:ind.
+            if (props?.ContextualSpacing == true) elements.Add(new W.ContextualSpacing());
+
             if (props?.Alignment is TextAlignment alignment)
                 elements.Add(new W.Justification { Val = new EnumValue<W.JustificationValues>(MapAlignment(alignment)) });
+
+            // Выравнивание знаков по высоте строки: по схеме — после w:jc, перед w:outlineLvl.
+            string? lineTextAlign = props?.LineTextAlignment switch
+            {
+                Models.Styles.LineTextAlignment.Baseline => "baseline",
+                Models.Styles.LineTextAlignment.Top => "top",
+                Models.Styles.LineTextAlignment.Center => "center",
+                Models.Styles.LineTextAlignment.Bottom => "bottom",
+                _ => null
+            };
+            if (lineTextAlign is not null)
+                elements.Add(new W.TextAlignment { Val = new EnumValue<W.VerticalTextAlignmentValues> { InnerText = lineTextAlign } });
 
             int? outline = outlineLevelOverride;
             if (outline is null && props is not null && props.OutlineLevel > 0)
@@ -480,6 +629,8 @@ namespace Writersword.Modules.TextEditor.Services
                 BorderStyle.Dashed => W.BorderValues.Dashed,
                 BorderStyle.Dotted => W.BorderValues.Dotted,
                 BorderStyle.Thick => W.BorderValues.Thick,
+                BorderStyle.Triple => W.BorderValues.Triple,
+                BorderStyle.Wave => W.BorderValues.Wave,
                 _ => W.BorderValues.Single
             });
 
@@ -529,6 +680,7 @@ namespace Writersword.Modules.TextEditor.Services
             Models.Styles.TabAlignment.Right => W.TabStopValues.Right,
             Models.Styles.TabAlignment.Center => W.TabStopValues.Center,
             Models.Styles.TabAlignment.Decimal => W.TabStopValues.Decimal,
+            Models.Styles.TabAlignment.Bar => W.TabStopValues.Bar,
             _ => W.TabStopValues.Left
         };
 
@@ -612,7 +764,7 @@ namespace Writersword.Modules.TextEditor.Services
 
         /// <summary>
         /// Элементы w:rPr в порядке, требуемом схемой CT_RPr:
-        /// rFonts, b, i, caps, smallCaps, strike, color, sz, szCs, u, shd, vertAlign, lang.
+        /// rFonts, b, bCs, i, iCs, caps, smallCaps, strike, color, sz, szCs, u, shd, vertAlign, lang.
         /// </summary>
         /// <param name="props">Свойства рана или стиля. Null — элементов нет.</param>
         /// <param name="writeExplicitToggles">
@@ -640,11 +792,31 @@ namespace Writersword.Modules.TextEditor.Services
                 });
             }
 
-            if (props.IsBold == true) elements.Add(new W.Bold());
-            else if (props.IsBold == false && writeExplicitToggles) elements.Add(new W.Bold { Val = false });
+            // Жирность и курсив пишутся и для сложных письменностей (w:bCs, w:iCs), как
+            // это делает сам Word по Ctrl+B и Ctrl+I: без них иврит и арабский в Word
+            // остались бы прямыми и не жирными, хотя у нас они такие. По схеме w:bCs
+            // идёт сразу за w:b, w:iCs — за w:i.
+            if (props.IsBold == true)
+            {
+                elements.Add(new W.Bold());
+                elements.Add(new W.BoldComplexScript());
+            }
+            else if (props.IsBold == false && writeExplicitToggles)
+            {
+                elements.Add(new W.Bold { Val = false });
+                elements.Add(new W.BoldComplexScript { Val = false });
+            }
 
-            if (props.IsItalic == true) elements.Add(new W.Italic());
-            else if (props.IsItalic == false && writeExplicitToggles) elements.Add(new W.Italic { Val = false });
+            if (props.IsItalic == true)
+            {
+                elements.Add(new W.Italic());
+                elements.Add(new W.ItalicComplexScript());
+            }
+            else if (props.IsItalic == false && writeExplicitToggles)
+            {
+                elements.Add(new W.Italic { Val = false });
+                elements.Add(new W.ItalicComplexScript { Val = false });
+            }
 
             if (props.IsAllCaps) elements.Add(new W.Caps());
             else if (writeExplicitToggles) elements.Add(new W.Caps { Val = false });
@@ -655,6 +827,27 @@ namespace Writersword.Modules.TextEditor.Services
             if (props.IsStrikethrough) elements.Add(new W.Strike());
             else if (writeExplicitToggles) elements.Add(new W.Strike { Val = false });
 
+            // Двойное зачёркивание — сразу за одинарным, как требует схема CT_RPr.
+            if (props.IsDoubleStrikethrough) elements.Add(new W.DoubleStrike());
+            else if (writeExplicitToggles) elements.Add(new W.DoubleStrike { Val = false });
+
+            // Эффекты букв и скрытый текст — дальше по схеме: w:outline, w:shadow,
+            // w:emboss, w:imprint, затем w:vanish.
+            if (props.IsOutline) elements.Add(new W.Outline());
+            else if (writeExplicitToggles) elements.Add(new W.Outline { Val = false });
+
+            if (props.IsShadow) elements.Add(new W.Shadow());
+            else if (writeExplicitToggles) elements.Add(new W.Shadow { Val = false });
+
+            if (props.IsEmboss) elements.Add(new W.Emboss());
+            else if (writeExplicitToggles) elements.Add(new W.Emboss { Val = false });
+
+            if (props.IsImprint) elements.Add(new W.Imprint());
+            else if (writeExplicitToggles) elements.Add(new W.Imprint { Val = false });
+
+            if (props.IsHidden) elements.Add(new W.Vanish());
+            else if (writeExplicitToggles) elements.Add(new W.Vanish { Val = false });
+
             string? textColor = HexWithoutHash(props.TextColor);
             if (textColor is not null) elements.Add(new W.Color { Val = textColor });
 
@@ -662,6 +855,17 @@ namespace Writersword.Modules.TextEditor.Services
             // двадцатых долях пункта.
             if (props.CharacterSpacing is double spacing && Math.Abs(spacing) > 0.001)
                 elements.Add(new W.Spacing { Val = (int)Math.Round(spacing * 20.0) });
+
+            // Масштаб по ширине и смещение от базовой линии — за разрядкой, в порядке
+            // схемы CT_RPr (w:spacing, w:w, w:kern, w:position, w:sz).
+            if (props.CharacterScale is int scale && scale > 0 && scale != 100)
+                elements.Add(new W.CharacterScale { Val = scale });
+
+            if (props.BaselineOffset is double offset && Math.Abs(offset) > 0.001)
+                elements.Add(new W.Position
+                {
+                    Val = Math.Round(offset * HalfPointsPerPoint).ToString(CultureInfo.InvariantCulture)
+                });
 
             if (props.FontSize is double size && size > 0)
             {
@@ -674,11 +878,40 @@ namespace Writersword.Modules.TextEditor.Services
             if (props.IsUnderline)
             {
                 // Значение обязательно: элемент w:u без w:val читается как «подчёркивания нет».
-                elements.Add(new W.Underline { Val = new EnumValue<W.UnderlineValues>(W.UnderlineValues.Single) });
+                var underline = new W.Underline
+                {
+                    Val = new EnumValue<W.UnderlineValues>(UnderlineToOoxml(props.UnderlineStyle))
+                };
+
+                // Цвет линии — атрибутом того же элемента. Без него Word рисует линию
+                // цветом букв, как и «авто» в модели.
+                string? underlineColor = HexWithoutHash(props.UnderlineColor);
+                if (underlineColor is not null) underline.Color = underlineColor;
+
+                elements.Add(underline);
             }
             else if (writeExplicitToggles)
             {
                 elements.Add(new W.Underline { Val = new EnumValue<W.UnderlineValues>(W.UnderlineValues.None) });
+            }
+
+            // Рамка вокруг знаков — перед заливкой рана, как требует схема (w:bdr, w:shd).
+            if (props.CharBorderWidthPt is double borderWidth && borderWidth > 0)
+            {
+                elements.Add(new W.Border
+                {
+                    Val = new EnumValue<W.BorderValues>(props.CharBorderStyle switch
+                    {
+                        CharBorderStyle.Double => W.BorderValues.Double,
+                        CharBorderStyle.Dotted => W.BorderValues.Dotted,
+                        CharBorderStyle.Dashed => W.BorderValues.Dashed,
+                        CharBorderStyle.Thick => W.BorderValues.Thick,
+                        _ => W.BorderValues.Single
+                    }),
+                    Size = (uint)Math.Max(2, Math.Round(borderWidth * 8.0)),
+                    Space = 0,
+                    Color = HexWithoutHash(props.CharBorderColor) ?? "auto"
+                });
             }
 
             string? highlight = HexWithoutHash(props.HighlightColor);
@@ -717,11 +950,37 @@ namespace Writersword.Modules.TextEditor.Services
                 });
             }
 
+            // Знак ударения — за вертикальным положением, перед языком (w:em, w:lang).
+            if (props.EmphasisMark != EmphasisMark.None)
+            {
+                elements.Add(new W.Emphasis
+                {
+                    Val = new EnumValue<W.EmphasisMarkValues>(props.EmphasisMark switch
+                    {
+                        EmphasisMark.Comma => W.EmphasisMarkValues.Comma,
+                        EmphasisMark.Circle => W.EmphasisMarkValues.Circle,
+                        EmphasisMark.UnderDot => W.EmphasisMarkValues.UnderDot,
+                        _ => W.EmphasisMarkValues.Dot
+                    })
+                });
+            }
+
             if (!string.IsNullOrWhiteSpace(props.Language))
                 elements.Add(new W.Languages { Val = props.Language });
 
+            // Настраиваемые эффекты — после всех элементов w:, элементами w14 (Word
+            // 2010+), а то, чего Word не умеет, — ещё и полными настройками wsx:effects.
+            if (props.Effects is { } effects && !effects.IsEmpty)
+            {
+                elements.AddRange(DocxTextEffects.Write(effects));
+                if (effects.HasWriterswordOnlyParts) _writerswordOnlyEffectsWritten = true;
+            }
+
             return elements;
         }
+
+        // Выгрузка встретила эффекты, которых нет у Word, — для предупреждения в итоге.
+        private bool _writerswordOnlyEffectsWritten;
 
         // ── docx: абзацы, раны, картинки ────────────────────────────────────
 
@@ -835,18 +1094,44 @@ namespace Writersword.Modules.TextEditor.Services
 
         private W.Paragraph BuildBreakParagraph(BreakBlock block)
         {
+            return new W.Paragraph(BuildBreakRun(block));
+        }
+
+        /// <summary>
+        /// Ран с разрывом: страницы, а у разрыва колонки — колонки. Отдельным абзацем
+        /// (BuildBreakParagraph) или внутри абзаца перед разрывом.
+        /// </summary>
+        private static W.Run BuildBreakRun(BreakBlock block)
+        {
             // Разрывы раздела в потоке блоков переносятся как разрыв страницы:
             // разделы документа описываются списком SectionModel, и импорт
             // приводит внутренние разрывы разделов Word к тем же разрывам страницы.
-            var breakType = block.BreakType == BreakType.Column
+            // Разрыв колонки из раздела в одну колонку работает как разрыв страницы, но
+            // в .docx возвращается тем, чем был в исходнике.
+            var breakType = block.BreakType == BreakType.Column || block.FromColumnBreak
                 ? W.BreakValues.Column
                 : W.BreakValues.Page;
 
-            return new W.Paragraph(new W.Run(new W.Break
+            var brk = new W.Break
             {
                 Type = new EnumValue<W.BreakValues>(breakType)
-            }));
+            };
+
+            // Разрыв, поставленный в самом редакторе, помечается в пропускаемом
+            // пространстве wsx: Word пометку не видит, а Writersword при открытии файла
+            // снова рисует у такого разрыва свою отметку, а не вордовскую.
+            if (!block.InParagraph)
+                brk.SetAttribute(new OpenXmlAttribute(
+                    "wsx", EditorBreakAttribute, DocxTextEffects.WsxNamespace, "1"));
+
+            return new W.Run(brk);
         }
+
+        /// <summary>
+        /// Имя пометки wsx у w:br, поставленного в редакторе Writersword, а не пришедшего
+        /// из Word. Её читает импорт (ImportService).
+        /// </summary>
+        internal const string EditorBreakAttribute = "editorBreak";
 
         private W.Drawing? BuildImageDrawing(Guid imageId, DocxWriteContext ctx)
         {
@@ -979,25 +1264,76 @@ namespace Writersword.Modules.TextEditor.Services
         {
             var result = new W.Table();
 
+            // Таблица «справа налево» хранит колонки в видимом порядке; Word ждёт
+            // логический — первая колонка в разметке стоит у правого края.
+            bool bidiVisual = table.BidiVisual;
+            if (bidiVisual)
+                table = LogicalColumnOrder(table);
+
             int columnCount = Math.Max(table.ColumnCount, 1);
             int rowCount = Math.Max(table.RowCount, 1);
 
-            var tableProperties = new W.TableProperties(
-                new W.TableWidth
+            // Все колонки заданы в мм (таблица из Word с сеткой или колонки, растянутые
+            // руками): таблица уходит с той же шириной в twips, какая у неё на листе.
+            // Иначе ширина — доля полосы набора, а сетка задаёт пропорции между столбцами
+            // на условной ширине страницы.
+            bool absoluteWidths = table.Columns.Count >= columnCount
+                && table.Columns.Take(columnCount).All(c => c.WidthType == TableColumnWidthType.Fixed && c.WidthValue > 0);
+            double gridTotalTwips = absoluteWidths
+                ? Math.Max(Math.Round(TotalFixedWidthMm(table) * TwipsPerMm), 1.0)
+                : 9360.0; // ширина текста на A4 при полях по умолчанию
+
+            var tableWidth = absoluteWidths
+                ? new W.TableWidth
+                {
+                    Type = new EnumValue<W.TableWidthUnitValues>(W.TableWidthUnitValues.Dxa),
+                    Width = Math.Round(gridTotalTwips).ToString(CultureInfo.InvariantCulture)
+                }
+                : new W.TableWidth
                 {
                     Type = new EnumValue<W.TableWidthUnitValues>(W.TableWidthUnitValues.Pct),
                     Width = Math.Round(Math.Clamp(table.WidthPercent, 1, 100) * 50)
                         .ToString(CultureInfo.InvariantCulture)
-                },
-                BuildTableBorders(table),
-                new W.TableLook { Val = "04A0" });
+                };
+
+            // Поля ячеек таблицы — по первой ячейке; ячейки с другими полями пишут свои
+            // (w:tcMar). По схеме w:tblCellMar стоит после w:tblBorders, перед w:tblLook.
+            var firstCell = table.Cells.Count > 0 ? table.Cells[0] : null;
+            var tableProperties = new W.TableProperties(tableWidth);
+
+            // Выравнивание таблицы: по схеме w:jc стоит сразу после w:tblW, перед w:tblInd.
+            if (table.Alignment != TableBlockAlignment.Left)
+            {
+                tableProperties.AppendChild(new W.TableJustification
+                {
+                    Val = table.Alignment == TableBlockAlignment.Center
+                        ? W.TableRowAlignmentValues.Center
+                        : W.TableRowAlignmentValues.Right
+                });
+            }
+
+            // Отступ таблицы от поля: по схеме w:tblInd стоит после w:tblW, перед w:tblBorders.
+            if (Math.Abs(table.LeftIndentPt) > 0.01)
+            {
+                tableProperties.AppendChild(new W.TableIndentation
+                {
+                    Width = (int)Math.Round(table.LeftIndentPt * 20.0),
+                    Type = W.TableWidthUnitValues.Dxa
+                });
+            }
+
+            tableProperties.AppendChild(BuildTableBorders(table));
+
+            if (firstCell is not null)
+                tableProperties.AppendChild(BuildTableCellMargins(firstCell));
+
+            tableProperties.AppendChild(new W.TableLook { Val = "04A0" });
+
+            // По схеме w:bidiVisual стоит перед w:tblW.
+            if (bidiVisual)
+                tableProperties.PrependChild(new W.BiDiVisual());
 
             result.AppendChild(tableProperties);
-
-            // Ширины столбцов OOXML задаёт в twips. Проценты модели раскладываются
-            // на условную ширину страницы: реальную ширину задаёт tblW в процентах,
-            // а сетка задаёт пропорции между столбцами.
-            const double gridTotalTwips = 9360.0; // ширина текста на A4 при полях по умолчанию
             var grid = new W.TableGrid();
             var columnShares = ColumnShares(table, columnCount);
 
@@ -1014,8 +1350,26 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 var tableRow = new W.TableRow();
 
-                if (table.RepeatHeader && row == 0)
-                    tableRow.AppendChild(new W.TableRowProperties(new W.TableHeader()));
+                // Свойства строки: высота «не менее» (w:trHeight) и повтор заголовка. По
+                // схеме CT_TrPr порядок элементов свободный.
+                double minHeightPt = table.GetRowMinHeightPt(row);
+                bool repeatHeader = table.RepeatHeader && row == 0;
+                if (minHeightPt > 0 || repeatHeader)
+                {
+                    var rowProperties = new W.TableRowProperties();
+                    if (minHeightPt > 0)
+                    {
+                        rowProperties.AppendChild(new W.TableRowHeight
+                        {
+                            Val = (UInt32Value)(uint)Math.Round(minHeightPt * 20.0),
+                            HeightType = table.IsRowHeightExact(row)
+                                ? W.HeightRuleValues.Exact
+                                : W.HeightRuleValues.AtLeast
+                        });
+                    }
+                    if (repeatHeader) rowProperties.AppendChild(new W.TableHeader());
+                    tableRow.AppendChild(rowProperties);
+                }
 
                 int column = 0;
                 while (column < columnCount)
@@ -1034,14 +1388,16 @@ namespace Writersword.Modules.TextEditor.Services
                     if (cell.Row == row && cell.Column == column)
                     {
                         tableRow.AppendChild(BuildTableCell(
-                            cell, span, isVerticalMergeContinuation: false, columnShares, column, gridTotalTwips, ctx));
+                            cell, span, isVerticalMergeContinuation: false, columnShares, column, gridTotalTwips, ctx,
+                            firstCell));
                     }
                     else if (cell.Column == column)
                     {
                         // Продолжение вертикального объединения: ячейка есть, но
                         // содержимое лежит в её «главной» строке.
                         tableRow.AppendChild(BuildTableCell(
-                            cell, span, isVerticalMergeContinuation: true, columnShares, column, gridTotalTwips, ctx));
+                            cell, span, isVerticalMergeContinuation: true, columnShares, column, gridTotalTwips, ctx,
+                            firstCell));
                     }
                     else
                     {
@@ -1107,6 +1463,35 @@ namespace Writersword.Modules.TextEditor.Services
             return shares;
         }
 
+        /// <summary>Поля таблицы (w:tblCellMar) по полям ячейки, в twips.</summary>
+        private static W.TableCellMarginDefault BuildTableCellMargins(Models.Document.TableCell cell)
+        {
+            return new W.TableCellMarginDefault(
+                new W.TopMargin { Width = MarginTwips(cell.PaddingTopPt), Type = W.TableWidthUnitValues.Dxa },
+                new W.TableCellLeftMargin { Width = (short)Math.Clamp(Math.Round(cell.PaddingLeftPt * 20.0), 0, short.MaxValue), Type = W.TableWidthValues.Dxa },
+                new W.BottomMargin { Width = MarginTwips(cell.PaddingBottomPt), Type = W.TableWidthUnitValues.Dxa },
+                new W.TableCellRightMargin { Width = (short)Math.Clamp(Math.Round(cell.PaddingRightPt * 20.0), 0, short.MaxValue), Type = W.TableWidthValues.Dxa });
+        }
+
+        /// <summary>Поля одной ячейки (w:tcMar), в twips.</summary>
+        private static W.TableCellMargin BuildCellMargins(Models.Document.TableCell cell)
+        {
+            return new W.TableCellMargin(
+                new W.TopMargin { Width = MarginTwips(cell.PaddingTopPt), Type = W.TableWidthUnitValues.Dxa },
+                new W.LeftMargin { Width = MarginTwips(cell.PaddingLeftPt), Type = W.TableWidthUnitValues.Dxa },
+                new W.BottomMargin { Width = MarginTwips(cell.PaddingBottomPt), Type = W.TableWidthUnitValues.Dxa },
+                new W.RightMargin { Width = MarginTwips(cell.PaddingRightPt), Type = W.TableWidthUnitValues.Dxa });
+        }
+
+        private static string MarginTwips(double pt) =>
+            Math.Max(Math.Round(pt * 20.0), 0).ToString(CultureInfo.InvariantCulture);
+
+        private static bool SameMargins(Models.Document.TableCell a, Models.Document.TableCell b) =>
+            Math.Abs(a.PaddingTopPt - b.PaddingTopPt) < 0.01
+            && Math.Abs(a.PaddingBottomPt - b.PaddingBottomPt) < 0.01
+            && Math.Abs(a.PaddingLeftPt - b.PaddingLeftPt) < 0.01
+            && Math.Abs(a.PaddingRightPt - b.PaddingRightPt) < 0.01;
+
         private static double TotalFixedWidthMm(TableBlock table)
         {
             double total = 0;
@@ -1114,6 +1499,71 @@ namespace Writersword.Modules.TextEditor.Services
                 if (column.WidthType == TableColumnWidthType.Fixed)
                     total += column.WidthValue;
             return total;
+        }
+
+        /// <summary>
+        /// Копия таблицы «справа налево» с колонками в логическом порядке Word. Ячейки
+        /// новые, но абзацы у них те же самые объекты: выгрузка списков и картинок
+        /// узнаёт абзацы по ссылке. Выравнивание переводится обратно в логическое:
+        /// у правого поля — «к началу», у левого — «к концу».
+        /// </summary>
+        private static TableBlock LogicalColumnOrder(TableBlock table)
+        {
+            var logical = new TableBlock
+            {
+                Id = table.Id,
+                RowCount = table.RowCount,
+                ColumnCount = table.ColumnCount,
+                StyleName = table.StyleName,
+                WidthPercent = table.WidthPercent,
+                LeftIndentPt = 0,
+                Alignment = table.Alignment switch
+                {
+                    TableBlockAlignment.Right => TableBlockAlignment.Left,
+                    TableBlockAlignment.Left => TableBlockAlignment.Right,
+                    _ => TableBlockAlignment.Center
+                },
+                BidiVisual = true,
+                RepeatHeader = table.RepeatHeader,
+                SplitMode = table.SplitMode,
+                BreakLabel = table.BreakLabel,
+                ContinuationLabel = table.ContinuationLabel,
+                RowMinHeightsPt = new List<double>(table.RowMinHeightsPt),
+                ExactHeightRows = table.ExactHeightRows is null ? null : new List<int>(table.ExactHeightRows)
+            };
+
+            foreach (var column in table.Columns)
+                logical.Columns.Add(new TableColumnDefinition
+                {
+                    WidthType = column.WidthType,
+                    WidthValue = column.WidthValue
+                });
+
+            foreach (var cell in table.Cells)
+            {
+                logical.Cells.Add(new Models.Document.TableCell
+                {
+                    Id = cell.Id,
+                    Paragraphs = cell.Paragraphs,
+                    Row = cell.Row,
+                    Column = cell.Column,
+                    RowSpan = cell.RowSpan,
+                    ColSpan = cell.ColSpan,
+                    BackgroundColor = cell.BackgroundColor,
+                    ShadingPattern = cell.ShadingPattern,
+                    ShadingPatternColor = cell.ShadingPatternColor,
+                    Borders = cell.Borders.Clone(),
+                    VerticalAlignment = cell.VerticalAlignment,
+                    TextDirection = cell.TextDirection,
+                    PaddingTopPt = cell.PaddingTopPt,
+                    PaddingBottomPt = cell.PaddingBottomPt,
+                    PaddingLeftPt = cell.PaddingLeftPt,
+                    PaddingRightPt = cell.PaddingRightPt
+                });
+            }
+
+            logical.MirrorColumns();
+            return logical;
         }
 
         private W.TableCell BuildEmptyCell(
@@ -1130,6 +1580,10 @@ namespace Writersword.Modules.TextEditor.Services
             return cell;
         }
 
+        /// <param name="tableMarginsCell">
+        /// Ячейка, чьи поля записаны полями таблицы (w:tblCellMar): у ячейки с такими же
+        /// полями своих полей нет.
+        /// </param>
         private W.TableCell BuildTableCell(
             Models.Document.TableCell cell,
             int span,
@@ -1137,7 +1591,8 @@ namespace Writersword.Modules.TextEditor.Services
             double[] shares,
             int column,
             double gridTotalTwips,
-            DocxWriteContext ctx)
+            DocxWriteContext ctx,
+            Models.Document.TableCell? tableMarginsCell = null)
         {
             var result = new W.TableCell();
 
@@ -1165,14 +1620,37 @@ namespace Writersword.Modules.TextEditor.Services
             var borders = BuildCellBorders(cell.Borders);
             if (borders is not null) properties.AppendChild(borders);
 
+            // Заливка: цвет фона и узор поверх него (pct25, diagStripe…) своим цветом.
             string? background = HexWithoutHash(cell.BackgroundColor);
-            if (background is not null)
+            string? cellPattern = string.IsNullOrWhiteSpace(cell.ShadingPattern) ? null : cell.ShadingPattern;
+            if (background is not null || cellPattern is not null)
             {
-                properties.AppendChild(new W.Shading
+                var shading = new W.Shading
                 {
-                    Val = new EnumValue<W.ShadingPatternValues>(W.ShadingPatternValues.Clear),
-                    Color = "auto",
-                    Fill = background
+                    Color = cellPattern is not null ? HexWithoutHash(cell.ShadingPatternColor) ?? "auto" : "auto",
+                    Fill = background ?? "auto"
+                };
+
+                if (cellPattern is not null)
+                    shading.Val = new EnumValue<W.ShadingPatternValues> { InnerText = cellPattern };
+                else
+                    shading.Val = new EnumValue<W.ShadingPatternValues>(W.ShadingPatternValues.Clear);
+
+                properties.AppendChild(shading);
+            }
+
+            // Свои поля ячейки, если они не те, что у таблицы. По схеме — после w:shd.
+            if (tableMarginsCell is not null && !SameMargins(cell, tableMarginsCell))
+                properties.AppendChild(BuildCellMargins(cell));
+
+            // Направление текста: по схеме w:textDirection идёт после w:tcMar, перед w:vAlign.
+            if (cell.TextDirection != CellTextDirection.Horizontal)
+            {
+                properties.AppendChild(new W.TextDirection
+                {
+                    Val = cell.TextDirection == CellTextDirection.BottomToTop
+                        ? W.TextDirectionValues.BottomToTopLeftToRight
+                        : W.TextDirectionValues.TopToBottomRightToLeft
                 });
             }
 
@@ -1239,11 +1717,12 @@ namespace Writersword.Modules.TextEditor.Services
         {
             if (source is null) return null;
 
+            // У каждой стороны свои цвет и толщина, если заданы (таблицы из Word).
             var borders = new W.TableCellBorders();
-            ApplyBorder(new W.TopBorder(), source.Top, source.ThicknessPt, source.Color, borders);
-            ApplyBorder(new W.LeftBorder(), source.Left, source.ThicknessPt, source.Color, borders);
-            ApplyBorder(new W.BottomBorder(), source.Bottom, source.ThicknessPt, source.Color, borders);
-            ApplyBorder(new W.RightBorder(), source.Right, source.ThicknessPt, source.Color, borders);
+            ApplyBorder(new W.TopBorder(), source.Top, source.EffectiveTopThicknessPt(), source.EffectiveTopColor(), borders);
+            ApplyBorder(new W.LeftBorder(), source.Left, source.EffectiveLeftThicknessPt(), source.EffectiveLeftColor(), borders);
+            ApplyBorder(new W.BottomBorder(), source.Bottom, source.EffectiveBottomThicknessPt(), source.EffectiveBottomColor(), borders);
+            ApplyBorder(new W.RightBorder(), source.Right, source.EffectiveRightThicknessPt(), source.EffectiveRightColor(), borders);
             return borders;
         }
 
@@ -1267,6 +1746,12 @@ namespace Writersword.Modules.TextEditor.Services
             BorderStyle.Dashed => W.BorderValues.Dashed,
             BorderStyle.Dotted => W.BorderValues.Dotted,
             BorderStyle.Thick => W.BorderValues.Thick,
+            BorderStyle.Triple => W.BorderValues.Triple,
+            BorderStyle.Wave => W.BorderValues.Wave,
+            BorderStyle.ThreeDEmboss => W.BorderValues.ThreeDEmboss,
+            BorderStyle.ThreeDEngrave => W.BorderValues.ThreeDEngrave,
+            BorderStyle.Outset => W.BorderValues.Outset,
+            BorderStyle.Inset => W.BorderValues.Inset,
             _ => W.BorderValues.Single
         };
 
@@ -1333,7 +1818,8 @@ namespace Writersword.Modules.TextEditor.Services
         /// интервал, списки с нумерацией, разрывы страниц, картинки в тексте и таблицы
         /// (включая объединение ячеек, границы, заливку и вертикальное выравнивание).
         /// Не переносится (с предупреждением в <see cref="ExportResult.Warnings"/>):
-        /// плавающие объекты, колонтитулы, поворот и обрезка картинок.
+        /// плавающие объекты, поворот и обрезка картинок. Колонтитулы и номера страниц
+        /// рисуются тем же расчётом листов, что у полотна.
         /// Таблица целиком переносится на следующую страницу, если не помещается
         /// на текущей; таблица выше страницы печатается без разбиения.
         /// </summary>
@@ -1373,7 +1859,31 @@ namespace Writersword.Modules.TextEditor.Services
             TextAlignment.Center => W.JustificationValues.Center,
             TextAlignment.Right => W.JustificationValues.Right,
             TextAlignment.Justify => W.JustificationValues.Both,
+            TextAlignment.Distribute => W.JustificationValues.Distribute,
             _ => W.JustificationValues.Left
+        };
+
+        /// <summary>Вид подчёркивания модели в значение w:u Word.</summary>
+        internal static W.UnderlineValues UnderlineToOoxml(UnderlineStyle style) => style switch
+        {
+            UnderlineStyle.Words => W.UnderlineValues.Words,
+            UnderlineStyle.Double => W.UnderlineValues.Double,
+            UnderlineStyle.Thick => W.UnderlineValues.Thick,
+            UnderlineStyle.Dotted => W.UnderlineValues.Dotted,
+            UnderlineStyle.DottedHeavy => W.UnderlineValues.DottedHeavy,
+            UnderlineStyle.Dash => W.UnderlineValues.Dash,
+            UnderlineStyle.DashedHeavy => W.UnderlineValues.DashedHeavy,
+            UnderlineStyle.DashLong => W.UnderlineValues.DashLong,
+            UnderlineStyle.DashLongHeavy => W.UnderlineValues.DashLongHeavy,
+            UnderlineStyle.DotDash => W.UnderlineValues.DotDash,
+            UnderlineStyle.DashDotHeavy => W.UnderlineValues.DashDotHeavy,
+            UnderlineStyle.DotDotDash => W.UnderlineValues.DotDotDash,
+            UnderlineStyle.DashDotDotHeavy => W.UnderlineValues.DashDotDotHeavy,
+            UnderlineStyle.Wave => W.UnderlineValues.Wave,
+            UnderlineStyle.WavyHeavy => W.UnderlineValues.WavyHeavy,
+            UnderlineStyle.WavyDouble => W.UnderlineValues.WavyDouble,
+            UnderlineStyle.None => W.UnderlineValues.None,
+            _ => W.UnderlineValues.Single
         };
 
         /// <summary>Цвет без ведущего «#»: OOXML хранит шестнадцатеричный цвет без него.</summary>
@@ -1487,6 +1997,17 @@ namespace Writersword.Modules.TextEditor.Services
         private readonly Dictionary<Guid, SortedDictionary<int, ListProperties>> _levelsByList = new();
         private readonly Dictionary<Guid, int> _numberingIdByList = new();
 
+        /// <summary>
+        /// Абзацы, которым нужен свой экземпляр нумерации (w:num) на общем определении
+        /// списка: перезапуск счёта (w:startOverride) или уровень Word, отличный от
+        /// уровня определения (w:lvlOverride с w:lvl). У Word счёт ведёт определение,
+        /// поэтому такой экземпляр продолжает общий счёт — как было в исходном файле.
+        /// </summary>
+        private readonly List<ListProperties> _overrideParagraphs = new();
+
+        /// <summary>Экземпляр нумерации абзаца с переопределением (по ссылке на его свойства списка).</summary>
+        private readonly Dictionary<ListProperties, int> _numberingIdByParagraph = new(ReferenceEqualityComparer.Instance);
+
         public void Collect(DocumentModel document)
         {
             foreach (var section in document.Sections)
@@ -1525,10 +2046,52 @@ namespace Writersword.Modules.TextEditor.Services
 
             int level = Math.Clamp(list.Level, 0, 8);
             if (!levels.ContainsKey(level)) levels[level] = list;
+
+            if (!list.ContinueNumbering || DiffersFromDefinition(list, levels))
+                _overrideParagraphs.Add(list);
+        }
+
+        /// <summary>
+        /// Уровни Word абзаца расходятся с уровнями первого абзаца списка, по которым
+        /// строится определение: у абзаца свой вид номера (переопределение экземпляра).
+        /// </summary>
+        private static bool DiffersFromDefinition(ListProperties list, SortedDictionary<int, ListProperties> levels)
+        {
+            if (list.WordLevels is null) return false;
+
+            var definition = DefinitionWordLevels(levels);
+            if (definition is null) return false;
+
+            for (int i = 0; i < list.WordLevels.Count; i++)
+            {
+                var own = list.WordLevels[i];
+                var shared = i < definition.Count ? definition[i] : null;
+                if (!own.SameAs(shared)) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Уровни Word, по которым строится определение списка: у первого его абзаца.</summary>
+        private static List<WordListLevel>? DefinitionWordLevels(SortedDictionary<int, ListProperties> levels)
+        {
+            foreach (var pair in levels)
+            {
+                if (pair.Value.WordLevels is not null) return pair.Value.WordLevels;
+            }
+
+            return null;
         }
 
         public int? GetNumberingId(Guid listId) =>
             _numberingIdByList.TryGetValue(listId, out var value) ? value : null;
+
+        /// <summary>
+        /// Экземпляр нумерации абзаца: свой, если у абзаца переопределение, иначе общий
+        /// экземпляр его списка.
+        /// </summary>
+        public int? GetNumberingId(ListProperties list) =>
+            _numberingIdByParagraph.TryGetValue(list, out var own) ? own : GetNumberingId(list.ListId);
 
         public void Write(MainDocumentPart mainPart)
         {
@@ -1552,13 +2115,27 @@ namespace Writersword.Modules.TextEditor.Services
                 int maxLevel = pair.Value.Keys.Count > 0 ? pair.Value.Keys.Max() : 0;
                 ListProperties? previous = null;
 
+                // Список из Word уходит всеми своими уровнями: номер «%1.%2.» второго
+                // уровня собирается и из первого, даже если пунктов первого уровня нет.
+                var definitionLevels = DefinitionWordLevels(pair.Value);
+                if (definitionLevels is not null)
+                    maxLevel = Math.Max(maxLevel, definitionLevels.Count - 1);
+
                 for (int level = 0; level <= maxLevel; level++)
                 {
                     var properties = pair.Value.TryGetValue(level, out var found) ? found : previous;
+
+                    // Уровень Word без своих пунктов выше первого пункта списка: отступы
+                    // берутся у первого пункта, вид номера — у самого уровня.
+                    if (properties is null && definitionLevels is not null && level < definitionLevels.Count)
+                        properties = pair.Value.Values.First();
                     if (properties is null) continue;
 
                     previous = properties;
-                    abstractNum.AppendChild(BuildLevel(properties, level));
+                    var wordLevel = definitionLevels is not null && level < definitionLevels.Count
+                        ? definitionLevels[level]
+                        : null;
+                    abstractNum.AppendChild(BuildLevel(properties, level, wordLevel));
                 }
 
                 numbering.AppendChild(abstractNum);
@@ -1569,6 +2146,39 @@ namespace Writersword.Modules.TextEditor.Services
                 });
 
                 _numberingIdByList[pair.Key] = id;
+                id++;
+            }
+
+            // Экземпляры с переопределениями идут на определениях своих списков.
+            foreach (var list in _overrideParagraphs)
+            {
+                if (!_numberingIdByList.TryGetValue(list.ListId, out int abstractId)) continue;
+
+                var instance = new W.NumberingInstance(new W.AbstractNumId { Val = abstractId }) { NumberID = id };
+                var definition = DefinitionWordLevels(_levelsByList[list.ListId]);
+                int ownLevel = Math.Clamp(list.Level, 0, 8);
+                int levelCount = Math.Max(list.WordLevels?.Count ?? 0, ownLevel + 1);
+
+                for (int level = 0; level < levelCount; level++)
+                {
+                    bool restart = !list.ContinueNumbering && level == ownLevel;
+                    var own = list.WordLevelAt(level);
+                    var shared = definition is not null && level < definition.Count ? definition[level] : null;
+                    bool differs = own is not null && !own.SameAs(shared);
+                    if (!restart && !differs) continue;
+
+                    // По схеме CT_NumLvl: сначала w:startOverride, затем w:lvl.
+                    var levelOverride = new W.LevelOverride { LevelIndex = level };
+                    if (restart)
+                        levelOverride.AppendChild(new W.StartOverrideNumberingValue { Val = list.StartAt });
+                    if (differs)
+                        levelOverride.AppendChild(BuildLevel(list, level, own));
+
+                    instance.AppendChild(levelOverride);
+                }
+
+                instances.Add(instance);
+                _numberingIdByParagraph[list] = id;
                 id++;
             }
 
@@ -1583,18 +2193,42 @@ namespace Writersword.Modules.TextEditor.Services
         /// Один уровень абстрактной нумерации. Порядок элементов задан схемой CT_Lvl:
         /// start, numFmt, lvlText, lvlJc, pPr.
         /// </summary>
-        private W.Level BuildLevel(ListProperties properties, int level)
+        /// <param name="wordLevel">
+        /// Уровень Word, пришедший из .docx: вид номера пишется им, как был в исходнике.
+        /// null — уровень списка Writersword.
+        /// </param>
+        private W.Level BuildLevel(ListProperties properties, int level, WordListLevel? wordLevel = null)
         {
-            var (format, text) = MapMarker(properties, level);
+            var (format, text) = wordLevel is not null
+                ? (MapWordFormat(wordLevel), wordLevel.Text)
+                : MapMarker(properties, level);
 
             var result = new W.Level { LevelIndex = level };
 
-            result.AppendChild(new W.StartNumberingValue { Val = Math.Max(properties.StartAt, 1) });
+            int start = wordLevel?.Start ?? Math.Max(properties.StartAt, 1);
+            result.AppendChild(new W.StartNumberingValue { Val = start });
             result.AppendChild(new W.NumberingFormat { Val = new EnumValue<W.NumberFormatValues>(format) });
+
+            // Разделитель за номером: у Word по умолчанию табуляция, её не пишем.
+            if (wordLevel is not null && wordLevel.Suffix is ListMarkerSuffix.Space or ListMarkerSuffix.Nothing)
+            {
+                result.AppendChild(new W.LevelSuffix
+                {
+                    Val = new EnumValue<W.LevelSuffixValues>(wordLevel.Suffix == ListMarkerSuffix.Space
+                        ? W.LevelSuffixValues.Space
+                        : W.LevelSuffixValues.Nothing)
+                });
+            }
+
             result.AppendChild(new W.LevelText { Val = text });
             result.AppendChild(new W.LevelJustification
             {
-                Val = new EnumValue<W.LevelJustificationValues>(W.LevelJustificationValues.Left)
+                Val = new EnumValue<W.LevelJustificationValues>((wordLevel?.Alignment ?? ListMarkerAlignment.Left) switch
+                {
+                    ListMarkerAlignment.Right => W.LevelJustificationValues.Right,
+                    ListMarkerAlignment.Center => W.LevelJustificationValues.Center,
+                    _ => W.LevelJustificationValues.Left
+                })
             });
 
             double textIndent = properties.EffectiveTextIndentPt();
@@ -1609,8 +2243,37 @@ namespace Writersword.Modules.TextEditor.Services
 
             result.AppendChild(new W.PreviousParagraphProperties(indentation));
 
+            // Шрифт маркера уровня (Symbol, Wingdings, Courier New): по схеме — за w:pPr.
+            if (!string.IsNullOrWhiteSpace(wordLevel?.FontFamily))
+            {
+                result.AppendChild(new W.NumberingSymbolRunProperties(new W.RunFonts
+                {
+                    Ascii = wordLevel!.FontFamily,
+                    HighAnsi = wordLevel.FontFamily,
+                    Hint = new EnumValue<W.FontTypeHintValues>(W.FontTypeHintValues.Default)
+                }));
+            }
+
             return result;
         }
+
+        /// <summary>Формат номера уровня Word в w:numFmt.</summary>
+        private static W.NumberFormatValues MapWordFormat(WordListLevel wordLevel) => wordLevel.Format switch
+        {
+            ListMarkerType.Decimal => W.NumberFormatValues.Decimal,
+            ListMarkerType.DecimalLeadingZero => W.NumberFormatValues.DecimalZero,
+            ListMarkerType.LowerAlpha => W.NumberFormatValues.LowerLetter,
+            ListMarkerType.UpperAlpha => W.NumberFormatValues.UpperLetter,
+            ListMarkerType.LowerRoman => W.NumberFormatValues.LowerRoman,
+            ListMarkerType.UpperRoman => W.NumberFormatValues.UpperRoman,
+            ListMarkerType.Ordinal => W.NumberFormatValues.Ordinal,
+            ListMarkerType.CardinalText => W.NumberFormatValues.CardinalText,
+            ListMarkerType.OrdinalText => W.NumberFormatValues.OrdinalText,
+            ListMarkerType.RussianLower => W.NumberFormatValues.RussianLower,
+            ListMarkerType.RussianUpper => W.NumberFormatValues.RussianUpper,
+            ListMarkerType.Chicago => W.NumberFormatValues.Chicago,
+            _ => wordLevel.IsNumbered ? W.NumberFormatValues.Decimal : W.NumberFormatValues.Bullet
+        };
 
         private static (W.NumberFormatValues Format, string Text) MapMarker(ListProperties properties, int level)
         {
@@ -1655,7 +2318,10 @@ namespace Writersword.Modules.TextEditor.Services
         public bool Bold;
         public bool Italic;
         public bool Underline;
+        public UnderlineStyle UnderlineKind;
+        public string? UnderlineColor;
         public bool Strikethrough;
+        public bool DoubleStrikethrough;
         public bool Superscript;
         public bool Subscript;
         public bool AllCaps;
@@ -1687,7 +2353,10 @@ namespace Writersword.Modules.TextEditor.Services
             Bold = properties.IsBold ?? (unsetInherits && Bold);
             Italic = properties.IsItalic ?? (unsetInherits && Italic);
             Underline = properties.IsUnderline;
+            UnderlineKind = properties.UnderlineStyle;
+            UnderlineColor = properties.UnderlineColor;
             Strikethrough = properties.IsStrikethrough;
+            DoubleStrikethrough = properties.IsDoubleStrikethrough;
             Superscript = properties.IsSuperscript;
             Subscript = properties.IsSubscript;
             AllCaps = properties.IsAllCaps;
@@ -1712,6 +2381,7 @@ namespace Writersword.Modules.TextEditor.Services
         public bool KeepTogether;
         public bool KeepWithNext;
         public bool PageBreakBefore;
+        public bool ContextualSpacing;
         public ResolvedRunStyle BaseRun = new();
 
         public void Apply(Models.Styles.ParagraphProperties? properties)
@@ -1726,6 +2396,7 @@ namespace Writersword.Modules.TextEditor.Services
             if (properties.SpaceAfter is double after) SpaceAfter = after;
             if (properties.LineSpacingRule is Models.Styles.LineSpacingRule rule) LineSpacingRule = rule;
             if (properties.LineSpacingValue is double lineValue && lineValue > 0) LineSpacingValue = lineValue;
+            if (properties.ContextualSpacing is bool contextual) ContextualSpacing = contextual;
 
             KeepTogether = properties.KeepTogether;
             KeepWithNext = properties.KeepWithNext;
@@ -1846,6 +2517,27 @@ namespace Writersword.Modules.TextEditor.Services
         /// <summary>Раскладка внутри ячейки таблицы: перенос страницы запрещён.</summary>
         private bool _insideCell;
 
+        // ── Колонтитулы ─────────────────────────────────────────────────────
+        //
+        // Колонтитулу нужно знать, сколько всего листов и где начинаются главы и
+        // метки правил, а PDF пишется потоком: лист, закрытый однажды, уже не
+        // дорисовать. Поэтому при колонтитулах документ раскладывается дважды —
+        // первый раз вхолостую, только чтобы узнать листы, второй раз набело.
+
+        // Лист, который сейчас рисуется, с нуля.
+        private int _pageIndex = -1;
+
+        // Холостой проход: листы считаются, колонтитулы не рисуются.
+        private bool _countingPass;
+
+        // Абзац → лист, где он начинается; листы с началом главы. Собираются в
+        // холостом проходе.
+        private readonly Dictionary<Guid, int> _paragraphStartPages = new();
+        private readonly HashSet<int> _chapterStartPages = new();
+
+        // Оформление листов для чистового прохода. Пусто — колонтитулов нет.
+        private PageDecoration[] _decorations = Array.Empty<PageDecoration>();
+
         public PdfExportEngine(DocumentModel document, Func<string, byte[]?>? resolveImage)
         {
             _document = document;
@@ -1857,7 +2549,38 @@ namespace Writersword.Modules.TextEditor.Services
 
         public void Export(string outputPath)
         {
+            var headerFooter = _document.HeaderFooter;
+            if (headerFooter is not null && !headerFooter.IsEmpty)
+            {
+                _countingPass = true;
+                RenderDocument(Stream.Null);
+                _countingPass = false;
+
+                _decorations = PageNumbering.Compute(headerFooter, _pageIndex + 1,
+                    _paragraphStartPages, _chapterStartPages);
+
+                ResetPassState();
+            }
+
             using var stream = File.Create(outputPath);
+            RenderDocument(stream);
+        }
+
+        /// <summary>Возвращает раскладку к началу документа перед вторым проходом.</summary>
+        private void ResetPassState()
+        {
+            _pdf?.Dispose();
+            _pdf = null;
+            _canvas = null;
+            _pageOpen = false;
+            _y = 0f;
+            _pageIndex = -1;
+            _insideCell = false;
+            _listCounters.Clear();
+        }
+
+        private void RenderDocument(Stream stream)
+        {
             _pdf = SKDocument.CreatePdf(stream);
 
             if (_pdf is null)
@@ -1875,14 +2598,16 @@ namespace Writersword.Modules.TextEditor.Services
                 if (section.FloatingObjects.Count > 0)
                     _warnings.Add("Плавающие объекты (картинки с обтеканием, фигуры, надписи) не переносятся в PDF.");
 
-                if (section.Header.IsEnabled || section.Footer.IsEnabled)
-                    _warnings.Add("Колонтитулы не переносятся в PDF.");
-
                 var columnSettings = section.ColumnSettings ?? _document.ColumnSettings;
                 if (columnSettings.ColumnCount > 1)
                     _warnings.Add("Многоколоночная вёрстка в PDF не воспроизводится: текст идёт одной колонкой.");
 
                 BeginPage();
+
+                // Интервалы между абзацами одного стиля снимаются по соседству — вывод
+                // до раскладки, как у редактора.
+                Writersword.Modules.TextEditor.Rendering.ContextualSpacingRules.Apply(section.Blocks,
+                    paragraph => _styles.ResolveParagraph(paragraph).ContextualSpacing);
 
                 for (int i = 0; i < section.Blocks.Count; i++)
                 {
@@ -1939,6 +2664,14 @@ namespace Writersword.Modules.TextEditor.Services
             _top = (float)(settings.MarginTopMm * PointsPerMm);
             _bottom = _pageHeight - (float)(settings.MarginBottomMm * PointsPerMm);
 
+            // Колонтитул выше поля листа отодвигает текст, как на полотне и в печати.
+            var (reserveTop, reserveBottom) = Rendering.HeaderFooterPainter.BodyReservePt(_document.HeaderFooter,
+                (float)(settings.HeaderDistanceMm * PointsPerMm),
+                (float)(settings.FooterDistanceMm * PointsPerMm),
+                GetTypeface, _styles.ResolveParagraph(new ParagraphBlock()).BaseRun.FontFamily);
+            _top = Math.Max(_top, reserveTop);
+            _bottom = Math.Min(_bottom, _pageHeight - reserveBottom);
+
             if (_right - _left < 36f) _right = _left + 36f;
             if (_bottom - _top < 36f) _bottom = _top + 36f;
         }
@@ -1952,11 +2685,14 @@ namespace Writersword.Modules.TextEditor.Services
             _canvas = _pdf!.BeginPage(_pageWidth, _pageHeight);
             _pageOpen = true;
             _y = _top;
+            _pageIndex++;
         }
 
         private void EndPage()
         {
             if (!_pageOpen) return;
+
+            DrawHeaderFooter();
 
             _pdf!.EndPage();
             _canvas = null;
@@ -1989,8 +2725,8 @@ namespace Writersword.Modules.TextEditor.Services
             if (!_insideCell && style.PageBreakBefore && _y > _top)
                 BeginPage();
 
-            float spaceBefore = (float)style.SpaceBefore;
-            float spaceAfter = (float)style.SpaceAfter;
+            float spaceBefore = paragraph.SuppressSpaceBefore ? 0f : (float)style.SpaceBefore;
+            float spaceAfter = paragraph.SuppressSpaceAfter ? 0f : (float)style.SpaceAfter;
             float contentHeight = lines.Sum(line => line.Height);
             float pageHeight = _bottom - _top;
 
@@ -2020,6 +2756,9 @@ namespace Writersword.Modules.TextEditor.Services
                 if (!_insideCell && _y + line.Height > _bottom && _y > _top)
                     BeginPage();
 
+                if (i == 0 && !_insideCell && _countingPass)
+                    NoteParagraphStart(paragraph);
+
                 float x = _left + leftIndent;
                 if (i == 0) x += firstLineIndent;
 
@@ -2035,6 +2774,41 @@ namespace Writersword.Modules.TextEditor.Services
             }
 
             _y += spaceAfter;
+        }
+
+        /// <summary>
+        /// Холостой проход: абзац начался на текущем листе. По этим записям считаются
+        /// метки правил и начала глав.
+        /// </summary>
+        private void NoteParagraphStart(ParagraphBlock paragraph)
+        {
+            if (_pageIndex < 0) return;
+
+            _paragraphStartPages.TryAdd(paragraph.Id, _pageIndex);
+            if (HeadingCollapseService.LevelOf(paragraph, _document) == 1)
+                _chapterStartPages.Add(_pageIndex);
+        }
+
+        /// <summary>Колонтитулы закрываемого листа — тем же художником, что на полотне.</summary>
+        private void DrawHeaderFooter()
+        {
+            if (_countingPass || _canvas is null) return;
+
+            var settings = _document.HeaderFooter;
+            if (settings is null || _pageIndex < 0 || _pageIndex >= _decorations.Length) return;
+
+            var pageSettings = _document.PageSettings;
+            var box = new Rendering.HeaderFooterPageBox(
+                0f, 0f, _pageWidth, _pageHeight,
+                _left, _pageWidth - _right, _top, _pageHeight - _bottom,
+                (float)(pageSettings.HeaderDistanceMm * PointsPerMm),
+                (float)(pageSettings.FooterDistanceMm * PointsPerMm));
+
+            var color = ParseColor(ExportService.HexWithoutHash(settings.TextColor), new SKColor(0x1A, 0x1A, 0x1A));
+            string family = _styles.ResolveParagraph(new ParagraphBlock()).BaseRun.FontFamily;
+
+            Rendering.HeaderFooterPainter.DrawPage(_canvas, settings, _decorations[_pageIndex], box, color,
+                GetTypeface, family);
         }
 
         private float EstimateFirstLineHeight(ParagraphBlock paragraph)
@@ -2143,6 +2917,9 @@ namespace Writersword.Modules.TextEditor.Services
 
                     string text = run.Text ?? string.Empty;
                     if (text.Length == 0) continue;
+
+                    // Скрытый текст не печатается.
+                    if (run.Properties?.IsHidden == true) continue;
 
                     var runStyle = _styles.ResolveRun(run, style);
                     if (runStyle.AllCaps) text = text.ToUpperInvariant();
@@ -2418,7 +3195,9 @@ namespace Writersword.Modules.TextEditor.Services
             float baseline = _y + line.Ascent;
 
             float extraPerSpace = 0f;
-            if (alignment == TextAlignment.Justify && !line.IsLast)
+            // Упрощённая вёрстка PDF растянутое выравнивание тянет как по ширине: разводки
+            // букв последней строки у неё нет.
+            if ((alignment == TextAlignment.Justify || alignment == TextAlignment.Distribute) && !line.IsLast)
             {
                 int gaps = 0;
                 for (int i = 0; i < line.Atoms.Count - 1; i++)
@@ -2461,22 +3240,20 @@ namespace Writersword.Modules.TextEditor.Services
                     _textPaint.Color = ParseColor(ExportService.HexWithoutHash(piece.Style.TextColor), SKColors.Black);
                     _canvas.DrawText(piece.Text, cursor, pieceBaseline, SKTextAlign.Left, piece.Font, _textPaint);
 
-                    if (piece.Style.Underline || piece.Style.Strikethrough)
+                    if (piece.Style.Underline)
+                        DrawPieceUnderline(piece, cursor, pieceBaseline,
+                            extraPerSpace > 0f && i < line.Atoms.Count - 1 && atom.EndsWithSpace
+                                && ReferenceEquals(piece, atom.Pieces[^1])
+                                ? extraPerSpace
+                                : 0f);
+
+                    // Зачёркивание — тем же художником, что и на экране: высота линии из
+                    // метрик шрифта, двойное — двумя линиями.
+                    if (piece.Style.Strikethrough || piece.Style.DoubleStrikethrough)
                     {
-                        _strokePaint.Color = _textPaint.Color;
-                        _strokePaint.StrokeWidth = Math.Max((float)piece.Style.FontSize * 0.05f, 0.4f);
-
-                        if (piece.Style.Underline)
-                        {
-                            float underlineY = pieceBaseline + piece.Font.Metrics.Descent * 0.5f;
-                            _canvas.DrawLine(cursor, underlineY, cursor + piece.Width, underlineY, _strokePaint);
-                        }
-
-                        if (piece.Style.Strikethrough)
-                        {
-                            float strikeY = pieceBaseline + piece.Font.Metrics.Ascent * 0.33f;
-                            _canvas.DrawLine(cursor, strikeY, cursor + piece.Width, strikeY, _strokePaint);
-                        }
+                        Rendering.StrikePainter.Draw(_canvas, piece.Style.DoubleStrikethrough,
+                            cursor, piece.Width, pieceBaseline, (float)piece.Style.FontSize,
+                            piece.Font, _textPaint.Color, null);
                     }
 
                     cursor += piece.Width;
@@ -2485,6 +3262,44 @@ namespace Writersword.Modules.TextEditor.Services
                 if (extraPerSpace > 0f && i < line.Atoms.Count - 1 && atom.EndsWithSpace)
                     cursor += extraPerSpace;
             }
+        }
+
+        /// <summary>
+        /// Подчёркивание куска строки тем же рисунком, что и на экране.
+        /// </summary>
+        /// <param name="piece">Кусок текста.</param>
+        /// <param name="x">Левый край куска.</param>
+        /// <param name="baseline">Базовая линия куска.</param>
+        /// <param name="justifyExtra">
+        /// Добавка растяжки за пробелом в конце куска при выравнивании по ширине: линия
+        /// тянется и под неё, иначе между подчёркнутыми словами остались бы щели.
+        /// </param>
+        private void DrawPieceUnderline(PdfPiece piece, float x, float baseline, float justifyExtra)
+        {
+            if (_canvas is null) return;
+
+            var style = piece.Style.UnderlineKind == UnderlineStyle.None
+                ? UnderlineStyle.Single
+                : piece.Style.UnderlineKind;
+
+            float width = piece.Width + justifyExtra;
+
+            // «Только слова»: пробелы по краям слова и растяжка за ним не подчёркиваются.
+            if (Rendering.UnderlineShape.Of(style).WordsOnly)
+            {
+                string word = piece.Text.TrimEnd(' ', '\t');
+                if (word.Trim(' ', '\t').Length == 0) return;
+                width = word.Length == piece.Text.Length
+                    ? piece.Width
+                    : piece.Font.MeasureText(word);
+            }
+
+            SKColor color = _textPaint.Color;
+            string? ownColor = ExportService.HexWithoutHash(piece.Style.UnderlineColor);
+            if (ownColor is not null) color = ParseColor(ownColor, color);
+
+            Rendering.UnderlinePainter.Draw(_canvas, style, x, width, baseline,
+                (float)piece.Style.FontSize, color, null, piece.Style.Bold);
         }
 
         // ── Списки ──────────────────────────────────────────────────────────
@@ -2808,7 +3623,9 @@ namespace Writersword.Modules.TextEditor.Services
                 float available = Math.Max(width - indent, 12f);
                 var lines = LayoutParagraph(paragraph, style, available, (float)style.FirstLineIndent);
 
-                total += (float)style.SpaceBefore + lines.Sum(line => line.Height) + (float)style.SpaceAfter;
+                float spaceBefore = paragraph.SuppressSpaceBefore ? 0f : (float)style.SpaceBefore;
+                float spaceAfter = paragraph.SuppressSpaceAfter ? 0f : (float)style.SpaceAfter;
+                total += spaceBefore + lines.Sum(line => line.Height) + spaceAfter;
             }
 
             return total;

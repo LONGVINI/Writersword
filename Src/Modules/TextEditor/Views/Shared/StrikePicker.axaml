@@ -1,0 +1,102 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
+             xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
+             x:Class="Writersword.Modules.TextEditor.Views.Shared.StrikePicker">
+
+	<!--
+	    Выбор зачёркивания — содержимое меню кнопки зачёркивания на вкладке «Главная».
+
+	    Плитки видов: «Нет», одинарное и двойное — ровно те, что есть у Word (w:strike
+	    и w:dstrike), поэтому выбранное без потерь уходит в .docx и возвращается из
+	    него. Отмечена плитка вида под кареткой. Выбранный вид запоминается, и дальше
+	    его ставит сама кнопка.
+
+	    Данные и команды — у вкладки «Главная» (RibbonHomeTabViewModel): контрол
+	    берёт их из DataContext кнопки, к которой приделано меню.
+	-->
+
+	<UserControl.Styles>
+		<Style Selector="TextBlock.PickerCaption">
+			<Setter Property="FontSize"   Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="Margin"     Value="0,0,0,4"/>
+		</Style>
+
+		<!-- Плитки вида зачёркивания — те же, что у меню подчёркивания. -->
+		<Style Selector="Button.PenTile">
+			<Setter Property="Width"           Value="58"/>
+			<Setter Property="Height"          Value="26"/>
+			<Setter Property="Margin"          Value="0,0,4,0"/>
+			<Setter Property="Padding"         Value="4,0"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="FontSize"        Value="11"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="Focusable"       Value="False"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		</Style>
+		<Style Selector="Button.PenTile /template/ ContentPresenter">
+			<Setter Property="CornerRadius" Value="4"/>
+		</Style>
+		<Style Selector="Button.PenTile:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.PenTile.on /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Образец на плитке: слово и линии зачёркивания поперёк него. -->
+		<Style Selector="TextBlock.StrikeSampleText">
+			<Setter Property="Text"                Value="abc"/>
+			<Setter Property="FontSize"            Value="12"/>
+			<Setter Property="HorizontalAlignment" Value="Center"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Rectangle.StrikeSampleLine">
+			<Setter Property="Height"              Value="1"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="Fill"                Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<StackPanel Margin="4">
+		<TextBlock Classes="PickerCaption" Text="Вид зачёркивания"/>
+		<StackPanel Orientation="Horizontal">
+			<Button Classes="PenTile"
+			        Classes.on="{Binding StrikeKindKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=None}"
+			        Command="{Binding StrikeKindCommand}" CommandParameter="None"
+			        behaviours:TooltipBehavior.Tip="Без зачёркивания"
+			        Content="Нет"/>
+			<Button Classes="PenTile"
+			        Classes.on="{Binding StrikeKindKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Single}"
+			        Command="{Binding StrikeKindCommand}" CommandParameter="Single"
+			        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Format_Strikethrough}">
+				<Grid Width="30" Height="14">
+					<TextBlock Classes="StrikeSampleText"/>
+					<Rectangle Classes="StrikeSampleLine" VerticalAlignment="Center" Margin="0,1,0,0"/>
+				</Grid>
+			</Button>
+			<Button Classes="PenTile"
+			        Classes.on="{Binding StrikeKindKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Double}"
+			        Command="{Binding StrikeKindCommand}" CommandParameter="Double"
+			        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Format_DoubleStrikethrough}">
+				<Grid Width="30" Height="14">
+					<TextBlock Classes="StrikeSampleText"/>
+					<StackPanel Spacing="1.5" VerticalAlignment="Center" Margin="0,1,0,0">
+						<Rectangle Classes="StrikeSampleLine"/>
+						<Rectangle Classes="StrikeSampleLine"/>
+					</StackPanel>
+				</Grid>
+			</Button>
+		</StackPanel>
+	</StackPanel>
+</UserControl>

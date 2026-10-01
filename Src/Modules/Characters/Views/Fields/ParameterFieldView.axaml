@@ -1,0 +1,566 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
+             xmlns:colorControls="using:Writersword.Styles.UserControls"
+             xmlns:infra="using:Writersword.Infrastructure.Controls"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:controls="using:Writersword.Modules.Characters.Controls"
+             x:Class="Writersword.Modules.Characters.Views.Fields.ParameterFieldView"
+             x:DataType="tabs:CharacterParameterItemViewModel">
+
+	<!-- Поле анкеты — одна строка: название слева, значение справа, значки
+	     примечания и «не относится» с краю. Описание поля показывается
+	     подсказкой на названии, а не отдельной строкой: читают его один раз,
+	     а место под ним занимало бы каждое поле. Вид значения задан в анкете
+	     (EffectiveDisplay у вью-модели).
+
+	     Отдельный контрол, а не шаблон внутри карточки: то же поле
+	     показывается и в карточке персонажа, и в предпросмотре конструктора
+	     анкет, и выглядеть оно должно там и там одинаково. -->
+	<UserControl.Styles>
+		<Style Selector="TextBlock.field-name">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.field-name.colored">
+			<Setter Property="Foreground" Value="{Binding LabelBrush}"/>
+		</Style>
+		<Style Selector="Grid.field-row.not-applicable TextBlock.field-name">
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.field-caption">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<!-- Ползунок поля — штатный, но в цвете акцента программы, а не
+		     системы: иначе он выходил синим среди оранжевого. -->
+		<Style Selector="Slider.field-slider">
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Margin" Value="0"/>
+			<Style.Resources>
+				<StaticResource x:Key="SliderTrackValueFill" ResourceKey="AccentDefaultBrush"/>
+				<StaticResource x:Key="SliderTrackValueFillPointerOver" ResourceKey="AccentDefaultBrush"/>
+				<StaticResource x:Key="SliderTrackValueFillPressed" ResourceKey="AccentDefaultBrush"/>
+				<StaticResource x:Key="SliderThumbBackground" ResourceKey="AccentDefaultBrush"/>
+				<StaticResource x:Key="SliderThumbBackgroundPointerOver" ResourceKey="AccentDefaultBrush"/>
+				<StaticResource x:Key="SliderThumbBackgroundPressed" ResourceKey="AccentDefaultBrush"/>
+			</Style.Resources>
+		</Style>
+		<Style Selector="TextBlock.field-value">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.field-pole">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.field-muted">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="FontStyle" Value="Italic"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+
+		<Style Selector="TextBox.field-input">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="MinHeight" Value="26"/>
+			<Setter Property="Padding" Value="8,3"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<!-- Поле ввода: мягкая подсветка под курсором и акцентная рамка в
+		     правке — чтобы было видно, куда пишешь. -->
+		<Style Selector="TextBox.field-input">
+			<Setter Property="HorizontalAlignment" Value="Left"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="BorderBrush" Duration="0:0:0.15"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="TextBox.field-input:pointerover /template/ Border#PART_BorderElement">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="TextBox.field-input:focus /template/ Border#PART_BorderElement">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Ручка ширины поля: узкая полоска у правого края поля. -->
+		<Style Selector="Border.width-grip">
+			<Setter Property="Width" Value="10"/>
+			<Setter Property="Cursor" Value="SizeWestEast"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="VerticalAlignment" Value="Stretch"/>
+		</Style>
+		<Style Selector="Border.width-grip > Border">
+			<Setter Property="Background" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Background" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Border.width-grip:pointerover > Border">
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Примечание — подчёркнутая строка без рамки: не спорит со значением. -->
+		<Style Selector="TextBox.field-note">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="2,3"/>
+			<Setter Property="Margin" Value="0,0,0,4"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="0,0,0,1"/>
+			<Setter Property="CornerRadius" Value="0"/>
+		</Style>
+
+		<!-- Чип варианта: отмеченный — акцентной рамкой и подложкой. -->
+		<Style Selector="ToggleButton.field-chip">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Padding" Value="10,3"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Margin" Value="0,2,5,2"/>
+			<Setter Property="CornerRadius" Value="12"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.field-chip:checked /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.field-chip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+
+		<!-- Переключатель способа задать число — плоские кнопки в ряд. -->
+		<Style Selector="ToggleButton.field-seg">
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="Padding" Value="8,2"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Margin" Value="0,0,2,0"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.field-seg:checked /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Кружок палитры цвета. -->
+		<Style Selector="ToggleButton.field-swatch">
+			<Setter Property="Width" Value="20"/>
+			<Setter Property="Height" Value="20"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Margin" Value="0,0,5,0"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="BorderThickness" Value="2"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<Style Selector="ToggleButton.field-swatch /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="ToggleButton.field-swatch:checked /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.field-swatch:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+
+		<!-- Значки строки поля: в покое скрыты, под курсором видны. -->
+		<Style Selector="Grid.field-row StackPanel.field-actions">
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Grid.field-row:pointerover StackPanel.field-actions">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Grid.field-row.not-applicable StackPanel.field-actions">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="ToggleButton.field-action">
+			<Setter Property="Width" Value="22"/>
+			<Setter Property="Height" Value="22"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.field-action:checked /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.field-action.has-value">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid Classes="field-row"
+	      Classes.not-applicable="{Binding IsNotApplicable}"
+	      RowDefinitions="Auto,Auto"
+	      ColumnDefinitions="Auto,*,Auto"
+	      ColumnSpacing="10"
+	      MinHeight="30"
+	      Background="Transparent">
+
+		<!-- Подпись: значок слева, жирность и цвет — из анкеты; подсказка
+		     поля — знаком «?» рядом, а не всплывашкой на самом названии. -->
+		<Grid Grid.Column="0"
+		      Width="{Binding LabelWidth}"
+		      ColumnDefinitions="Auto,*,Auto"
+		      ColumnSpacing="5"
+		      VerticalAlignment="Center">
+			<controls:GlyphIcon Grid.Column="0"
+			                    Size="14"
+			                    Glyph="{Binding LabelIcon}"
+			                    Fill="{Binding LabelBrush}"
+			                    IsVisible="{Binding HasLabelIcon}"
+			                    VerticalAlignment="Center"/>
+			<TextBlock Grid.Column="1"
+			           Classes="field-name"
+			           Classes.colored="{Binding HasLabelBrush}"
+			           Text="{Binding Name}"
+			           FontWeight="{Binding LabelFontWeight}"
+			           VerticalAlignment="Center"
+			           TextTrimming="CharacterEllipsis"
+			           behaviours:TooltipBehavior.Tip="{Binding Name}"/>
+			<infra:HintMark Grid.Column="2"
+			                VerticalAlignment="Center"
+			                IsVisible="{Binding HasDescription}"
+			                behaviours:TooltipBehavior.Tip="{Binding Name}"
+			                behaviours:TooltipBehavior.Description="{Binding Description}"/>
+		</Grid>
+
+		<Panel Grid.Column="1" VerticalAlignment="Center">
+
+			<TextBlock Classes="field-muted"
+			           Text="{x:Static loc:CharactersStrings.Param_NotApplicable}"
+			           IsVisible="{Binding IsNotApplicable}"
+			           VerticalAlignment="Center"/>
+
+			<!-- Шарики: подпись справа показывает слово деления, а под
+			     курсором — то, что будет после щелчка. -->
+			<StackPanel Orientation="Horizontal" Spacing="10"
+			            IsVisible="{Binding ShowBalls}">
+				<controls:BallScale x:Name="Balls"
+				                    Count="{Binding BallCount}"
+				                    Value="{Binding BallIndex, Mode=TwoWay}"
+				                    Captions="{Binding BallCaptions}"
+				                    AccentBrush="{Binding AccentBrush}"
+				                    VerticalAlignment="Center"/>
+				<TextBlock Classes="field-caption"
+				           Text="{Binding #Balls.Caption}"
+				           VerticalAlignment="Center"/>
+			</StackPanel>
+
+			<!-- Оценка значками: звёзды, сердечки, свой рисунок из анкеты. -->
+			<StackPanel Orientation="Horizontal" Spacing="10"
+			            IsVisible="{Binding ShowGlyphs}">
+				<controls:GlyphScale x:Name="Glyphs"
+				                     Glyph="{Binding GlyphKey}"
+				                     Count="{Binding BallCount}"
+				                     Value="{Binding BallIndex, Mode=TwoWay}"
+				                     Captions="{Binding BallCaptions}"
+				                     AccentBrush="{Binding AccentBrush}"
+				                     VerticalAlignment="Center"/>
+				<TextBlock Classes="field-caption"
+				           Text="{Binding #Glyphs.Caption}"
+				           VerticalAlignment="Center"/>
+			</StackPanel>
+
+			<!-- Полюса: крайности подписаны по бокам, отмечается одно
+			     положение между ними. -->
+			<Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="10"
+			      IsVisible="{Binding ShowBipolar}">
+				<TextBlock Grid.Column="0" Classes="field-pole"
+				           Text="{Binding LeftPole}" VerticalAlignment="Center"/>
+				<controls:BallScale x:Name="Poles" Grid.Column="1"
+				                    IsBipolar="True"
+				                    Count="{Binding BipolarCount}"
+				                    Value="{Binding BipolarIndex, Mode=TwoWay}"
+				                    Captions="{Binding BipolarCaptions}"
+				                    AccentBrush="{Binding AccentBrush}"
+				                    VerticalAlignment="Center"/>
+				<TextBlock Grid.Column="2" Classes="field-pole"
+				           Text="{Binding RightPole}" VerticalAlignment="Center"/>
+				<TextBlock Grid.Column="3" Classes="field-caption"
+				           Text="{Binding #Poles.Caption}" VerticalAlignment="Center"/>
+			</Grid>
+
+			<StackPanel Orientation="Horizontal" Spacing="10"
+			            IsVisible="{Binding ShowBar}">
+				<controls:SegmentBar x:Name="Bar"
+				                     Width="200"
+				                     Count="{Binding BarCount}"
+				                     Value="{Binding BarIndex, Mode=TwoWay}"
+				                     Captions="{Binding BarCaptions}"
+				                     AccentBrush="{Binding AccentBrush}"
+				                     VerticalAlignment="Center"/>
+				<TextBlock Classes="field-caption"
+				           Text="{Binding #Bar.Caption}"
+				           VerticalAlignment="Center"/>
+			</StackPanel>
+
+			<!-- Штатный ползунок в цвете акцента. Перетаскивание ведёт
+			     SliderPointerBehavior: сам по себе бегунок в этой сборке
+			     не тащится. Шаг шкалы — SmallChange, значение
+			     округляется до него, дробных вроде 18.75 нет. -->
+			<StackPanel Orientation="Horizontal" Spacing="12"
+			            IsVisible="{Binding ShowSlider}">
+				<Slider Classes="field-slider"
+				        Width="240"
+				        Minimum="{Binding MinValue}"
+				        Maximum="{Binding MaxValue}"
+				        SmallChange="{Binding Step}"
+				        Value="{Binding SliderValue, Mode=TwoWay}"
+				        controls:SliderPointerBehavior.IsEnabled="True"
+				        VerticalAlignment="Center"/>
+				<TextBlock Classes="field-value"
+				           Text="{Binding ValueCaption}"
+				           VerticalAlignment="Center"/>
+			</StackPanel>
+
+			<!-- Поля ввода — своей ширины, заданной в анкете, а не во всю
+			     строку. В конструкторе справа от поля ручка ширины. -->
+			<StackPanel Orientation="Horizontal" Spacing="2"
+			            IsVisible="{Binding ShowText}">
+				<TextBox Classes="field-input"
+				         Width="{Binding InputWidth}"
+				         Text="{Binding TextValue}"/>
+				<Border Classes="width-grip"
+				       IsVisible="{Binding IsDesignerPreview}"
+				       PointerPressed="OnWidthGripPressed"
+				       PointerMoved="OnWidthGripMoved"
+				       PointerReleased="OnWidthGripReleased"
+				       behaviours:TooltipBehavior.Tip="Ширина поля"
+				       behaviours:TooltipBehavior.Description="Потяните, чтобы сделать поле шире или уже">
+<Border Width="3" CornerRadius="2" HorizontalAlignment="Center" Margin="0,5"/>
+</Border>
+			</StackPanel>
+
+			<StackPanel Orientation="Horizontal" Spacing="2"
+			            IsVisible="{Binding ShowLongText}">
+				<TextBox Classes="field-input"
+				         Width="{Binding InputWidth}"
+				         Text="{Binding TextValue}"
+				         AcceptsReturn="True"
+				         TextWrapping="Wrap"
+				         MinHeight="64"
+				         VerticalContentAlignment="Top"/>
+				<Border Classes="width-grip"
+				       IsVisible="{Binding IsDesignerPreview}"
+				       PointerPressed="OnWidthGripPressed"
+				       PointerMoved="OnWidthGripMoved"
+				       PointerReleased="OnWidthGripReleased"
+				       behaviours:TooltipBehavior.Tip="Ширина поля"
+				       behaviours:TooltipBehavior.Description="Потяните, чтобы сделать поле шире или уже">
+<Border Width="3" CornerRadius="2" HorizontalAlignment="Center" Margin="0,5"/>
+</Border>
+			</StackPanel>
+
+			<ItemsControl ItemsSource="{Binding ChoiceChips}"
+			              IsVisible="{Binding ShowChoiceChips}">
+				<ItemsControl.ItemsPanel>
+					<ItemsPanelTemplate>
+						<WrapPanel Orientation="Horizontal"/>
+					</ItemsPanelTemplate>
+				</ItemsControl.ItemsPanel>
+				<ItemsControl.ItemTemplate>
+					<DataTemplate x:DataType="tabs:CharacterChoiceOptionViewModel">
+						<ToggleButton Classes="field-chip"
+						              Content="{Binding Name}"
+						              IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
+					</DataTemplate>
+				</ItemsControl.ItemTemplate>
+			</ItemsControl>
+
+			<ComboBox ItemsSource="{Binding States}"
+			          SelectedIndex="{Binding CurrentStateIndex}"
+			          IsVisible="{Binding ShowChoiceList}"
+			          MinWidth="160"
+			          HorizontalAlignment="Left"
+			          FontSize="12"/>
+
+			<ItemsControl ItemsSource="{Binding Options}"
+			              IsVisible="{Binding ShowMultiChips}">
+				<ItemsControl.ItemsPanel>
+					<ItemsPanelTemplate>
+						<WrapPanel Orientation="Horizontal"/>
+					</ItemsPanelTemplate>
+				</ItemsControl.ItemsPanel>
+				<ItemsControl.ItemTemplate>
+					<DataTemplate x:DataType="tabs:CharacterChoiceOptionViewModel">
+						<ToggleButton Classes="field-chip"
+						              Content="{Binding Name}"
+						              IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
+					</DataTemplate>
+				</ItemsControl.ItemTemplate>
+			</ItemsControl>
+
+			<ToggleSwitch IsChecked="{Binding BoolValue}"
+			              IsVisible="{Binding ShowYesNo}"
+			              OnContent="{Binding BoolCaption}"
+			              OffContent="{Binding BoolCaption}"
+			              FontSize="12"/>
+
+			<!-- Свободное число. Способы — «точно», «примерно», «от — до»,
+			     «этап», «год рождения» — показываются, только если анкета
+			     разрешила больше одного. -->
+			<StackPanel Spacing="6" IsVisible="{Binding ShowNumber}">
+				<ItemsControl ItemsSource="{Binding NumberModeOptions}"
+				              IsVisible="{Binding ShowNumberModes}">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+							<WrapPanel Orientation="Horizontal"/>
+						</ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+					<ItemsControl.ItemTemplate>
+						<DataTemplate x:DataType="tabs:CharacterNumberModeOptionViewModel">
+							<ToggleButton Classes="field-seg"
+							              Content="{Binding Label}"
+							              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="{Binding Label}"
+							              behaviours:TooltipBehavior.Description="{Binding Hint}"/>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+
+				<StackPanel Orientation="Horizontal" Spacing="6"
+				            IsVisible="{Binding ShowNumberMain}">
+					<TextBlock Classes="field-caption" Text="около"
+					           IsVisible="{Binding ShowNumberApprox}"
+					           VerticalAlignment="Center"/>
+					<TextBox Classes="field-input field-number"
+					         Width="{Binding InputWidth}"
+					         Text="{Binding NumberText}"
+					         Tag="from"
+					         KeyDown="OnNumberKeyDown"
+					         LostFocus="OnNumberLostFocus"/>
+					<TextBlock Classes="field-caption" Text="—"
+					           IsVisible="{Binding ShowNumberRange}"
+					           VerticalAlignment="Center"/>
+					<TextBox Classes="field-input field-number"
+					         Width="{Binding InputWidth}"
+					         Text="{Binding NumberToText}"
+					         Tag="to"
+					         KeyDown="OnNumberKeyDown"
+					         LostFocus="OnNumberLostFocus"
+					         IsVisible="{Binding ShowNumberRange}"/>
+					<TextBlock Classes="field-caption"
+					           Text="{Binding UnitCaption}"
+					           IsVisible="{Binding ShowUnit}"
+					           VerticalAlignment="Center"/>
+					<Border Classes="width-grip"
+					       IsVisible="{Binding IsDesignerPreview}"
+					       PointerPressed="OnWidthGripPressed"
+					       PointerMoved="OnWidthGripMoved"
+					       PointerReleased="OnWidthGripReleased"
+					       behaviours:TooltipBehavior.Tip="Ширина поля"
+					       behaviours:TooltipBehavior.Description="Потяните, чтобы сделать поле шире или уже">
+<Border Width="3" CornerRadius="2" HorizontalAlignment="Center" Margin="0,5"/>
+</Border>
+				</StackPanel>
+
+				<ItemsControl ItemsSource="{Binding StageOptions}"
+				              IsVisible="{Binding ShowNumberStage}">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+							<WrapPanel Orientation="Horizontal"/>
+						</ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+					<ItemsControl.ItemTemplate>
+						<DataTemplate x:DataType="tabs:CharacterChoiceOptionViewModel">
+							<ToggleButton Classes="field-chip"
+							              Content="{Binding Name}"
+							              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="{Binding Name}"
+							              behaviours:TooltipBehavior.Description="{Binding Hint}"/>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+			</StackPanel>
+
+			<!-- Цвет: кружки палитры анкеты и, если анкета разрешает,
+			     свой цвет через общий выбор цвета. -->
+			<StackPanel Orientation="Horizontal" Spacing="6"
+			            IsVisible="{Binding ShowColor}">
+				<ItemsControl ItemsSource="{Binding PaletteOptions}"
+				              IsVisible="{Binding HasPalette}">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+							<WrapPanel Orientation="Horizontal"/>
+						</ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+					<ItemsControl.ItemTemplate>
+						<DataTemplate x:DataType="tabs:CharacterColorOptionViewModel">
+							<ToggleButton Classes="field-swatch"
+							              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="{Binding Hex}">
+								<Ellipse Width="14" Height="14" Fill="{Binding Brush}"/>
+							</ToggleButton>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+				<colorControls:ColorPickerButton Width="22" Height="22"
+				                                 VerticalAlignment="Center"
+				                                 HexColor="{Binding ColorValue, Mode=TwoWay}"
+				                                 IsVisible="{Binding AllowCustomColor}"
+				                                 behaviours:TooltipBehavior.Tip="Свой цвет"
+				                                 behaviours:TooltipBehavior.Description="Любой цвет вне палитры анкеты"/>
+			</StackPanel>
+		</Panel>
+
+		<!-- Значки строки: проявляются под курсором. Отмеченное «не
+		     относится» и заполненное примечание видны и в покое — по
+		     ним видно, что у поля что-то есть. -->
+		<StackPanel Grid.Column="2"
+		            Classes="field-actions"
+		            IsVisible="{Binding !IsDesignerPreview}"
+		            Orientation="Horizontal"
+		            Spacing="2"
+		            VerticalAlignment="Center">
+			<ToggleButton Classes="field-action"
+			              Classes.has-value="{Binding HasValueNote}"
+			              IsChecked="{Binding IsNoteOpen, Mode=TwoWay}"
+			              IsVisible="{Binding IsApplicable}"
+			              behaviours:TooltipBehavior.Tip="Примечание"
+			              behaviours:TooltipBehavior.Description="Строка своими словами рядом со значением: «187, сутулится и кажется ниже». Значение сравнивается, примечание — для вас">
+				<PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+				          Width="11" Height="11"/>
+			</ToggleButton>
+			<ToggleButton Classes="field-action"
+			              IsChecked="{Binding IsNotApplicable, Mode=TwoWay}"
+			              behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_NotApplicable}"
+			              behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Param_NotApplicableHint}">
+				<PathIcon Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9A7.902 7.902 0 0 1 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1A7.902 7.902 0 0 1 20 12c0 4.42-3.58 8-8 8z"
+				          Width="11" Height="11"/>
+			</ToggleButton>
+		</StackPanel>
+
+		<TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+		         Classes="field-note"
+		         Text="{Binding ValueNote}"
+		         PlaceholderText="{x:Static loc:CharactersStrings.Param_ValueNotePlaceholder}"
+		         IsVisible="{Binding ShowNote}"/>
+	</Grid>
+</UserControl>

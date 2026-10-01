@@ -89,6 +89,65 @@ namespace Writersword.Modules.Characters.Models
 
         /// <summary>Можно ли у поля цвета выбрать цвет вне палитры.</summary>
         public bool AllowCustomColor { get; set; } = true;
+
+        /// <summary>
+        /// Ширина поля ввода у текста, описания и числа, в точках. Задаётся в
+        /// анкете перетаскиванием края поля: «имя» короче «места рождения».
+        /// Пусто — ширина по умолчанию для типа.
+        /// </summary>
+        public double? InputWidth { get; set; }
+
+        // ── Раскладка и подпись ──────────────────────────────────────────
+
+        /// <summary>
+        /// Ключ поля внутри анкеты — по нему раскладка (CharacterAnketa.Layout)
+        /// ставит поле в ячейку. В отличие от FieldId, не связан с именем и не
+        /// меняется при переименовании. Пусто — выдаётся при загрузке.
+        /// </summary>
+        public string Key { get; set; } = string.Empty;
+
+        /// <summary>Подпись поля жирным.</summary>
+        public bool LabelBold { get; set; }
+
+        /// <summary>Цвет подписи #RRGGBB. Пусто — цвет текста темы.</summary>
+        public string LabelColor { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Значок слева от подписи: ключ из CharacterAnketaIcons, «path:…»
+        /// с геометрией или «png:…» с картинкой. Пусто — без значка.
+        /// </summary>
+        public string LabelIcon { get; set; } = string.Empty;
+
+        // ── Свободное число ──────────────────────────────────────────────
+
+        /// <summary>Знаков после запятой. Ноль — целое число.</summary>
+        public int Decimals { get; set; }
+
+        /// <summary>Наименьшее допустимое значение. Пусто — без нижней границы.</summary>
+        public double? NumberMin { get; set; }
+
+        /// <summary>Наибольшее допустимое значение. Пусто — без верхней границы.</summary>
+        public double? NumberMax { get; set; }
+
+        /// <summary>
+        /// Число подчиняется шагу: вписанное значение притягивается к
+        /// ближайшему допустимому, стрелки вверх и вниз идут по шагу.
+        /// </summary>
+        public bool UseStep { get; set; }
+
+        /// <summary>Как считаются допустимые значения при включённом шаге.</summary>
+        public CharacterStepRule StepRule { get; set; } = CharacterStepRule.Linear;
+
+        /// <summary>Свой список допустимых значений через запятую — для правила List.</summary>
+        public string StepValuesRaw { get; set; } = string.Empty;
+
+        // ── Оценка ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Значок оценки для вида Glyph — в тех же форматах, что LabelIcon.
+        /// Пусто — сердечко.
+        /// </summary>
+        public string RatingGlyph { get; set; } = string.Empty;
     }
 
     /// <summary>

@@ -39,7 +39,12 @@ namespace Writersword.Modules.TextEditor.Document
         private Dictionary<Guid, int> LiveBlockPageNumbers()
         {
             List<ParaLayout> layouts;
-            lock (_renderLock) { layouts = _layouts; }
+            List<PageRect> pages;
+            lock (_renderLock)
+            {
+                layouts = _layouts;
+                pages = _pages;
+            }
 
             var map = new Dictionary<Guid, int>(layouts.Count);
 
@@ -54,6 +59,20 @@ namespace Writersword.Modules.TextEditor.Document
                 if (map.TryGetValue(id, out int known) && known <= page) continue;
 
                 map[id] = page;
+            }
+
+            // Номер страницы в оглавлении — тот, что напечатан на листе, а не его место
+            // в стопке: при счёте с другого числа или заново с главы (DocumentCanvas.HeaderFooter)
+            // оглавление обязано показывать то же, что читатель увидит внизу страницы.
+            if (DocVm?.HeaderFooter is not null && pages.Count > 0)
+            {
+                var decorations = GetDecorations(layouts, pages.Count);
+                foreach (var id in new List<Guid>(map.Keys))
+                {
+                    int index = map[id] - 1;
+                    if (index >= 0 && index < decorations.Length)
+                        map[id] = decorations[index].Number;
+                }
             }
 
             return map;

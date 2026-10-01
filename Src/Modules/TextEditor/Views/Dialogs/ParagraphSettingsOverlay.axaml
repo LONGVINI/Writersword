@@ -189,6 +189,9 @@
                         <ToggleButton x:Name="AlignJustifyBtn" Classes="Seg" ToolTip.Tip="По ширине">
                             <PathIcon Data="M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z" Width="14" Height="14"/>
                         </ToggleButton>
+                        <ToggleButton x:Name="AlignDistributeBtn" Classes="Seg" ToolTip.Tip="Растянуть: по ширине вместе с последней строкой">
+                            <PathIcon Data="M3 3h18v2H3zM3 7h18v2H3zM3 11h18v2H3zM3 19l3-2.5v2h12v-2l3 2.5-3 2.5v-2H6v2z" Width="14" Height="14"/>
+                        </ToggleButton>
                     </StackPanel>
 
                     <!-- Отступы -->
@@ -247,6 +250,16 @@
                                            Minimum="0" Maximum="2000" Increment="1" FormatString="0.#"/>
                         </StackPanel>
                     </Grid>
+                    <CheckBox x:Name="ContextualSpacingBox"
+                              FontSize="12"
+                              Foreground="{DynamicResource TextPrimaryBrush}"
+                              Content="Не добавлять интервал между абзацами одного стиля"
+                              ToolTip.Tip="Интервалы до и после не ставятся между соседними абзацами одного стиля — так пункты списка идут вплотную"/>
+                    <CheckBox x:Name="RightToLeftBox"
+                              FontSize="12"
+                              Foreground="{DynamicResource TextPrimaryBrush}"
+                              Content="Справа налево (иврит, арабский)"
+                              ToolTip.Tip="Абзац набирается справа налево: начало строк у правого края, куски текста разных направлений встают в порядке письма справа налево"/>
                     <Grid ColumnDefinitions="* *" ColumnSpacing="12">
                         <StackPanel Grid.Column="0" Spacing="3">
                             <TextBlock Classes="FieldLabel" Text="Междустрочный"/>

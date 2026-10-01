@@ -34,6 +34,16 @@ namespace Writersword.Core.Models.Rendering
         /// <summary>Интервал после параграфа в pt.</summary>
         public float SpaceAfterPt { get; set; }
 
+        /// <summary>
+        /// Интервал до абзаца снят при раскладке: абзац не добавляет интервал к соседу
+        /// своего стиля выше. Запоминается, чтобы раскладку из кеша можно было сверить с
+        /// соседством: сменился стиль соседа — снятие меняется, и раскладка уже не та.
+        /// </summary>
+        public bool SpaceBeforeSuppressed { get; set; }
+
+        /// <summary>Интервал после абзаца снят при раскладке: ниже сосед того же стиля.</summary>
+        public bool SpaceAfterSuppressed { get; set; }
+
         /// <summary>Левый отступ параграфа в pt.</summary>
         public float LeftIndentPt { get; set; }
 
@@ -52,6 +62,18 @@ namespace Writersword.Core.Models.Rendering
         /// выделение и навигация её пропускают.
         /// </summary>
         public bool MarkerOwnsFirstLine { get; set; }
+
+        /// <summary>
+        /// Выравнивание номера списка у точки номера: 0 — номер начинается в ней, 1 — стоит
+        /// серединой, 2 — кончается (w:lvlJc у списков из Word). Ставится вёрсткой.
+        /// </summary>
+        public int MarkerAlignment { get; set; }
+
+        /// <summary>
+        /// Шрифт маркера списка, заданный уровнем Word (Symbol, Wingdings, Courier New).
+        /// null — маркер рисуется шрифтом текста пункта. Ставится вёрсткой.
+        /// </summary>
+        public string? MarkerFontFamily { get; set; }
 
         /// <summary>
         /// Первая строка вытеснена под обтекаемый объект (полоса рядом с ним оказалась
@@ -87,6 +109,42 @@ namespace Writersword.Core.Models.Rendering
         /// текстом: под строками, а при рамке — всё поле внутри неё.
         /// </summary>
         public string? ShadingColor { get; set; }
+
+        /// <summary>
+        /// Узор заливки поверх цвета заливки — имя узора Word (pct25, diagStripe…).
+        /// null — узора нет.
+        /// </summary>
+        public string? ShadingPattern { get; set; }
+
+        /// <summary>Цвет узора (HEX). null — «авто»: цвет текста листа.</summary>
+        public string? ShadingPatternColor { get; set; }
+
+        /// <summary>
+        /// Табуляции-черты абзаца: позиции вертикальных линий в pt от левого края
+        /// текстовой области (там же, откуда отсчитываются позиции табуляции). Черта
+        /// идёт через каждую строку. null — черт нет.
+        /// </summary>
+        public IReadOnlyList<float>? BarTabPositionsPt { get; set; }
+
+        /// <summary>
+        /// Как знаки разного кегля встают по высоте строки: 0 — авто, 1 — по базовой
+        /// линии, 2 — по верху строки, 3 — по середине, 4 — по низу. Числа — те же, что
+        /// у выравнивания w:textAlignment в модели документа.
+        /// </summary>
+        public int LineTextAlignment { get; set; }
+
+        /// <summary>Абзац набран справа налево (w:bidi): его начало — у правого края.</summary>
+        public bool IsRightToLeft { get; set; }
+
+        /// <summary>
+        /// В абзаце есть текст справа налево или сам абзац справа налево: строки
+        /// раскладываются по направлению письма.
+        /// </summary>
+        public bool HasBidiText { get; set; }
+
+        /// <summary>У абзаца есть заливка: цвет, узор или то и другое.</summary>
+        public bool HasShading =>
+            !string.IsNullOrWhiteSpace(ShadingColor) || !string.IsNullOrWhiteSpace(ShadingPattern);
 
         /// <summary>
         /// Суммарная высота параграфа включая интервалы до и после.
@@ -222,6 +280,26 @@ namespace Writersword.Core.Models.Rendering
 
                 if (lineFrom >= lineTo) continue;
 
+                // Строка с кусками, переставленными по направлению письма: знаки подряд
+                // по тексту стоят на листе в разных местах. Прямоугольник от края до края
+                // накрыл бы и невыделенные куски между ними — выделение собирается из
+                // мест самих выделенных знаков.
+                if (line.IsBidiReordered && !line.HasWrapFragments)
+                {
+                    float reorderedExtra = (i == 0) ? FirstLineIndentPt : 0f;
+                    foreach (var (spanLeft, spanRight) in ReorderedSelectionSpans(line, lineFrom, lineTo))
+                    {
+                        result.Add(new SKSelectionRect
+                        {
+                            Rect = new SKRect(
+                                LeftIndentPt + reorderedExtra + spanLeft, line.Y,
+                                LeftIndentPt + reorderedExtra + spanRight, line.Y + line.Height),
+                            LineIndex = i
+                        });
+                    }
+                    continue;
+                }
+
                 float x1 = GetCaretXInLine(line, lineFrom);
                 float x2 = GetCaretXInLine(line, lineTo);
 
@@ -326,6 +404,26 @@ namespace Writersword.Core.Models.Rendering
                 if (segRight > totalWidth) totalWidth = segRight;
             }
 
+            // Строка справа налево: левый край — её конец, правый — начало.
+            if (line.IsRightToLeft)
+            {
+                if (xPt <= 0)
+                    return new SKHitTestResult
+                    {
+                        CharIndex = line.LastCharIndex + 1,
+                        IsInside = false,
+                        IsTrailingEdge = true
+                    };
+
+                if (xPt >= totalWidth)
+                    return new SKHitTestResult
+                    {
+                        CharIndex = line.FirstCharIndex,
+                        IsInside = false,
+                        IsTrailingEdge = false
+                    };
+            }
+
             if (xPt <= 0)
                 return new SKHitTestResult
                 {
@@ -334,11 +432,23 @@ namespace Writersword.Core.Models.Rendering
                     IsTrailingEdge = false
                 };
 
+            // Строка кончается переносом строки (Shift+Enter): клик правее её текста
+            // ставит каретку перед переносом, как в Word. Позиция за переносом — уже
+            // начало следующей строки, и каретка прыгала бы вниз.
+            var lastSeg = line.Segments[^1];
+            if (lastSeg.IsLineBreak && !line.IsBidiReordered && xPt >= lastSeg.X)
+                return new SKHitTestResult
+                {
+                    CharIndex = lastSeg.GlobalCharOffset,
+                    IsInside = false,
+                    IsTrailingEdge = true
+                };
+
             // Хвостовые пробелы на переносимой (не последней) строке — висячие: клик правее
             // последнего слова ставит каретку в конец содержимого строки, а не на LastCharIndex+1
             // (который для переносимой строки уже является первым символом следующей строки, из-за
             // чего каретка «прыгает вниз»).
-            if (!line.IsLastLine)
+            if (!line.IsLastLine && !line.IsBidiReordered)
             {
                 int contentEnd = LastNonSpaceEnd(line);
                 if (contentEnd <= line.LastCharIndex)
@@ -367,6 +477,32 @@ namespace Writersword.Core.Models.Rendering
                 if (xPt < seg.X || xPt > seg.X + seg.Width) continue;
 
                 float localX = xPt - seg.X;
+
+                // Сегмент справа налево: знак начинается у своего правого края, поэтому
+                // правая половина знака — место перед ним, левая — после.
+                if (seg.IsRightToLeft)
+                {
+                    foreach (var glyph in seg.GlyphMetrics)
+                    {
+                        if (localX >= glyph.MidX)
+                            return new SKHitTestResult
+                            {
+                                CharIndex = glyph.CharIndex,
+                                IsInside = true,
+                                IsTrailingEdge = false
+                            };
+
+                        if (localX >= glyph.X)
+                            return new SKHitTestResult
+                            {
+                                CharIndex = glyph.CharIndex + 1,
+                                IsInside = true,
+                                IsTrailingEdge = false
+                            };
+                    }
+
+                    continue;
+                }
 
                 foreach (var glyph in seg.GlyphMetrics)
                 {
@@ -432,6 +568,56 @@ namespace Writersword.Core.Models.Rendering
             return nearest;
         }
 
+        /// <summary>
+        /// Участки выделения [from, to) в строке с переставленными кусками, слева
+        /// направо, в координатах строки. Каждый знак даёт своё место; места, стоящие
+        /// вплотную, сливаются в один участок.
+        /// </summary>
+        private static List<(float Left, float Right)> ReorderedSelectionSpans(
+            SKLineLayout line, int from, int to)
+        {
+            var spans = new List<(float Left, float Right)>();
+
+            foreach (var seg in line.Segments)
+            {
+                int segFrom = seg.GlobalCharOffset;
+                int segTo = segFrom + seg.Text.Length;
+                int a = Math.Max(from, segFrom);
+                int b = Math.Min(to, segTo);
+                if (a >= b) continue;
+
+                if (seg.GlyphMetrics.Length != seg.Text.Length)
+                {
+                    if (seg.Width > 0f) spans.Add((seg.X, seg.X + seg.Width));
+                    continue;
+                }
+
+                for (int k = a - segFrom; k < b - segFrom; k++)
+                {
+                    var glyph = seg.GlyphMetrics[k];
+                    if (glyph.Width <= 0f) continue;
+                    spans.Add((seg.X + glyph.X, seg.X + glyph.Right));
+                }
+            }
+
+            if (spans.Count < 2) return spans;
+
+            spans.Sort((p, q) => p.Left.CompareTo(q.Left));
+
+            var merged = new List<(float Left, float Right)>(spans.Count) { spans[0] };
+            for (int s = 1; s < spans.Count; s++)
+            {
+                var last = merged[^1];
+                var span = spans[s];
+                if (span.Left <= last.Right + 0.01f)
+                    merged[^1] = (last.Left, Math.Max(last.Right, span.Right));
+                else
+                    merged.Add(span);
+            }
+
+            return merged;
+        }
+
         // Глобальный индекс сразу за последним непробельным символом строки.
         // Если непробельных нет — возвращает FirstCharIndex.
         private static int LastNonSpaceEnd(SKLineLayout line)
@@ -454,6 +640,18 @@ namespace Writersword.Core.Models.Rendering
                 if (charIndex > seg.GlobalCharOffset + seg.GlyphMetrics.Length) continue;
 
                 int localIndex = charIndex - seg.GlobalCharOffset;
+
+                // Сегмент справа налево: его начало — у правого края, и место после
+                // знака — у левого края этого знака.
+                if (seg.IsRightToLeft)
+                {
+                    if (localIndex == 0) return seg.X + seg.Width;
+
+                    if (localIndex >= seg.GlyphMetrics.Length)
+                        return seg.X;
+
+                    return seg.X + seg.GlyphMetrics[localIndex - 1].X;
+                }
 
                 if (localIndex == 0) return seg.X;
 

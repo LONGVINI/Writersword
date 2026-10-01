@@ -153,6 +153,21 @@ namespace Writersword.Modules.Characters.ViewModels
             this.RaisePropertyChanged(nameof(IsCollective));
         }
 
+        /// <summary>
+        /// Перечитать поля анкет после правки анкеты в конструкторе: новые
+        /// поля, вид, подписи. Список значений берётся из персонажа заново:
+        /// разнос правки анкеты мог добавить в него поля, и следующее
+        /// сохранение карточки должно записать уже полный список.
+        /// </summary>
+        public void ReloadFields()
+        {
+            var updated = _characterService.GetById(CharacterId);
+            if (updated == null) return;
+
+            ParametersTab.ReloadFromModel(updated);
+            BasicsTab.ReloadFromStorage();
+        }
+
         private void Save()
         {
             var character = _characterService.GetById(CharacterId);

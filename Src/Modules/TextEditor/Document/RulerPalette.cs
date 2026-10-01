@@ -48,6 +48,11 @@ namespace Writersword.Modules.TextEditor.Document
         public SKColor LabelNegative { get; init; }
 
         public SKColor Border { get; init; }
+        /// <summary>
+        /// Край листа на вертикальной линейке: черта, где шкала одного листа
+        /// кончается и за зазором начинается шкала следующего.
+        /// </summary>
+        public SKColor PageEdge { get; init; }
         public SKColor MarginHandle { get; init; }
 
         /// <summary>Позиция табуляции, поставленная человеком.</summary>
@@ -72,6 +77,7 @@ namespace Writersword.Modules.TextEditor.Document
             LabelMuted = new SKColor(0x88, 0x88, 0x88),
             LabelNegative = new SKColor(0x99, 0x44, 0x44),
             Border = new SKColor(0xCC, 0xCC, 0xCC),
+            PageEdge = new SKColor(0xA8, 0xA8, 0xA8),
             MarginHandle = new SKColor(0x88, 0x88, 0x88),
             TabMarker = DefaultTabMarker,
             TabMarkerFaint = DefaultTabMarker.WithAlpha(0x66)
@@ -126,6 +132,7 @@ namespace Writersword.Modules.TextEditor.Document
                     : new SKColor(0x99, 0x44, 0x44), 0.75),
 
                 Border = ink.WithAlpha(0x3C),
+                PageEdge = ink.WithAlpha(0x5A),
                 MarginHandle = ink.WithAlpha(0x7A),
 
                 TabMarker = tab,

@@ -443,11 +443,26 @@ namespace Writersword.Modules.TextEditor.Commands
                 && a.IsBold == b.IsBold
                 && a.IsItalic == b.IsItalic
                 && a.IsUnderline == b.IsUnderline
+                && a.UnderlineStyle == b.UnderlineStyle
+                && a.UnderlineColor == b.UnderlineColor
                 && a.IsStrikethrough == b.IsStrikethrough
+                && a.IsDoubleStrikethrough == b.IsDoubleStrikethrough
                 && a.IsSuperscript == b.IsSuperscript
                 && a.IsSubscript == b.IsSubscript
                 && a.IsAllCaps == b.IsAllCaps
                 && a.IsSmallCaps == b.IsSmallCaps
+                && a.CharacterScale == b.CharacterScale
+                && a.BaselineOffset == b.BaselineOffset
+                && a.IsHidden == b.IsHidden
+                && a.IsOutline == b.IsOutline
+                && a.IsShadow == b.IsShadow
+                && a.IsEmboss == b.IsEmboss
+                && a.IsImprint == b.IsImprint
+                && a.EmphasisMark == b.EmphasisMark
+                && a.CharBorderColor == b.CharBorderColor
+                && a.CharBorderWidthPt == b.CharBorderWidthPt
+                && a.CharBorderStyle == b.CharBorderStyle
+                && Equals(a.Effects, b.Effects)
                 && a.TextColor == b.TextColor
                 && a.HighlightColor == b.HighlightColor
                 && a.Language == b.Language;

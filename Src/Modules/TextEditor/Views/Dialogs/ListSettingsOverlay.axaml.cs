@@ -25,6 +25,19 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
         private Guid _listId;
         private int _level;
 
+        // Список, открытый в диалоге, и то, что диалог показал при открытии. Список из Word
+        // несёт свои уровни (вид номера, шаблон «8.1.1.», шрифт маркера); пока в диалоге не
+        // тронут сам маркер, они сохраняются, и меняется только то, что поправили.
+        private ListProperties? _source;
+        private int _loadedType;
+        private int _loadedSystem;
+        private string _loadedPrefix = string.Empty;
+        private string _loadedSuffix = string.Empty;
+        private string _loadedBullet = string.Empty;
+        private string _loadedSequence = string.Empty;
+        private decimal _loadedStart;
+        private decimal _loadedGap;
+
         private Border _scrim = null!;
         private ScrollViewer _panelScroll = null!;
         private ComboBox _typeCombo = null!;
@@ -214,6 +227,16 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _markerIndentBox.Value = (decimal)Math.Round(markerAbsPt, 1);
             _minGapBox.Value = (decimal)Math.Round(p?.MarkerTextMinGapPt ?? ListProperties.DefaultMarkerTextGapPt, 1);
 
+            _source = p;
+            _loadedType = _typeCombo.SelectedIndex;
+            _loadedSystem = _numberSystemCombo.SelectedIndex;
+            _loadedPrefix = _prefixBox.Text ?? string.Empty;
+            _loadedSuffix = _suffixBox.Text ?? string.Empty;
+            _loadedBullet = _bulletSymbolBox.Text ?? string.Empty;
+            _loadedSequence = _sequenceBox.Text ?? string.Empty;
+            _loadedStart = _startAtBox.Value ?? 1m;
+            _loadedGap = _minGapBox.Value ?? 0m;
+
             _loading = false;
         }
 
@@ -254,7 +277,49 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
                 lp.CustomMarker = string.IsNullOrEmpty(_bulletSymbolBox.Text) ? "•" : _bulletSymbolBox.Text;
             }
 
+            KeepWordLevels(lp);
+
             return lp;
+        }
+
+        /// <summary>
+        /// Список из Word остаётся списком Word, пока в диалоге не тронут сам маркер: тип,
+        /// система счёта, префикс, суффикс, знак или набор знаков. Тогда переносятся его
+        /// уровни, а поправленное ложится поверх: новый начальный номер — в уровень, свой
+        /// зазор между номером и текстом — вместо табуляции Word. Маркер поменяли — это уже
+        /// свой список Writersword, и уровни Word не переносятся.
+        /// </summary>
+        private void KeepWordLevels(ListProperties lp)
+        {
+            if (_source?.WordLevels is null) return;
+
+            bool markerChanged = _typeCombo.SelectedIndex != _loadedType
+                || _numberSystemCombo.SelectedIndex != _loadedSystem
+                || !string.Equals(_prefixBox.Text ?? string.Empty, _loadedPrefix, StringComparison.Ordinal)
+                || !string.Equals(_suffixBox.Text ?? string.Empty, _loadedSuffix, StringComparison.Ordinal)
+                || !string.Equals(_bulletSymbolBox.Text ?? string.Empty, _loadedBullet, StringComparison.Ordinal)
+                || !string.Equals(_sequenceBox.Text ?? string.Empty, _loadedSequence, StringComparison.Ordinal);
+            if (markerChanged) return;
+
+            lp.WordLevels = _source.WordLevels.ConvertAll(level => level.Clone());
+            lp.NumberLanguage = _source.NumberLanguage;
+            lp.MarkerType = _source.MarkerType;
+            lp.CustomMarker = _source.CustomMarker;
+            lp.NumberPrefix = _source.NumberPrefix;
+            lp.NumberSuffix = _source.NumberSuffix;
+
+            // Номер первого пункта у списка Word задаёт уровень — туда и новый старт.
+            decimal start = _startAtBox.Value ?? 1m;
+            if (start != _loadedStart && lp.WordLevelAt(_level) is { } ownLevel)
+                ownLevel.Start = (int)start;
+
+            // Свой зазор: текст за номером встаёт на зазор, а не на табуляцию Word.
+            decimal gap = _minGapBox.Value ?? 0m;
+            if (gap != _loadedGap)
+            {
+                foreach (var level in lp.WordLevels)
+                    if (level.Suffix == ListMarkerSuffix.Tab) level.Suffix = ListMarkerSuffix.Gap;
+            }
         }
 
         // Разбивает строку на отдельные символы-«номера» по пробелам и переводам строк.

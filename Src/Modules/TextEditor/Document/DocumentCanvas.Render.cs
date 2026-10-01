@@ -635,6 +635,9 @@ namespace Writersword.Modules.TextEditor.Document
                         canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, cellVisibleH, _paintCellBg);
                     }
 
+                    // Узор заливки (pct25, diagStripe…) поверх цвета фона.
+                    SKTextRenderer.RenderCellShadingPattern(canvas, cell, cellX, cellY + rowShift, cell.WidthPt, cellVisibleH);
+
                     float visibleCellY = cellY + rowShift;
 
                     SKTextRenderer.RenderCellBordersPublic(canvas, cell, cellX, visibleCellY,
@@ -1518,6 +1521,9 @@ namespace Writersword.Modules.TextEditor.Document
             if (FormattingMarksVisible)
                 DrawPageBreakMarks(canvas, pages, firstPage, lastPage);
 
+            // Колонтитулы и номера страниц — в полях листа (DocumentCanvas.HeaderFooter).
+            RenderHeaderFooters(canvas, layouts, pages, firstPage, lastPage);
+
             // Картинки поверх текста (InFront / Square / Tight) — рисуются после текста.
             foreach (var ie in images)
             {
@@ -1726,6 +1732,9 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Рамка и маркеры выделенной фигуры.
             RenderShapeSelection(canvas, firstPage, lastPage);
+
+            // Выделения таблиц — принадлежность правки: в PDF их нет.
+            if (ExportPassActive) return;
 
             // Рисуем выделения всех таблиц из единого словаря.
             foreach (var kv in _tableSelections)
@@ -2014,6 +2023,8 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void DrawMissingImage(SKCanvas canvas, SKRect rect, string? fileName)
         {
+            // Отметка — подсказка правке. В PDF на месте потерянной картинки пусто.
+            if (ExportPassActive) return;
             if (rect.Width < 2f || rect.Height < 2f) return;
 
             using var frame = new SKPaint
@@ -2145,6 +2156,11 @@ namespace Writersword.Modules.TextEditor.Document
         private SKImage? GetImageBitmap(string fileName)
         {
             if (string.IsNullOrEmpty(fileName)) return null;
+
+            // Выгрузка в PDF берёт картинку из файла проекта в исходном разрешении и
+            // сразу: экранная копия уменьшена, а фоновая загрузка оставила бы дыру.
+            if (ExportPassActive && _exportImageResolver is { } exportResolve)
+                return exportResolve(fileName);
 
             lock (_imageCacheLock)
             {
@@ -2586,6 +2602,9 @@ namespace Writersword.Modules.TextEditor.Document
                 var clip = pl.Cell!;
                 canvas.ClipRect(new SKRect(clip.ClipX, clip.ClipY,
                     clip.ClipX + clip.ClipW, clip.ClipY + clip.ClipH));
+
+                // Повёрнутая ячейка: клип стоит в координатах листа, дальше — её поворот.
+                clip.ApplyRotation(canvas);
             }
 
             var renderLayout = GetRenderLayout(pl, (float)(_canvasWidth * PxToPt));
@@ -2675,7 +2694,7 @@ namespace Writersword.Modules.TextEditor.Document
             // В снимок (рендер в overscan-битмап) выделение не запекается: там его рисует
             // DrawSelectionOverlay поверх готового снимка. Иначе каждое движение мыши при
             // выделении перерисовывало три вьюпорта текста заново.
-            if (!_selectionAsOverlay)
+            if (!_selectionAsOverlay && !ExportPassActive)
                 DrawSelectionForSlice(canvas, idx, pl, absX, absY, layouts, renderLayout);
 
             if (drawCaret && _caretPara == idx)
@@ -2717,7 +2736,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// прокрутил — подложка пропала, прокрутил ещё — вернулась.
         /// </summary>
         private bool CaretPlaceable =>
-            !_zooming && !_caretIndexPending && !SpreadMode && !ReadingActive;
+            !_zooming && !_caretIndexPending && !SpreadMode && !ReadingActive && !ExportPassActive;
 
         private void DrawCaretOnCanvas(
             SKCanvas canvas,
@@ -2757,6 +2776,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (!hasPageClip) canvas.Save();
                 var c = pl.Cell!;
                 canvas.ClipRect(new SKRect(c.ClipX, c.ClipY, c.ClipX + c.ClipW, c.ClipY + c.ClipH));
+                c.ApplyRotation(canvas);
             }
 
             DrawCaret(canvas, pl, xPt, pl.Ypt, caretLayout);
@@ -3013,6 +3033,7 @@ namespace Writersword.Modules.TextEditor.Document
                 var clip = pl.Cell;
                 canvas.ClipRect(new SKRect(clip.ClipX, clip.ClipY,
                     clip.ClipX + clip.ClipW, clip.ClipY + clip.ClipH));
+                clip.ApplyRotation(canvas);
             }
 
             var renderLayout = GetRenderLayout(pl, (float)(_canvasWidth * PxToPt));

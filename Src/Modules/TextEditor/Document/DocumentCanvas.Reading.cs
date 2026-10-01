@@ -159,8 +159,10 @@ namespace Writersword.Modules.TextEditor.Document
         /// открыл чтение — и на странице висит рамка с маркерами размера, взяться
         /// которым там неоткуда. Само выделение при этом не сбрасывается: выйдя из
         /// книги, человек находит свою работу там же, где оставил.
+        ///
+        /// При выгрузке листов в PDF — тоже нет: в файл уходит книга, а не правка.
         /// </summary>
-        private bool SelectionDrawable => !ReadingActive;
+        private bool SelectionDrawable => !ReadingActive && !ExportPassActive;
 
         /// <summary>
         /// Показывать ли пометки редактора о том, что объект промахнулся мимо листа:
@@ -171,8 +173,10 @@ namespace Writersword.Modules.TextEditor.Document
         /// заштрихованный прямоугольник в поле над страницей читается как поломка.
         /// Поэтому в книге такой объект просто обрезается своим листом, как всё
         /// остальное.
+        ///
+        /// В PDF — так же, как в книге: объект мимо листа обрезается листом.
         /// </summary>
-        private bool OffPageMarkersVisible => !ReadingActive;
+        private bool OffPageMarkersVisible => !ReadingActive && !ExportPassActive;
 
         /// <summary>Вид рабочей области при правке.</summary>
         private EditorViewSettings? EditorView => DocVm?.EditorView;
@@ -201,7 +205,8 @@ namespace Writersword.Modules.TextEditor.Document
         /// вид и свои настройки, и решает за него <see cref="ReadingActive"/>.
         /// </summary>
         private bool EditorThemeActive
-            => !ReadingActive && !SpreadMode && EditorView is { ThemeEnabled: true, Active: not null };
+            => !ReadingActive && !SpreadMode && !ExportPassActive
+               && EditorView is { ThemeEnabled: true, Active: not null };
 
         /// <summary>
         /// Лист рисуется не белым: либо идёт чтение, либо вид назначен правке.

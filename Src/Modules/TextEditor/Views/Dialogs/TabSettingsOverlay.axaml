@@ -139,6 +139,8 @@
 							             Content="{x:Static loc:TextEditorStrings.Tab_AlignRight}"/>
 							<RadioButton x:Name="AlignDecimalBtn" Classes="Option" GroupName="TabAlign"
 							             Content="{x:Static loc:TextEditorStrings.Tab_AlignDecimal}"/>
+							<RadioButton x:Name="AlignBarBtn"     Classes="Option" GroupName="TabAlign"
+							             Content="{x:Static loc:TextEditorStrings.Tab_AlignBar}"/>
 						</StackPanel>
 
 						<StackPanel>
@@ -152,6 +154,24 @@
 							             Content="{x:Static loc:TextEditorStrings.Tab_LeaderDashes}"/>
 							<RadioButton x:Name="LeaderLineBtn"   Classes="Option" GroupName="TabLeader"
 							             Content="{x:Static loc:TextEditorStrings.Tab_LeaderLine}"/>
+						</StackPanel>
+
+						<!-- Густота знаков заполнителя: как у Word или своя -->
+						<StackPanel Spacing="4" ToolTip.Tip="{x:Static loc:TextEditorStrings.Tab_LeaderDensity_Tip}">
+							<TextBlock Classes="FieldLabel"
+							           Text="{x:Static loc:TextEditorStrings.Tab_LeaderDensity}"/>
+							<CheckBox x:Name="LeaderWordLikeBox"
+							          FontSize="12"
+							          Foreground="{DynamicResource TextPrimaryBrush}"
+							          Content="{x:Static loc:TextEditorStrings.Tab_LeaderWordLike}"/>
+							<StackPanel Orientation="Horizontal" Spacing="6">
+								<NumericUpDown x:Name="LeaderDensityBox"
+								               Width="110" FontSize="12"
+								               Minimum="25" Maximum="400" Increment="25"
+								               FormatString="0"/>
+								<TextBlock Text="%" FontSize="12" VerticalAlignment="Center"
+								           Foreground="{DynamicResource TextPrimaryBrush}"/>
+							</StackPanel>
 						</StackPanel>
 
 						<StackPanel Orientation="Horizontal" Spacing="8">

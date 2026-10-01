@@ -213,6 +213,32 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // ── Колонтитул ────────────────────────────────────────────────
+            // Вне колонтитулов двойной щелчок по полю листа над текстом или под ним
+            // открывает правку колонтитула этого листа; одиночный ставит каретку как
+            // обычно — поле листа не должно ловить промахи мимо текста. В колонтитулах
+            // одиночного щелчка по полю любого листа довольно, а щелчок по тексту
+            // документа заканчивает набор в колонтитуле и ставит каретку туда, куда
+            // щёлкнули. Вкладка «Колонтитулы» при этом остаётся: так ставят исключение
+            // от нужного абзаца — каретку в абзац, затем кнопку на вкладке.
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+                && !IsEditingBlocked
+                && DocVm is { } hfDoc)
+            {
+                bool hfMode = hfDoc.IsHeaderFooterMode;
+
+                if ((e.ClickCount == 2 || hfMode)
+                    && TryHitHeaderFooter(xPt, yPt, out int hfPage, out bool hfHeader, out int hfSlot))
+                {
+                    hfDoc.RequestHeaderFooterEdit(hfHeader, hfPage, hfSlot);
+                    e.Handled = true;
+                    return;
+                }
+
+                if (hfMode)
+                    hfDoc.EndHeaderFooterBandEdit();
+            }
+
             // ── Стрелка свёртки заголовка ─────────────────────────────────
             // Стоит на поле листа слева от заголовка. Нажатие по ней сворачивает или
             // разворачивает раздел и каретку не ставит (DocumentCanvas.HeadingCollapse).
@@ -258,6 +284,15 @@ namespace Writersword.Modules.TextEditor.Document
                 else
                 {
                     _tableDragStartVal = (float)te.Table.LeftIndentPt; // pt
+
+                    // Таблица по центру или справа стоит не на своём отступе: тянуть её
+                    // начинаем с того места, где она видна, а при сдвиге она станет левой.
+                    if (te.Table.Alignment != TableBlockAlignment.Left
+                        && _pages.Count > 0 && te.PageIndex >= 0 && te.PageIndex < _pages.Count)
+                    {
+                        var dragPage = _pages[te.PageIndex];
+                        _tableDragStartVal = te.XPt - (dragPage.PadLeftPt + dragPage.MarginLeftPt);
+                    }
                 }
 
                 // Входим в таблицу если ещё не там
@@ -715,6 +750,12 @@ namespace Writersword.Modules.TextEditor.Document
                 Cursor = ReadingRibbonCursor;
                 return;
             }
+
+            // Знак λ исключения колонтитулов: над ним — подсказка (DocumentCanvas.HeaderFooter).
+            {
+                var (markX, markY) = VisualToLogicalPt(xPt, yPt);
+                UpdateRuleMarkTip(markX, markY);
+            }
             // Страницы рядом: во время жеста над объектом маппинг идёт через страницу,
             // где жест начался — заход указателя на соседнюю страницу не даёт скачка
             // логических координат. Вне жеста — через ближайшую страницу.
@@ -919,6 +960,7 @@ namespace Writersword.Modules.TextEditor.Document
                     // Сдвигаем всю таблицу: LeftIndentPt += delta (без ограничений)
                     if (_activeTableBlock is not null)
                     {
+                        _activeTableBlock.Alignment = TableBlockAlignment.Left;
                         _activeTableBlock.LeftIndentPt = _tableDragStartVal + deltaPt;
                         if (DocVm is not null) DocVm.ActiveTable = _activeTableBlock;
                         InvalidateCellLayoutCaches();
@@ -1967,6 +2009,15 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // Shift+Enter в остальных местах — перенос строки внутри абзаца, как в Word:
+            // новая строка того же абзаца, без нового абзаца, отступа и интервалов.
+            if (e.Key == Key.Enter && shft && !ctrl)
+            {
+                InsertText("\n");
+                e.Handled = true;
+                return;
+            }
+
             switch (e.Key)
             {
                 case Key.Back: ExecuteDeleteBackSmart(); e.Handled = true; break;
@@ -1980,8 +2031,18 @@ namespace Writersword.Modules.TextEditor.Document
                 case Key.Right when alt: ExecuteNavigateForward(); e.Handled = true; break;
                 case Key.F5 when shft: ExecuteNavigateBack(); e.Handled = true; break;
 
-                case Key.Left: ExecuteNavLeft(shft); e.Handled = true; break;
-                case Key.Right: ExecuteNavRight(shft); e.Handled = true; break;
+                // В абзаце справа налево текст идёт от правого края, и стрелки в Word
+                // меняются ролями: вправо — к началу текста, влево — к его концу.
+                case Key.Left:
+                    if (CaretParagraphIsRightToLeft()) ExecuteNavRight(shft);
+                    else ExecuteNavLeft(shft);
+                    e.Handled = true;
+                    break;
+                case Key.Right:
+                    if (CaretParagraphIsRightToLeft()) ExecuteNavLeft(shft);
+                    else ExecuteNavRight(shft);
+                    e.Handled = true;
+                    break;
                 case Key.Up: ExecuteNavUp(shft); e.Handled = true; break;
                 case Key.Down: ExecuteNavDown(shft); e.Handled = true; break;
 
@@ -2063,6 +2124,7 @@ namespace Writersword.Modules.TextEditor.Document
                     vm.TableSetLeftEdgeDelegate = leftIndentPt =>
                     {
                         if (_activeTableBlock is null) return;
+                        _activeTableBlock.Alignment = TableBlockAlignment.Left;
                         _activeTableBlock.LeftIndentPt = leftIndentPt; // без ограничений
                         InvalidateCellLayoutCaches();
                         RebuildLayouts();
@@ -3257,6 +3319,11 @@ namespace Writersword.Modules.TextEditor.Document
             if (pvm is null) return;
             string text = pvm.PlainText ?? "";
 
+            // Спрятанный скрытый текст слева от каретки не виден — Backspace удаляет
+            // видимый знак перед ним, а не невидимые знаки по одному.
+            if (!HasSel())
+                _caretChar = SkipHiddenBackward(GetLayoutAt(_caretPara), _caretChar);
+
             // Операционное удаление (лёгкий текстовый стек, без снапшота всего документа) —
             // покрывает частые случаи: выделение в пределах одного абзаца и посимвольный
             // Backspace. Снапшот сериализует и при Undo/Redo пересобирает весь документ
@@ -3350,6 +3417,11 @@ namespace Writersword.Modules.TextEditor.Document
             var pvm = GetVmAt(_caretPara);
             if (pvm is null) return;
             string text = pvm.PlainText ?? "";
+
+            // Спрятанный скрытый текст справа от каретки не виден — Delete удаляет
+            // видимый знак за ним, а не невидимые знаки по одному.
+            if (!HasSel())
+                _caretChar = SkipHiddenForward(GetLayoutAt(_caretPara), _caretChar, text.Length);
 
             // Операционное удаление (лёгкий текстовый стек, без снапшота всего документа) —
             // выделение в пределах одного абзаца и посимвольный Delete справа. Структурные
@@ -3848,17 +3920,33 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.SetActiveParagraph(pvm);
         }
 
+        /// <summary>Абзац под кареткой набран справа налево (w:bidi).</summary>
+        private bool CaretParagraphIsRightToLeft()
+            => GetLayoutAt(_caretPara)?.IsRightToLeft == true;
+
         public void ExecuteNavLeft(bool extend)
         {
             var renderStateBefore = CaptureSelectionRenderState();
             _caretLineHint = -1;
 
+            // Спрятанный скрытый текст места не занимает: каретка перешагивает его
+            // целиком, и шаг влево сдвигает её на один видимый знак.
+            if (!HasSel() || extend)
+                _caretChar = SkipHiddenBackward(GetLayoutAt(_caretPara), _caretChar);
+
             if (HasSel() && !extend)
             { var (sp, sc, _, _) = NormalizeSelection(); _caretPara = sp; _caretChar = sc; }
             else if (_caretChar > 0)
+            {
                 _caretChar--;
+                _caretChar = SkipHiddenBackward(GetLayoutAt(_caretPara), _caretChar);
+            }
             else if (_caretPara > 0)
-            { _caretPara--; _caretChar = GetVmAt(_caretPara)?.PlainText?.Length ?? 0; }
+            {
+                _caretPara--;
+                _caretChar = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
+                _caretChar = SkipHiddenBackward(GetLayoutAt(_caretPara), _caretChar);
+            }
             // На границе абзаца/ячейки шаг влево уходит в предыдущую полосу по порядку чтения
             // (в т.ч. в предыдущую ячейку или абзац перед таблицей) — как в Word.
 
@@ -3874,6 +3962,12 @@ namespace Writersword.Modules.TextEditor.Document
             var renderStateBefore = CaptureSelectionRenderState();
             _caretLineHint = -1;
             int len = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
+
+            // Спрятанный скрытый текст места не занимает: каретка перешагивает его
+            // целиком, и шаг вправо сдвигает её на один видимый знак. Каретка встаёт
+            // перед следующим спрятанным куском, как и при шаге влево.
+            if (!HasSel() || extend)
+                _caretChar = SkipHiddenForward(GetLayoutAt(_caretPara), _caretChar, len);
 
             if (HasSel() && !extend)
             { var (_, _, ep, ec) = NormalizeSelection(); _caretPara = ep; _caretChar = ec; }
@@ -3980,8 +4074,19 @@ namespace Writersword.Modules.TextEditor.Document
                     int li = layout.GetLineIndexForChar(_caretChar);
                     _caretChar = li >= 0 && li < layout.Lines.Count
                         ? layout.Lines[li].LastCharIndex + 1 : len;
+
+                    // Строка кончается переносом строки (Shift+Enter): каретка встаёт перед
+                    // ним, а не за ним — за ним уже начало следующей строки.
+                    string lineText = GetVmAt(_caretPara)?.PlainText ?? string.Empty;
+                    if (_caretChar > 0 && _caretChar <= lineText.Length && lineText[_caretChar - 1] == '\n'
+                        && li >= 0 && li < layout.Lines.Count
+                        && layout.Lines[li].LastCharIndex == _caretChar - 1)
+                        _caretChar--;
                 }
                 else _caretChar = len;
+
+                // Спрятанный хвост строки: каретка встаёт перед ним, туда, где она видна.
+                _caretChar = SkipHiddenBackward(layout, _caretChar);
             }
             SnapCaretToCorrectSlice();
             if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }

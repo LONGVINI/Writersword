@@ -155,6 +155,16 @@ namespace Writersword.Modules.TextEditor.Models.Document
         public List<Toc.TocSettings>? TableOfContents { get; set; }
 
         /// <summary>
+        /// Колонтитулы и нумерация страниц всего документа: шаблоны, вид номера и
+        /// исключения для отдельных листов. Null — колонтитулов в документе нет.
+        ///
+        /// Живут у документа, а не у раздела: исключения здесь задаются листами и
+        /// метками в тексте, а не разрывами разделов.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public HeaderFooterSettings? HeaderFooter { get; set; }
+
+        /// <summary>
         /// Правила автозамены, специфичные для этого документа.
         /// Дополняют глобальные правила из TextEditorSettings.
         /// </summary>

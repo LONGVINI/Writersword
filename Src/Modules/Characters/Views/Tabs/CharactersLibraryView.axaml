@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
+             xmlns:tabs="using:Writersword.Modules.Characters.Views.Tabs"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             x:Class="Writersword.Modules.Characters.Views.Tabs.CharactersLibraryView"
+             x:DataType="vm:CharactersViewModel"
+             Background="{DynamicResource BgSurfaceBrush}">
+
+	<!-- Вкладка «Шаблоны и анкеты»: две части одного дела. Анкета — раздел
+	     полей, шаблон — набор анкет под проект. Переключатель сверху, под ним
+	     одна из двух частей; обе живут одновременно и переключаются видимостью. -->
+	<UserControl.Styles>
+		<Style Selector="Button.part">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="Padding" Value="14,5"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Button.part.active /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid RowDefinitions="Auto,*">
+		<Border Grid.Row="0" Padding="10,7"
+		        Background="{DynamicResource BgPanelBrush}"
+		        BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,0,0,1">
+			<Grid ColumnDefinitions="Auto,*">
+				<Border Grid.Column="0" Padding="3" CornerRadius="8"
+				        Background="{DynamicResource BgSurfaceBrush}">
+					<StackPanel Orientation="Horizontal" Spacing="2">
+						<Button Classes="part"
+						        Classes.active="{Binding IsTab3Active}"
+						        Command="{Binding GoToTemplatesCommand}"
+						        Content="Шаблоны"
+						        behaviours:TooltipBehavior.Tip="Шаблоны"
+						        behaviours:TooltipBehavior.Description="Наборы анкет под проект. Анкеты шаблона проекта получает каждый новый персонаж"/>
+						<Button Classes="part"
+						        Classes.active="{Binding IsTab4Active}"
+						        Command="{Binding GoToAnketasCommand}"
+						        Content="Редактор анкет"
+						        behaviours:TooltipBehavior.Tip="Редактор анкет"
+						        behaviours:TooltipBehavior.Description="Анкеты листами: поля, раскладка по колонкам, группы, подсказки и вид. У каждого листа своя история правок"/>
+					</StackPanel>
+				</Border>
+			</Grid>
+		</Border>
+
+		<Panel Grid.Row="1">
+			<tabs:CharactersAnketasView DataContext="{Binding AnketasViewModel}"
+			                            IsVisible="{Binding $parent[UserControl].DataContext.IsTab4Active}"/>
+			<tabs:CharactersTemplatesView DataContext="{Binding TemplatesViewModel}"
+			                              IsVisible="{Binding $parent[UserControl].DataContext.IsTab3Active}"/>
+		</Panel>
+	</Grid>
+</UserControl>

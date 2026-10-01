@@ -72,6 +72,13 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public bool JustifyWithShrinking { get; }
 
+        /// <summary>
+        /// Показывать скрытый текст (w:vanish): на своём месте и с точечным
+        /// подчёркиванием, как Word при включённых непечатаемых знаках. Выключено —
+        /// скрытый текст не рисуется и не занимает места.
+        /// </summary>
+        public bool ShowHiddenText { get; }
+
         public StyleResolver(
             IEnumerable<DocumentStyle> styles,
             IReadOnlyDictionary<string, string>? scriptFontMap = null,
@@ -79,7 +86,8 @@ namespace Writersword.Modules.TextEditor.Rendering
             string? substituteFontFamily = null,
             bool breakOnHyphen = true,
             float defaultTabStopPt = 35.4f,
-            bool justifyWithShrinking = false)
+            bool justifyWithShrinking = false,
+            bool showHiddenText = false)
         {
             _index = new Dictionary<string, DocumentStyle>(
                 System.StringComparer.OrdinalIgnoreCase);
@@ -96,6 +104,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             BreakOnHyphen = breakOnHyphen;
             DefaultTabStopPt = defaultTabStopPt > 1f ? defaultTabStopPt : 35.4f;
             JustifyWithShrinking = justifyWithShrinking;
+            ShowHiddenText = showHiddenText;
         }
 
         // ── Резолверы шрифта ──────────────────────────────────────────────
@@ -352,6 +361,19 @@ namespace Writersword.Modules.TextEditor.Rendering
                     return (float)style.ParagraphProperties.SpaceAfter.Value;
 
             return FallbackSpaceAfterPt;
+        }
+
+        /// <summary>
+        /// Резолвирует «не добавлять интервал между абзацами одного стиля» из цепочки
+        /// стилей BasedOn. Цепочка молчит — интервалы добавляются.
+        /// </summary>
+        public bool ResolveContextualSpacing(string? styleName)
+        {
+            foreach (var style in WalkChain(styleName))
+                if (style.ParagraphProperties?.ContextualSpacing is bool contextual)
+                    return contextual;
+
+            return false;
         }
 
         /// <summary>

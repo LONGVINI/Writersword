@@ -24,7 +24,107 @@ namespace Writersword.Modules.TextEditor.Models.Document
         UpperAlpha = 13,
         LowerRoman = 14,
         UpperRoman = 15,
-        CustomSequence = 16
+        CustomSequence = 16,
+
+        /// <summary>Порядковый номер цифрами: «1-й», «2-й» (по-английски 1st, 2nd).</summary>
+        Ordinal = 17,
+
+        /// <summary>Количественное числительное словом: «Один», «Два» (One, Two).</summary>
+        CardinalText = 18,
+
+        /// <summary>Порядковое числительное словом: «Первый», «Второй» (First, Second).</summary>
+        OrdinalText = 19,
+
+        /// <summary>Строчные русские буквы: а, б, в… (без ё, й, ъ, ы, ь — как у Word).</summary>
+        RussianLower = 20,
+
+        /// <summary>Прописные русские буквы: А, Б, В…</summary>
+        RussianUpper = 21,
+
+        /// <summary>Знаки сносок по Чикагскому руководству: *, †, ‡, §, затем удвоенные.</summary>
+        Chicago = 22
+    }
+
+    /// <summary>Выравнивание номера у точки номера (w:lvlJc).</summary>
+    public enum ListMarkerAlignment
+    {
+        /// <summary>Номер начинается в точке номера.</summary>
+        Left = 0,
+
+        /// <summary>Номер стоит серединой в точке номера.</summary>
+        Center = 1,
+
+        /// <summary>Номер кончается в точке номера: «i.», «ii.», «iii.» выровнены по правому краю.</summary>
+        Right = 2
+    }
+
+    /// <summary>Что стоит между номером и текстом.</summary>
+    public enum ListMarkerSuffix
+    {
+        /// <summary>
+        /// Зазор редактора: текст первой строки идёт за номером через
+        /// <see cref="ListProperties.MarkerTextMinGapPt"/>. Так устроены списки, созданные в Writersword.
+        /// </summary>
+        Gap = 0,
+
+        /// <summary>Табуляция Word: текст встаёт на отступ текста или на следующую позицию табуляции.</summary>
+        Tab = 1,
+
+        /// <summary>Пробел: текст сразу за номером через пробел.</summary>
+        Space = 2,
+
+        /// <summary>Ничего: текст вплотную к номеру.</summary>
+        Nothing = 3
+    }
+
+    /// <summary>
+    /// Уровень нумерации Word в том виде, в каком он пришёл из .docx: формат номера, шаблон
+    /// текста (w:lvlText), выравнивание, разделитель, шрифт маркера и начальный номер.
+    /// Модель списков Writersword проще — префикс, номер и суффикс, — а шаблон Word собирает
+    /// номер из номеров всех уровней («8.1.1.»), ставит слова вокруг («Глава 1.») или вовсе
+    /// обходится без номера («§»). Уровень хранится целиком, чтобы номер выглядел как у
+    /// Word и в .docx уходил тем же, чем пришёл.
+    /// </summary>
+    public sealed class WordListLevel
+    {
+        /// <summary>Формат номера уровня. Маркированный уровень — Bullet или Custom.</summary>
+        public ListMarkerType Format { get; set; }
+
+        /// <summary>
+        /// Шаблон текста: %1…%9 — номера уровней 1…9, остальное — как написано. У
+        /// маркированного уровня — сам знак маркера. Пустая строка — маркера нет.
+        /// </summary>
+        public string Text { get; set; } = string.Empty;
+
+        /// <summary>Выравнивание номера у точки номера.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public ListMarkerAlignment Alignment { get; set; }
+
+        /// <summary>Что стоит между номером и текстом.</summary>
+        public ListMarkerSuffix Suffix { get; set; } = ListMarkerSuffix.Tab;
+
+        /// <summary>Шрифт маркера (w:lvl/w:rPr/w:rFonts). null — шрифт текста пункта.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? FontFamily { get; set; }
+
+        /// <summary>Начальный номер уровня.</summary>
+        public int Start { get; set; } = 1;
+
+        /// <summary>Уровень счётный: номер, а не знак маркера.</summary>
+        [JsonIgnore]
+        public bool IsNumbered => (int)Format >= 10;
+
+        public WordListLevel Clone() => (WordListLevel)MemberwiseClone();
+
+        /// <summary>Уровни совпадают во всём, что видно в номере.</summary>
+        public bool SameAs(WordListLevel? other) =>
+            other is not null
+            && Format == other.Format
+            && string.Equals(Text, other.Text, StringComparison.Ordinal)
+            && Alignment == other.Alignment
+            && Suffix == other.Suffix
+            && string.Equals(FontFamily, other.FontFamily, StringComparison.OrdinalIgnoreCase)
+            && Start == other.Start;
     }
 
     /// <summary>
@@ -43,6 +143,21 @@ namespace Writersword.Modules.TextEditor.Models.Document
 
         /// <summary>Id списка (несколько параграфов с одним ListId образуют один список).</summary>
         public Guid ListId { get; set; }
+
+        /// <summary>
+        /// Уровни нумерации Word (индекс = уровень), когда список пришёл из .docx. null —
+        /// список Writersword: номер собирается из префикса, номера и суффикса. Правка
+        /// списка в редакторе создаёт новые свойства без этих уровней.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<WordListLevel>? WordLevels { get; set; }
+
+        /// <summary>
+        /// Язык слов в номерах «Один», «1-й», «Первый» (w:lang документа): «ru…» или null —
+        /// по-русски, иначе по-английски, как у Word.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? NumberLanguage { get; set; }
 
         /// <summary>Уровень вложенности (0–8).</summary>
         public int Level { get; set; }
@@ -155,9 +270,19 @@ namespace Writersword.Modules.TextEditor.Models.Document
         public double EffectiveMarkerIndentPt()
             => MarkerIndentPt ?? Math.Max(0.0, EffectiveTextIndentPt() - DefaultHangingPt);
 
-        /// <summary>Тип маркера текущего уровня: из <see cref="LevelMarkers"/>, иначе <see cref="MarkerType"/>.</summary>
+        /// <summary>Уровень Word с указанным номером или null.</summary>
+        public WordListLevel? WordLevelAt(int level)
+            => WordLevels is not null && level >= 0 && level < WordLevels.Count ? WordLevels[level] : null;
+
+        /// <summary>
+        /// Тип маркера текущего уровня: из уровней Word, из <see cref="LevelMarkers"/>,
+        /// иначе <see cref="MarkerType"/>.
+        /// </summary>
         public ListMarkerType EffectiveMarkerTypeForLevel()
         {
+            if (WordLevelAt(Level) is { } wordLevel)
+                return wordLevel.Format;
+
             if (LevelMarkers is not null && Level >= 0 && Level < LevelMarkers.Count)
                 return LevelMarkers[Level];
             return MarkerType;
@@ -172,6 +297,8 @@ namespace Writersword.Modules.TextEditor.Models.Document
                 c.CustomSequence = new List<string>(CustomSequence);
             if (LevelMarkers is not null)
                 c.LevelMarkers = new List<ListMarkerType>(LevelMarkers);
+            if (WordLevels is not null)
+                c.WordLevels = WordLevels.ConvertAll(level => level.Clone());
             return c;
         }
     }
@@ -200,6 +327,22 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// <summary>Свойства списка. Null если параграф не является элементом списка.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public ListProperties? ListProperties { get; set; }
+
+        /// <summary>
+        /// Интервал до абзаца снят правилом «не добавлять интервал между абзацами одного
+        /// стиля»: выше стоит абзац того же стиля. Не свойство документа, а вывод из
+        /// соседства — его выставляет вёрстка перед раскладкой
+        /// (<see cref="Writersword.Modules.TextEditor.Rendering.ContextualSpacingRules"/>), и в файл он не пишется.
+        /// </summary>
+        [JsonIgnore]
+        public bool SuppressSpaceBefore { get; set; }
+
+        /// <summary>
+        /// Интервал после абзаца снят тем же правилом: ниже стоит абзац того же стиля.
+        /// Выставляется вёрсткой, в файл не пишется.
+        /// </summary>
+        [JsonIgnore]
+        public bool SuppressSpaceAfter { get; set; }
 
         /// <summary>
         /// Суммарная длина текста параграфа в символах.
@@ -501,6 +644,8 @@ namespace Writersword.Modules.TextEditor.Models.Document
                 && a.IsBold == b.IsBold
                 && a.IsItalic == b.IsItalic
                 && a.IsUnderline == b.IsUnderline
+                && a.UnderlineStyle == b.UnderlineStyle
+                && a.UnderlineColor == b.UnderlineColor
                 && a.IsStrikethrough == b.IsStrikethrough
                 && a.IsSuperscript == b.IsSuperscript
                 && a.IsSubscript == b.IsSubscript

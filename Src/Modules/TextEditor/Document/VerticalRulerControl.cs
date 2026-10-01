@@ -5,6 +5,7 @@ using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using SkiaSharp;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using Writersword.Modules.TextEditor.Models.Settings;
 using Writersword.Modules.TextEditor.ViewModels.Components;
@@ -14,11 +15,15 @@ namespace Writersword.Modules.TextEditor.Document
     /// <summary>
     /// Вертикальная линейка редактора.
     ///
-    /// ПОВЕДЕНИЕ (аналогично Word):
-    /// • Шкала рисуется только для ОДНОЙ страницы — той, на которой стоит каретка
-    ///   (FocusedPageIndex из RulerViewModel). Никаких перекрытий меток.
+    /// ПОВЕДЕНИЕ:
+    /// • Шкала рисуется у КАЖДОГО листа, видимого в окне (VisiblePages из
+    ///   RulerViewModel), — у каждого по его собственному краю и в его пределах:
+    ///   деления соседних листов не встречаются и не налезают друг на друга.
+    ///   Одна шкала у листа каретки уезжала вверх, как только человек прокручивал
+    ///   на следующую страницу, и напротив неё оставалась серая полоса.
     /// • Ноль шкалы = верхняя граница ТЕКСТОВОЙ области (после верхнего поля).
-    /// • Поля закрашены серым, текстовая зона — светлым фоном.
+    /// • Поля и зазоры между листами закрашены серым, текстовая зона — светлым фоном.
+    /// • Поля тянутся за границу у любой шкалы: поля у всех листов общие.
     /// </summary>
     public sealed class VerticalRulerControl : Control
     {
@@ -43,6 +48,8 @@ namespace Writersword.Modules.TextEditor.Document
         private SKColor ColLabel => _palette.Label;
         private SKColor ColLabelMargin => _palette.LabelMuted;
         private SKColor ColBorder => _palette.Border;
+        private SKColor ColOutsidePage => _palette.OutsidePage;
+        private SKColor ColPageEdge => _palette.PageEdge;
         private SKColor ColMarginHandle => _palette.MarginHandle;
 
         private RulerViewModel? _vm;
@@ -52,6 +59,11 @@ namespace Writersword.Modules.TextEditor.Document
         // чтобы изменение FocusedPageIndex (смена каретки) не смещало маркер.
         private double _dragPageTopY;
         private double _dragPageBotY;
+
+        // Масштаб листа, за поле которого тянут, — тоже на момент нажатия: шкал
+        // теперь несколько, и пересчитывать миллиметры нужно по тому листу, у
+        // которого поле взяли.
+        private double _dragZoom = 1.0;
 
         public VerticalRulerControl()
         {
@@ -87,50 +99,82 @@ namespace Writersword.Modules.TextEditor.Document
 
             float w = (float)RulerWidthPx;
             float h = (float)Bounds.Height;
-            double zoom = _vm.Zoom;
 
-            const double PageGapPt = 15.0;
-            const double PtToPx = 96.0 / 72.0;
-
-            double pageGapPx = PageGapPt * PtToPx * zoom;
-
-            // ── Страница по индексу каретки ───────────────────────────────
-            // Геометрия считается там же, где и для попаданий указателя —
-            // одна формула на отрисовку и на drag полей.
-            var (_, pBotY, tTopY, tBotY) = ComputePageGeometry();
+            // ── Видимые листы ─────────────────────────────────────────────
+            // Шкала у каждого листа в окне, у каждого по его собственному краю
+            // (RulerViewModel.VisiblePages). Геометрия считается там же, где и для
+            // попаданий указателя — одна формула на отрисовку и на drag полей.
+            var sheets = ComputePageGeometries();
 
             // ── Фон ──────────────────────────────────────────────────────
-            using var bgPaint = new SKPaint { Color = ColBg };
-            canvas.DrawRect(0, 0, w, h, bgPaint);
+            // Вне листов — зазоры между ними, место выше первого и ниже последнего —
+            // линейка окрашена как поле вокруг страницы, так же как горизонтальная
+            // линейка за краем листа. Зазор при этом читается как промежуток между
+            // двумя линейками, а не как продолжение полей: когда и поля, и зазор были
+            // одного серого, шкалы сливались в одну полосу, и зазор в полсантиметра
+            // выглядел частью линейки, вылезшей за лист.
+            using var outsidePaint = new SKPaint { Color = ColOutsidePage };
+            canvas.DrawRect(0, 0, w, h, outsidePaint);
 
-            // ── Серые зоны (поля) ─────────────────────────────────────────
+            // Поля листа — серым, от края листа до края текста.
             using var marginPaint = new SKPaint { Color = ColMarginZone };
-
-            if (tTopY > 0)
-                canvas.DrawRect(0, 0, w, (float)Math.Min(tTopY, h), marginPaint);
-
-            if (tBotY < h)
-                canvas.DrawRect(0, (float)Math.Max(0, tBotY),
-                    w, h - (float)Math.Max(0, tBotY), marginPaint);
-
-            // Зазор между страницами если попадает в видимую область.
-            if (pBotY > 0 && pBotY < h)
+            foreach (var sheet in sheets)
             {
-                float gapH = (float)Math.Min(pageGapPx, h - pBotY);
-                if (gapH > 0)
-                    canvas.DrawRect(0, (float)pBotY, w, gapH, marginPaint);
+                float top = (float)Math.Max(0, sheet.PageTopY);
+                float bottom = (float)Math.Min(h, sheet.PageBotY);
+                if (bottom > top)
+                    canvas.DrawRect(0, top, w, bottom - top, marginPaint);
+            }
+
+            using var bgPaint = new SKPaint { Color = ColBg };
+            foreach (var sheet in sheets)
+            {
+                float top = (float)Math.Max(0, sheet.TextTopY);
+                float bottom = (float)Math.Min(h, sheet.TextBotY);
+                if (bottom > top)
+                    canvas.DrawRect(0, top, w, bottom - top, bgPaint);
             }
 
             // ── Линии границ полей ────────────────────────────────────────
             using var handlePaint = new SKPaint
             { Color = ColMarginHandle, StrokeWidth = 1f, IsStroke = true };
-            if (tTopY > 0 && tTopY < h)
-                canvas.DrawLine(0, (float)tTopY, w, (float)tTopY, handlePaint);
-            if (tBotY > 0 && tBotY < h)
-                canvas.DrawLine(0, (float)tBotY, w, (float)tBotY, handlePaint);
+            foreach (var sheet in sheets)
+            {
+                if (sheet.TextTopY > 0 && sheet.TextTopY < h)
+                    canvas.DrawLine(0, (float)sheet.TextTopY, w, (float)sheet.TextTopY, handlePaint);
+                if (sheet.TextBotY > 0 && sheet.TextBotY < h)
+                    canvas.DrawLine(0, (float)sheet.TextBotY, w, (float)sheet.TextBotY, handlePaint);
+            }
 
-            // ── Шкала ─────────────────────────────────────────────────────
-            DrawScale(canvas, tTopY, tBotY, w, h, zoom);
+            // ── Шкалы ─────────────────────────────────────────────────────
+            // Шкала листа не выходит за его край: деления соседних листов иначе
+            // сходились бы в зазоре между ними и налезали друг на друга.
+            foreach (var sheet in sheets)
+            {
+                if (sheet.PageBotY < 0 || sheet.PageTopY > h) continue;
+
+                canvas.Save();
+                canvas.ClipRect(new SKRect(0, (float)sheet.PageTopY, w, (float)sheet.PageBotY));
+                DrawScale(canvas, sheet.TextTopY, sheet.TextBotY, w, h, sheet.Zoom);
+                canvas.Restore();
+            }
+
+            // ── Края листов ───────────────────────────────────────────────
+            // Черта по верхнему и нижнему краю каждого листа: здесь одна шкала
+            // кончается, а за зазором начинается следующая. Черта ложится внутрь
+            // листа — на его крайний пиксель, а не в зазор.
+            using var edgePaint = new SKPaint
+            { Color = ColPageEdge, StrokeWidth = 1f, IsStroke = true, IsAntialias = false };
+            foreach (var sheet in sheets)
+            {
+                float edgeTop = (float)Math.Floor(sheet.PageTopY) + 0.5f;
+                float edgeBottom = (float)Math.Ceiling(sheet.PageBotY) - 0.5f;
+
+                if (edgeTop > 0 && edgeTop < h)
+                    canvas.DrawLine(0, edgeTop, w, edgeTop, edgePaint);
+                if (edgeBottom > 0 && edgeBottom < h)
+                    canvas.DrawLine(0, edgeBottom, w, edgeBottom, edgePaint);
+            }
 
             // ── Правая граница ────────────────────────────────────────────
             using var borderPaint = new SKPaint
@@ -216,6 +260,88 @@ namespace Writersword.Modules.TextEditor.Document
 
         private const double MarginHitPx = 5.0;
 
+        /// <summary>
+        /// Лист на линейке, в точках линейки: край листа, край текстовой зоны и
+        /// масштаб, в котором лист стоит на экране.
+        /// </summary>
+        private readonly record struct PageGeometry(
+            double PageTopY, double PageBotY, double TextTopY, double TextBotY, double Zoom);
+
+        /// <summary>
+        /// Все листы, видимые в окне, сверху вниз. Листы приходят от раскладки
+        /// (RulerViewModel.VisiblePages), поэтому шкала стоит ровно напротив листа при
+        /// любом числе листов в ряду.
+        ///
+        /// Масштаб каждого листа выводится из его высоты на экране, а не берётся у
+        /// линейки: во время плавной смены масштаба лист уже промежуточного размера,
+        /// а число в настройках — конечное, и шкала по нему разъезжалась бы с листом.
+        ///
+        /// Листов от раскладки ещё нет — одна шкала по FocusedPageIndex, как раньше.
+        /// </summary>
+        private List<PageGeometry> ComputePageGeometries()
+        {
+            var result = new List<PageGeometry>();
+            if (_vm is null) return result;
+
+            var bands = _vm.VisiblePages;
+            if (bands.Count == 0)
+            {
+                var (pTop, pBot, tTop, tBot) = ComputePageGeometry();
+                result.Add(new PageGeometry(pTop, pBot, tTop, tBot, _vm.Zoom));
+                return result;
+            }
+
+            double pageHeightAtOnePx = MmToPx(_vm.PageHeightMm, 1.0);
+
+            foreach (var band in bands)
+            {
+                double zoom = pageHeightAtOnePx > 0.0001 && band.HeightPx > 0
+                    ? band.HeightPx / pageHeightAtOnePx
+                    : _vm.Zoom;
+
+                // Полоса листа — в координатах холста; на линейку её переносит сдвиг
+                // холста в окне за вычетом прокрутки — та же формула, что у одной шкалы.
+                double pTop = _vm.ContentTopOffsetPx + band.TopPx - _vm.ScrollOffsetY;
+                double pBot = pTop + band.HeightPx;
+                double tTop = pTop + MmToPx(_vm.MarginTopMm, zoom);
+                double tBot = pBot - MmToPx(_vm.MarginBottomMm, zoom);
+
+                result.Add(new PageGeometry(pTop, pBot, tTop, tBot, zoom));
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Граница поля под указателем: лист и какая граница — верхняя или нижняя.
+        /// Из нескольких подходящих берётся ближайшая к указателю. null — указатель
+        /// не на границе ни одного листа.
+        /// </summary>
+        private (PageGeometry Sheet, bool Top)? FindMarginUnder(double y)
+        {
+            (PageGeometry Sheet, bool Top)? best = null;
+            double bestDistance = double.MaxValue;
+
+            foreach (var sheet in ComputePageGeometries())
+            {
+                double toTop = Math.Abs(y - sheet.TextTopY);
+                if (toTop <= MarginHitPx && toTop < bestDistance)
+                {
+                    best = (sheet, true);
+                    bestDistance = toTop;
+                }
+
+                double toBottom = Math.Abs(y - sheet.TextBotY);
+                if (toBottom <= MarginHitPx && toBottom < bestDistance)
+                {
+                    best = (sheet, false);
+                    bestDistance = toBottom;
+                }
+            }
+
+            return best;
+        }
+
         private (double pTopY, double pBotY, double tTopY, double tBotY) ComputePageGeometry()
         {
             if (_vm is null) return (0, 0, 0, 0);
@@ -252,26 +378,20 @@ namespace Writersword.Modules.TextEditor.Document
             if (_vm.IsReadOnly) return;
 
             var pos = e.GetPosition(this);
-            var (pTopY, pBotY, tTopY, tBotY) = ComputePageGeometry();
 
-            if (Math.Abs(pos.Y - tTopY) <= MarginHitPx)
-            {
-                _isDraggingMargin = true; _draggingTopMargin = true;
-                _dragPageTopY = pTopY; _dragPageBotY = pBotY;
-                _vm.BeginMarginDrag();
-                e.Pointer.Capture(this);
-                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
-                e.Handled = true;
-            }
-            else if (Math.Abs(pos.Y - tBotY) <= MarginHitPx)
-            {
-                _isDraggingMargin = true; _draggingTopMargin = false;
-                _dragPageTopY = pTopY; _dragPageBotY = pBotY;
-                _vm.BeginMarginDrag();
-                e.Pointer.Capture(this);
-                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
-                e.Handled = true;
-            }
+            // Поле берётся у того листа, на границе которого указатель: поля у всех
+            // листов общие, и тянуть их можно за любую шкалу.
+            if (FindMarginUnder(pos.Y) is not { } hit) return;
+
+            _isDraggingMargin = true;
+            _draggingTopMargin = hit.Top;
+            _dragPageTopY = hit.Sheet.PageTopY;
+            _dragPageBotY = hit.Sheet.PageBotY;
+            _dragZoom = hit.Sheet.Zoom;
+            _vm.BeginMarginDrag();
+            e.Pointer.Capture(this);
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
+            e.Handled = true;
         }
 
         protected override void OnPointerMoved(Avalonia.Input.PointerEventArgs e)
@@ -280,8 +400,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (_vm is null) return;
 
             var pos = e.GetPosition(this);
-            double zoom = _vm.Zoom;
-            var (pTopY, pBotY, tTopY, tBotY) = ComputePageGeometry();
+            double zoom = _dragZoom;
 
             if (_isDraggingMargin)
             {
@@ -306,8 +425,7 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
-            if (!_vm.IsReadOnly
-                && (Math.Abs(pos.Y - tTopY) <= MarginHitPx || Math.Abs(pos.Y - tBotY) <= MarginHitPx))
+            if (!_vm.IsReadOnly && FindMarginUnder(pos.Y) is not null)
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
             else
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow);

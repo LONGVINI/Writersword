@@ -1743,6 +1743,17 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
 
         // Крестик на чипе набора: набор перестаёт числиться в составе карточки,
         // значения полей при этом остаются.
+        /// <summary>Крестик в заголовке раздела анкеты — отключить её от персонажа.</summary>
+        private void OnDetachSectionClick(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not Control c || c.DataContext is not CharacterAnketaSectionViewModel section) return;
+            if (!section.CanDetach) return;
+            if (DataContext is not CharacterBasicsTabViewModel vm) return;
+
+            vm.DetachAnketa(section.AnketaId);
+            e.Handled = true;
+        }
+
         private void OnDetachAnketaClick(object? sender, RoutedEventArgs e)
         {
             if (sender is not Control c || c.DataContext is not Writersword.Modules.Characters.Models.CharacterAnketa anketa) return;

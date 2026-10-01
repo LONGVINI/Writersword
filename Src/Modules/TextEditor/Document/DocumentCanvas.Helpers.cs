@@ -1211,6 +1211,9 @@ namespace Writersword.Modules.TextEditor.Document
                     RowSpan = Math.Min(srcCell.RowSpan, maxRow - srcCell.Row + 1),
                     ColSpan = Math.Min(srcCell.ColSpan, maxCol - srcCell.Column + 1),
                     BackgroundColor = srcCell.BackgroundColor,
+                    ShadingPattern = srcCell.ShadingPattern,
+                    ShadingPatternColor = srcCell.ShadingPatternColor,
+                    TextDirection = srcCell.TextDirection,
                     Borders = srcCell.Borders.Clone(),
                     PaddingTopPt = srcCell.PaddingTopPt,
                     PaddingBottomPt = srcCell.PaddingBottomPt,
@@ -1994,7 +1997,17 @@ namespace Writersword.Modules.TextEditor.Document
             return data?.ToArray();
         }
 
+        /// <summary>
+        /// Позиция каретки под точкой. Спрятанный скрытый текст места не занимает, и
+        /// каретка встаёт перед ним — там же, куда её ставят стрелки.
+        /// </summary>
         private (int parIdx, int charIdx) HitTest(Point ptLogPx)
+        {
+            var (parIdx, charIdx) = HitTestRaw(ptLogPx);
+            return (parIdx, SkipHiddenBackward(GetLayoutAt(parIdx), charIdx));
+        }
+
+        private (int parIdx, int charIdx) HitTestRaw(Point ptLogPx)
         {
             List<ParaLayout> layouts;
             List<TableEntry> tables;
@@ -2055,9 +2068,11 @@ namespace Writersword.Modules.TextEditor.Document
                 if (yPt < c.ClipY || yPt > c.ClipY + c.ClipH) continue;
 
                 // Клик внутри clip этой ячейки — вычисляем расстояние до параграфа.
+                // У повёрнутой ячейки абзацы лежат в её собственных координатах.
+                float cellY = c.ToLocal(xPt, yPt).Y;
                 float top = pl.Ypt;
                 float bot = pl.Ypt + pl.HeightPt;
-                float yDist = yPt < top ? top - yPt : yPt > bot ? yPt - bot : 0f;
+                float yDist = cellY < top ? top - cellY : cellY > bot ? cellY - bot : 0f;
 
                 if (yDist < clipBestYDist)
                 {
@@ -2085,9 +2100,10 @@ namespace Writersword.Modules.TextEditor.Document
                         if (c == null || c.Table != geo.Value.table) continue;
                         if (c.Cell.Row != geo.Value.row || c.Cell.Column != geo.Value.col) continue;
 
+                        float cellY = c.ToLocal(xPt, yPt).Y;
                         float top = pl.Ypt;
                         float bot = pl.Ypt + pl.HeightPt;
-                        float yDist = yPt < top ? top - yPt : yPt > bot ? yPt - bot : 0f;
+                        float yDist = cellY < top ? top - cellY : cellY > bot ? cellY - bot : 0f;
                         if (yDist < geoBestDist)
                         {
                             geoBestDist = yDist;
@@ -2266,6 +2282,10 @@ namespace Writersword.Modules.TextEditor.Document
                     break;
                 }
             }
+
+            // Повёрнутая ячейка: дальше точка нужна в координатах её раскладки.
+            if (best.Cell is { IsRotated: true } rotatedCell)
+                (xPt, yPt) = rotatedCell.ToLocal(xPt, yPt);
 
             float padXPt = best.AbsXPt;
 

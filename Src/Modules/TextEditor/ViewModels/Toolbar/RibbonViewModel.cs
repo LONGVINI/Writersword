@@ -18,6 +18,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private bool _isTableTabVisible;
         private bool _isImageTabVisible;
         private bool _isTocTabVisible;
+        private bool _isHeaderFooterTabVisible;
         private bool _isEditingEnabled = true;
 
         public int SelectedTabIndex
@@ -54,6 +55,16 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             get => _isTocTabVisible;
             set => this.RaiseAndSetIfChanged(ref _isTocTabVisible, value);
+        }
+
+        /// <summary>
+        /// Управляет видимостью контекстной вкладки «Колонтитулы».
+        /// true — идёт работа с колонтитулами.
+        /// </summary>
+        public bool IsHeaderFooterTabVisible
+        {
+            get => _isHeaderFooterTabVisible;
+            set => this.RaiseAndSetIfChanged(ref _isHeaderFooterTabVisible, value);
         }
 
         /// <summary>
@@ -101,8 +112,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// <summary>Контекстная вкладка для работы с оглавлением.</summary>
         public RibbonTocTabViewModel Toc { get; }
 
+        /// <summary>Контекстная вкладка колонтитулов и номеров страниц.</summary>
+        public RibbonHeaderFooterTabViewModel HeaderFooter { get; }
+
         public RibbonViewModel(
-            ITextEditorCommandTarget target, IEditorViewHost viewHost, ITocHost tocHost)
+            ITextEditorCommandTarget target, IEditorViewHost viewHost, ITocHost tocHost,
+            IHeaderFooterHost headerFooterHost)
         {
             Home = new RibbonHomeTabViewModel(target);
             Insert = new RibbonInsertTabViewModel(target);
@@ -112,6 +127,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             Table = new RibbonTableTabViewModel(target);
             Image = new RibbonImageTabViewModel(target);
             Toc = new RibbonTocTabViewModel(tocHost);
+            HeaderFooter = new RibbonHeaderFooterTabViewModel(headerFooterHost);
+
+            // Кнопки «Колонтитулы» и «Номер страницы» на «Вставке» — те же команды, что
+            // на своей вкладке: одно действие не должно жить в двух реализациях.
+            Insert.HeaderFooter = HeaderFooter;
         }
     }
 }

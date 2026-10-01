@@ -158,7 +158,14 @@ namespace Writersword.Modules.TextEditor.Document
             if (singleTable) BeginTableEdit(_activeTableBlock ?? System.Linq.Enumerable.First(touchedTables), "Set cell background");
             else BeginEdit("Set cell background");
 
-            foreach (var cell in targets) cell.BackgroundColor = value;
+            // Новый цвет фона снимает узор заливки (у ячеек из Word): иначе узор лёг бы
+            // поверх выбранного цвета.
+            foreach (var cell in targets)
+            {
+                cell.BackgroundColor = value;
+                cell.ShadingPattern = null;
+                cell.ShadingPatternColor = null;
+            }
 
             if (singleTable) CommitTableEdit();
             else CommitEdit();
@@ -798,8 +805,11 @@ namespace Writersword.Modules.TextEditor.Document
                 Row = row,
                 Column = column,
                 BackgroundColor = source.BackgroundColor,
+                ShadingPattern = source.ShadingPattern,
+                ShadingPatternColor = source.ShadingPatternColor,
                 Borders = source.Borders.Clone(),
                 VerticalAlignment = source.VerticalAlignment,
+                TextDirection = source.TextDirection,
                 PaddingTopPt = source.PaddingTopPt,
                 PaddingBottomPt = source.PaddingBottomPt,
                 PaddingLeftPt = source.PaddingLeftPt,

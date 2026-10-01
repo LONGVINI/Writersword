@@ -1,0 +1,1383 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Anketas"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:fields="using:Writersword.Modules.Characters.Views.Fields"
+             xmlns:controls="using:Writersword.Modules.Characters.Controls"
+             x:Class="Writersword.Modules.Characters.Views.Tabs.CharactersAnketasView"
+             x:DataType="vm:CharactersAnketasViewModel"
+             Background="{DynamicResource BgAppBrush}">
+
+	<!-- Редактор анкет. Сверху листы-вкладки открытых анкет, под ними лента
+	     в стиле ленты текстового редактора, ниже — лист анкеты так, как она
+	     встанет в карточку, и справа все настройки выбранного поля.
+
+	     Поля раскладываются строками по одной–три ячейки; поле переносят
+	     за ручку в другую ячейку, строку — за ручку слева. У каждого листа
+	     своя история правок: Ctrl+Z отменяет только его. -->
+
+	<UserControl.Resources>
+		<!-- Выбор значка: подписи или оценки. Цель задаётся в Tag перед показом. -->
+		<Flyout x:Key="GlyphFlyout" Placement="BottomEdgeAlignedLeft">
+			<StackPanel Width="318" Spacing="8" Margin="2" x:DataType="vm:AnketaSheetViewModel">
+				<ScrollViewer MaxHeight="260">
+					<ItemsControl ItemsSource="{Binding GlyphChoices}">
+						<ItemsControl.ItemsPanel>
+							<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+						</ItemsControl.ItemsPanel>
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="vm:AnketaGlyphOptionViewModel">
+								<Button Classes="RibbonBtn" Width="30" Height="30" Margin="0,0,3,3" Click="OnGlyphChosen"
+								        behaviours:TooltipBehavior.Tip="{Binding Label}">
+									<controls:GlyphIcon Glyph="{Binding Glyph}" Size="18"/>
+								</Button>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+				</ScrollViewer>
+				<StackPanel Orientation="Horizontal" Spacing="4">
+					<Button Click="OnGlyphUploadClick"
+					        behaviours:TooltipBehavior.Tip="Свой значок из файла"
+					        behaviours:TooltipBehavior.Description="SVG — фигурой, которая красится цветом поля; PNG или JPG — картинкой. Значок сохраняется в анкете и уезжает вместе с её файлом">
+						<StackPanel Orientation="Horizontal" Spacing="6">
+							<PathIcon Data="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" Width="11" Height="11"/>
+							<TextBlock Text="Из файла…" FontSize="12"/>
+						</StackPanel>
+					</Button>
+					<Button Click="OnGlyphClearClick" x:Name="GlyphClearButton">
+						<TextBlock Text="Без значка" FontSize="12"/>
+					</Button>
+				</StackPanel>
+			</StackPanel>
+		</Flyout>
+	</UserControl.Resources>
+
+	<UserControl.Styles>
+		<!-- Вкладки листов -->
+		<Style Selector="Border.sheet-tab">
+			<Setter Property="Height" Value="28"/>
+			<Setter Property="Padding" Value="9,0,4,0"/>
+			<Setter Property="Margin" Value="0,0,2,0"/>
+			<Setter Property="CornerRadius" Value="4,4,0,0"/>
+			<Setter Property="BorderThickness" Value="1,1,1,0"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Cursor" Value="Hand"/>
+		</Style>
+		<Style Selector="Border.sheet-tab:pointerover">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Border.sheet-tab.active">
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="Border.sheet-tab.drag-source">
+			<Setter Property="Opacity" Value="0.4"/>
+		</Style>
+		<Style Selector="Border.sheet-tab TextBlock.sheet-name">
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Border.sheet-tab.active TextBlock.sheet-name">
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.sheet-close">
+			<Setter Property="Width" Value="16"/>
+			<Setter Property="Height" Value="16"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="3"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
+		<Style Selector="Button.sheet-close:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#BB660000"/>
+		</Style>
+
+		<!-- Лист анкеты — блок карточки персонажа -->
+		<Style Selector="Border.block">
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="10"/>
+			<Setter Property="Padding" Value="18,16"/>
+		</Style>
+		<Style Selector="Border.block-header">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="0,0,0,1"/>
+			<Setter Property="Padding" Value="0,0,0,10"/>
+		</Style>
+
+		<!-- Строки и ячейки раскладки -->
+		<Style Selector="Border.row">
+			<Setter Property="Padding" Value="2,3"/>
+			<Setter Property="Margin" Value="0,1"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="Border.row:pointerover">
+			<Setter Property="Background" Value="#08FFFFFF"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+		</Style>
+		<Style Selector="Border.row.selected">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="Border.row.drag-source">
+			<Setter Property="Opacity" Value="0.35"/>
+		</Style>
+		<Style Selector="Border.row-grip">
+			<Setter Property="Width" Value="16"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Cursor" Value="SizeAll"/>
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<Style Selector="Border.row:pointerover Border.row-grip, Border.row.selected Border.row-grip">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Border.row-grip PathIcon, Border.cell-grip PathIcon">
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+		<Style Selector="Border.row-grip:pointerover PathIcon, Border.cell-grip:pointerover PathIcon">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Border.row StackPanel.row-tools">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<Style Selector="Border.row:pointerover StackPanel.row-tools, Border.row.selected StackPanel.row-tools">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="ToggleButton.col-btn">
+			<Setter Property="MinWidth" Value="20"/>
+			<Setter Property="Height" Value="20"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="4,0"/>
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="CornerRadius" Value="3"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
+		<Style Selector="ToggleButton.col-btn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.col-btn:checked /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.row-del">
+			<Setter Property="Width" Value="20"/>
+			<Setter Property="Height" Value="20"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="3"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
+		<Style Selector="Button.row-del:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#BB660000"/>
+			<Setter Property="Foreground" Value="White"/>
+		</Style>
+
+		<Style Selector="Border.cell">
+			<Setter Property="Margin" Value="2"/>
+			<Setter Property="Padding" Value="2,2,6,2"/>
+			<Setter Property="MinHeight" Value="34"/>
+			<Setter Property="CornerRadius" Value="5"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="Border.cell:pointerover">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="Border.cell.selected">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+		</Style>
+		<Style Selector="Border.cell.drop">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+		</Style>
+		<Style Selector="Border.cell-grip">
+			<Setter Property="Width" Value="14"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Cursor" Value="SizeAll"/>
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<Style Selector="Border.cell:pointerover Border.cell-grip, Border.cell.selected Border.cell-grip">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Rectangle.empty-frame">
+			<Setter Property="Stroke" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="StrokeThickness" Value="1"/>
+			<Setter Property="StrokeDashArray" Value="4,3"/>
+		</Style>
+
+		<!-- Панель свойств поля -->
+		<Style Selector="Border.ps">
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="Margin" Value="0,0,0,8"/>
+		</Style>
+		<Style Selector="ToggleButton.ps-head">
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+			<Setter Property="Padding" Value="10,7"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
+		<Style Selector="ToggleButton.ps-head:pointerover /template/ ContentPresenter, ToggleButton.ps-head:checked /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="ToggleButton.ps-head TextBlock">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.ps-head PathIcon">
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="RenderTransform" Value="rotate(-90deg)"/>
+		</Style>
+		<Style Selector="ToggleButton.ps-head:checked PathIcon">
+			<Setter Property="RenderTransform" Value="rotate(0deg)"/>
+		</Style>
+		<Style Selector="StackPanel.ps-body">
+			<Setter Property="Margin" Value="10,0,10,10"/>
+			<Setter Property="Spacing" Value="7"/>
+		</Style>
+		<Style Selector="TextBlock.pl">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="TextBlock.inner">
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="Margin" Value="7,0,0,0"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.tile">
+			<Setter Property="Width" Value="62"/>
+			<Setter Property="Height" Value="50"/>
+		</Style>
+		<Style Selector="WrapPanel > ContentPresenter > ToggleButton.RibbonToggle, WrapPanel > ToggleButton.RibbonToggle">
+			<Setter Property="Margin" Value="0,0,3,3"/>
+		</Style>
+		<Style Selector="ToggleButton.swatch">
+			<Setter Property="Width" Value="22"/>
+			<Setter Property="Height" Value="22"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Margin" Value="0,0,3,3"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="BorderThickness" Value="2"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+			<Setter Property="VerticalContentAlignment" Value="Stretch"/>
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
+		<Style Selector="ToggleButton.swatch:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.swatch:checked /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.pick-row">
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+			<Setter Property="Padding" Value="6,4"/>
+			<Setter Property="Margin" Value="0,1"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="Button.pick-row:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<!-- Перетаскивание -->
+		<Style Selector="Border.ghost">
+			<Setter Property="Padding" Value="8,4"/>
+			<Setter Property="CornerRadius" Value="5"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BoxShadow" Value="0 0 16 2 #66000000"/>
+		</Style>
+		<Style Selector="Border.drop-line">
+			<Setter Property="CornerRadius" Value="2"/>
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid RowDefinitions="Auto,Auto,*,Auto">
+
+		<!-- ── Листы ───────────────────────────────────────────────────── -->
+		<Border Grid.Row="0"
+		        Background="{DynamicResource BgSurfaceBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="0,0,0,1"
+		        Padding="6,4,6,0">
+			<ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+				<StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
+					<ItemsControl x:Name="SheetTabs" ItemsSource="{Binding Sheets}">
+						<ItemsControl.ItemsPanel>
+							<ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+						</ItemsControl.ItemsPanel>
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="vm:AnketaSheetViewModel">
+								<Border Classes="sheet-tab"
+								        Classes.active="{Binding IsActive}"
+								        Classes.drag-source="{Binding IsDragSource}"
+								        PointerPressed="OnSheetTabPressed"
+								        PointerMoved="OnSheetTabMoved"
+								        PointerReleased="OnSheetTabReleased"
+								        PointerCaptureLost="OnSheetTabCaptureLost"
+								        behaviours:TooltipBehavior.Tip="{Binding Name}"
+								        behaviours:TooltipBehavior.Description="{Binding Description}">
+									<Grid ColumnDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="7" VerticalAlignment="Center">
+										<controls:AnketaIconBadge Grid.Column="0" Size="16"
+										                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+										<TextBlock Grid.Column="1" Classes="sheet-name"
+										           Text="{Binding Name}" FontSize="12"
+										           MaxWidth="180" TextTrimming="CharacterEllipsis"
+										           VerticalAlignment="Center"/>
+										<Ellipse Grid.Column="2" Width="6" Height="6"
+										         VerticalAlignment="Center"
+										         Fill="{DynamicResource AccentDefaultBrush}"
+										         IsVisible="{Binding IsDirty}"/>
+										<Button Grid.Column="3" Classes="sheet-close"
+										        Click="OnCloseSheetClick"
+										        behaviours:TooltipBehavior.Tip="Закрыть лист">
+											<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+											          Width="7" Height="7" Foreground="{DynamicResource TextPrimaryBrush}"/>
+											<FlyoutBase.AttachedFlyout>
+												<Flyout Placement="BottomEdgeAlignedLeft">
+													<StackPanel Spacing="8" Margin="2">
+														<TextBlock Text="Сохранить изменения?" FontWeight="SemiBold"/>
+														<StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
+															<Button Content="Не сохранять" Click="OnCloseDiscardClick"/>
+															<Button Classes="primary" Content="Сохранить" Click="OnCloseSaveClick"/>
+														</StackPanel>
+													</StackPanel>
+												</Flyout>
+											</FlyoutBase.AttachedFlyout>
+										</Button>
+									</Grid>
+								</Border>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+
+					<Button Classes="RibbonBtn" Margin="4,0,0,3" Width="26" Height="24"
+					        behaviours:TooltipBehavior.Tip="Открыть анкету"
+					        behaviours:TooltipBehavior.Description="Из анкет проекта и встроенных, новую или из файла">
+						<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" Width="10" Height="10"/>
+						<Button.Flyout>
+							<Flyout Placement="BottomEdgeAlignedLeft" Opening="OnPickerOpening" Closed="OnPickerClosed">
+								<StackPanel Width="320" Spacing="6" Margin="2">
+									<StackPanel Orientation="Horizontal" Spacing="4">
+										<Button Click="OnNewAnketaClick">
+											<StackPanel Orientation="Horizontal" Spacing="6">
+												<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" Width="10" Height="10"/>
+												<TextBlock Text="Новая анкета" FontSize="12"/>
+											</StackPanel>
+										</Button>
+										<Button Click="OnImportClick"
+										        behaviours:TooltipBehavior.Tip="Открыть из файла"
+										        behaviours:TooltipBehavior.Description="Анкета из другого проекта или от другого автора — станет своей">
+											<StackPanel Orientation="Horizontal" Spacing="6">
+												<PathIcon Data="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" Width="11" Height="11"/>
+												<TextBlock Text="Из файла…" FontSize="12"/>
+											</StackPanel>
+										</Button>
+									</StackPanel>
+									<TextBox
+									         Text="{Binding PickerQuery, Mode=TwoWay}"
+									         PlaceholderText="Поиск анкеты или поля"/>
+									<ScrollViewer MaxHeight="360">
+										<ItemsControl ItemsSource="{Binding PickerItems}">
+											<ItemsControl.ItemTemplate>
+												<DataTemplate x:DataType="vm:AnketaPickItemViewModel">
+													<Button Classes="pick-row" Click="OnPickAnketaClick"
+													        behaviours:TooltipBehavior.Tip="{Binding Name}"
+													        behaviours:TooltipBehavior.Description="{Binding Description}">
+														<Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="9">
+															<controls:AnketaIconBadge Grid.Column="0" Size="22"
+															                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+															<TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
+															           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+															           Foreground="{DynamicResource TextPrimaryBrush}"/>
+															<PathIcon Grid.Column="2" IsVisible="{Binding IsBuiltIn}"
+															          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"
+															          Width="9" Height="9" VerticalAlignment="Center"
+															          Foreground="{DynamicResource TextMutedBrush}"/>
+															<TextBlock Grid.Column="3" Text="{Binding FieldCount}" FontSize="10"
+															           VerticalAlignment="Center"
+															           Foreground="{DynamicResource TextMutedBrush}"/>
+														</Grid>
+													</Button>
+												</DataTemplate>
+											</ItemsControl.ItemTemplate>
+										</ItemsControl>
+									</ScrollViewer>
+								</StackPanel>
+							</Flyout>
+						</Button.Flyout>
+					</Button>
+				</StackPanel>
+			</ScrollViewer>
+		</Border>
+
+		<!-- ── Лента ───────────────────────────────────────────────────── -->
+		<Border Grid.Row="1"
+		        Background="{DynamicResource BgPanelBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="0,0,0,1"
+		        IsEnabled="{Binding HasActiveSheet}">
+			<ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+				<StackPanel Orientation="Horizontal" Height="88" Margin="2,0">
+
+					<!-- Правка -->
+					<Border Classes="RibbonGroup">
+						<DockPanel>
+							<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Правка"/>
+							<StackPanel Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
+								<StackPanel Spacing="3">
+									<Button Classes="RibbonBtn" Click="OnUndoClick"
+									        IsEnabled="{Binding ActiveSheet.CanUndo, FallbackValue=False}"
+									        behaviours:TooltipBehavior.Tip="Отменить"
+									        behaviours:TooltipBehavior.Description="Только на этом листе: у каждого листа своя история"
+									        behaviours:TooltipBehavior.HotKey="Ctrl+Z">
+										<PathIcon Data="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" Width="14" Height="14"/>
+									</Button>
+									<Button Classes="RibbonBtn" Click="OnRedoClick"
+									        IsEnabled="{Binding ActiveSheet.CanRedo, FallbackValue=False}"
+									        behaviours:TooltipBehavior.Tip="Вернуть"
+									        behaviours:TooltipBehavior.HotKey="Ctrl+Y ;; Ctrl+Shift+Z">
+										<PathIcon Data="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z" Width="14" Height="14"/>
+									</Button>
+								</StackPanel>
+								<StackPanel Spacing="3">
+									<Button Classes="RibbonBtn" Click="OnSaveClick"
+									        IsEnabled="{Binding ActiveSheet.IsDirty, FallbackValue=False}"
+									        behaviours:TooltipBehavior.Tip="Сохранить анкету"
+									        behaviours:TooltipBehavior.Description="Правки уйдут в анкету проекта и в карточки персонажей, к которым она подключена"
+									        behaviours:TooltipBehavior.HotKey="Ctrl+S">
+										<PathIcon Data="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" Width="14" Height="14"/>
+									</Button>
+									<Button Classes="RibbonBtn" Click="OnSaveAllClick"
+									        behaviours:TooltipBehavior.Tip="Сохранить все листы"
+									        behaviours:TooltipBehavior.HotKey="Ctrl+Shift+S">
+										<PathIcon Data="M15 3H4c-1.1 0-2 .9-2 2v11h2V5h11V3zm3 3H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-5 14c-1.38 0-2.5-1.12-2.5-2.5S11.62 15 13 15s2.5 1.12 2.5 2.5S14.38 20 13 20zm2.5-9H9.5V8h6v3z" Width="14" Height="14"/>
+									</Button>
+								</StackPanel>
+								<StackPanel Spacing="3">
+									<Button Classes="RibbonBtn" Click="OnExportClick"
+									        behaviours:TooltipBehavior.Tip="В файл"
+									        behaviours:TooltipBehavior.Description="Анкета целиком — поля, раскладка и свои значки. Открывается в другом проекте или у другого автора">
+										<PathIcon Data="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" Width="14" Height="14"/>
+									</Button>
+									<Button Classes="RibbonBtn" Click="OnImportClick"
+									        behaviours:TooltipBehavior.Tip="Открыть из файла">
+										<PathIcon Data="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" Width="14" Height="14"/>
+									</Button>
+								</StackPanel>
+							</StackPanel>
+						</DockPanel>
+					</Border>
+
+					<!-- Добавить поле -->
+					<Border Classes="RibbonGroup" IsEnabled="{Binding ActiveSheet.IsEditable, FallbackValue=False}">
+						<DockPanel>
+							<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Добавить поле"/>
+							<UniformGrid Rows="2" Columns="4" VerticalAlignment="Center">
+								<Button Classes="RibbonBtn" Margin="1.5" Tag="Numeric" Click="OnAddFieldClick"
+								        behaviours:TooltipBehavior.Tip="Шкала"
+								        behaviours:TooltipBehavior.Description="Шарики, звёзды, свои значки, деления, ползунок, полюса. «Вспыльчивость 4 из 5»">
+										<PathIcon Data="M5 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M19 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" Width="16" Height="12" Foreground="#E08A3C"/>
+								</Button>
+								<Button Classes="RibbonBtn" Margin="1.5" Tag="Number" Click="OnAddFieldClick"
+								        behaviours:TooltipBehavior.Tip="Число"
+								        behaviours:TooltipBehavior.Description="Целое или дробное, с пределами, шагом и правилом шага, «примерно», «от — до», этапы">
+										<PathIcon Data="M10 3L8 21h2l2-18zM16 3l-2 18h2l2-18zM4 8h17v2H4zM3 14h17v2H3z" Width="14" Height="14" Foreground="#5B7FA8"/>
+								</Button>
+								<Button Classes="RibbonBtn" Margin="1.5" Tag="StateList" Click="OnAddFieldClick"
+								        behaviours:TooltipBehavior.Tip="Выбор"
+								        behaviours:TooltipBehavior.Description="Один вариант из списка: темперамент, раса, класс">
+										<PathIcon Data="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm0-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" Width="14" Height="14" Foreground="#8A6FC0"/>
+								</Button>
+								<Button Classes="RibbonBtn" Margin="1.5" Tag="MultiChoice" Click="OnAddFieldClick"
+								        behaviours:TooltipBehavior.Tip="Несколько"
+								        behaviours:TooltipBehavior.Description="Отметить сколько угодно: оружие, языки, фобии">
+										<PathIcon Data="M9,16.17L4.83,12l-1.42,1.41L9,19 21,7l-1.41,-1.41z" Width="14" Height="14" Foreground="#4FA39A"/>
+								</Button>
+								<Button Classes="RibbonBtn" Margin="1.5" Tag="Boolean" Click="OnAddFieldClick"
+								        behaviours:TooltipBehavior.Tip="Да / нет"
+								        behaviours:TooltipBehavior.Description="Переключатель с двумя подписями: «Женат» / «Холост»">
+										<PathIcon Data="M17 7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h10c2.76 0 5-2.24 5-5s-2.24-5-5-5zm0 8c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z" Width="16" Height="12" Foreground="#7FB069"/>
+								</Button>
+								<Button Classes="RibbonBtn" Margin="1.5" Tag="Color" Click="OnAddFieldClick"
+								        behaviours:TooltipBehavior.Tip="Цвет"
+								        behaviours:TooltipBehavior.Description="Цвет глаз, волос, кожи: палитра анкеты и, если разрешить, любой свой">
+										<PathIcon Data="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" Width="14" Height="14" Foreground="#C06FA0"/>
+								</Button>
+								<Button Classes="RibbonBtn" Margin="1.5" Tag="Text" Click="OnAddFieldClick"
+								        behaviours:TooltipBehavior.Tip="Текст"
+								        behaviours:TooltipBehavior.Description="Одна строка: профессия, место рождения, прозвище">
+										<PathIcon Data="M5 4v3h5.5v12h3V7H19V4z" Width="12" Height="12" Foreground="#9A8F85"/>
+								</Button>
+								<Button Classes="RibbonBtn" Margin="1.5" Tag="LongText" Click="OnAddFieldClick"
+								        behaviours:TooltipBehavior.Tip="Описание"
+								        behaviours:TooltipBehavior.Description="Несколько абзацев: внешность, привычки, прошлое">
+										<PathIcon Data="M14 17H4v2h10v-2zm6-8H4v2h16V9zM4 15h16v-2H4v2zM4 5v2h16V5H4z" Width="14" Height="14" Foreground="#D4A33B"/>
+								</Button>
+							</UniformGrid>
+						</DockPanel>
+					</Border>
+
+					<!-- Раскладка -->
+					<Border Classes="RibbonGroup" IsEnabled="{Binding ActiveSheet.IsEditable, FallbackValue=False}">
+						<DockPanel>
+							<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Раскладка"/>
+							<UniformGrid Rows="2" Columns="2" VerticalAlignment="Center">
+								<Button Classes="RibbonBtn" Margin="1.5" Tag="1" Click="OnAddRowClick"
+								        behaviours:TooltipBehavior.Tip="Строка"
+								        behaviours:TooltipBehavior.Description="Пустая строка на одно поле — под выбранной">
+										<PathIcon Data="M3 9h18v6H3z" Width="15" Height="10"/>
+								</Button>
+								<Button Classes="RibbonBtn" Margin="1.5" Tag="2" Click="OnAddRowClick"
+								        behaviours:TooltipBehavior.Tip="Две колонки"
+								        behaviours:TooltipBehavior.Description="Строка на два поля рядом">
+										<PathIcon Data="M3 9h8.5v6H3zM12.5 9H21v6h-8.5z" Width="15" Height="10"/>
+								</Button>
+								<Button Classes="RibbonBtn" Margin="1.5" Tag="3" Click="OnAddRowClick"
+								        behaviours:TooltipBehavior.Tip="Три колонки"
+								        behaviours:TooltipBehavior.Description="Строка на три коротких поля — возраст, рост, вес">
+										<PathIcon Data="M3 9h5.3v6H3zM9.35 9h5.3v6h-5.3zM15.7 9H21v6h-5.3z" Width="15" Height="10"/>
+								</Button>
+								<Button Classes="RibbonBtn" Margin="1.5" Click="OnAddGroupClick"
+								        behaviours:TooltipBehavior.Tip="Группа"
+								        behaviours:TooltipBehavior.Description="Подзаголовок: «Эмоции», «Внешность». Поля под ним — его группа">
+										<PathIcon Data="M3 11h4v2H3zM9 6h12v2H9zM9 11h12v2H9zM9 16h12v2H9z" Width="14" Height="12"/>
+								</Button>
+							</UniformGrid>
+						</DockPanel>
+					</Border>
+
+					<!-- Поле -->
+					<Border Classes="RibbonGroup" IsEnabled="{Binding ActiveSheet.HasSelectedField, FallbackValue=False}">
+						<DockPanel>
+							<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Поле"/>
+							<StackPanel Spacing="3" VerticalAlignment="Center" IsEnabled="{Binding ActiveSheet.IsEditable, FallbackValue=False}">
+								<StackPanel Orientation="Horizontal" Spacing="3">
+									<ToggleButton Classes="RibbonToggle"
+									              IsChecked="{Binding ActiveSheet.SelectedField.LabelBold, Mode=TwoWay}"
+									              behaviours:TooltipBehavior.Tip="Жирная подпись">
+										<TextBlock Text="Ж" FontWeight="Bold" FontSize="12"/>
+									</ToggleButton>
+									<Button Classes="RibbonBtn" Click="OnHintClick"
+									        behaviours:TooltipBehavior.Tip="Подсказка к полю"
+									        behaviours:TooltipBehavior.Description="Значок пояснения у подписи в карточке">
+										<PathIcon Data="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" Width="14" Height="14"/>
+									</Button>
+									<Button Classes="RibbonBtn" Tag="label" Click="OnGlyphPickClick"
+									        behaviours:TooltipBehavior.Tip="Значок слева от подписи">
+										<PathIcon Data="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" Width="14" Height="14"/>
+									</Button>
+								</StackPanel>
+								<StackPanel Orientation="Horizontal" Spacing="3">
+									<Button Classes="RibbonBtn"
+									        behaviours:TooltipBehavior.Tip="Цвет подписи">
+										<Grid RowDefinitions="*,Auto" Width="14">
+											<TextBlock Text="A" FontWeight="SemiBold" FontSize="12" HorizontalAlignment="Center"/>
+											<Border Grid.Row="1" Height="3" CornerRadius="1" Background="{DynamicResource AccentDefaultBrush}"/>
+										</Grid>
+										<Button.Flyout>
+											<Flyout Placement="BottomEdgeAlignedLeft">
+												<ItemsControl Width="230" Margin="2"
+												              ItemsSource="{Binding ActiveSheet.SelectedField.LabelColorOptions}">
+													<ItemsControl.ItemsPanel>
+														<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+													</ItemsControl.ItemsPanel>
+													<ItemsControl.ItemTemplate>
+														<DataTemplate x:DataType="vm:AnketaColorOptionViewModel">
+															<ToggleButton Classes="swatch" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+															              behaviours:TooltipBehavior.Tip="Повторный щелчок — цвет темы">
+																<Border CornerRadius="2" Background="{Binding Brush}"/>
+															</ToggleButton>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+											</Flyout>
+										</Button.Flyout>
+									</Button>
+									<Button Classes="RibbonBtn" Click="OnDuplicateFieldClick"
+									        behaviours:TooltipBehavior.Tip="Дублировать поле"
+									        behaviours:TooltipBehavior.Description="Копия со всеми настройками — рядом">
+										<PathIcon Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" Width="14" Height="14"/>
+									</Button>
+									<Button Classes="RibbonBtn" Click="OnDeleteFieldClick"
+									        behaviours:TooltipBehavior.Tip="Удалить поле"
+									        behaviours:TooltipBehavior.Description="У персонажей значение останется, в анкете поля не будет"
+									        behaviours:TooltipBehavior.HotKey="Delete">
+										<PathIcon Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" Width="14" Height="14"/>
+									</Button>
+								</StackPanel>
+							</StackPanel>
+						</DockPanel>
+					</Border>
+
+					<!-- Анкета -->
+					<Border Classes="RibbonGroup">
+						<DockPanel>
+							<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Анкета"/>
+							<StackPanel Spacing="3" VerticalAlignment="Center">
+								<Button Classes="RibbonBtn" Margin="1.5" Click="OnMakeCopyClick"
+								        behaviours:TooltipBehavior.Tip="Своя копия"
+								        behaviours:TooltipBehavior.Description="Отдельная анкета с тем, что сейчас на листе. Так правят встроенные">
+										<PathIcon Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" Width="14" Height="14"/>
+								</Button>
+								<Button Classes="RibbonBtn" Margin="1.5"
+								        IsEnabled="{Binding ActiveSheet.IsEditable, FallbackValue=False}"
+								        behaviours:TooltipBehavior.Tip="Удалить анкету"
+								        behaviours:TooltipBehavior.Description="Персонажи сохранят значения — удаляется только определение полей">
+										<PathIcon Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" Width="14" Height="14"/>
+									<Button.Flyout>
+										<Flyout Placement="BottomEdgeAlignedLeft">
+											<StackPanel Spacing="8" Margin="2">
+												<TextBlock Text="Удалить анкету?" FontWeight="SemiBold"/>
+												<Button Classes="primary" Content="Удалить" Click="OnDeleteAnketaClick" HorizontalAlignment="Right"/>
+											</StackPanel>
+										</Flyout>
+									</Button.Flyout>
+								</Button>
+							</StackPanel>
+						</DockPanel>
+					</Border>
+
+					<!-- Просмотр -->
+					<Border Classes="RibbonGroup">
+						<DockPanel>
+							<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Просмотр"/>
+							<Button Classes="RibbonBtnLarge" Click="OnPreviewClick"
+							        behaviours:TooltipBehavior.Tip="Превью"
+							        behaviours:TooltipBehavior.Description="Анкета так, как она встанет в карточку персонажа">
+								<StackPanel Spacing="3">
+									<PathIcon Data="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" Width="20" Height="18"/>
+									<TextBlock Text="Превью" FontSize="9" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+						</DockPanel>
+					</Border>
+				</StackPanel>
+			</ScrollViewer>
+		</Border>
+
+		<!-- ── Лист и свойства ─────────────────────────────────────────── -->
+		<Grid Grid.Row="2" ColumnDefinitions="*,310" IsVisible="{Binding HasActiveSheet}">
+
+			<ScrollViewer Grid.Column="0" x:Name="CanvasScroll">
+				<Border Classes="block"
+				        DataContext="{Binding ActiveSheet}"
+				        x:DataType="vm:AnketaSheetViewModel"
+				        Margin="12,12,12,24"
+				        VerticalAlignment="Top">
+					<StackPanel Spacing="8">
+
+						<!-- Шапка: значок, название, описание -->
+						<Border Classes="block-header">
+							<Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+								<Button Grid.Column="0" Classes="ghost" Padding="0" MinHeight="0"
+								        VerticalAlignment="Center"
+								        IsEnabled="{Binding IsEditable}"
+								        Click="OnAnketaIconClick"
+								        behaviours:TooltipBehavior.Tip="Значок и цвет анкеты"
+								        behaviours:TooltipBehavior.Description="По ним анкету узнают в шаблонах и в карточке персонажа">
+									<controls:AnketaIconBadge Size="34" Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+									<FlyoutBase.AttachedFlyout>
+										<Flyout Placement="BottomEdgeAlignedLeft">
+											<StackPanel Width="340" Spacing="8" Margin="2">
+												<ItemsControl ItemsSource="{Binding IconOptions}">
+													<ItemsControl.ItemsPanel>
+														<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+													</ItemsControl.ItemsPanel>
+													<ItemsControl.ItemTemplate>
+														<DataTemplate x:DataType="vm:AnketaIconOptionViewModel">
+															<ToggleButton Classes="swatch" Width="32" Height="32"
+															              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+															              behaviours:TooltipBehavior.Tip="{Binding Label}">
+																<controls:AnketaIconBadge Size="26" Icon="{Binding Key}" IconColor="{Binding IconColor}"/>
+															</ToggleButton>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+												<Border Height="1" Background="{DynamicResource BorderDefaultBrush}"/>
+												<ItemsControl ItemsSource="{Binding IconColorOptions}">
+													<ItemsControl.ItemsPanel>
+														<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+													</ItemsControl.ItemsPanel>
+													<ItemsControl.ItemTemplate>
+														<DataTemplate x:DataType="vm:AnketaIconColorOptionViewModel">
+															<ToggleButton Classes="swatch" Width="32" Height="32"
+															              IsChecked="{Binding IsSelected, Mode=TwoWay}">
+																<controls:AnketaIconBadge Size="26" Icon="{Binding Icon}" IconColor="{Binding Hex}"/>
+															</ToggleButton>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+											</StackPanel>
+										</Flyout>
+									</FlyoutBase.AttachedFlyout>
+								</Button>
+								<StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+									<TextBox x:Name="SheetNameBox"
+									         Text="{Binding Name, Mode=TwoWay}"
+									         IsReadOnly="{Binding IsReadOnly}"
+									         FontSize="13" FontWeight="SemiBold"
+									         PlaceholderText="Название анкеты"/>
+									<TextBox
+									         Text="{Binding Description, Mode=TwoWay}"
+									         IsReadOnly="{Binding IsReadOnly}"
+									         FontSize="11"
+									         Foreground="{DynamicResource TextSecondaryBrush}"
+									         PlaceholderText="Для чего анкета — одной строкой"/>
+								</StackPanel>
+							</Grid>
+						</Border>
+
+						<!-- Встроенная -->
+						<Border IsVisible="{Binding IsReadOnly}"
+						        Padding="10,6"
+						        CornerRadius="6"
+						        BorderThickness="1"
+						        BorderBrush="{DynamicResource BorderDefaultBrush}"
+						        Background="{DynamicResource BgSurfaceBrush}">
+							<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+								<PathIcon Grid.Column="0"
+								          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"
+								          Width="12" Height="12" Foreground="{DynamicResource TextSecondaryBrush}"/>
+								<TextBlock Grid.Column="1" VerticalAlignment="Center"
+								           Text="Встроенная"
+								           Foreground="{DynamicResource TextSecondaryBrush}"
+								           behaviours:TooltipBehavior.Tip="Встроенная анкета"
+								           behaviours:TooltipBehavior.Description="Не меняется — правится своя копия"/>
+								<Button Grid.Column="2" Click="OnMakeCopyClick">
+									<TextBlock Text="Своя копия" FontSize="12" Foreground="{DynamicResource AccentDefaultBrush}"/>
+								</Button>
+							</Grid>
+						</Border>
+
+						<!-- Строки -->
+						<Panel>
+							<ItemsControl x:Name="RowsList" ItemsSource="{Binding Rows}">
+								<ItemsControl.ItemTemplate>
+									<DataTemplate x:DataType="vm:AnketaLayoutRowViewModel">
+										<Border Classes="row"
+										        Classes.selected="{Binding IsSelected}"
+										        Classes.drag-source="{Binding IsDragSource}">
+											<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="4">
+												<Border Grid.Column="0" Classes="row-grip"
+												        IsVisible="{Binding Sheet.IsEditable}"
+												        PointerPressed="OnRowGripPressed"
+												        PointerMoved="OnRowGripMoved"
+												        PointerReleased="OnRowGripReleased"
+												        PointerCaptureLost="OnRowGripCaptureLost"
+												        behaviours:TooltipBehavior.Tip="Перетащить строку">
+													<PathIcon Data="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
+													          Width="10" Height="14"/>
+												</Border>
+
+												<Panel Grid.Column="1">
+													<!-- Подзаголовок группы -->
+													<Grid ColumnDefinitions="Auto,*" ColumnSpacing="8"
+													      IsVisible="{Binding IsGroup}" Margin="2,6,2,2">
+														<TextBox Grid.Column="0"
+														         Text="{Binding Title, Mode=TwoWay}"
+														         IsReadOnly="{Binding Sheet.IsReadOnly}"
+														         FontSize="11" FontWeight="SemiBold"
+														         MinWidth="80"
+														         Foreground="{DynamicResource TextSecondaryBrush}"
+														         PlaceholderText="Название группы"/>
+														<Border Grid.Column="1" Height="1" VerticalAlignment="Center"
+														        Background="{DynamicResource BorderDefaultBrush}"/>
+													</Grid>
+
+													<!-- Ячейки -->
+													<ItemsControl ItemsSource="{Binding Cells}" IsVisible="{Binding IsFields}">
+														<ItemsControl.ItemsPanel>
+															<ItemsPanelTemplate>
+																<UniformGrid Rows="1" Columns="{Binding Columns}"/>
+															</ItemsPanelTemplate>
+														</ItemsControl.ItemsPanel>
+														<ItemsControl.ItemTemplate>
+															<DataTemplate x:DataType="vm:AnketaLayoutCellViewModel">
+																<Border Classes="cell"
+																        Classes.selected="{Binding Field.IsSelected}"
+																        Classes.drop="{Binding IsDropTarget}">
+																	<Panel>
+																		<Rectangle Classes="empty-frame" RadiusX="5" RadiusY="5"
+																		           IsVisible="{Binding IsEmpty}"/>
+																		<Grid ColumnDefinitions="Auto,*" ColumnSpacing="2" IsVisible="{Binding HasField}">
+																			<Border Grid.Column="0" Classes="cell-grip"
+																			        IsVisible="{Binding Row.Sheet.IsEditable}"
+																			        PointerPressed="OnCellGripPressed"
+																			        PointerMoved="OnCellGripMoved"
+																			        PointerReleased="OnCellGripReleased"
+																			        PointerCaptureLost="OnCellGripCaptureLost"
+																			        behaviours:TooltipBehavior.Tip="Перетащить поле"
+																			        behaviours:TooltipBehavior.Description="В другую ячейку; поле, что там стояло, встанет на его место">
+																				<PathIcon Data="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
+																				          Width="9" Height="12"/>
+																			</Border>
+																			<fields:ParameterFieldView Grid.Column="1" DataContext="{Binding Field.Preview}"/>
+																		</Grid>
+																	</Panel>
+																</Border>
+															</DataTemplate>
+														</ItemsControl.ItemTemplate>
+													</ItemsControl>
+												</Panel>
+
+												<!-- Колонки и удаление строки -->
+												<StackPanel Grid.Column="2" Classes="row-tools"
+												            Orientation="Horizontal" Spacing="1"
+												            VerticalAlignment="Top" Margin="0,4,0,0"
+												            IsVisible="{Binding Sheet.IsEditable}">
+													<StackPanel Orientation="Horizontal" Spacing="1" IsVisible="{Binding IsFields}">
+														<ToggleButton Classes="col-btn" Content="1" Tag="1" Click="OnColumnsClick"
+														              IsChecked="{Binding IsOneColumn, Mode=OneWay}"
+														              behaviours:TooltipBehavior.Tip="Одна колонка"/>
+														<ToggleButton Classes="col-btn" Content="2" Tag="2" Click="OnColumnsClick"
+														              IsChecked="{Binding IsTwoColumns, Mode=OneWay}"
+														              behaviours:TooltipBehavior.Tip="Две колонки"/>
+														<ToggleButton Classes="col-btn" Content="3" Tag="3" Click="OnColumnsClick"
+														              IsChecked="{Binding IsThreeColumns, Mode=OneWay}"
+														              behaviours:TooltipBehavior.Tip="Три колонки"/>
+													</StackPanel>
+													<Button Classes="row-del" Click="OnDeleteRowClick"
+													        behaviours:TooltipBehavior.Tip="Удалить строку"
+													        behaviours:TooltipBehavior.Description="Вместе с её полями. Ctrl+Z вернёт">
+														<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+														          Width="8" Height="8"/>
+													</Button>
+												</StackPanel>
+											</Grid>
+										</Border>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+
+							<TextBlock IsVisible="{Binding !HasRows}"
+							           Margin="4,12"
+							           Foreground="{DynamicResource TextMutedBrush}"
+							           Text="Полей нет"/>
+						</Panel>
+					</StackPanel>
+				</Border>
+			</ScrollViewer>
+
+			<!-- ── Свойства поля ───────────────────────────────────────── -->
+			<Border Grid.Column="1"
+			        Background="{DynamicResource BgSurfaceBrush}"
+			        BorderBrush="{DynamicResource BorderDefaultBrush}"
+			        BorderThickness="1,0,0,0">
+				<Panel>
+					<TextBlock IsVisible="{Binding ActiveSheet.HasNoSelectedField, FallbackValue=False}"
+					           Margin="16,30"
+					           TextAlignment="Center" TextWrapping="Wrap"
+					           FontSize="12"
+					           Foreground="{DynamicResource TextMutedBrush}"
+					           Text="Выберите поле"/>
+
+					<ScrollViewer x:Name="PropsScroll" IsVisible="{Binding ActiveSheet.HasSelectedField, FallbackValue=False}">
+						<StackPanel Margin="10"
+						            DataContext="{Binding ActiveSheet.SelectedField}"
+						            x:DataType="vm:AnketaFieldEditorViewModel">
+
+							<!-- Тип поля -->
+							<Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="2,0,2,10">
+								<Border Grid.Column="0" Width="24" Height="24" CornerRadius="5" Background="{Binding TypeSoftBrush}">
+									<PathIcon Data="{Binding TypeIcon}" Foreground="{Binding TypeBrush}" Width="12" Height="12"/>
+								</Border>
+								<TextBlock Grid.Column="1" Text="{Binding TypeLabel}" FontSize="12" FontWeight="SemiBold"
+								           VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+							</Grid>
+
+							<StackPanel IsEnabled="{Binding Owner.IsEditable}">
+
+								<!-- Подпись -->
+								<Border Classes="ps">
+									<StackPanel>
+										<ToggleButton x:Name="SecLabel" Classes="ps-head" IsChecked="True">
+											<Grid ColumnDefinitions="*,Auto">
+												<TextBlock Text="Подпись"/>
+												<PathIcon Grid.Column="1" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+											</Grid>
+										</ToggleButton>
+										<StackPanel Classes="ps-body" IsVisible="{Binding #SecLabel.IsChecked}">
+											<TextBox x:Name="FieldNameBox" Text="{Binding Name, Mode=TwoWay}"
+											         PlaceholderText="Название поля"/>
+											<Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+												<ToggleButton Grid.Column="0" Classes="RibbonToggle"
+												              IsChecked="{Binding LabelBold, Mode=TwoWay}"
+												              behaviours:TooltipBehavior.Tip="Жирная подпись">
+													<TextBlock Text="Ж" FontWeight="Bold"/>
+												</ToggleButton>
+												<ItemsControl Grid.Column="1" ItemsSource="{Binding LabelColorOptions}">
+													<ItemsControl.ItemsPanel>
+														<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+													</ItemsControl.ItemsPanel>
+													<ItemsControl.ItemTemplate>
+														<DataTemplate x:DataType="vm:AnketaColorOptionViewModel">
+															<ToggleButton Classes="swatch" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+															              behaviours:TooltipBehavior.Tip="Цвет подписи"
+															              behaviours:TooltipBehavior.Description="Повторный щелчок — цвет темы">
+																<Border CornerRadius="2" Background="{Binding Brush}"/>
+															</ToggleButton>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+											</Grid>
+											<Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+												<TextBlock Grid.Column="0" Classes="pl" Text="Значок слева"/>
+												<controls:GlyphIcon Grid.Column="1" Size="16" Glyph="{Binding LabelIcon}"
+												                    IsVisible="{Binding HasLabelIcon}" VerticalAlignment="Center"/>
+												<Button Grid.Column="2" Tag="label" Click="OnGlyphPickClick">
+													<TextBlock Text="Выбрать…" FontSize="12"/>
+												</Button>
+											</Grid>
+										</StackPanel>
+									</StackPanel>
+								</Border>
+
+								<!-- Подсказка -->
+								<Border Classes="ps">
+									<StackPanel>
+										<ToggleButton x:Name="SecHint" Classes="ps-head" IsChecked="True">
+											<Grid ColumnDefinitions="*,Auto">
+												<TextBlock Text="Подсказка"/>
+												<PathIcon Grid.Column="1" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+											</Grid>
+										</ToggleButton>
+										<StackPanel Classes="ps-body" IsVisible="{Binding #SecHint.IsChecked}">
+											<TextBox x:Name="FieldHintBox"
+											         Text="{Binding Description, Mode=TwoWay}"
+											         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48"
+											         PlaceholderText="Пояснение к полю"/>
+										</StackPanel>
+									</StackPanel>
+								</Border>
+
+								<!-- Вид -->
+								<Border Classes="ps" IsVisible="{Binding HasDisplayChoice}">
+									<StackPanel>
+										<ToggleButton x:Name="SecView" Classes="ps-head" IsChecked="True">
+											<Grid ColumnDefinitions="*,Auto">
+												<TextBlock Text="Вид"/>
+												<PathIcon Grid.Column="1" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+											</Grid>
+										</ToggleButton>
+										<StackPanel Classes="ps-body" IsVisible="{Binding #SecView.IsChecked}">
+											<ItemsControl ItemsSource="{Binding DisplayOptions}">
+												<ItemsControl.ItemsPanel>
+													<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+												</ItemsControl.ItemsPanel>
+												<ItemsControl.ItemTemplate>
+													<DataTemplate>
+														<ToggleButton Classes="RibbonToggle tile"
+														              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+														              behaviours:TooltipBehavior.Tip="{Binding Label}"
+														              behaviours:TooltipBehavior.Description="{Binding Hint}">
+															<StackPanel Spacing="4">
+																<PathIcon Data="{Binding IconPath}" Width="18" Height="13" HorizontalAlignment="Center"/>
+																<TextBlock Text="{Binding Label}" FontSize="10" HorizontalAlignment="Center"/>
+															</StackPanel>
+														</ToggleButton>
+													</DataTemplate>
+												</ItemsControl.ItemTemplate>
+											</ItemsControl>
+										</StackPanel>
+									</StackPanel>
+								</Border>
+
+								<!-- Шкала и оценка -->
+								<Border Classes="ps" IsVisible="{Binding IsScale}">
+									<StackPanel>
+										<ToggleButton x:Name="SecScale" Classes="ps-head" IsChecked="True">
+											<Grid ColumnDefinitions="*,Auto">
+												<TextBlock Text="Шкала"/>
+												<PathIcon Grid.Column="1" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+											</Grid>
+										</ToggleButton>
+										<StackPanel Classes="ps-body" IsVisible="{Binding #SecScale.IsChecked}">
+											<Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+												<TextBlock Grid.Column="0" Classes="pl" Text="Делений"/>
+												<ItemsControl Grid.Column="1" ItemsSource="{Binding ScaleCountOptions}">
+													<ItemsControl.ItemsPanel>
+														<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+													</ItemsControl.ItemsPanel>
+													<ItemsControl.ItemTemplate>
+														<DataTemplate>
+															<ToggleButton Classes="RibbonToggle" Content="{Binding Label}"
+															              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+															              behaviours:TooltipBehavior.Tip="{Binding Hint}"/>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+											</Grid>
+											<Grid ColumnDefinitions="*,4,*,4,*">
+												<TextBox Grid.Column="0" Text="{Binding MinValue, Mode=TwoWay}">
+													<TextBox.InnerLeftContent><TextBlock Classes="inner" Text="от"/></TextBox.InnerLeftContent>
+												</TextBox>
+												<TextBox Grid.Column="2" Text="{Binding MaxValue, Mode=TwoWay}">
+													<TextBox.InnerLeftContent><TextBlock Classes="inner" Text="до"/></TextBox.InnerLeftContent>
+												</TextBox>
+												<TextBox Grid.Column="4" Text="{Binding StepValue, Mode=TwoWay}">
+													<TextBox.InnerLeftContent><TextBlock Classes="inner" Text="шаг"/></TextBox.InnerLeftContent>
+												</TextBox>
+											</Grid>
+											<TextBlock Classes="pl" Text="{Binding ScaleSummary}" Foreground="{DynamicResource TextMutedBrush}"/>
+											<TextBox Text="{Binding ScaleLabels, Mode=TwoWay}"
+											         TextWrapping="Wrap"
+											         PlaceholderText="Подписи делений через запятую"
+											         behaviours:TooltipBehavior.Tip="Подписи делений"
+											         behaviours:TooltipBehavior.Description="{Binding ScaleLabelsHint}"/>
+											<Grid ColumnDefinitions="*,4,*" IsVisible="{Binding IsBipolar}">
+												<TextBox Grid.Column="0" Text="{Binding LeftPole, Mode=TwoWay}" PlaceholderText="← слева"/>
+												<TextBox Grid.Column="2" Text="{Binding RightPole, Mode=TwoWay}" PlaceholderText="справа →"/>
+											</Grid>
+											<Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" IsVisible="{Binding IsGlyphDisplay}">
+												<TextBlock Grid.Column="0" Classes="pl" Text="Значок оценки"/>
+												<controls:GlyphIcon Grid.Column="1" Size="18" Glyph="{Binding RatingGlyph}"
+												                    Fill="{DynamicResource AccentDefaultBrush}" VerticalAlignment="Center"/>
+												<Button Grid.Column="2" Tag="rating" Click="OnGlyphPickClick">
+													<TextBlock Text="Выбрать…" FontSize="12"/>
+												</Button>
+											</Grid>
+										</StackPanel>
+									</StackPanel>
+								</Border>
+
+								<!-- Цвет поля -->
+								<Border Classes="ps" IsVisible="{Binding HasAccent}">
+									<StackPanel>
+										<ToggleButton x:Name="SecAccent" Classes="ps-head" IsChecked="True">
+											<Grid ColumnDefinitions="*,Auto">
+												<TextBlock Text="Цвет поля"/>
+												<PathIcon Grid.Column="1" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+											</Grid>
+										</ToggleButton>
+										<StackPanel Classes="ps-body" IsVisible="{Binding #SecAccent.IsChecked}">
+											<ItemsControl ItemsSource="{Binding ColorOptions}">
+												<ItemsControl.ItemsPanel>
+													<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+												</ItemsControl.ItemsPanel>
+												<ItemsControl.ItemTemplate>
+													<DataTemplate x:DataType="vm:AnketaColorOptionViewModel">
+														<ToggleButton Classes="swatch" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+														              behaviours:TooltipBehavior.Tip="Цвет шариков, звёзд, отмеченного"
+														              behaviours:TooltipBehavior.Description="Повторный щелчок — цвет темы">
+															<Border CornerRadius="2" Background="{Binding Brush}"/>
+														</ToggleButton>
+													</DataTemplate>
+												</ItemsControl.ItemTemplate>
+											</ItemsControl>
+										</StackPanel>
+									</StackPanel>
+								</Border>
+
+								<!-- Варианты -->
+								<Border Classes="ps" IsVisible="{Binding HasStates}">
+									<StackPanel>
+										<ToggleButton x:Name="SecStates" Classes="ps-head" IsChecked="True">
+											<Grid ColumnDefinitions="*,Auto">
+												<TextBlock Text="Варианты"/>
+												<PathIcon Grid.Column="1" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+											</Grid>
+										</ToggleButton>
+										<StackPanel Classes="ps-body" IsVisible="{Binding #SecStates.IsChecked}">
+											<TextBox Text="{Binding StatesRaw, Mode=TwoWay}"
+											         TextWrapping="Wrap" MinHeight="48"
+											         PlaceholderText="Через запятую: Сангвиник, Холерик, Флегматик"/>
+										</StackPanel>
+									</StackPanel>
+								</Border>
+
+								<!-- Число -->
+								<Border Classes="ps" IsVisible="{Binding IsNumber}">
+									<StackPanel>
+										<ToggleButton x:Name="SecNumber" Classes="ps-head" IsChecked="True">
+											<Grid ColumnDefinitions="*,Auto">
+												<TextBlock Text="Число"/>
+												<PathIcon Grid.Column="1" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+											</Grid>
+										</ToggleButton>
+										<StackPanel Classes="ps-body" IsVisible="{Binding #SecNumber.IsChecked}">
+											<Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="4">
+												<ToggleButton Grid.Column="0" Classes="RibbonToggle" Content="Целое"
+												              IsChecked="{Binding IsInteger, Mode=TwoWay}"/>
+												<ToggleButton Grid.Column="1" Classes="RibbonToggle" Content="Дробное"
+												              IsChecked="{Binding IsDecimal, Mode=TwoWay}"/>
+												<TextBlock Grid.Column="2" Classes="pl" Text="знаков" HorizontalAlignment="Right"
+												           IsVisible="{Binding IsDecimal}"/>
+												<ComboBox Grid.Column="3" FontSize="12" MinWidth="56"
+												          IsVisible="{Binding IsDecimal}"
+												          ItemsSource="{Binding DecimalsOptions}"
+												          SelectedItem="{Binding DecimalsValue, Mode=TwoWay}"/>
+											</Grid>
+											<TextBox Text="{Binding Unit, Mode=TwoWay}" PlaceholderText="лет, см, кг — или пусто">
+												<TextBox.InnerLeftContent><TextBlock Classes="inner" Text="ед."/></TextBox.InnerLeftContent>
+											</TextBox>
+											<Grid ColumnDefinitions="*,4,*">
+												<TextBox Grid.Column="0" Text="{Binding NumberMinText, Mode=TwoWay}"
+												         PlaceholderText="нет"
+												         behaviours:TooltipBehavior.Tip="Наименьшее значение"
+												         behaviours:TooltipBehavior.Description="Вписанное меньше — станет им. Пусто — без границы">
+													<TextBox.InnerLeftContent><TextBlock Classes="inner" Text="мин"/></TextBox.InnerLeftContent>
+												</TextBox>
+												<TextBox Grid.Column="2" Text="{Binding NumberMaxText, Mode=TwoWay}"
+												         PlaceholderText="нет"
+												         behaviours:TooltipBehavior.Tip="Наибольшее значение">
+													<TextBox.InnerLeftContent><TextBlock Classes="inner" Text="макс"/></TextBox.InnerLeftContent>
+												</TextBox>
+											</Grid>
+											<TextBlock Classes="pl" Text="Как задать"/>
+											<WrapPanel Orientation="Horizontal">
+												<ToggleButton Classes="RibbonToggle" Content="Точно" IsChecked="{Binding ModeExact, Mode=TwoWay}"
+												              behaviours:TooltipBehavior.Tip="Точно" behaviours:TooltipBehavior.Description="«31»"/>
+												<ToggleButton Classes="RibbonToggle" Content="≈ Примерно" IsChecked="{Binding ModeApprox, Mode=TwoWay}"
+												              behaviours:TooltipBehavior.Tip="Примерно" behaviours:TooltipBehavior.Description="«Около 30» — сравнивается само число"/>
+												<ToggleButton Classes="RibbonToggle" Content="От – до" IsChecked="{Binding ModeRange, Mode=TwoWay}"
+												              behaviours:TooltipBehavior.Tip="Диапазон" behaviours:TooltipBehavior.Description="«От 25 до 35» — сравнивается середина"/>
+												<ToggleButton Classes="RibbonToggle" Content="Этап" IsChecked="{Binding ModeStage, Mode=TwoWay}"
+												              behaviours:TooltipBehavior.Tip="Этап" behaviours:TooltipBehavior.Description="«Подросток», «взрослый»"/>
+												<ToggleButton Classes="RibbonToggle" Content="Год рождения" IsChecked="{Binding ModeBirthYear, Mode=TwoWay}"
+												              behaviours:TooltipBehavior.Tip="Год рождения" behaviours:TooltipBehavior.Description="Вместо возраста — год рождения"/>
+											</WrapPanel>
+											<TextBox IsVisible="{Binding ModeStage}"
+											         Text="{Binding StagesRaw, Mode=TwoWay}" TextWrapping="Wrap"
+											         PlaceholderText="Ребёнок 0-12, Взрослый 18-59, Пожилой 60+"
+											         behaviours:TooltipBehavior.Tip="Этапы"
+											         behaviours:TooltipBehavior.Description="Имя и границы через запятую"/>
+											<CheckBox Content="Шаг"
+											          IsChecked="{Binding UseStep, Mode=TwoWay}"
+											          behaviours:TooltipBehavior.Tip="Шаг"
+											          behaviours:TooltipBehavior.Description="Вписанное притягивается к ближайшему допустимому значению, стрелки вверх и вниз идут по шагу"/>
+											<StackPanel Spacing="6" IsVisible="{Binding UseStep}">
+												<ItemsControl ItemsSource="{Binding StepRuleOptions}">
+													<ItemsControl.ItemsPanel>
+														<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+													</ItemsControl.ItemsPanel>
+													<ItemsControl.ItemTemplate>
+														<DataTemplate>
+															<ToggleButton Classes="RibbonToggle" Content="{Binding Label}"
+															              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+															              behaviours:TooltipBehavior.Tip="{Binding Label}"
+															              behaviours:TooltipBehavior.Description="{Binding Hint}"/>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+												<TextBox Text="{Binding StepValue, Mode=TwoWay}"
+												         IsVisible="{Binding !IsStepList}"
+												         behaviours:TooltipBehavior.Tip="Шаг"
+												         behaviours:TooltipBehavior.Description="При «+ шаг» — расстояние между значениями, при «× шаг» — во сколько раз растёт">
+													<TextBox.InnerLeftContent><TextBlock Classes="inner" Text="шаг"/></TextBox.InnerLeftContent>
+												</TextBox>
+												<TextBox IsVisible="{Binding IsStepList}"
+												         Text="{Binding StepValuesRaw, Mode=TwoWay}" TextWrapping="Wrap"
+												         PlaceholderText="Допустимые значения: 1, 3, 7, 12"/>
+											</StackPanel>
+										</StackPanel>
+									</StackPanel>
+								</Border>
+
+								<!-- Да / нет -->
+								<Border Classes="ps" IsVisible="{Binding IsBool}">
+									<StackPanel>
+										<ToggleButton x:Name="SecBool" Classes="ps-head" IsChecked="True">
+											<Grid ColumnDefinitions="*,Auto">
+												<TextBlock Text="Да / нет"/>
+												<PathIcon Grid.Column="1" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+											</Grid>
+										</ToggleButton>
+										<Grid Classes="ps-body" ColumnDefinitions="*,4,*" Margin="10,0,10,10" IsVisible="{Binding #SecBool.IsChecked}">
+											<TextBox Grid.Column="0" Text="{Binding TrueLabel, Mode=TwoWay}" PlaceholderText="Да"/>
+											<TextBox Grid.Column="2" Text="{Binding FalseLabel, Mode=TwoWay}" PlaceholderText="Нет"/>
+										</Grid>
+									</StackPanel>
+								</Border>
+
+								<!-- Палитра -->
+								<Border Classes="ps" IsVisible="{Binding IsColor}">
+									<StackPanel>
+										<ToggleButton x:Name="SecPalette" Classes="ps-head" IsChecked="True">
+											<Grid ColumnDefinitions="*,Auto">
+												<TextBlock Text="Палитра"/>
+												<PathIcon Grid.Column="1" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+											</Grid>
+										</ToggleButton>
+										<StackPanel Classes="ps-body" IsVisible="{Binding #SecPalette.IsChecked}">
+											<TextBox Text="{Binding PaletteRaw, Mode=TwoWay}" TextWrapping="Wrap"
+											         PlaceholderText="#5B7FA8, #6B8F4E, #7A5236"/>
+											<CheckBox Content="Разрешить свой цвет"
+											          IsChecked="{Binding AllowCustomColor, Mode=TwoWay}"/>
+										</StackPanel>
+									</StackPanel>
+								</Border>
+
+								<!-- Ещё -->
+								<Border Classes="ps">
+									<StackPanel>
+										<ToggleButton x:Name="SecMore" Classes="ps-head" IsChecked="True">
+											<Grid ColumnDefinitions="*,Auto">
+												<TextBlock Text="Ещё"/>
+												<PathIcon Grid.Column="1" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+											</Grid>
+										</ToggleButton>
+										<StackPanel Classes="ps-body" IsVisible="{Binding #SecMore.IsChecked}">
+											<CheckBox Content="Сравнивать между персонажами"
+											          IsChecked="{Binding IsComparable, Mode=TwoWay}"
+											          behaviours:TooltipBehavior.Tip="Сравнивать"
+											          behaviours:TooltipBehavior.Description="Рост, сила, цвет глаз — сравниваются. Вопросы-размышления в сравнения не идут"/>
+											<WrapPanel Orientation="Horizontal">
+												<Button Click="OnCopyDisplayClick" Margin="0,0,4,4"
+												        behaviours:TooltipBehavior.Tip="Скопировать вид"
+												        behaviours:TooltipBehavior.Description="Вид, цвета, подпись, у шкалы — края и шаг, у числа — знаки, способы и шаг. Вставляется в другие поля и на других листах">
+													<TextBlock Text="Копировать вид" FontSize="12"/>
+												</Button>
+												<Button Click="OnPasteDisplayClick" Margin="0,0,4,4"
+												        IsEnabled="{Binding Owner.CanPasteDisplay}"
+												        behaviours:TooltipBehavior.Tip="Вставить вид"
+												        behaviours:TooltipBehavior.Description="Название, подсказка и варианты останутся свои">
+													<TextBlock Text="Вставить" FontSize="12"/>
+												</Button>
+												<Button Click="OnPasteDisplayGroupClick" Margin="0,0,4,4"
+												        IsEnabled="{Binding Owner.CanPasteDisplay}"
+												        behaviours:TooltipBehavior.Tip="Вставить вид во всю группу"
+												        behaviours:TooltipBehavior.Description="Во все поля от подзаголовка группы до следующего">
+													<TextBlock Text="В группу" FontSize="12"/>
+												</Button>
+											</WrapPanel>
+										</StackPanel>
+									</StackPanel>
+								</Border>
+
+								<Grid ColumnDefinitions="*,6,*" Margin="0,2,0,0">
+									<Button Grid.Column="0" Click="OnDuplicateFieldClick"
+									        HorizontalAlignment="Stretch">
+										<TextBlock Text="Дублировать" FontSize="12"/>
+									</Button>
+									<Button Grid.Column="2" Click="OnDeleteFieldClick"
+									        HorizontalAlignment="Stretch">
+										<TextBlock Text="Удалить" FontSize="12" Foreground="#E57373"/>
+									</Button>
+								</Grid>
+							</StackPanel>
+						</StackPanel>
+					</ScrollViewer>
+				</Panel>
+			</Border>
+		</Grid>
+
+		<!-- ── Пусто: листов нет ───────────────────────────────────────── -->
+		<StackPanel Grid.Row="2" IsVisible="{Binding HasNoSheets}"
+		            HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+			<TextBlock Text="Открытых анкет нет" HorizontalAlignment="Center"
+			           Foreground="{DynamicResource TextMutedBrush}"/>
+			<StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+				<Button Click="OnNewAnketaClick">
+					<TextBlock Text="Новая анкета" FontSize="12"/>
+				</Button>
+				<Button Click="OnImportClick">
+					<TextBlock Text="Из файла…" FontSize="12"/>
+				</Button>
+			</StackPanel>
+		</StackPanel>
+
+		<!-- ── Строка состояния ────────────────────────────────────────── -->
+		<Border Grid.Row="3"
+		        Background="{DynamicResource BgPanelBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="0,1,0,0"
+		        Padding="10,3">
+			<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+				<TextBlock Grid.Column="0" Text="{Binding ActiveSheet.HistoryCaption}" FontSize="11"
+				           Foreground="{DynamicResource TextMutedBrush}"/>
+				<TextBlock Grid.Column="1" Text="{Binding ActiveSheet.SelectedField.DisplayName}" FontSize="11"
+				           TextTrimming="CharacterEllipsis"
+				           Foreground="{DynamicResource TextMutedBrush}"/>
+
+			</Grid>
+		</Border>
+
+		<!-- ── Превью ──────────────────────────────────────────────────── -->
+		<Border Grid.Row="0" Grid.RowSpan="4"
+		        Background="#A0000000"
+		        IsVisible="{Binding ActiveSheet.IsPreviewOpen, FallbackValue=False}"
+		        PointerPressed="OnPreviewScrimPressed">
+			<Border Width="860" MaxHeight="760" Margin="24"
+			        HorizontalAlignment="Center" VerticalAlignment="Center"
+			        Background="{DynamicResource BgSurfaceBrush}"
+			        BorderBrush="{DynamicResource BorderDefaultBrush}" BorderThickness="1"
+			        CornerRadius="10" ClipToBounds="True"
+			        BoxShadow="0 10 40 0 #AA000000"
+			        PointerPressed="OnPreviewPanelPressed">
+				<Grid RowDefinitions="Auto,*">
+					<Border Grid.Row="0" Background="{DynamicResource BgPanelBrush}"
+					        BorderBrush="{DynamicResource BorderDefaultBrush}" BorderThickness="0,0,0,1"
+					        Padding="14,8">
+						<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+							<TextBlock Grid.Column="0" Text="Превью" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+							<Button Grid.Column="2" Click="OnPreviewCloseClick"
+							        behaviours:TooltipBehavior.Tip="Закрыть" behaviours:TooltipBehavior.HotKey="Escape">
+								<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" Width="10" Height="10"/>
+							</Button>
+						</Grid>
+					</Border>
+					<ScrollViewer Grid.Row="1">
+						<Border Classes="block" Margin="16" DataContext="{Binding ActiveSheet.Preview}">
+							<StackPanel Spacing="6">
+								<Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,0,0,4">
+									<controls:AnketaIconBadge Grid.Column="0" Size="22"
+									                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+									<TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="12" FontWeight="SemiBold"
+									           VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+								</Grid>
+								<fields:AnketaFieldsView/>
+							</StackPanel>
+						</Border>
+					</ScrollViewer>
+				</Grid>
+			</Border>
+		</Border>
+
+		<!-- ── Слой перетаскивания ─────────────────────────────────────── -->
+		<Canvas Grid.Row="0" Grid.RowSpan="4" x:Name="DragLayer" IsHitTestVisible="False">
+			<Border x:Name="DropLine" Classes="drop-line" IsVisible="False"/>
+			<Border x:Name="Ghost" Classes="ghost" IsVisible="False">
+				<TextBlock x:Name="GhostText" FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}"/>
+			</Border>
+		</Canvas>
+	</Grid>
+</UserControl>

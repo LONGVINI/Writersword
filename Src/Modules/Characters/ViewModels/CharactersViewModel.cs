@@ -16,6 +16,7 @@ using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Models.Enums;
 using Writersword.Modules.Characters.Services;
+using Writersword.Modules.Characters.ViewModels.Anketas;
 using Writersword.Modules.Characters.ViewModels.Inspector;
 using Writersword.Modules.Characters.ViewModels.Onboarding;
 using Writersword.Modules.Characters.ViewModels.Templates;
@@ -163,6 +164,12 @@ namespace Writersword.Modules.Characters.ViewModels
                 this.RaisePropertyChanged(nameof(IsTab1Active));
                 this.RaisePropertyChanged(nameof(IsTab2Active));
                 this.RaisePropertyChanged(nameof(IsTab3Active));
+                this.RaisePropertyChanged(nameof(IsTab4Active));
+                this.RaisePropertyChanged(nameof(IsLibraryTabActive));
+
+                // Вкладка «Шаблоны и анкеты» помнит, какая из её частей была
+                // открыта: возвращаются туда, откуда ушли.
+                if (_mainTabIndex == 3 || _mainTabIndex == 4) _lastLibraryTab = _mainTabIndex;
 
                 // Возврат на вкладку редактора — повод перечитать персонажа.
                 //
@@ -183,11 +190,42 @@ namespace Writersword.Modules.Characters.ViewModels
         public bool IsTab2Active => _mainTabIndex == 2;
         public bool IsTab3Active => _mainTabIndex == 3;
 
+        /// <summary>Вкладка «Анкеты» — библиотека и конструктор анкет.</summary>
+        public bool IsTab4Active => _mainTabIndex == 4;
+
+        /// <summary>Открыта вкладка «Шаблоны и анкеты» — любая из её частей.</summary>
+        public bool IsLibraryTabActive => _mainTabIndex == 3 || _mainTabIndex == 4;
+
+        private int _lastLibraryTab = 3;
+
         public ReactiveCommand<string, Unit> SwitchMainTabCommand { get; }
         public ReactiveCommand<Unit, Unit> GoToCharactersCommand { get; }
         public ReactiveCommand<Unit, Unit> GoToEditCommand { get; }
         public ReactiveCommand<Unit, Unit> GoToRelationshipsCommand { get; }
         public ReactiveCommand<Unit, Unit> GoToTemplatesCommand { get; }
+        public ReactiveCommand<Unit, Unit> GoToAnketasCommand { get; }
+        public ReactiveCommand<Unit, Unit> GoToLibraryCommand { get; }
+
+        /// <summary>Вкладка «Анкеты»: библиотека и конструктор анкет.</summary>
+        public CharactersAnketasViewModel AnketasViewModel { get; }
+
+        /// <summary>Открыть анкету в конструкторе — например, из шаблонов.</summary>
+        public void OpenAnketaInDesigner(string anketaId)
+        {
+            AnketasViewModel.Select(anketaId);
+            MainTabIndex = 4;
+        }
+
+        /// <summary>
+        /// Анкету сохранили или удалили в конструкторе: список шаблонов и
+        /// открытая карточка перечитывают её, иначе новый вид или новое поле
+        /// появились бы только после повторного открытия персонажа.
+        /// </summary>
+        private void OnAnketaSaved(string anketaId)
+        {
+            TemplatesViewModel.Refresh();
+            SelectedCharacterCard?.ReloadFields();
+        }
         public ReactiveCommand<Unit, Unit> FilterPrimaryCommand { get; }
         public ReactiveCommand<Unit, Unit> FilterSecondaryCommand { get; }
         public ReactiveCommand<Unit, Unit> FilterTertiaryCommand { get; }
@@ -1073,7 +1111,7 @@ namespace Writersword.Modules.Characters.ViewModels
 
             // Вкладка ставится последней: открытие персонажа само переводит
             // модуль на редактор, а запомненной могла быть другая вкладка.
-            MainTabIndex = Math.Clamp(place.MainTabIndex, 0, 3);
+            MainTabIndex = Math.Clamp(place.MainTabIndex, 0, 4);
         }
 
         private bool _isCardOpen;
@@ -1133,8 +1171,13 @@ namespace Writersword.Modules.Characters.ViewModels
 
             // Сервис персонажей нужен вкладке шаблонов, чтобы правка набора
             // разъезжалась по карточкам, к которым он подключён.
-            TemplatesViewModel = new CharactersTemplatesViewModel(anketaService, ActiveTemplateIds, characterService);
+            TemplatesViewModel = new CharactersTemplatesViewModel(anketaService, ActiveTemplateIds, characterService, avatarService);
             TemplatesViewModel.OnboardingRestartRequested += () => ShowOnboarding = true;
+            TemplatesViewModel.OpenAnketaRequested += OpenAnketaInDesigner;
+            TemplatesViewModel.CharactersUpdated += () => SelectedCharacterCard?.ReloadFields();
+
+            AnketasViewModel = new CharactersAnketasViewModel(anketaService, characterService);
+            AnketasViewModel.AnketaSaved += OnAnketaSaved;
 
             GraphViewModel = new CharactersGraphViewModel(characterService, relationshipService,
                 id => { MainTabIndex = 0; OpenCharacter(id); });
@@ -1151,6 +1194,8 @@ namespace Writersword.Modules.Characters.ViewModels
             GoToEditCommand = ReactiveCommand.Create(() => { MainTabIndex = 1; });
             GoToRelationshipsCommand = ReactiveCommand.Create(() => { MainTabIndex = 2; });
             GoToTemplatesCommand = ReactiveCommand.Create(() => { MainTabIndex = 3; });
+            GoToAnketasCommand = ReactiveCommand.Create(() => { MainTabIndex = 4; });
+            GoToLibraryCommand = ReactiveCommand.Create(() => { MainTabIndex = _lastLibraryTab; });
 
             GoToCharactersCommand.ThrownExceptions
                 .Subscribe(ex => _logger.Error(ex, "GoToCharacters failed")).DisposeWith(_disposables);

@@ -131,10 +131,12 @@
                             Command="{ReflectionBinding GoToRelationshipsCommand}"
                             Classes="tab"
                             Classes.tab-active="{Binding IsTab2Active}"/>
-					<Button Content="{x:Static loc:CharactersStrings.Tab_Templates}"
-                            Command="{ReflectionBinding GoToTemplatesCommand}"
+					<!-- Анкеты и шаблоны — одна вкладка с переключателем внутри:
+					     шаблон собирается из анкет, и это одна работа. -->
+					<Button Content="Шаблоны и анкеты"
+                            Command="{ReflectionBinding GoToLibraryCommand}"
                             Classes="tab"
-                            Classes.tab-active="{Binding IsTab3Active}"/>
+                            Classes.tab-active="{Binding IsLibraryTabActive}"/>
 				</StackPanel>
 			</Border>
 

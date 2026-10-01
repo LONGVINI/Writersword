@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
 using ReactiveUI;
@@ -11,6 +12,9 @@ using Geometry = Avalonia.Media.Geometry;
 using StreamGeometry = Avalonia.Media.StreamGeometry;
 using Writersword.Modules.TextEditor.Models.Styles;
 using Writersword.Modules.TextEditor.Contracts;
+using UnderlineStyle = Writersword.Modules.TextEditor.Models.Inline.UnderlineStyle;
+using EmphasisMark = Writersword.Modules.TextEditor.Models.Inline.EmphasisMark;
+using TextEffectPreset = Writersword.Modules.TextEditor.Models.Inline.TextEffectPreset;
 
 namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 {
@@ -23,10 +27,44 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public bool IsUnderline { get; set; }
+
+        /// <summary>Вид подчёркивания под кареткой. None — подчёркивания нет.</summary>
+        public UnderlineStyle UnderlineStyle { get; set; }
+
+        /// <summary>Цвет линии подчёркивания под кареткой. Null — как у букв.</summary>
+        public string? UnderlineColor { get; set; }
+
         public bool IsStrikethrough { get; set; }
+
+        /// <summary>Двойное зачёркивание под кареткой.</summary>
+        public bool IsDoubleStrikethrough { get; set; }
+
         public bool IsSuperscript { get; set; }
         public bool IsSubscript { get; set; }
         public bool IsAllCaps { get; set; }
+
+        /// <summary>Малые прописные под кареткой.</summary>
+        public bool IsSmallCaps { get; set; }
+
+        /// <summary>Скрытый текст под кареткой (w:vanish).</summary>
+        public bool IsHidden { get; set; }
+
+        /// <summary>Эффекты букв под кареткой: контур, тень, рельеф, гравировка.</summary>
+        public bool IsOutline { get; set; }
+        public bool IsShadow { get; set; }
+        public bool IsEmboss { get; set; }
+        public bool IsImprint { get; set; }
+
+        /// <summary>Знак ударения под кареткой. None — знака нет.</summary>
+        public EmphasisMark EmphasisMark { get; set; }
+
+        /// <summary>У текста под кареткой есть рамка вокруг знаков.</summary>
+        public bool HasCharBorder { get; set; }
+
+        /// <summary>Свечение и отражение под кареткой (эффекты Word 2010+).</summary>
+        public bool IsGlow { get; set; }
+        public bool IsReflection { get; set; }
+
         public bool IsBulletList { get; set; }
         public bool IsNumberedList { get; set; }
         public string? FontFamily { get; set; }
@@ -67,10 +105,38 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private bool _isBold;
         private bool _isItalic;
         private bool _isUnderline;
+
+        // Вид подчёркивания под кареткой — для отметки в меню подчёркивания.
+        private UnderlineStyle _underlineStyle;
+
+        // Цвет линии подчёркивания под кареткой. Null — как у букв.
+        private string? _underlineColor;
+
+        // Вид, который ставит сама кнопка подчёркивания (без меню): последний выбранный,
+        // как в Word.
+        private UnderlineStyle _lastUnderlineStyle = UnderlineStyle.Single;
+
         private bool _isStrikethrough;
+        private bool _isDoubleStrikethrough;
+
+        // Вид, который ставит сама кнопка зачёркивания: последний выбранный в меню.
+        private bool _lastStrikeDouble;
         private bool _isSuperscript;
         private bool _isSubscript;
         private bool _isAllCaps;
+
+        // Эффекты из меню «Эффекты текста»: состояние под кареткой.
+        private bool _isSmallCaps;
+        private bool _isHiddenText;
+        private bool _isTextOutline;
+        private bool _isTextShadow;
+        private bool _isTextEmboss;
+        private bool _isTextImprint;
+        private EmphasisMark _emphasisMark;
+        private bool _isCharBorder;
+        private bool _isTextGlow;
+        private bool _isTextReflection;
+
         private bool _isBulletList;
         private bool _isNumberedList;
         private string? _fontFamily;
@@ -155,11 +221,53 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             set => this.RaiseAndSetIfChanged(ref _isUnderline, value);
         }
 
+        /// <summary>
+        /// Вид подчёркивания под кареткой ключом для отметки в меню. У текста без
+        /// подчёркивания — None, и отмечена плитка «Нет».
+        /// </summary>
+        public string UnderlineStyleKey => _underlineStyle.ToString();
+
+        /// <summary>
+        /// Вид, который ставит кнопка подчёркивания. Им нарисована линия под буквой на
+        /// самой кнопке — видно, что ляжет по нажатию.
+        /// </summary>
+        public UnderlineStyle LastUnderlineStyle => _lastUnderlineStyle;
+
+        /// <summary>Линия подчёркивания под кареткой «авто» — цвета букв.</summary>
+        public bool IsUnderlineColorAuto => _underlineColor is null;
+
+        // Цвет в меню подчёркивания. Контекст каретки пишет в поле напрямую (без
+        // применения); выбор человеком идёт через сеттер и красит линию выделения.
+        // При «авто» показывает цвет букв — им линия и нарисована.
+        private string _underlineColorPick = "#1A1A1A";
+        public string UnderlineColorPick
+        {
+            get => _underlineColorPick;
+            set
+            {
+                if (string.Equals(_underlineColorPick, value, StringComparison.OrdinalIgnoreCase)) return;
+                this.RaiseAndSetIfChanged(ref _underlineColorPick, value);
+                if (!string.IsNullOrWhiteSpace(value)) _target.SetUnderlineColor(value);
+            }
+        }
+
         public bool IsStrikethrough
         {
             get => _isStrikethrough;
             set => this.RaiseAndSetIfChanged(ref _isStrikethrough, value);
         }
+
+        /// <summary>Под кареткой есть зачёркивание — одинарное или двойное. Горит кнопка.</summary>
+        public bool IsStrikeAny => _isStrikethrough || _isDoubleStrikethrough;
+
+        /// <summary>Вид зачёркивания под кареткой: None, Single или Double — отметка плитки в меню.</summary>
+        public string StrikeKindKey => _isDoubleStrikethrough ? "Double" : _isStrikethrough ? "Single" : "None";
+
+        /// <summary>
+        /// Вид, который ставит сама кнопка зачёркивания (без меню): последний выбранный,
+        /// как у подчёркивания. Нарисован на кнопке.
+        /// </summary>
+        public bool LastStrikeDouble => _lastStrikeDouble;
 
         public bool IsSuperscript
         {
@@ -178,6 +286,59 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             get => _isAllCaps;
             set => this.RaiseAndSetIfChanged(ref _isAllCaps, value);
         }
+
+        /// <summary>Малые прописные под кареткой — отметка в меню «Эффекты текста».</summary>
+        public bool IsSmallCaps => _isSmallCaps;
+
+        /// <summary>Скрытый текст под кареткой.</summary>
+        public bool IsHiddenText => _isHiddenText;
+
+        /// <summary>Контур букв под кареткой.</summary>
+        public bool IsTextOutline => _isTextOutline;
+
+        /// <summary>Тень букв под кареткой.</summary>
+        public bool IsTextShadow => _isTextShadow;
+
+        /// <summary>Рельеф букв под кареткой.</summary>
+        public bool IsTextEmboss => _isTextEmboss;
+
+        /// <summary>Гравировка букв под кареткой.</summary>
+        public bool IsTextImprint => _isTextImprint;
+
+        /// <summary>Рамка вокруг знаков под кареткой.</summary>
+        public bool IsCharBorder => _isCharBorder;
+
+        /// <summary>Свечение вокруг букв под кареткой.</summary>
+        public bool IsTextGlow => _isTextGlow;
+
+        /// <summary>Отражение букв под кареткой.</summary>
+        public bool IsTextReflection => _isTextReflection;
+
+        /// <summary>
+        /// Знак ударения под кареткой: None, Dot, Comma, Circle или UnderDot — отметка
+        /// плитки в меню.
+        /// </summary>
+        public string EmphasisMarkKey => _emphasisMark.ToString();
+
+        /// <summary>
+        /// Под кареткой есть хоть один эффект из меню «Эффекты текста» — кнопка меню
+        /// подсвечена, чтобы эффект было видно и без открытия меню.
+        /// </summary>
+        public bool IsAnyTextEffect =>
+            _isAllCaps || _isSmallCaps || _isHiddenText
+            || _isTextOutline || _isTextShadow || _isTextEmboss || _isTextImprint
+            || _emphasisMark != EmphasisMark.None || _isCharBorder
+            || _isTextGlow || _isTextReflection;
+
+        /// <summary>
+        /// Под кареткой есть то, что входит в набор «Мои эффекты»: эффекты букв, рамка
+        /// знаков или знак ударения. Регистр и скрытый текст — не эффекты вида, и из
+        /// них набор не заводится.
+        /// </summary>
+        public bool CanSaveCaretTextEffectPreset =>
+            _isTextOutline || _isTextShadow || _isTextEmboss || _isTextImprint
+            || _isTextGlow || _isTextReflection
+            || _emphasisMark != EmphasisMark.None || _isCharBorder;
 
         public bool IsBulletList
         {
@@ -532,7 +693,20 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand BoldCommand { get; }
         public ICommand ItalicCommand { get; }
         public ICommand UnderlineCommand { get; }
+
+        /// <summary>
+        /// Плитка вида в меню подчёркивания. CommandParameter — имя вида
+        /// (Single, Dotted, Wave…); None снимает подчёркивание.
+        /// </summary>
+        public ICommand UnderlineStyleCommand { get; }
+
+        /// <summary>Цвет линии подчёркивания «как у текста».</summary>
+        public ICommand UnderlineColorAutoCommand { get; }
+
         public ICommand StrikethroughCommand { get; }
+
+        /// <summary>Вид зачёркивания из меню кнопки: None, Single или Double.</summary>
+        public ICommand StrikeKindCommand { get; }
         public ICommand SuperscriptCommand { get; }
         public ICommand SubscriptCommand { get; }
         public ICommand AllCapsCommand { get; }
@@ -565,19 +739,117 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// <summary>иЗМЕНИТЬ РЕГИСТР — инвертирует регистр каждого символа.</summary>
         public ICommand CaseToggleCommand { get; }
 
-        // --- Команды: эффекты текста (заготовки) ---
+        // --- Команды: эффекты текста (меню «Эффекты текста») ---
 
-        /// <summary>Контур текста — заготовка для будущей реализации.</summary>
+        /// <summary>Контур букв (w:outline): включает и снимает.</summary>
         public ICommand TextOutlineCommand { get; }
 
-        /// <summary>Тень текста — заготовка для будущей реализации.</summary>
+        /// <summary>Тень букв (w:shadow): включает и снимает.</summary>
         public ICommand TextShadowCommand { get; }
 
-        /// <summary>Отражение текста — заготовка для будущей реализации.</summary>
+        /// <summary>Рельеф (w:emboss): включает и снимает.</summary>
+        public ICommand TextEmbossCommand { get; }
+
+        /// <summary>Гравировка (w:imprint): включает и снимает.</summary>
+        public ICommand TextImprintCommand { get; }
+
+        /// <summary>Скрытый текст (w:vanish), Ctrl+Shift+H: включает и снимает.</summary>
+        public ICommand HiddenTextCommand { get; }
+
+        /// <summary>Малые прописные, Ctrl+Shift+K: включает и снимает.</summary>
+        public ICommand SmallCapsCommand { get; }
+
+        /// <summary>Знак ударения: параметр — None, Dot, Comma, Circle или UnderDot.</summary>
+        public ICommand EmphasisMarkCommand { get; }
+
+        /// <summary>Рамка вокруг знаков (w:bdr): включает и снимает.</summary>
+        public ICommand CharBorderCommand { get; }
+
+        /// <summary>Свечение вокруг букв (вид Word по умолчанию): включает и снимает.</summary>
+        public ICommand TextGlowCommand { get; }
+
+        /// <summary>Отражение букв (вид Word по умолчанию): включает и снимает.</summary>
         public ICommand TextReflectionCommand { get; }
 
-        /// <summary>Свечение текста — заготовка для будущей реализации.</summary>
-        public ICommand TextGlowCommand { get; }
+        /// <summary>Открывает окно «Эффекты текста» со всеми настройками.</summary>
+        public ICommand OpenTextEffectsCommand { get; }
+
+        /// <summary>
+        /// Просьба открыть окно «Эффекты текста». Окно — оверлей модуля, открывает его
+        /// вид вкладки (RibbonHomeTab): вьюмодель о видах не знает.
+        /// </summary>
+        public event Action? TextEffectsDialogRequested;
+
+        // --- Мои эффекты ---
+
+        // Хранилище наборов — редактор (TextEditorViewModel). Подключается после
+        // создания ленты: до него раздел «Мои эффекты» пуст.
+        private ITextEffectPresetHost? _presetHost;
+
+        /// <summary>Наборы «Мои эффекты» — плитки раздела в меню «A».</summary>
+        public ObservableCollection<TextEffectPreset> TextEffectPresets { get; } = new();
+
+        /// <summary>Есть хоть один набор: вместо подсказки показываются плитки.</summary>
+        public bool HasTextEffectPresets => TextEffectPresets.Count > 0;
+
+        /// <summary>Ставит набор выделению. Параметр — набор.</summary>
+        public ICommand ApplyTextEffectPresetCommand { get; }
+
+        /// <summary>Заводит набор из эффектов текста под кареткой.</summary>
+        public ICommand SaveCaretTextEffectPresetCommand { get; }
+
+        /// <summary>
+        /// Подключает хранилище наборов и показывает его наборы. Лента узнаёт о каждой
+        /// смене списка — и своей, и сделанной в другом редакторе.
+        /// </summary>
+        public void AttachPresetHost(ITextEffectPresetHost host)
+        {
+            if (_presetHost is not null)
+                _presetHost.TextEffectPresetsChanged -= RebuildTextEffectPresets;
+
+            _presetHost = host;
+            _presetHost.TextEffectPresetsChanged += RebuildTextEffectPresets;
+            RebuildTextEffectPresets();
+        }
+
+        /// <summary>Свободное имя для нового набора.</summary>
+        public string SuggestTextEffectPresetName()
+            => _presetHost?.SuggestTextEffectPresetName() ?? TextEffectPreset.DefaultName;
+
+        /// <summary>Заводит готовый набор — например, собранный в окне «Эффекты текста».</summary>
+        public void SaveTextEffectPreset(TextEffectPreset preset) => _presetHost?.AddTextEffectPreset(preset);
+
+        /// <summary>Переименовывает набор.</summary>
+        public void RenameTextEffectPreset(TextEffectPreset preset, string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return;
+            _presetHost?.ReplaceTextEffectPreset(preset with { Name = name.Trim() });
+        }
+
+        /// <summary>
+        /// Заменяет вид набора эффектами текста под кареткой; имя и место в списке
+        /// остаются. Если под кареткой эффектов нет, набор не трогается.
+        /// </summary>
+        public void ReplaceTextEffectPresetFromCaret(TextEffectPreset preset)
+        {
+            var captured = _presetHost?.CaptureCaretTextEffectPreset(preset.Name);
+            if (captured is null || captured.IsBlank) return;
+
+            _presetHost!.ReplaceTextEffectPreset(captured with { Id = preset.Id });
+        }
+
+        /// <summary>Удаляет набор.</summary>
+        public void DeleteTextEffectPreset(TextEffectPreset preset) => _presetHost?.RemoveTextEffectPreset(preset.Id);
+
+        private void RebuildTextEffectPresets()
+        {
+            TextEffectPresets.Clear();
+            if (_presetHost is not null)
+                foreach (var preset in _presetHost.TextEffectPresets)
+                    TextEffectPresets.Add(preset);
+
+            this.RaisePropertyChanged(nameof(HasTextEffectPresets));
+        }
 
         // --- Рамка абзаца ---
 
@@ -815,6 +1087,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand AlignCenterCommand { get; }
         public ICommand AlignRightCommand { get; }
         public ICommand AlignJustifyCommand { get; }
+
+        /// <summary>Растянутое выравнивание: по ширине вместе с последней строкой (Ctrl+Shift+J).</summary>
+        public ICommand AlignDistributeCommand { get; }
         public ICommand SetLineSpacingCommand { get; }
         public ICommand SpaceBeforeCommand { get; }
         public ICommand SpaceAfterCommand { get; }
@@ -911,8 +1186,40 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             BoldCommand = ReactiveCommand.Create(() => _target.ToggleBold());
             ItalicCommand = ReactiveCommand.Create(() => _target.ToggleItalic());
-            UnderlineCommand = ReactiveCommand.Create(() => _target.ToggleUnderline());
-            StrikethroughCommand = ReactiveCommand.Create(() => _target.ToggleStrikethrough());
+            UnderlineCommand = ReactiveCommand.Create(() => _target.ToggleUnderlineStyle(_lastUnderlineStyle));
+            UnderlineStyleCommand = ReactiveCommand.Create<string>(param =>
+            {
+                if (!Enum.TryParse(param, out UnderlineStyle style)) return;
+
+                if (style != UnderlineStyle.None)
+                {
+                    _lastUnderlineStyle = style;
+                    this.RaisePropertyChanged(nameof(LastUnderlineStyle));
+                }
+
+                _target.SetUnderlineStyle(style);
+            });
+            UnderlineColorAutoCommand = ReactiveCommand.Create(() => _target.SetUnderlineColor(null));
+            // Кнопка ставит или снимает последний выбранный вид — как подчёркивание.
+            StrikethroughCommand = ReactiveCommand.Create(() =>
+            {
+                if (_lastStrikeDouble) _target.ToggleDoubleStrikethrough();
+                else _target.ToggleStrikethrough();
+            });
+            StrikeKindCommand = ReactiveCommand.Create<string>(kind =>
+            {
+                bool enabled = kind is "Single" or "Double";
+                bool isDouble = kind == "Double";
+
+                // Выбранный вид запоминается, и дальше его ставит сама кнопка.
+                if (enabled && _lastStrikeDouble != isDouble)
+                {
+                    _lastStrikeDouble = isDouble;
+                    this.RaisePropertyChanged(nameof(LastStrikeDouble));
+                }
+
+                _target.SetStrikethrough(enabled, isDouble);
+            });
             SuperscriptCommand = ReactiveCommand.Create(() => _target.ToggleSuperscript());
             SubscriptCommand = ReactiveCommand.Create(() => _target.ToggleSubscript());
             AllCapsCommand = ReactiveCommand.Create(() => _target.ToggleAllCaps());
@@ -949,11 +1256,39 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             CaseTitleCommand = ReactiveCommand.Create(() => _target.ChangeCase(TextCaseMode.Title));
             CaseToggleCommand = ReactiveCommand.Create(() => _target.ChangeCase(TextCaseMode.Toggle));
 
-            // Эффекты текста — заготовки.
-            TextOutlineCommand = ReactiveCommand.Create(() => { });
-            TextShadowCommand = ReactiveCommand.Create(() => { });
-            TextReflectionCommand = ReactiveCommand.Create(() => { });
-            TextGlowCommand = ReactiveCommand.Create(() => { });
+            // Эффекты текста: плитка включает эффект, если его нет под кареткой, и
+            // снимает, если есть, — одно значение на всё выделение, как в окне шрифта Word.
+            TextOutlineCommand = ReactiveCommand.Create(() => _target.SetTextEffect(TextEffectKind.Outline, !_isTextOutline));
+            TextShadowCommand = ReactiveCommand.Create(() => _target.SetTextEffect(TextEffectKind.Shadow, !_isTextShadow));
+            TextEmbossCommand = ReactiveCommand.Create(() => _target.SetTextEffect(TextEffectKind.Emboss, !_isTextEmboss));
+            TextImprintCommand = ReactiveCommand.Create(() => _target.SetTextEffect(TextEffectKind.Imprint, !_isTextImprint));
+            HiddenTextCommand = ReactiveCommand.Create(() => _target.SetHiddenText(!_isHiddenText));
+            SmallCapsCommand = ReactiveCommand.Create(() => _target.ToggleSmallCaps());
+            EmphasisMarkCommand = ReactiveCommand.Create<string>(param =>
+            {
+                if (!Enum.TryParse(param, out EmphasisMark mark)) return;
+                _target.SetEmphasisMark(mark);
+            });
+            CharBorderCommand = ReactiveCommand.Create(() => _target.SetCharBorder(!_isCharBorder));
+            TextGlowCommand = ReactiveCommand.Create(() => _target.SetTextEffect(TextEffectKind.Glow, !_isTextGlow));
+            TextReflectionCommand = ReactiveCommand.Create(() => _target.SetTextEffect(TextEffectKind.Reflection, !_isTextReflection));
+            OpenTextEffectsCommand = ReactiveCommand.Create(() => TextEffectsDialogRequested?.Invoke());
+
+            // Мои эффекты: набор ставится одним нажатием; «сохранить» заводит набор из
+            // текста под кареткой под свободным именем — переименовать можно в меню плитки.
+            ApplyTextEffectPresetCommand = ReactiveCommand.Create<TextEffectPreset>(preset =>
+            {
+                if (preset is not null) _presetHost?.ApplyTextEffectPreset(preset);
+            });
+            SaveCaretTextEffectPresetCommand = ReactiveCommand.Create(() =>
+            {
+                if (_presetHost is null) return;
+
+                var captured = _presetHost.CaptureCaretTextEffectPreset(_presetHost.SuggestTextEffectPresetName());
+                if (captured is null || captured.IsBlank) return;
+
+                _presetHost.AddTextEffectPreset(captured);
+            });
 
             BulletListCommand = ReactiveCommand.Create(() => _target.ToggleBulletList());
             NumberedListCommand = ReactiveCommand.Create(() => _target.ToggleNumberedList());
@@ -1012,6 +1347,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             AlignCenterCommand = ReactiveCommand.Create(() => _target.SetAlignment(TextAlignment.Center));
             AlignRightCommand = ReactiveCommand.Create(() => _target.SetAlignment(TextAlignment.Right));
             AlignJustifyCommand = ReactiveCommand.Create(() => _target.SetAlignment(TextAlignment.Justify));
+            AlignDistributeCommand = ReactiveCommand.Create(() => _target.SetAlignment(TextAlignment.Distribute));
 
             // CommandParameter передаётся строкой из AXAML ("1.0", "1.5" и т.д.).
             SetLineSpacingCommand = ReactiveCommand.Create<string>(param =>
@@ -1114,10 +1450,24 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             _isBold = ctx.IsBold;
             _isItalic = ctx.IsItalic;
             _isUnderline = ctx.IsUnderline;
+            _underlineStyle = ctx.UnderlineStyle;
+            _underlineColor = ctx.UnderlineColor;
+            _underlineColorPick = ctx.UnderlineColor ?? ctx.TextColor ?? "#1A1A1A";
             _isStrikethrough = ctx.IsStrikethrough;
+            _isDoubleStrikethrough = ctx.IsDoubleStrikethrough;
             _isSuperscript = ctx.IsSuperscript;
             _isSubscript = ctx.IsSubscript;
             _isAllCaps = ctx.IsAllCaps;
+            _isSmallCaps = ctx.IsSmallCaps;
+            _isHiddenText = ctx.IsHidden;
+            _isTextOutline = ctx.IsOutline;
+            _isTextShadow = ctx.IsShadow;
+            _isTextEmboss = ctx.IsEmboss;
+            _isTextImprint = ctx.IsImprint;
+            _emphasisMark = ctx.EmphasisMark;
+            _isCharBorder = ctx.HasCharBorder;
+            _isTextGlow = ctx.IsGlow;
+            _isTextReflection = ctx.IsReflection;
             _isBulletList = ctx.IsBulletList;
             _isNumberedList = ctx.IsNumberedList;
             _fontFamily = ctx.FontFamily;
@@ -1147,10 +1497,27 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             this.RaisePropertyChanged(nameof(IsBold));
             this.RaisePropertyChanged(nameof(IsItalic));
             this.RaisePropertyChanged(nameof(IsUnderline));
+            this.RaisePropertyChanged(nameof(UnderlineStyleKey));
+            this.RaisePropertyChanged(nameof(IsUnderlineColorAuto));
+            this.RaisePropertyChanged(nameof(UnderlineColorPick));
             this.RaisePropertyChanged(nameof(IsStrikethrough));
+            this.RaisePropertyChanged(nameof(IsStrikeAny));
+            this.RaisePropertyChanged(nameof(StrikeKindKey));
             this.RaisePropertyChanged(nameof(IsSuperscript));
             this.RaisePropertyChanged(nameof(IsSubscript));
             this.RaisePropertyChanged(nameof(IsAllCaps));
+            this.RaisePropertyChanged(nameof(IsSmallCaps));
+            this.RaisePropertyChanged(nameof(IsHiddenText));
+            this.RaisePropertyChanged(nameof(IsTextOutline));
+            this.RaisePropertyChanged(nameof(IsTextShadow));
+            this.RaisePropertyChanged(nameof(IsTextEmboss));
+            this.RaisePropertyChanged(nameof(IsTextImprint));
+            this.RaisePropertyChanged(nameof(IsCharBorder));
+            this.RaisePropertyChanged(nameof(IsTextGlow));
+            this.RaisePropertyChanged(nameof(IsTextReflection));
+            this.RaisePropertyChanged(nameof(EmphasisMarkKey));
+            this.RaisePropertyChanged(nameof(IsAnyTextEffect));
+            this.RaisePropertyChanged(nameof(CanSaveCaretTextEffectPreset));
             this.RaisePropertyChanged(nameof(IsBulletList));
             this.RaisePropertyChanged(nameof(IsNumberedList));
             this.RaisePropertyChanged(nameof(CurrentFontFamily));

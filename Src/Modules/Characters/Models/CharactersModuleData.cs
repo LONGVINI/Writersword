@@ -20,6 +20,13 @@ namespace Writersword.Modules.Characters.Models
         /// <summary>Id активных шаблонов — применяются к каждому новому персонажу</summary>
         public List<string> ActiveTemplateIds { get; set; } = new();
 
+        /// <summary>
+        /// Шаблон проекта: набор анкет, который получает каждый новый персонаж.
+        /// Его анкеты и лежат в ActiveTemplateIds; здесь — какой шаблон их задал,
+        /// чтобы правка шаблона доходила до состава. Пусто — шаблон не выбран.
+        /// </summary>
+        public string? ProjectTemplateId { get; set; }
+
         public List<Character> Characters { get; set; } = new();
 
         /// <summary>

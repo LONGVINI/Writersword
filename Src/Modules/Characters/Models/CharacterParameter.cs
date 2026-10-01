@@ -165,6 +165,41 @@ namespace Writersword.Modules.Characters.Models
         private bool _allowCustomColor = true;
         public bool AllowCustomColor { get => _allowCustomColor; set => Set(ref _allowCustomColor, value); }
 
+        private double? _inputWidth;
+        public double? InputWidth { get => _inputWidth; set => Set(ref _inputWidth, value); }
+
+        // Подпись и число — тоже копия определения из анкеты (CopyDisplay).
+
+        private bool _labelBold;
+        public bool LabelBold { get => _labelBold; set => Set(ref _labelBold, value); }
+
+        private string _labelColor = string.Empty;
+        public string LabelColor { get => _labelColor; set => Set(ref _labelColor, value); }
+
+        private string _labelIcon = string.Empty;
+        public string LabelIcon { get => _labelIcon; set => Set(ref _labelIcon, value); }
+
+        private int _decimals;
+        public int Decimals { get => _decimals; set => Set(ref _decimals, value); }
+
+        private double? _numberMin;
+        public double? NumberMin { get => _numberMin; set => Set(ref _numberMin, value); }
+
+        private double? _numberMax;
+        public double? NumberMax { get => _numberMax; set => Set(ref _numberMax, value); }
+
+        private bool _useStep;
+        public bool UseStep { get => _useStep; set => Set(ref _useStep, value); }
+
+        private CharacterStepRule _stepRule = CharacterStepRule.Linear;
+        public CharacterStepRule StepRule { get => _stepRule; set => Set(ref _stepRule, value); }
+
+        private string _stepValuesRaw = string.Empty;
+        public string StepValuesRaw { get => _stepValuesRaw; set => Set(ref _stepValuesRaw, value); }
+
+        private string _ratingGlyph = string.Empty;
+        public string RatingGlyph { get => _ratingGlyph; set => Set(ref _ratingGlyph, value); }
+
         // ── Свободное число: способ и вторая граница ─────────────────────
 
         /// <summary>

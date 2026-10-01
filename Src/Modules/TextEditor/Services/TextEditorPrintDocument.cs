@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using SkiaSharp;
 using Writersword.Core.Interfaces.Print;
 using Writersword.Core.Models.Print;
@@ -33,11 +34,55 @@ namespace Writersword.Modules.TextEditor.Services
             _document = document ?? throw new ArgumentNullException(nameof(document));
             _pageSettings = ConvertPageSettings(document.PageSettings);
             _renderer = new SKTextRenderer();
+            _styles = new StyleResolver(document.Styles);
+            ReserveHeaderFooterSpace();
             // Габарит картинки в строке: без него объект встал бы в строку нулевой ширины
             // и переносы строк в печати разошлись бы с редактором.
             _renderer.InlineImageSize = GetInlineImageSize;
-            _styles = new StyleResolver(document.Styles);
             _pageLayout = _renderer.BuildPageLayout(_document, _pageSettings, _styles);
+            _decorations = BuildDecorations();
+        }
+
+        // Оформление листов печати: номера и видимость колонтитулов. Считается по
+        // раскладке печати, а не по полотну: печать может идти без открытого редактора.
+        private readonly PageDecoration[] _decorations;
+
+        /// <summary>
+        /// Сведения о листах печати: где начинается каждый абзац и где главы. Индекс
+        /// абзаца в раскладке печати — номер блока потока без разрывов страницы: так их
+        /// считает SKTextRenderer.BuildPageLayout.
+        /// </summary>
+        private PageDecoration[] BuildDecorations()
+        {
+            var settings = _document.HeaderFooter;
+            if (settings is null || settings.IsEmpty) return Array.Empty<PageDecoration>();
+
+            var blocks = new System.Collections.Generic.List<BlockModel>();
+            foreach (var section in _document.Sections)
+                foreach (var block in section.Blocks)
+                {
+                    if (block is BreakBlock bb && bb.BreakType == BreakType.Page) continue;
+                    blocks.Add(block);
+                }
+
+            var starts = new System.Collections.Generic.Dictionary<Guid, int>();
+            var chapters = new System.Collections.Generic.HashSet<int>();
+
+            for (int pi = 0; pi < _pageLayout.Pages.Count; pi++)
+            {
+                foreach (var para in _pageLayout.Pages[pi].Paragraphs)
+                {
+                    if (para.LineFrom != 0) continue;
+                    if (para.ParagraphIndex < 0 || para.ParagraphIndex >= blocks.Count) continue;
+                    if (blocks[para.ParagraphIndex] is not ParagraphBlock paragraph) continue;
+
+                    starts.TryAdd(paragraph.Id, pi);
+                    if (HeadingCollapseService.LevelOf(paragraph, _document) == 1)
+                        chapters.Add(pi);
+                }
+            }
+
+            return PageNumbering.Compute(settings, _pageLayout.PageCount, starts, chapters);
         }
 
         /// <summary>
@@ -99,11 +144,71 @@ namespace Writersword.Modules.TextEditor.Services
             try
             {
                 SKTextRenderer.RenderPage(canvas, page, SKColors.Transparent);
+                RenderHeaderFooter(canvas, pageIndex, page);
             }
             finally
             {
                 SKTextRenderer.PrintImageResolver = null;
             }
+        }
+
+        /// <summary>
+        /// Пишет листы печати в PDF. Это та же вёрстка страниц и тот же движок, что у
+        /// печати: PDF выходит полным — со всеми эффектами букв, таблицами, картинками,
+        /// фигурами и колонтитулами — из любого режима редактора, а не только из
+        /// режима «Страницы». Скрытый текст в файл не идёт, как и на печать.
+        /// </summary>
+        /// <param name="outputPath">Путь к создаваемому файлу .pdf.</param>
+        /// <param name="rasterDpi">Разрешение, в котором PDF растрирует то, что не выражается векторно.</param>
+        public void WritePdf(string outputPath, float rasterDpi)
+        {
+            using var stream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None);
+
+            // От значений по умолчанию, а не с нуля: у пустых сведений качество сжатия
+            // картинок равно нулю, и перекодированный растр выходил кашей.
+            var metadata = SKDocumentPdfMetadata.Default;
+            metadata.Title = _document.Title ?? string.Empty;
+            metadata.Creator = "Writersword";
+            metadata.Producer = "Writersword";
+            metadata.Creation = DateTime.Now;
+            metadata.Modified = DateTime.Now;
+            metadata.RasterDpi = rasterDpi;
+
+            using var pdf = SKDocument.CreatePdf(stream, metadata)
+                ?? throw new InvalidOperationException("Не удалось создать PDF-документ (SkiaSharp вернул null).");
+
+            for (int pi = 0; pi < _pageLayout.Pages.Count; pi++)
+            {
+                var page = _pageLayout.Pages[pi];
+                var canvas = pdf.BeginPage(page.PageWidthPt, page.PageHeightPt);
+                RenderPage(pi, canvas, page.PageWidthPt, page.PageHeightPt);
+                pdf.EndPage();
+            }
+
+            pdf.Close();
+        }
+
+        /// <summary>Колонтитулы листа печати — тем же художником, что на полотне.</summary>
+        private void RenderHeaderFooter(SKCanvas canvas, int pageIndex, Core.Models.Rendering.SKPageContent page)
+        {
+            var settings = _document.HeaderFooter;
+            if (settings is null || pageIndex >= _decorations.Length) return;
+
+            float marginRight = Math.Max(page.PageWidthPt - page.MarginLeftPt - page.TextWidthPt, 0f);
+            float marginBottom = Math.Max(page.PageHeightPt - page.MarginTopPt - page.TextHeightPt, 0f);
+
+            var box = new HeaderFooterPageBox(
+                0f, 0f, page.PageWidthPt, page.PageHeightPt,
+                page.MarginLeftPt, marginRight, page.MarginTopPt, marginBottom,
+                (float)(_document.PageSettings.HeaderDistanceMm * 72.0 / 25.4),
+                (float)(_document.PageSettings.FooterDistanceMm * 72.0 / 25.4));
+
+            var color = new SKColor(0x1A, 0x1A, 0x1A);
+            if (!string.IsNullOrWhiteSpace(settings.TextColor) && SKColor.TryParse(settings.TextColor, out var own))
+                color = own;
+
+            HeaderFooterPainter.DrawPage(canvas, settings, _decorations[pageIndex], box, color,
+                SKTextRenderer.ResolveTypeface, _styles.ResolveFontFamily(StyleResolver.DefaultStyleName));
         }
 
         /// <summary>
@@ -128,6 +233,23 @@ namespace Writersword.Modules.TextEditor.Services
                 }
             }
             return null;
+        }
+
+        /// <summary>
+        /// Колонтитул выше поля листа отодвигает текст, как на полотне: поле печати
+        /// увеличивается до места, которое колонтитул занимает.
+        /// </summary>
+        private void ReserveHeaderFooterSpace()
+        {
+            const double pointsPerMm = 72.0 / 25.4;
+
+            var (top, bottom) = HeaderFooterPainter.BodyReservePt(_document.HeaderFooter,
+                (float)(_pageSettings.HeaderDistanceMm * pointsPerMm),
+                (float)(_pageSettings.FooterDistanceMm * pointsPerMm),
+                SKTextRenderer.ResolveTypeface, _styles.ResolveFontFamily(StyleResolver.DefaultStyleName));
+
+            if (top > 0f) _pageSettings.MarginTopMm = Math.Max(_pageSettings.MarginTopMm, top / pointsPerMm);
+            if (bottom > 0f) _pageSettings.MarginBottomMm = Math.Max(_pageSettings.MarginBottomMm, bottom / pointsPerMm);
         }
 
         // ── Конвертация PageSettings ──────────────────────────────────────

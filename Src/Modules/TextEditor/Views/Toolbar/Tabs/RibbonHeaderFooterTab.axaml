@@ -1,0 +1,792 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="using:Writersword.Modules.TextEditor.Views.Shared"
+             xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
+             xmlns:vmroot="using:Writersword.Modules.TextEditor.ViewModels"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
+             xmlns:controls="using:Writersword.Styles.UserControls"
+             x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonHeaderFooterTab"
+             x:DataType="vm:RibbonHeaderFooterTabViewModel">
+
+	<!--
+	    Контекстная вкладка «Колонтитулы». Видна, пока идёт работа с колонтитулами:
+	    после двойного щелчка по полю листа и после кнопок на «Вставке».
+
+	    Кнопки нарисованы маленькими листами: на каждом видно, что кнопка делает с
+	    листом — где встаёт номер, какой лист остаётся без номера, какие колонтитулы
+	    исчезают. Подписи под кнопками короткие, подробности — во всплывающих
+	    подсказках.
+
+	    Слева направо — от общего к частному: сами колонтитулы и номер; как пишется
+	    номер и с какого числа начинается; шрифт; что делать во всём документе; что
+	    делать с этой страницей (без разрывов разделов, в отличие от Word); список
+	    всех исключений; выход.
+	-->
+
+	<UserControl.Styles>
+
+		<Style Selector="Button.RibbonBtn">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4"/>
+			<Setter Property="MinWidth"                   Value="26"/>
+			<Setter Property="MinHeight"                  Value="26"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="Button.RibbonBtnLarge">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4 2"/>
+			<Setter Property="MinWidth"                   Value="40"/>
+			<!-- 56 — общая для всех вкладок высота тела группы: столько занимают
+			     два ряда кнопок по 26 в группах «Шрифт» и «Абзац» на «Главной». -->
+			<Setter Property="MinHeight"                  Value="56"/>
+			<Setter Property="VerticalAlignment"          Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="ToggleButton.RibbonToggle">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4"/>
+			<Setter Property="MinWidth"                   Value="26"/>
+			<Setter Property="MinHeight"                  Value="26"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggle /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggle:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggle:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggle:checked /template/ ContentPresenter">
+			<Setter Property="Background"             Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush"            Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggle:checked:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="Border.RibbonGroup">
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Padding"         Value="6 4 6 0"/>
+			<Setter Property="Margin"          Value="2 3"/>
+		</Style>
+
+		<Style Selector="Border.RibbonGroupCollapsed">
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Padding"         Value="2 4 2 0"/>
+			<Setter Property="Margin"          Value="2 3"/>
+		</Style>
+
+		<Style Selector="Grid.RibbonGroupLabelGrid">
+			<Setter Property="Margin" Value="0 3 0 2"/>
+		</Style>
+
+		<Style Selector="TextBlock.RibbonGroupLabel">
+			<Setter Property="FontSize"            Value="10"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="TextAlignment"       Value="Center"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
+		</Style>
+
+		<!-- Подпись слева от числового поля: та же роль, что у подписи группы,
+		     но в строку с полем и без растяжки на всю ширину. -->
+		<Style Selector="TextBlock.RibbonFieldLabel">
+			<Setter Property="FontSize"          Value="11"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+		<!-- Поле названия оглавления. Рамка тонкая, как у числовых полей ленты:
+		     это поле ввода, а не кнопка, и подавать его кнопкой значит обещать
+		     нажатие. -->
+		<Style Selector="TextBox.RibbonInput">
+			<Setter Property="Background"               Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="Foreground"               Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="BorderBrush"              Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"          Value="1"/>
+			<Setter Property="CornerRadius"             Value="3"/>
+			<Setter Property="FontSize"                 Value="11"/>
+			<Setter Property="Padding"                  Value="4 0"/>
+			<Setter Property="MinHeight"                Value="24"/>
+			<Setter Property="Height"                   Value="24"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="CaretBrush"               Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="SelectionBrush"           Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="SelectionForegroundBrush" Value="White"/>
+		</Style>
+		<Style Selector="TextBox.RibbonInput:focus /template/ Border#PART_BorderElement">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+
+		<!-- Большая кнопка-переключатель: как большая кнопка, но горит, пока включена. -->
+		<Style Selector="ToggleButton.RibbonToggleLarge">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4 2"/>
+			<Setter Property="MinWidth"                   Value="52"/>
+			<Setter Property="MinHeight"                  Value="56"/>
+			<Setter Property="VerticalAlignment"          Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggleLarge /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggleLarge:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggleLarge:checked /template/ ContentPresenter">
+			<Setter Property="Background"             Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush"            Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Подпись под большой кнопкой: одна-две строки по центру. -->
+		<Style Selector="TextBlock.BtnCaption">
+			<Setter Property="FontSize"      Value="9"/>
+			<Setter Property="TextAlignment" Value="Center"/>
+			<Setter Property="TextWrapping"  Value="Wrap"/>
+			<Setter Property="MaxWidth"      Value="64"/>
+		</Style>
+
+		<!-- Картинки-листы на кнопках: лист, строки текста, номер. Та же рисовка, что
+		     в галерее номера (PageNumberPicker), чтобы кнопки читались одинаково. -->
+		<Style Selector="Border.Mini">
+			<Setter Property="Background"      Value="#FFFDF8"/>
+			<Setter Property="BorderBrush"     Value="#8C8C8C"/>
+			<Setter Property="BorderThickness" Value="1"/>
+		</Style>
+		<Style Selector="Rectangle.MiniLine">
+			<Setter Property="Fill"   Value="#C9C9C9"/>
+			<Setter Property="Height" Value="1.5"/>
+		</Style>
+		<Style Selector="Rectangle.MiniHeading">
+			<Setter Property="Fill"   Value="#2B579A"/>
+			<Setter Property="Height" Value="3"/>
+		</Style>
+		<Style Selector="Rectangle.MiniBand">
+			<Setter Property="Fill" Value="#7FA6DB"/>
+		</Style>
+		<Style Selector="Rectangle.MiniBandOff">
+			<Setter Property="Fill" Value="#E6A1A1"/>
+		</Style>
+		<Style Selector="TextBlock.MiniNum">
+			<Setter Property="FontSize"          Value="6.5"/>
+			<Setter Property="FontWeight"        Value="Bold"/>
+			<Setter Property="Foreground"        Value="#2B579A"/>
+			<Setter Property="Margin"            Value="1.5,0"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="LineHeight"        Value="7"/>
+		</Style>
+		<Style Selector="TextBlock.MiniNumOff">
+			<Setter Property="FontSize"          Value="6.5"/>
+			<Setter Property="FontWeight"        Value="Bold"/>
+			<Setter Property="Foreground"        Value="#C0392B"/>
+			<Setter Property="TextDecorations"   Value="Strikethrough"/>
+			<Setter Property="Margin"            Value="1.5,0"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+	</UserControl.Styles>
+
+	<controls:RibbonScrollContainer x:Name="ScrollContainer">
+		<controls:RibbonScrollContainer.RibbonContent>
+			<StackPanel Orientation="Horizontal">
+
+				<!-- ═══════════════════════════════════════════════════════
+				     КОЛОНТИТУЛЫ — писать сверху или снизу, поставить номер, удалить
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Колонтитулы"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<Button Classes="RibbonBtnLarge" Command="{Binding EditHeaderCommand}"
+							        behaviours:TooltipBehavior.Tip="Писать в верхнем колонтитуле"
+							        behaviours:TooltipBehavior.Description="Каретка встаёт в поле над текстом этой страницы. То же — двойной щелчок по полю.">
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<Panel Height="24" HorizontalAlignment="Center">
+										<Border Classes="Mini" Width="18" Height="24">
+											<Grid RowDefinitions="7 * 7">
+												<Rectangle Classes="MiniBand" Grid.Row="0"/>
+												<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+													<Rectangle Classes="MiniLine"/>
+													<Rectangle Classes="MiniLine" Width="6" HorizontalAlignment="Left"/>
+												</StackPanel>
+											</Grid>
+										</Border>
+									</Panel>
+									<TextBlock Classes="BtnCaption" Text="Верхний"/>
+								</StackPanel>
+							</Button>
+							<Button Classes="RibbonBtnLarge" Command="{Binding EditFooterCommand}"
+							        behaviours:TooltipBehavior.Tip="Писать в нижнем колонтитуле"
+							        behaviours:TooltipBehavior.Description="Каретка встаёт в поле под текстом этой страницы. То же — двойной щелчок по полю.">
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<Panel Height="24" HorizontalAlignment="Center">
+										<Border Classes="Mini" Width="18" Height="24">
+											<Grid RowDefinitions="7 * 7">
+												<Rectangle Classes="MiniBand" Grid.Row="2"/>
+												<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+													<Rectangle Classes="MiniLine"/>
+													<Rectangle Classes="MiniLine" Width="6" HorizontalAlignment="Left"/>
+												</StackPanel>
+											</Grid>
+										</Border>
+									</Panel>
+									<TextBlock Classes="BtnCaption" Text="Нижний"/>
+								</StackPanel>
+							</Button>
+							<Button Classes="RibbonBtnLarge" behaviours:TooltipBehavior.Tip="Поставить номер страницы"
+							        behaviours:TooltipBehavior.Description="Выберите на картинке, где стоит номер. Он появится на всех страницах.">
+								<Button.Flyout>
+									<Flyout Placement="Bottom">
+										<shared:PageNumberPicker/>
+									</Flyout>
+								</Button.Flyout>
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<Panel Height="24" HorizontalAlignment="Center">
+										<Border Classes="Mini" Width="18" Height="24">
+											<Grid RowDefinitions="7 * 7">
+												<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+													<Rectangle Classes="MiniLine"/>
+													<Rectangle Classes="MiniLine" Width="6" HorizontalAlignment="Left"/>
+												</StackPanel>
+												<TextBlock Classes="MiniNum" Grid.Row="2" Text="1" HorizontalAlignment="Center"/>
+											</Grid>
+										</Border>
+									</Panel>
+									<TextBlock Classes="BtnCaption" Text="Номер ▾"/>
+								</StackPanel>
+							</Button>
+							<Button Command="{Binding RemoveAllCommand}" Classes="RibbonBtnLarge"
+							        behaviours:TooltipBehavior.Tip="Удалить все колонтитулы и номера из документа">
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<PathIcon Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+									          Width="20" Height="24"/>
+									<TextBlock Classes="BtnCaption" Text="Удалить всё"/>
+								</StackPanel>
+							</Button>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+				     НУМЕРАЦИЯ — как пишутся номера и с какого числа начинать
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Нумерация"/>
+						</Grid>
+						<StackPanel Spacing="4" VerticalAlignment="Top">
+							<Button Classes="RibbonBtn" HorizontalAlignment="Stretch"
+							        behaviours:TooltipBehavior.Tip="Как пишутся номера: цифрами, римскими или буквами">
+								<Button.Flyout>
+									<MenuFlyout>
+										<MenuItem Header="1, 2, 3" Command="{Binding SetFormatCommand}" CommandParameter="Arabic"/>
+										<MenuItem Header="i, ii, iii" Command="{Binding SetFormatCommand}" CommandParameter="RomanLower"/>
+										<MenuItem Header="I, II, III" Command="{Binding SetFormatCommand}" CommandParameter="RomanUpper"/>
+										<MenuItem Header="a, b, c" Command="{Binding SetFormatCommand}" CommandParameter="LetterLower"/>
+										<MenuItem Header="A, B, C" Command="{Binding SetFormatCommand}" CommandParameter="LetterUpper"/>
+									</MenuFlyout>
+								</Button.Flyout>
+								<StackPanel Orientation="Horizontal" Spacing="6">
+									<TextBlock Text="#" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"
+									           Foreground="{DynamicResource AccentDefaultBrush}"/>
+									<TextBlock Text="{Binding NumberFormatLabel}" FontSize="11" VerticalAlignment="Center"/>
+									<PathIcon Data="M7 10l5 5 5-5z" Width="8" Height="8"
+									          Foreground="{DynamicResource TextMutedBrush}"/>
+								</StackPanel>
+							</Button>
+							<StackPanel Orientation="Horizontal" Spacing="4"
+							            behaviours:TooltipBehavior.Tip="С какого номера начинается документ"
+							            behaviours:TooltipBehavior.Description="Например, 3 — если первые две страницы идут отдельным файлом.">
+								<TextBlock Classes="RibbonFieldLabel" Text="Начать с"/>
+								<NumericUpDown Classes="Ribbon" Width="70"
+								               Value="{Binding StartNumber, Mode=TwoWay}"
+								               Minimum="0" Maximum="9999"
+								               Increment="1"
+								               FormatString="0"
+								               ClipValueToMinMax="True"/>
+							</StackPanel>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+				     ШРИФТ колонтитулов — размер, жирный, курсив
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Шрифт"/>
+						</Grid>
+						<StackPanel Spacing="4" VerticalAlignment="Top">
+							<StackPanel Orientation="Horizontal" Spacing="4"
+							            behaviours:TooltipBehavior.Tip="Размер шрифта колонтитулов, пт">
+								<PathIcon Data="M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z" Width="16" Height="16"
+								          VerticalAlignment="Center"/>
+								<NumericUpDown Classes="Ribbon" Width="70"
+								               Value="{Binding FontSize, Mode=TwoWay}"
+								               Minimum="6" Maximum="36"
+								               Increment="0.5"
+								               FormatString="0.#"
+								               ClipValueToMinMax="True"/>
+							</StackPanel>
+							<StackPanel Orientation="Horizontal" Spacing="4">
+								<ToggleButton Classes="RibbonToggle" FontWeight="Bold"
+								              IsChecked="{Binding IsBold, Mode=TwoWay}"
+								              behaviours:TooltipBehavior.Tip="Жирный шрифт колонтитулов">
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Format_Bold_Letter}" FontWeight="Bold"/>
+								</ToggleButton>
+								<ToggleButton Classes="RibbonToggle"
+								              IsChecked="{Binding IsItalic, Mode=TwoWay}"
+								              behaviours:TooltipBehavior.Tip="Курсив в колонтитулах">
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Format_Italic_Letter}"
+									           FontStyle="Italic" FontFamily="Georgia"/>
+								</ToggleButton>
+							</StackPanel>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+				     ОТСТУП ОТ КРАЯ — колонтитул выше или ниже
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Отступ от края листа"/>
+						</Grid>
+						<StackPanel Spacing="4" VerticalAlignment="Top">
+							<StackPanel Orientation="Horizontal" Spacing="4"
+							            behaviours:TooltipBehavior.Tip="Насколько верхний колонтитул отстоит от верхнего края листа"
+							            behaviours:TooltipBehavior.Description="Больше число — колонтитул ниже, меньше — выше, ближе к краю.">
+								<Panel Width="18" Height="24">
+									<Border Classes="Mini" Width="14" Height="20">
+										<Grid RowDefinitions="7 * 7">
+											<Rectangle Classes="MiniBand" Grid.Row="0"/>
+											<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+												<Rectangle Classes="MiniLine"/>
+											</StackPanel>
+										</Grid>
+									</Border>
+								</Panel>
+								<TextBlock Classes="RibbonFieldLabel" Text="Сверху" Width="44"/>
+								<NumericUpDown Classes="Ribbon" Width="70"
+								               Value="{Binding HeaderDistance, Mode=TwoWay}"
+								               Minimum="0" Maximum="100"
+								               Increment="1"
+								               FormatString="0.#"
+								               ClipValueToMinMax="True"/>
+								<TextBlock Classes="RibbonFieldLabel" Text="мм"/>
+							</StackPanel>
+							<StackPanel Orientation="Horizontal" Spacing="4"
+							            behaviours:TooltipBehavior.Tip="Насколько нижний колонтитул отстоит от нижнего края листа"
+							            behaviours:TooltipBehavior.Description="Больше число — колонтитул выше, меньше — ниже, ближе к краю.">
+								<Panel Width="18" Height="24">
+									<Border Classes="Mini" Width="14" Height="20">
+										<Grid RowDefinitions="7 * 7">
+											<Rectangle Classes="MiniBand" Grid.Row="2"/>
+											<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+												<Rectangle Classes="MiniLine"/>
+											</StackPanel>
+										</Grid>
+									</Border>
+								</Panel>
+								<TextBlock Classes="RibbonFieldLabel" Text="Снизу" Width="44"/>
+								<NumericUpDown Classes="Ribbon" Width="70"
+								               Value="{Binding FooterDistance, Mode=TwoWay}"
+								               Minimum="0" Maximum="100"
+								               Increment="1"
+								               FormatString="0.#"
+								               ClipValueToMinMax="True"/>
+								<TextBlock Classes="RibbonFieldLabel" Text="мм"/>
+							</StackPanel>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+				     ВО ВСЁМ ДОКУМЕНТЕ — титул, левые и правые страницы, главы
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Во всём документе"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<ToggleButton Classes="RibbonToggleLarge"
+							              IsChecked="{Binding DifferentFirstPage, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Первая страница без номера и колонтитулов"
+							              behaviours:TooltipBehavior.Description="Для титульного листа. В счёте она всё равно первая: вторая страница получит номер 2.">
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<Panel Height="24" HorizontalAlignment="Center">
+										<StackPanel Orientation="Horizontal" Spacing="1" HorizontalAlignment="Center">
+											<Border Classes="Mini" Width="18" Height="24">
+												<Grid RowDefinitions="7 * 7">
+													<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+														<Rectangle Classes="MiniHeading"/>
+														<Rectangle Classes="MiniLine"/>
+													</StackPanel>
+												</Grid>
+											</Border>
+											<Border Classes="Mini" Width="18" Height="24">
+												<Grid RowDefinitions="7 * 7">
+													<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+														<Rectangle Classes="MiniLine"/>
+														<Rectangle Classes="MiniLine" Width="6" HorizontalAlignment="Left"/>
+													</StackPanel>
+													<TextBlock Classes="MiniNum" Grid.Row="2" Text="2" HorizontalAlignment="Center"/>
+												</Grid>
+											</Border>
+										</StackPanel>
+									</Panel>
+									<TextBlock Classes="BtnCaption" Text="Титул без номера"/>
+								</StackPanel>
+							</ToggleButton>
+							<ToggleButton Classes="RibbonToggleLarge"
+							              IsChecked="{Binding DifferentOddEven, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Разные колонтитулы на левых и правых страницах"
+							              behaviours:TooltipBehavior.Description="Для книги: номер у внешнего края разворота. Текст колонтитулов левых и правых страниц правится отдельно.">
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<Panel Height="24" HorizontalAlignment="Center">
+										<StackPanel Orientation="Horizontal" Spacing="0" HorizontalAlignment="Center">
+											<Border Classes="Mini" Width="18" Height="24">
+												<Grid RowDefinitions="7 * 7">
+													<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+														<Rectangle Classes="MiniLine"/>
+														<Rectangle Classes="MiniLine" Width="6" HorizontalAlignment="Left"/>
+													</StackPanel>
+													<TextBlock Classes="MiniNum" Grid.Row="2" Text="2" HorizontalAlignment="Left"/>
+												</Grid>
+											</Border>
+											<Border Classes="Mini" Width="18" Height="24">
+												<Grid RowDefinitions="7 * 7">
+													<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+														<Rectangle Classes="MiniLine"/>
+														<Rectangle Classes="MiniLine" Width="6" HorizontalAlignment="Left"/>
+													</StackPanel>
+													<TextBlock Classes="MiniNum" Grid.Row="2" Text="3" HorizontalAlignment="Right"/>
+												</Grid>
+											</Border>
+										</StackPanel>
+									</Panel>
+									<TextBlock Classes="BtnCaption" Text="Левые и правые"/>
+								</StackPanel>
+							</ToggleButton>
+							<ToggleButton Classes="RibbonToggleLarge"
+							              IsChecked="{Binding HideNumberOnChapterStart, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Не ставить номер на первой странице главы"
+							              behaviours:TooltipBehavior.Description="Глава — заголовок первого уровня. Счёт при этом не сбивается.">
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<Panel Height="24" HorizontalAlignment="Center">
+										<Border Classes="Mini" Width="18" Height="24">
+											<Grid RowDefinitions="7 * 7">
+												<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+													<Rectangle Classes="MiniHeading"/>
+													<Rectangle Classes="MiniLine"/>
+												</StackPanel>
+												<TextBlock Classes="MiniNumOff" Grid.Row="2" Text="7" HorizontalAlignment="Center"/>
+											</Grid>
+										</Border>
+									</Panel>
+									<TextBlock Classes="BtnCaption" Text="Главы без номера"/>
+								</StackPanel>
+							</ToggleButton>
+							<ToggleButton Classes="RibbonToggleLarge"
+							              IsChecked="{Binding HideHeaderFooterOnChapterStart, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Убрать колонтитулы с первой страницы главы"
+							              behaviours:TooltipBehavior.Description="Глава — заголовок первого уровня. Счёт при этом не сбивается.">
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<Panel Height="24" HorizontalAlignment="Center">
+										<Border Classes="Mini" Width="18" Height="24">
+											<Grid RowDefinitions="7 * 7">
+												<Rectangle Classes="MiniBandOff" Grid.Row="0"/>
+												<Rectangle Classes="MiniBandOff" Grid.Row="2"/>
+												<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+													<Rectangle Classes="MiniHeading"/>
+													<Rectangle Classes="MiniLine"/>
+												</StackPanel>
+											</Grid>
+										</Border>
+									</Panel>
+									<TextBlock Classes="BtnCaption" Text="Главы без колонтит."/>
+								</StackPanel>
+							</ToggleButton>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+				     ЭТА СТРАНИЦА — исключения без разрывов разделов
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="{Binding PageCaption}"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<Button Command="{Binding ToggleNumberHereCommand}" Classes="RibbonBtnLarge"
+							        behaviours:TooltipBehavior.Tip="Номер только на этой странице — скрыть или вернуть"
+							        behaviours:TooltipBehavior.Description="Счёт не сбивается: следующая страница получит свой номер как обычно.">
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<Panel Height="24" HorizontalAlignment="Center">
+										<Border Classes="Mini" Width="18" Height="24">
+											<Grid RowDefinitions="7 * 7">
+												<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+													<Rectangle Classes="MiniLine"/>
+													<Rectangle Classes="MiniLine" Width="6" HorizontalAlignment="Left"/>
+												</StackPanel>
+												<TextBlock Classes="MiniNumOff" Grid.Row="2" Text="5" HorizontalAlignment="Center"/>
+											</Grid>
+										</Border>
+									</Panel>
+									<TextBlock Classes="BtnCaption" Text="{Binding ToggleNumberHereLabel}"/>
+								</StackPanel>
+							</Button>
+							<Button Command="{Binding ToggleBandsHereCommand}" Classes="RibbonBtnLarge"
+							        behaviours:TooltipBehavior.Tip="Колонтитулы только на этой странице — скрыть или вернуть">
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<Panel Height="24" HorizontalAlignment="Center">
+										<Border Classes="Mini" Width="18" Height="24">
+											<Grid RowDefinitions="7 * 7">
+												<Rectangle Classes="MiniBandOff" Grid.Row="0"/>
+												<Rectangle Classes="MiniBandOff" Grid.Row="2"/>
+												<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+													<Rectangle Classes="MiniLine"/>
+													<Rectangle Classes="MiniLine" Width="6" HorizontalAlignment="Left"/>
+												</StackPanel>
+											</Grid>
+										</Border>
+									</Panel>
+									<TextBlock Classes="BtnCaption" Text="{Binding ToggleBandsHereLabel}"/>
+								</StackPanel>
+							</Button>
+							<Button Classes="RibbonBtnLarge"
+							        behaviours:TooltipBehavior.Tip="С этой страницы и до конца документа"
+							        behaviours:TooltipBehavior.Description="Убрать или вернуть номера и колонтитулы сразу на всех следующих страницах — без разрывов разделов.">
+								<Button.Flyout>
+									<MenuFlyout>
+										<MenuItem Header="С этой страницы номеров нет" Command="{Binding StopNumbersCommand}"/>
+										<MenuItem Header="С этой страницы номера снова есть" Command="{Binding ResumeNumbersCommand}"/>
+										<Separator/>
+										<MenuItem Header="С этой страницы колонтитулов нет" Command="{Binding StopBandsCommand}"/>
+										<MenuItem Header="С этой страницы колонтитулы снова есть" Command="{Binding ResumeBandsCommand}"/>
+										<Separator/>
+										<MenuItem Header="С этой страницы номера пишутся как">
+											<MenuItem Header="1, 2, 3" Command="{Binding SetFormatHereCommand}" CommandParameter="Arabic"/>
+											<MenuItem Header="i, ii, iii" Command="{Binding SetFormatHereCommand}" CommandParameter="RomanLower"/>
+											<MenuItem Header="I, II, III" Command="{Binding SetFormatHereCommand}" CommandParameter="RomanUpper"/>
+											<MenuItem Header="a, b, c" Command="{Binding SetFormatHereCommand}" CommandParameter="LetterLower"/>
+											<MenuItem Header="A, B, C" Command="{Binding SetFormatHereCommand}" CommandParameter="LetterUpper"/>
+										</MenuItem>
+									</MenuFlyout>
+								</Button.Flyout>
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<Panel Height="24" HorizontalAlignment="Center">
+										<StackPanel Orientation="Horizontal" Spacing="1" HorizontalAlignment="Center">
+											<Border Classes="Mini" Width="12" Height="24">
+												<Grid RowDefinitions="7 * 7">
+													<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+														<Rectangle Classes="MiniLine"/>
+														<Rectangle Classes="MiniLine" Width="6" HorizontalAlignment="Left"/>
+													</StackPanel>
+													<TextBlock Classes="MiniNumOff" Grid.Row="2" Text="5" HorizontalAlignment="Center"/>
+												</Grid>
+											</Border>
+											<Border Classes="Mini" Width="12" Height="24">
+												<Grid RowDefinitions="7 * 7">
+													<StackPanel Grid.Row="1" Spacing="2" Margin="3,1" VerticalAlignment="Center">
+														<Rectangle Classes="MiniLine"/>
+														<Rectangle Classes="MiniLine" Width="6" HorizontalAlignment="Left"/>
+													</StackPanel>
+													<TextBlock Classes="MiniNumOff" Grid.Row="2" Text="6" HorizontalAlignment="Center"/>
+												</Grid>
+											</Border>
+										</StackPanel>
+									</Panel>
+									<TextBlock Classes="BtnCaption" Text="Отсюда и дальше ▾"/>
+								</StackPanel>
+							</Button>
+							<StackPanel Spacing="4" VerticalAlignment="Top"
+							            behaviours:TooltipBehavior.Tip="Начать счёт заново с этой страницы"
+							            behaviours:TooltipBehavior.Description="Эта страница получит указанный номер, следующие продолжат от него.">
+								<NumericUpDown Classes="Ribbon" Width="78"
+								               Value="{Binding RestartValue, Mode=TwoWay}"
+								               Minimum="0" Maximum="9999"
+								               Increment="1"
+								               FormatString="0"
+								               ClipValueToMinMax="True"/>
+								<Button Command="{Binding RestartHereCommand}" Classes="RibbonBtn" HorizontalAlignment="Stretch">
+									<TextBlock Text="Счёт отсюда" FontSize="11"/>
+								</Button>
+							</StackPanel>
+							<ToggleButton Classes="RibbonToggleLarge"
+							              IsChecked="{Binding AnchorRules, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Держать исключения за текстом, а не за номером страницы"
+							              behaviours:TooltipBehavior.Description="Включите, потом поставьте курсор в нужный абзац и нажмите кнопку слева (например, «Скрыть номер»). Исключение запомнит этот абзац и переедет вместе с ним, если текст сдвинется. В тексте на этом месте стоит невидимый знак λ — его видно, когда включён показ знаков ¶; наведите на него, чтобы увидеть, что он делает.">
+								<StackPanel Spacing="3" HorizontalAlignment="Center">
+									<TextBlock Text="λ" FontSize="18" FontWeight="Bold" Height="24" TextAlignment="Center"
+									           Foreground="#E07B39"/>
+									<TextBlock Classes="BtnCaption" Text="За текстом"/>
+								</StackPanel>
+							</ToggleButton>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+				     ИСКЛЮЧЕНИЯ — все правила страниц списком
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Исключения"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<Button Classes="RibbonBtnLarge" MinWidth="72"
+							        behaviours:TooltipBehavior.Tip="Все исключения для страниц списком"
+							        behaviours:TooltipBehavior.Description="Где номер скрыт, где счёт начат заново. Крестик снимает исключение.">
+								<Button.Flyout>
+									<Flyout Placement="Bottom">
+										<StackPanel Width="300" Spacing="6" Margin="4">
+											<TextBlock Text="{Binding RulesCaption}" FontSize="11"
+											           Foreground="{DynamicResource TextMutedBrush}"/>
+											<ScrollViewer MaxHeight="260" HorizontalScrollBarVisibility="Disabled">
+												<ItemsControl ItemsSource="{Binding Rules}">
+													<ItemsControl.ItemTemplate>
+														<DataTemplate DataType="vmroot:PageRuleItem">
+															<Grid ColumnDefinitions="* Auto" Margin="0 1">
+																<TextBlock Grid.Column="0" Text="{Binding Text}" FontSize="11"
+																           VerticalAlignment="Center" TextWrapping="Wrap"
+																           Opacity="{Binding TextOpacity}"/>
+																<Button Grid.Column="1" Classes="RibbonBtn" MinWidth="22" MinHeight="22" Padding="0"
+																        Command="{Binding $parent[ItemsControl].DataContext.RemoveRuleCommand}"
+																        CommandParameter="{Binding Id}"
+																        behaviours:TooltipBehavior.Tip="Снять правило">
+																	<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+																	          Width="10" Height="10"/>
+																</Button>
+															</Grid>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+											</ScrollViewer>
+											<Button Classes="RibbonBtn" HorizontalAlignment="Left"
+											        Command="{Binding ClearRulesCommand}"
+											        IsVisible="{Binding HasRules}">
+												<TextBlock Text="Снять все исключения" FontSize="11"/>
+											</Button>
+										</StackPanel>
+									</Flyout>
+								</Button.Flyout>
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
+									          Width="20" Height="20"/>
+									<TextBlock Text="{Binding RulesCaption}" FontSize="9" TextAlignment="Center"
+									           TextWrapping="Wrap" MaxWidth="80"/>
+								</StackPanel>
+							</Button>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+				     ЗАКРЫТЬ — вернуться к тексту
+				     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text=" "/>
+						</Grid>
+						<Button Command="{Binding CloseCommand}" Classes="RibbonBtnLarge" VerticalAlignment="Top"
+						        behaviours:TooltipBehavior.Tip="Вернуться к тексту документа (Esc)">
+							<StackPanel Spacing="3" HorizontalAlignment="Center">
+								<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+								          Width="18" Height="24"/>
+								<TextBlock Classes="BtnCaption" Text="Закрыть"/>
+							</StackPanel>
+						</Button>
+					</DockPanel>
+				</Border>
+
+			</StackPanel>
+		</controls:RibbonScrollContainer.RibbonContent>
+	</controls:RibbonScrollContainer>
+</UserControl>

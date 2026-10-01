@@ -13,7 +13,11 @@ namespace Writersword.Core.Models.Rendering
         /// <summary>Цвет линии в формате #RRGGBB.</summary>
         public string Color { get; init; } = "#000000";
 
-        /// <summary>Стиль линии (0=Solid, 1=Dashed, 2=Double, 3=None).</summary>
+        /// <summary>
+        /// Стиль линии: 0 — сплошная, 1 — штрих, 2 — двойная, 3 — нет, 4 — точки,
+        /// 5 — тройная, 6 — волна, 7 — объёмная выпуклая, 8 — объёмная вдавленная,
+        /// 9 — выпуклая (outset), 10 — вдавленная (inset).
+        /// </summary>
         public int Style { get; init; }
     }
 
@@ -99,8 +103,25 @@ namespace Writersword.Core.Models.Rendering
         /// <summary>Цвет фона ячейки. Null — нет заливки.</summary>
         public string? BackgroundColor { get; init; }
 
+        /// <summary>Узор заливки поверх фона (имя w:shd w:val). Null — узора нет.</summary>
+        public string? ShadingPattern { get; init; }
+
+        /// <summary>Цвет узора заливки. Null — «авто».</summary>
+        public string? ShadingPatternColor { get; init; }
+
         /// <summary>Вертикальное выравнивание содержимого (0=Top, 1=Middle, 2=Bottom).</summary>
         public int VerticalAlignment { get; init; }
+
+        /// <summary>
+        /// Направление текста: 0 — горизонтально, 1 — снизу вверх (btLr),
+        /// 2 — сверху вниз (tbRl). У повёрнутой ячейки раскладки абзацев построены
+        /// на длину строки, равную высоте области содержимого, а ContentHeightPt —
+        /// толщина стопки строк поперёк ячейки, то есть по её ширине.
+        /// </summary>
+        public int TextDirection { get; init; }
+
+        /// <summary>Текст ячейки повёрнут.</summary>
+        public bool IsRotated => TextDirection != 0;
 
         /// <summary>Настройки границ ячейки для рендеринга.</summary>
         public SKTableCellBorderLayout Borders { get; init; } = new();

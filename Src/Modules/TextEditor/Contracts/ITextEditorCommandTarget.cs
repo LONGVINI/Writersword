@@ -19,6 +19,21 @@ namespace Writersword.Modules.TextEditor.Contracts
     }
 
     /// <summary>
+    /// Эффект букв: контур (w:outline), тень (w:shadow), рельеф (w:emboss) и
+    /// гравировка (w:imprint) из окна шрифта Word; свечение и отражение — эффекты
+    /// Word 2010+ (w14:glow, w14:reflection) с видом по умолчанию.
+    /// </summary>
+    public enum TextEffectKind
+    {
+        Outline,
+        Shadow,
+        Emboss,
+        Imprint,
+        Glow,
+        Reflection
+    }
+
+    /// <summary>
     /// Контракт между Ribbon (командный источник) и DocumentViewModel (исполнитель).
     /// Все операции редактирования проходят через этот интерфейс.
     /// PaperSize и PageOrientation берутся из Core.Models.Print.
@@ -29,11 +44,57 @@ namespace Writersword.Modules.TextEditor.Contracts
         void ToggleBold();
         void ToggleItalic();
         void ToggleUnderline();
+
+        /// <summary>
+        /// Включает подчёркивание заданного вида у неподчёркнутого текста и снимает
+        /// у подчёркнутого — кнопка ленты с последним выбранным видом.
+        /// </summary>
+        void ToggleUnderlineStyle(UnderlineStyle style);
+
+        /// <summary>Ставит вид подчёркивания; None снимает подчёркивание.</summary>
+        void SetUnderlineStyle(UnderlineStyle style);
+
+        /// <summary>Цвет линии подчёркивания. Null — как у букв.</summary>
+        void SetUnderlineColor(string? color);
         void ToggleStrikethrough();
+
+        /// <summary>
+        /// Двойное зачёркивание. С одинарным не сочетается: включённое снимает одинарное.
+        /// </summary>
+        void ToggleDoubleStrikethrough();
+
+        /// <summary>
+        /// Ставит вид зачёркивания: <paramref name="enabled"/> = false снимает любое,
+        /// иначе одинарное либо двойное (<paramref name="isDouble"/>).
+        /// </summary>
+        void SetStrikethrough(bool enabled, bool isDouble);
         void ToggleSuperscript();
         void ToggleSubscript();
         void ToggleAllCaps();
         void ToggleSmallCaps();
+
+        /// <summary>
+        /// Скрытый текст (w:vanish), Ctrl+Shift+H: переключает по фрагменту.
+        /// </summary>
+        void ToggleHiddenText();
+
+        /// <summary>Ставит или снимает скрытый текст.</summary>
+        void SetHiddenText(bool enabled);
+
+        /// <summary>
+        /// Ставит или снимает эффект букв. Рельеф и гравировка, как в Word, не сочетаются
+        /// ни друг с другом, ни с контуром и тенью: включённый снимает несовместимые.
+        /// </summary>
+        void SetTextEffect(TextEffectKind kind, bool enabled);
+
+        /// <summary>Знак ударения над буквами (w:em); None снимает.</summary>
+        void SetEmphasisMark(EmphasisMark mark);
+
+        /// <summary>
+        /// Рамка вокруг знаков (w:bdr): тонкая одинарная линия цвета текста, как рамка
+        /// Word по умолчанию. False снимает.
+        /// </summary>
+        void SetCharBorder(bool enabled);
         void ClearFormatting();
         void SetTextColor(string color);
         void SetHighlightColor(string? color);

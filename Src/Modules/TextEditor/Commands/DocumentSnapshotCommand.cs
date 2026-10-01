@@ -201,6 +201,11 @@ namespace Writersword.Modules.TextEditor.Commands
             doc.TableOfContents = restored.TableOfContents;
             doc.DocumentAutoReplaceRules = restored.DocumentAutoReplaceRules;
 
+            // Колонтитулы документа входят в снимок целиком: импорт приносит свои, и
+            // отмена импорта обязана вернуть прежние.
+            doc.HeaderFooter = restored.HeaderFooter;
+            _docVm.RaiseHeaderFooterChanged();
+
             doc.Annotations.Clear();
             foreach (var annotation in restored.Annotations)
                 doc.Annotations.Add(annotation);

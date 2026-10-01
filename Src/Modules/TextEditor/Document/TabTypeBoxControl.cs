@@ -120,7 +120,8 @@ namespace Writersword.Modules.TextEditor.Document
                 Models.Styles.TabAlignment.Left,
                 Models.Styles.TabAlignment.Center,
                 Models.Styles.TabAlignment.Right,
-                Models.Styles.TabAlignment.Decimal
+                Models.Styles.TabAlignment.Decimal,
+                Models.Styles.TabAlignment.Bar
             };
 
             var list = new System.Text.StringBuilder();
@@ -218,6 +219,8 @@ namespace Writersword.Modules.TextEditor.Document
                 case Models.Styles.TabAlignment.Right:
                     ctx.DrawLine(_glyphPen, new Point(cx - Arm, bottom), new Point(cx, bottom));
                     break;
+                case Models.Styles.TabAlignment.Bar:
+                    break;
                 default:
                     ctx.DrawLine(_glyphPen,
                         new Point(cx - Arm + 1, bottom), new Point(cx + Arm - 1, bottom));
@@ -234,6 +237,7 @@ namespace Writersword.Modules.TextEditor.Document
                 Models.Styles.TabAlignment.Center => Strings.Tab_AlignCenter,
                 Models.Styles.TabAlignment.Right => Strings.Tab_AlignRight,
                 Models.Styles.TabAlignment.Decimal => Strings.Tab_AlignDecimal,
+                Models.Styles.TabAlignment.Bar => Strings.Tab_AlignBar,
                 _ => Strings.Tab_AlignLeft
             };
 
@@ -243,6 +247,7 @@ namespace Writersword.Modules.TextEditor.Document
                 Models.Styles.TabAlignment.Center => Strings.Tab_Hint_WhatCenter,
                 Models.Styles.TabAlignment.Right => Strings.Tab_Hint_WhatRight,
                 Models.Styles.TabAlignment.Decimal => Strings.Tab_Hint_WhatDecimal,
+                Models.Styles.TabAlignment.Bar => Strings.Tab_Hint_WhatBar,
                 _ => Strings.Tab_Hint_WhatLeft
             };
     }

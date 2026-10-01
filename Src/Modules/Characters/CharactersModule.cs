@@ -449,6 +449,7 @@ namespace Writersword.Modules.Characters
             var data = _characterService.GetModuleData();
             data.Relationships = _relationshipService.GetAll().ToList();
             data.ActiveTemplateIds = _viewModel?.ActiveTemplateIds.ToList() ?? new List<string>();
+            data.ProjectTemplateId = _viewModel?.TemplatesViewModel.ProjectTemplateId;
             data.Folders = _viewModel?.GetFolders() ?? new List<CharacterFolder>();
             data.IsFirstLaunch = false;
             if (_anketaService is CharacterAnketaService as_)
@@ -552,6 +553,8 @@ namespace Writersword.Modules.Characters
                     foreach (var id in moduleData.ActiveTemplateIds ?? new List<string>())
                         _viewModel.ActiveTemplateIds.Add(id);
 
+                    _viewModel.TemplatesViewModel.ProjectTemplateId = moduleData.ProjectTemplateId;
+
                     _viewModel.CancelLoad();
                     _viewModel.RefreshAll();
                     _logger.Debug("ViewModel refreshed after SetCustomData");
@@ -565,6 +568,12 @@ namespace Writersword.Modules.Characters
                     // поверх сессии там.
                     _placeReady = false;
                     _placeRestorePending = true;
+
+                    // Листы редактора анкет принадлежат проекту: прежние
+                    // дописываются в черновики и закрываются, листы этого
+                    // проекта вернутся вместе с местом.
+                    _viewModel.AnketasViewModel.DetachDrafts();
+
                     Avalonia.Threading.Dispatcher.UIThread.Post(
                         ApplyStoredPlace, Avalonia.Threading.DispatcherPriority.Background);
                 }
@@ -662,6 +671,10 @@ namespace Writersword.Modules.Characters
             try
             {
                 var key = PlaceKey();
+
+                // Открытые листы редактора анкет с несохранённым — из черновиков проекта.
+                _viewModel.AnketasViewModel.AttachDrafts(key);
+
                 if (key is not null && CharactersPlaceStore.Get(key) is { } place)
                 {
                     _logger.Debug("Restoring characters place: character {Id}, tab {Tab}, card tab {CardTab}, scroll {Scroll:F0}",
@@ -712,6 +725,9 @@ namespace Writersword.Modules.Characters
             }
 
             _avatarService.AvatarRefsRemapped -= OnAvatarRefsRemapped;
+
+            // Несохранённые листы редактора анкет не должны пропасть при закрытии.
+            _viewModel?.AnketasViewModel.FlushDrafts();
 
             // Отложенная запись места не должна пропасть при закрытии.
             if (_placeSaveTimer is { IsEnabled: true })

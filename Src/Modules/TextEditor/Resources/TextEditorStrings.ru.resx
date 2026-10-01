@@ -291,6 +291,9 @@
   <data name="Format_Strikethrough_Letter" xml:space="preserve">
     <value>З</value>
   </data>
+  <data name="Format_DoubleStrikethrough" xml:space="preserve">
+    <value>Двойное зачёркивание</value>
+  </data>
   <data name="Format_Subscript" xml:space="preserve">
     <value>Подстрочный</value>
   </data>
@@ -948,6 +951,9 @@
   <data name="Tab_AlignDecimal" xml:space="preserve">
     <value>По разделителю</value>
   </data>
+  <data name="Tab_AlignBar" xml:space="preserve">
+    <value>Черта</value>
+  </data>
   <data name="Tab_LeaderNone" xml:space="preserve">
     <value>Нет</value>
   </data>
@@ -959,6 +965,15 @@
   </data>
   <data name="Tab_LeaderLine" xml:space="preserve">
     <value>Сплошная линия</value>
+  </data>
+  <data name="Tab_LeaderDensity" xml:space="preserve">
+    <value>Густота знаков</value>
+  </data>
+  <data name="Tab_LeaderWordLike" xml:space="preserve">
+    <value>Как в Word</value>
+  </data>
+  <data name="Tab_LeaderDensity_Tip" xml:space="preserve">
+    <value>Насколько густо стоят знаки заполнителя. 100% — обычный шаг, 200% — вдвое гуще</value>
   </data>
   <data name="Tab_Title" xml:space="preserve">
     <value>Табуляция</value>
@@ -1019,6 +1034,9 @@
   </data>
   <data name="Tab_Hint_WhatDecimal" xml:space="preserve">
     <value>Числа встают разделителем на отметку, запятая под запятой.</value>
+  </data>
+  <data name="Tab_Hint_WhatBar" xml:space="preserve">
+    <value>Вертикальная черта через все строки абзаца. Табуляция её не замечает.</value>
   </data>
   <data name="Tab_Hint_MarkerTitle" xml:space="preserve">
     <value>Позиция {0}</value>

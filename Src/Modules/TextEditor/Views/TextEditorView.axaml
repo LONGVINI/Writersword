@@ -8,6 +8,7 @@
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
              xmlns:ui="using:Writersword.Styles.UserControls"
              xmlns:dlg="using:Writersword.Modules.TextEditor.Views.Dialogs"
+             xmlns:shared="using:Writersword.Modules.TextEditor.Views.Shared"
              x:Class="Writersword.Modules.TextEditor.Views.TextEditorView"
              x:DataType="vm:TextEditorViewModel"
              ui:ModalHost.IsHost="True">
@@ -18,6 +19,12 @@
 		<ui:ColorEditorOverlay x:Name="ColorEditorOverlay"
 		                       Grid.Row="0" Grid.RowSpan="3"
 		                       ZIndex="200"/>
+
+		<!-- Окно «Эффекты текста» — поверх всего модуля, но под редактором цвета:
+		     кнопки цвета в окне открывают полный редактор цвета поверх него. -->
+		<dlg:TextEffectsOverlay x:Name="TextEffectsOverlay"
+		                        Grid.Row="0" Grid.RowSpan="3"
+		                        ZIndex="199"/>
 
 		<!-- Оверлей настроек абзаца — поверх всего модуля -->
 		<dlg:ParagraphSettingsOverlay x:Name="ParagraphOverlay"
@@ -170,6 +177,13 @@
 	                                    DataContext="{Binding DocumentViewModel}"/>
 
 				</ScrollViewer>
+
+				<!-- Правка колонтитула на листе. Слой без фона: щелчки мимо поля
+				     проходят к листу. Поле ставится кодом вида точно на полосу листа
+				     и следует за ней при прокрутке и смене масштаба. -->
+				<Canvas x:Name="HeaderFooterEditLayer" ClipToBounds="True">
+					<shared:HeaderFooterBandEditor x:Name="HeaderFooterEditor" IsVisible="False"/>
+				</Canvas>
 			</Panel>
 
 			<!-- [0..1, 2] Вертикальная лента чтения. Появляется, когда по ширине

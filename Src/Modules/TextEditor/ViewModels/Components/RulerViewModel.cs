@@ -103,6 +103,14 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         public double RightEdge { get; set; }
     }
 
+    /// <summary>
+    /// Лист, видимый в окне редактора, для вертикальной линейки: номер листа и его
+    /// полоса по вертикали в точках экрана, в координатах холста документа (без
+    /// прокрутки и без сдвига холста внутри окна). Из листов одного ряда берётся
+    /// первый — по вертикали они стоят одинаково.
+    /// </summary>
+    public readonly record struct RulerPageBand(int PageIndex, double TopPx, double HeightPx);
+
     public sealed class RulerViewModel : ReactiveObject
     {
         private RulerUnits _units;
@@ -131,6 +139,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         private double _viewportHeight = 600;
         private double _contentTopOffsetPx = 0;
         private int _pagesPerRow = 1;
+        private IReadOnlyList<RulerPageBand> _visiblePages = Array.Empty<RulerPageBand>();
 
         private RulerIndentMarkerType? _draggingIndentMarker;
         private int _draggingColumnIndex = -1;
@@ -387,6 +396,49 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             set => this.RaiseAndSetIfChanged(ref _pagesPerRow, Math.Clamp(value, 1, 2));
         }
 
+        /// <summary>
+        /// Листы, которые сейчас видны в окне, сверху вниз. Вертикальная линейка
+        /// рисует шкалу у каждого из них — у каждого свою, по его собственному краю.
+        ///
+        /// Раньше шкала была одна, у листа каретки или у листа, чей верх выше края
+        /// окна. Стоило прокрутить на следующую страницу, пока от прежней виднелась
+        /// хоть полоска, — шкала оставалась на прежней и уезжала вверх, а напротив
+        /// листа, на который человек смотрел, была одна серая полоса.
+        ///
+        /// Пусто — геометрия листов ещё не пришла: линейка рисует одну шкалу по
+        /// FocusedPageIndex, как раньше.
+        /// </summary>
+        public IReadOnlyList<RulerPageBand> VisiblePages
+        {
+            get => _visiblePages;
+            set
+            {
+                var next = value ?? Array.Empty<RulerPageBand>();
+                if (SameBands(_visiblePages, next)) return;
+                _visiblePages = next;
+                this.RaisePropertyChanged();
+            }
+        }
+
+        /// <summary>
+        /// Те же ли листы в тех же местах. Прокрутка и раскладка присылают список на
+        /// каждый свой шаг, а перерисовывать линейку стоит, только если он сменился.
+        /// </summary>
+        private static bool SameBands(IReadOnlyList<RulerPageBand> a, IReadOnlyList<RulerPageBand> b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+            if (a.Count != b.Count) return false;
+
+            for (int i = 0; i < a.Count; i++)
+            {
+                if (a[i].PageIndex != b[i].PageIndex) return false;
+                if (Math.Abs(a[i].TopPx - b[i].TopPx) > 0.01) return false;
+                if (Math.Abs(a[i].HeightPx - b[i].HeightPx) > 0.01) return false;
+            }
+
+            return true;
+        }
+
         public List<RulerIndentMarker> IndentMarkers { get; } = new()
         {
             new RulerIndentMarker { Type = RulerIndentMarkerType.LeftIndent,      Position = 0 },
@@ -480,6 +532,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         {
             if (DraggingTabIndex >= 0) return;
 
+            // Пока пишут в колонтитуле, на линейке его позиции, а не позиции абзаца.
+            if (_headerFooterTabs) return;
+
             TabMarkers.Clear();
 
             if (stops is not null)
@@ -503,6 +558,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         public void AddTabStopAt(double positionUnits)
         {
             if (IsReadOnly) return;
+
+            // У колонтитула позиций ровно две — середина и правый край; новых не ставят.
+            if (_headerFooterTabs) return;
 
             double pos = SnapUnits(positionUnits);
             if (pos < 0) return;
@@ -560,7 +618,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
                 return;
             }
 
-            if (IsTabDragDiscarding && DraggingTabIndex < TabMarkers.Count)
+            // Позицию колонтитула не снимают: уведённая вниз, она остаётся на месте.
+            if (IsTabDragDiscarding && DraggingTabIndex < TabMarkers.Count && !_headerFooterTabs)
                 TabMarkers.RemoveAt(DraggingTabIndex);
             else
                 TabMarkers.Sort(static (a, b) => a.Position.CompareTo(b.Position));
@@ -575,7 +634,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// <summary>Убирает одну позицию — из меню на линейке или из окна настройки.</summary>
         public void RemoveTabStopAt(int index)
         {
-            if (IsReadOnly) return;
+            if (IsReadOnly || _headerFooterTabs) return;
             if (index < 0 || index >= TabMarkers.Count) return;
 
             TabMarkers.RemoveAt(index);
@@ -586,7 +645,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// <summary>Меняет выравнивание уже стоящей позиции, не сдвигая её.</summary>
         public void SetTabAlignmentAt(int index, Models.Styles.TabAlignment alignment)
         {
-            if (IsReadOnly) return;
+            if (IsReadOnly || _headerFooterTabs) return;
             if (index < 0 || index >= TabMarkers.Count) return;
 
             TabMarkers[index].Alignment = alignment;
@@ -597,7 +656,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// <summary>Меняет заполнитель уже стоящей позиции.</summary>
         public void SetTabLeaderAt(int index, Models.Styles.TabLeaderStyle leader)
         {
-            if (IsReadOnly) return;
+            if (IsReadOnly || _headerFooterTabs) return;
             if (index < 0 || index >= TabMarkers.Count) return;
 
             TabMarkers[index].Leader = leader;
@@ -608,7 +667,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// <summary>Снимает с абзаца все позиции разом.</summary>
         public void ClearTabStops()
         {
-            if (IsReadOnly) return;
+            if (IsReadOnly || _headerFooterTabs) return;
             if (TabMarkers.Count == 0) return;
 
             TabMarkers.Clear();
@@ -623,6 +682,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
                 Models.Styles.TabAlignment.Left => Models.Styles.TabAlignment.Center,
                 Models.Styles.TabAlignment.Center => Models.Styles.TabAlignment.Right,
                 Models.Styles.TabAlignment.Right => Models.Styles.TabAlignment.Decimal,
+                Models.Styles.TabAlignment.Decimal => Models.Styles.TabAlignment.Bar,
                 _ => Models.Styles.TabAlignment.Left
             };
 
@@ -637,6 +697,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
 
         private void PublishTabStops()
         {
+            // Позиции колонтитула уходят своим событием: абзацу под кареткой они не принадлежат.
+            if (_headerFooterTabs)
+            {
+                PublishHeaderFooterTabs();
+                return;
+            }
+
             var stops = new List<Models.Styles.TabStop>(TabMarkers.Count);
             foreach (var m in TabMarkers)
             {
@@ -819,6 +886,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         {
             if (DraggingIndentMarker is not null) return;
 
+            // Пока пишут в колонтитуле, линейка показывает колонтитул. Геометрия абзаца
+            // запоминается и встаёт обратно, когда набор в колонтитуле кончится.
+            _lastParagraphGeometry = geometry;
+            if (_headerFooterTabs) return;
+
             ActiveCellLeftUnits = MmToUnits(geometry.ZoneLeftMm);
             ActiveCellRightUnits = MmToUnits(geometry.ZoneLeftMm + geometry.ZoneWidthMm);
             _leftOverhangUnits = MmToUnits(geometry.LeftOverhangMm);
@@ -841,6 +913,103 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             this.RaisePropertyChanged(nameof(RightIndentMm));
         }
 
+        // ── Колонтитул ────────────────────────────────────────────────────
+
+        // Линейка показывает позиции колонтитула: середину и правый край, как Word,
+        // пока пишут в колонтитуле. Стрелки отступов стоят на краях текста.
+        private bool _headerFooterTabs;
+
+        // Геометрия абзаца под кареткой на момент входа в колонтитул — её линейка
+        // возвращает на выходе.
+        private RulerParagraphGeometry? _lastParagraphGeometry;
+
+        /// <summary>Линейка показывает позиции колонтитула.</summary>
+        public bool IsHeaderFooterTabs => _headerFooterTabs;
+
+        /// <summary>
+        /// Позиции колонтитула сдвинули на линейке: середина среднего места и правый край
+        /// правого, мм от левого края текста.
+        /// </summary>
+        public event Action<double, double>? HeaderFooterTabsChanged;
+
+        /// <summary>
+        /// Ставит на линейку позиции колонтитула: «по центру» и «по правому краю», как
+        /// в Word. Их можно тянуть мышью; снять или добавить позиции нельзя.
+        /// </summary>
+        /// <param name="textWidthMm">Ширина текста листа.</param>
+        /// <param name="centerMm">Середина среднего места от левого края текста.</param>
+        /// <param name="rightMm">Правый край правого места от левого края текста.</param>
+        public void ShowHeaderFooterTabs(double textWidthMm, double centerMm, double rightMm)
+        {
+            if (DraggingTabIndex >= 0) return;
+
+            _headerFooterTabs = true;
+
+            ActiveCellLeftUnits = 0;
+            ActiveCellRightUnits = MmToUnits(Math.Max(textWidthMm, 1.0));
+            _leftOverhangUnits = 0;
+
+            _leftIndentMm = 0;
+            _firstLineIndentMm = 0;
+            _rightIndentMm = 0;
+            UpdateIndentMarkers();
+            ShowListMarker = false;
+
+            TabMarkers.Clear();
+            TabMarkers.Add(new RulerTabMarker
+            {
+                Position = MmToUnits(centerMm),
+                Alignment = Models.Styles.TabAlignment.Center,
+                Leader = Models.Styles.TabLeaderStyle.None
+            });
+            TabMarkers.Add(new RulerTabMarker
+            {
+                Position = MmToUnits(rightMm),
+                Alignment = Models.Styles.TabAlignment.Right,
+                Leader = Models.Styles.TabLeaderStyle.None
+            });
+            TabMarkers.Sort(static (a, b) => a.Position.CompareTo(b.Position));
+
+            this.RaisePropertyChanged(nameof(TabMarkers));
+            this.RaisePropertyChanged(nameof(ActiveCellLeftUnits));
+            this.RaisePropertyChanged(nameof(ActiveCellRightUnits));
+            this.RaisePropertyChanged(nameof(LeftIndentMm));
+            this.RaisePropertyChanged(nameof(FirstLineIndentMm));
+            this.RaisePropertyChanged(nameof(RightIndentMm));
+        }
+
+        /// <summary>Набор в колонтитуле кончился — линейка снова показывает абзац под кареткой.</summary>
+        public void HideHeaderFooterTabs()
+        {
+            if (!_headerFooterTabs) return;
+            _headerFooterTabs = false;
+
+            if (_lastParagraphGeometry is { } geometry)
+            {
+                ApplyParagraphGeometry(geometry);
+            }
+            else
+            {
+                TabMarkers.Clear();
+                this.RaisePropertyChanged(nameof(TabMarkers));
+            }
+        }
+
+        private void PublishHeaderFooterTabs()
+        {
+            double? center = null;
+            double? right = null;
+
+            foreach (var m in TabMarkers)
+            {
+                if (m.Alignment == Models.Styles.TabAlignment.Center) center ??= UnitsToMm(m.Position);
+                else if (m.Alignment == Models.Styles.TabAlignment.Right) right ??= UnitsToMm(m.Position);
+            }
+
+            if (center is double c && right is double r)
+                HeaderFooterTabsChanged?.Invoke(c, r);
+        }
+
         public void SwitchToParagraphMode()
         {
             if (Mode == RulerMode.Paragraph) return;
@@ -850,6 +1019,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
 
         public void BeginIndentDrag(RulerIndentMarkerType markerType)
         {
+            // В колонтитуле отступов нет: стрелки стоят на краях текста и не тянутся —
+            // иначе жест сдвинул бы отступы абзаца документа, который сейчас не правят.
+            if (_headerFooterTabs) return;
+
             DraggingIndentMarker = markerType;
             IndentDragStarted?.Invoke();
         }

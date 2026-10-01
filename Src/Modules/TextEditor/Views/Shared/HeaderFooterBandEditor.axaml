@@ -1,0 +1,149 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             x:Class="Writersword.Modules.TextEditor.Views.Shared.HeaderFooterBandEditor"
+             Tag="TextEditor.HeaderFooterBand">
+
+	<!--
+	    Правка полосы колонтитула прямо на листе, как в Word: текст набирается на самой
+	    бумаге, тем же шрифтом, кеглем и цветом, в тех же местах, где его рисует лист.
+	    Своего фона и рамки у поля нет — границу колонтитула и ярлык рисует полотно,
+	    оно же приглушает текст документа, пока идёт работа с колонтитулами.
+
+	    Три места — у левого поля, по центру и у правого поля — как позиции табуляции
+	    Word. Tab переходит к следующему месту, Enter начинает новую строку, Esc выходит
+	    из колонтитулов. Правка применяется, когда поле теряет фокус: одним шагом отмены.
+
+	    Номер страницы показан числом этого листа: стереть его — убрать номер только
+	    здесь, набрать верное число — вернуть живой номер, набрать другое — поставить
+	    своё. В последнем случае рядом с полосой появляется вопрос, не продолжить ли
+	    счёт отсюда.
+
+	    Tag — не имя модуля. Окно ищет, какой модуль в фокусе, по ближайшему Tag вверх
+	    от фокуса и отдаёт горячие клавиши редактора этому модулю. Без своего Tag
+	    Backspace, стрелки, Enter, Ctrl+Z/C/V/X уходили бы в рукопись, а не в поле
+	    колонтитула. С ним поле получает клавиши как обычное поле ввода.
+	-->
+
+	<UserControl.Styles>
+		<Style Selector="TextBox.HfSlot">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Margin" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="MinWidth" Value="6"/>
+			<Setter Property="VerticalAlignment" Value="Top"/>
+			<Setter Property="VerticalContentAlignment" Value="Top"/>
+			<Setter Property="AcceptsReturn" Value="True"/>
+			<Setter Property="AcceptsTab" Value="False"/>
+			<Setter Property="TextWrapping" Value="NoWrap"/>
+			<Setter Property="CornerRadius" Value="0"/>
+		</Style>
+		<Style Selector="TextBox.HfSlot /template/ Border#PART_BorderElement">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="0"/>
+		</Style>
+		<Style Selector="TextBox.HfSlot:pointerover /template/ Border#PART_BorderElement">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="TextBox.HfSlot:focus /template/ Border#PART_BorderElement">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+
+		<Style Selector="Button.HfBtn">
+			<Setter Property="Focusable" Value="False"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="6,2"/>
+			<Setter Property="MinHeight" Value="22"/>
+			<Setter Property="CornerRadius" Value="3"/>
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.HfBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.HfBtn:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+		</Style>
+		<Style Selector="Button.HfBtnAccent">
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="White"/>
+		</Style>
+		<Style Selector="Button.HfBtnAccent:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="Foreground" Value="White"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid x:Name="RootGrid" RowDefinitions="Auto Auto">
+
+		<!-- ── Полоса колонтитула: три места на бумаге ─────────────────────── -->
+		<!-- Фон прозрачный, но есть: щелчок по пустому месту полосы ставит каретку
+		     в ближайшее место, как щелчок по строке колонтитула в Word. -->
+		<Panel x:Name="BandPanel" Grid.Row="0"
+		       Background="Transparent"
+		       HorizontalAlignment="Left"
+		       VerticalAlignment="Top"
+		       Cursor="IBeam">
+			<TextBox x:Name="LeftSlot" Classes="HfSlot"
+			         HorizontalAlignment="Left"
+			         TextAlignment="Left"/>
+			<!-- Среднее и правое места стоят по позициям колонтитула, которые двигают на
+			     линейке: среднее — серединой в точке позиции (подложка шириной в две
+			     позиции, место посередине), правое — правым краем в точке позиции. -->
+			<Panel x:Name="CenterHost" HorizontalAlignment="Left">
+				<TextBox x:Name="CenterSlot" Classes="HfSlot"
+				         HorizontalAlignment="Center"
+				         TextAlignment="Center"/>
+			</Panel>
+			<Panel x:Name="RightHost" HorizontalAlignment="Left">
+				<TextBox x:Name="RightSlot" Classes="HfSlot"
+				         HorizontalAlignment="Right"
+				         TextAlignment="Right"/>
+			</Panel>
+		</Panel>
+
+		<!-- ── Вопрос о счёте после ручного номера ───────────────────────── -->
+		<!-- Со стороны текста: у верхнего колонтитула под полосой, у нижнего — над ней. -->
+		<Border x:Name="MismatchPanel" Grid.Row="1"
+		        IsVisible="False"
+		        HorizontalAlignment="Left"
+		        VerticalAlignment="Top"
+		        Margin="0,4,0,4"
+		        Padding="8,4"
+		        Background="{DynamicResource BgSurfaceBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1"
+		        CornerRadius="4"
+		        BoxShadow="0 2 6 0 #33000000">
+			<StackPanel Orientation="Horizontal" Spacing="6">
+				<PathIcon Data="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"
+				          Width="14" Height="14"
+				          Foreground="{DynamicResource AccentDefaultBrush}"
+				          VerticalAlignment="Center"/>
+				<TextBlock x:Name="MismatchText"
+				           FontSize="11"
+				           Foreground="{DynamicResource TextPrimaryBrush}"
+				           VerticalAlignment="Center"
+				           MaxWidth="360"
+				           TextWrapping="Wrap"/>
+				<Button x:Name="ContinueCountingButton" Classes="HfBtn HfBtnAccent"
+				        behaviours:TooltipBehavior.Tip="Этот лист получает набранное число, следующие продолжают от него">
+					<TextBlock Text="Продолжить счёт отсюда"/>
+				</Button>
+				<Button x:Name="KeepSingleButton" Classes="HfBtn"
+				        behaviours:TooltipBehavior.Tip="Набранное число стоит только на этом листе, счёт не тронут">
+					<TextBlock Text="Только эта страница"/>
+				</Button>
+			</StackPanel>
+		</Border>
+
+	</Grid>
+</UserControl>

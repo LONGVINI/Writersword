@@ -349,6 +349,10 @@
     <value>S</value>
     <comment>Letter shown on Strikethrough button</comment>
   </data>
+  <data name="Format_DoubleStrikethrough" xml:space="preserve">
+    <value>Double strikethrough</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
   <data name="Format_Subscript" xml:space="preserve">
     <value>Subscript</value>
     <comment>Toolbar button tooltip</comment>
@@ -1225,6 +1229,10 @@
     <value>Decimal</value>
     <comment>Tab alignment</comment>
   </data>
+  <data name="Tab_AlignBar" xml:space="preserve">
+    <value>Bar</value>
+    <comment>Tab alignment</comment>
+  </data>
   <data name="Tab_LeaderNone" xml:space="preserve">
     <value>None</value>
     <comment>Tab leader</comment>
@@ -1240,6 +1248,18 @@
   <data name="Tab_LeaderLine" xml:space="preserve">
     <value>Solid line</value>
     <comment>Tab leader</comment>
+  </data>
+  <data name="Tab_LeaderDensity" xml:space="preserve">
+    <value>Leader density</value>
+    <comment>Tab leader density</comment>
+  </data>
+  <data name="Tab_LeaderWordLike" xml:space="preserve">
+    <value>As in Word</value>
+    <comment>Tab leader density</comment>
+  </data>
+  <data name="Tab_LeaderDensity_Tip" xml:space="preserve">
+    <value>How densely leader marks are placed. 100% is the normal step, 200% is twice as dense</value>
+    <comment>Tab leader density</comment>
   </data>
   <data name="Tab_Title" xml:space="preserve">
     <value>Tabs</value>
@@ -1319,6 +1339,10 @@
   </data>
   <data name="Tab_Hint_WhatDecimal" xml:space="preserve">
     <value>Numbers line up by their separator, comma under comma.</value>
+    <comment>Ruler tab hint</comment>
+  </data>
+  <data name="Tab_Hint_WhatBar" xml:space="preserve">
+    <value>A vertical line through every line of the paragraph. Tab characters pass it by.</value>
     <comment>Ruler tab hint</comment>
   </data>
   <data name="Tab_Hint_MarkerTitle" xml:space="preserve">

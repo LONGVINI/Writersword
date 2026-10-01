@@ -165,6 +165,9 @@ namespace Writersword.Modules.TextEditor.Converters
                     Models.Styles.TextAlignment.Center => TextAlignment.Center,
                     Models.Styles.TextAlignment.Right => TextAlignment.Right,
                     Models.Styles.TextAlignment.Justify => TextAlignment.Justify,
+
+                    // У Avalonia растянутого выравнивания нет — ближе всего по ширине.
+                    Models.Styles.TextAlignment.Distribute => TextAlignment.Justify,
                     _ => TextAlignment.Left
                 };
             }

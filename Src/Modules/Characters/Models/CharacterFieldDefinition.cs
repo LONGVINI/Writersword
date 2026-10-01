@@ -30,6 +30,21 @@ namespace Writersword.Modules.Characters.Models
                 .ToList();
             parameter.Palette = (field.Palette ?? new List<string>()).ToList();
             parameter.AllowCustomColor = field.AllowCustomColor;
+            parameter.InputWidth = field.InputWidth;
+            parameter.LabelBold = field.LabelBold;
+            parameter.LabelColor = field.LabelColor ?? string.Empty;
+            parameter.LabelIcon = field.LabelIcon ?? string.Empty;
+            parameter.Decimals = Math.Clamp(field.Decimals, 0, 6);
+            parameter.NumberMin = field.NumberMin;
+            parameter.NumberMax = field.NumberMax;
+            parameter.UseStep = field.UseStep;
+            parameter.StepRule = field.StepRule;
+            parameter.StepValuesRaw = field.StepValuesRaw ?? string.Empty;
+            parameter.RatingGlyph = field.RatingGlyph ?? string.Empty;
+
+            // Шаг свободного числа живёт в том же Step, что и шаг шкалы.
+            if (field.Type == CharacterParameterType.Number)
+                parameter.Step = field.Step > 0 ? field.Step : 1;
         }
 
         /// <summary>

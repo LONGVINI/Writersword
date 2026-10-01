@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using Newtonsoft.Json;
 using Writersword.Modules.TextEditor.Models.Document;
+using Writersword.Modules.TextEditor.Models.Inline;
 using Writersword.Modules.TextEditor.Models.Page;
 
 namespace Writersword.Modules.TextEditor.Models.Settings
@@ -112,6 +113,15 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// проекта), встаёт в конец, не сбивая остальных.
         /// </summary>
         public List<string> ReadingThemeOrder { get; set; } = new();
+
+        // ── Мои эффекты ───────────────────────────────────────────────────
+
+        /// <summary>
+        /// Свои наборы эффектов букв — раздел «Мои эффекты» меню «A» на вкладке
+        /// «Главная», в том порядке, в каком их завели. Общие для всех проектов, как и
+        /// виды чтения: собранный однажды вид нужен в любой рукописи.
+        /// </summary>
+        public List<TextEffectPreset> TextEffectPresets { get; set; } = new();
 
         // ── Чтение ────────────────────────────────────────────────────────
         // Личные предпочтения читателя, а не свойства рукописи. Живут здесь, а не в
@@ -279,6 +289,9 @@ namespace Writersword.Modules.TextEditor.Models.Settings
 
             copy.HiddenReadingThemeIds = new List<string>(HiddenReadingThemeIds);
             copy.ReadingThemeOrder = new List<string>(ReadingThemeOrder);
+
+            // Наборы неизменяемы — достаточно своего списка.
+            copy.TextEffectPresets = new List<TextEffectPreset>(TextEffectPresets);
 
             copy.EditorTheme = EditorTheme?.Clone();
 

@@ -710,7 +710,11 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
 
                 if (items.Count == 0) continue;
 
-                Sections.Add(new CharacterAnketaSectionViewModel(anketa.Name, anketa.Id, items));
+                Sections.Add(new CharacterAnketaSectionViewModel(anketa.Name, anketa.Id, items, anketa)
+                {
+                    Icon = anketa.Icon,
+                    IconColor = anketa.IconColor
+                });
             }
 
             var rest = _parameters.Parameters.Where(p => !taken.Contains(p.Id)).ToList();
@@ -1308,24 +1312,42 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
     /// Раздел полей в карточке — одна подключённая анкета со своими
     /// значениями. Заголовок нужен: без него список полей плоский, и по нему
     /// не сказать, откуда взялась «Сила» — из боевой анкеты или из общей.
+    ///
+    /// Поля раскладываются так, как их разложили в анкете: строки из одной,
+    /// двух или трёх ячеек и подзаголовки групп. У раздела без анкеты («Свои
+    /// поля») раскладки нет — там короткие поля идут парами.
     /// </summary>
     public class CharacterAnketaSectionViewModel : ReactiveObject
     {
         public CharacterAnketaSectionViewModel(
             string title,
             string anketaId,
-            IReadOnlyList<CharacterParameterItemViewModel> items)
+            IReadOnlyList<CharacterParameterItemViewModel> items,
+            CharacterAnketa? anketa = null)
         {
             Title = title;
             AnketaId = anketaId;
             Items = items;
-            Groups = BuildGroups(items);
+            Groups = anketa != null && anketa.Layout.Count > 0
+                ? BuildFromLayout(anketa, items)
+                : BuildGroups(items);
         }
 
         public string Title { get; }
 
         /// <summary>Пусто у раздела «Свои поля»: анкеты за ним не стоит.</summary>
         public string AnketaId { get; }
+
+        /// <summary>Значок анкеты раздела — тот же, что в библиотеке анкет.</summary>
+        public string Icon { get; init; } = string.Empty;
+
+        public string IconColor { get; init; } = string.Empty;
+
+        /// <summary>У «Своих полей» анкеты нет — нет и значка.</summary>
+        public bool HasIcon => !string.IsNullOrEmpty(AnketaId);
+
+        /// <summary>Раздел можно отключить от персонажа: за ним стоит анкета.</summary>
+        public bool CanDetach => !string.IsNullOrEmpty(AnketaId);
 
         public IReadOnlyList<CharacterParameterItemViewModel> Items { get; }
 
@@ -1337,6 +1359,77 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         /// группа читается один раз, а не столько, сколько в ней полей.
         /// </summary>
         public IReadOnlyList<CharacterFieldGroupViewModel> Groups { get; }
+
+        /// <summary>
+        /// Раскладка из анкеты. Значение находится по идентификатору поля;
+        /// поле, у которого значения у персонажа нет, оставляет пустую ячейку,
+        /// чтобы соседи стояли там же, где их поставил автор. Значения, которых
+        /// в раскладке нет, идут в конце парами.
+        /// </summary>
+        private static IReadOnlyList<CharacterFieldGroupViewModel> BuildFromLayout(
+            CharacterAnketa anketa,
+            IReadOnlyList<CharacterParameterItemViewModel> items)
+        {
+            var byFieldId = new Dictionary<string, CharacterParameterItemViewModel>(StringComparer.Ordinal);
+            foreach (var item in items)
+            {
+                var id = CharacterFieldId.Resolve(item.Model);
+                if (!string.IsNullOrEmpty(id) && !byFieldId.ContainsKey(id)) byFieldId[id] = item;
+            }
+
+            var fieldIdByKey = anketa.Fields
+                .Where(f => !string.IsNullOrEmpty(f.Key))
+                .GroupBy(f => f.Key, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => CharacterFieldId.Resolve(g.First()), StringComparer.Ordinal);
+
+            var groups = new List<CharacterFieldGroupViewModel>();
+            var title = string.Empty;
+            var rows = new List<CharacterFieldRowViewModel>();
+            var placed = new HashSet<CharacterParameterItemViewModel>();
+
+            void Flush()
+            {
+                if (rows.Count > 0 || title.Length > 0)
+                    groups.Add(new CharacterFieldGroupViewModel(title, rows.ToList()));
+                rows.Clear();
+            }
+
+            foreach (var row in anketa.Layout)
+            {
+                if (row.Kind == CharacterAnketaRowKind.Group)
+                {
+                    Flush();
+                    title = row.Title?.Trim() ?? string.Empty;
+                    continue;
+                }
+
+                var cells = row.Cells
+                    .Select(key => !string.IsNullOrEmpty(key) &&
+                                   fieldIdByKey.TryGetValue(key, out var fieldId) &&
+                                   byFieldId.TryGetValue(fieldId, out var item) &&
+                                   placed.Add(item)
+                        ? item
+                        : null)
+                    .ToList();
+
+                if (cells.All(c => c == null)) continue;
+                rows.Add(new CharacterFieldRowViewModel(cells));
+            }
+
+            var rest = items.Where(i => !placed.Contains(i)).ToList();
+            if (rest.Count > 0)
+            {
+                Flush();
+                title = string.Empty;
+                rows.AddRange(CharacterFieldGroupViewModel.PairRows(rest));
+            }
+
+            Flush();
+
+            // Пустые подзаголовки без полей не показываются: в карточке
+            // заголовок над пустотой ничего не сообщает.
+            return groups.Where(g => g.Rows.Count > 0).ToList();
+        }
 
         private static IReadOnlyList<CharacterFieldGroupViewModel> BuildGroups(
             IReadOnlyList<CharacterParameterItemViewModel> items)
@@ -1359,7 +1452,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             }
 
             return order
-                .Select(key => new CharacterFieldGroupViewModel(key, byGroup[key]))
+                .Select(key => new CharacterFieldGroupViewModel(key, CharacterFieldGroupViewModel.PairRows(byGroup[key])))
                 .ToList();
         }
     }
@@ -1367,10 +1460,10 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
     /// <summary>Группа полей внутри раздела анкеты.</summary>
     public class CharacterFieldGroupViewModel
     {
-        public CharacterFieldGroupViewModel(string title, IReadOnlyList<CharacterParameterItemViewModel> items)
+        public CharacterFieldGroupViewModel(string title, IReadOnlyList<CharacterFieldRowViewModel> rows)
         {
             Title = title;
-            Rows = BuildRows(items);
+            Rows = rows;
         }
 
         /// <summary>Пусто у полей без группы: над ними подзаголовка нет.</summary>
@@ -1381,13 +1474,12 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public IReadOnlyList<CharacterFieldRowViewModel> Rows { get; }
 
         /// <summary>
-        /// Раскладка по строкам: короткие поля идут парами в две колонки,
+        /// Раскладка без анкеты: короткие поля идут парами в две колонки,
         /// широкое — описание, выбор чипами, полюса — занимает строку целиком.
-        /// Пара не переносится через широкое поле: порядок полей анкеты
-        /// сохраняется слева направо и сверху вниз.
+        /// Пара не переносится через широкое поле: порядок полей сохраняется
+        /// слева направо и сверху вниз.
         /// </summary>
-        private static IReadOnlyList<CharacterFieldRowViewModel> BuildRows(
-            IReadOnlyList<CharacterParameterItemViewModel> items)
+        public static List<CharacterFieldRowViewModel> PairRows(IReadOnlyList<CharacterParameterItemViewModel> items)
         {
             var rows = new List<CharacterFieldRowViewModel>();
             CharacterParameterItemViewModel? pending = null;
@@ -1398,10 +1490,10 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                 {
                     if (pending != null)
                     {
-                        rows.Add(new CharacterFieldRowViewModel(pending, null));
+                        rows.Add(new CharacterFieldRowViewModel(new CharacterParameterItemViewModel?[] { pending, null }));
                         pending = null;
                     }
-                    rows.Add(new CharacterFieldRowViewModel(item, null, isWide: true));
+                    rows.Add(new CharacterFieldRowViewModel(new CharacterParameterItemViewModel?[] { item }));
                     continue;
                 }
 
@@ -1411,39 +1503,56 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                 }
                 else
                 {
-                    rows.Add(new CharacterFieldRowViewModel(pending, item));
+                    rows.Add(new CharacterFieldRowViewModel(new CharacterParameterItemViewModel?[] { pending, item }));
                     pending = null;
                 }
             }
 
             if (pending != null)
-                rows.Add(new CharacterFieldRowViewModel(pending, null));
+                rows.Add(new CharacterFieldRowViewModel(new CharacterParameterItemViewModel?[] { pending, null }));
 
             return rows;
         }
     }
 
-    /// <summary>Строка раскладки полей: одно широкое поле или до двух коротких.</summary>
+    /// <summary>
+    /// Строка раскладки полей: одна, две или три ячейки равной ширины.
+    /// Пустая ячейка держит место — соседи стоят там, где их поставили.
+    /// </summary>
     public class CharacterFieldRowViewModel
     {
-        public CharacterFieldRowViewModel(
-            CharacterParameterItemViewModel first,
-            CharacterParameterItemViewModel? second,
-            bool isWide = false)
+        public CharacterFieldRowViewModel(IReadOnlyList<CharacterParameterItemViewModel?> cells)
         {
-            First = first;
-            Second = second;
-            IsWide = isWide;
+            Columns = Math.Clamp(cells.Count, 1, CharacterAnketaLayout.MaxColumns);
+            Cells = cells
+                .Take(Columns)
+                .Select(item => new CharacterFieldCellViewModel(item))
+                .ToList();
+
+            // В трёх колонках места мало: подпись короче, чтобы значению
+            // осталось больше.
+            var labelWidth = Columns >= 3
+                ? CharacterParameterItemViewModel.NarrowLabelWidth
+                : CharacterParameterItemViewModel.DefaultLabelWidth;
+            foreach (var cell in Cells)
+                if (cell.Item != null) cell.Item.LabelWidth = labelWidth;
         }
 
-        public CharacterParameterItemViewModel First { get; }
-        public CharacterParameterItemViewModel? Second { get; }
+        public int Columns { get; }
 
-        public bool IsWide { get; }
-        public bool IsPair => !IsWide;
+        public IReadOnlyList<CharacterFieldCellViewModel> Cells { get; }
+    }
 
-        /// <summary>Широкое поле занимает обе колонки и просвет между ними.</summary>
-        public int FirstSpan => IsWide ? 3 : 1;
-        public bool HasSecond => Second != null;
+    /// <summary>Ячейка строки: поле или пустое место.</summary>
+    public class CharacterFieldCellViewModel
+    {
+        public CharacterFieldCellViewModel(CharacterParameterItemViewModel? item)
+        {
+            Item = item;
+        }
+
+        public CharacterParameterItemViewModel? Item { get; }
+
+        public bool HasItem => Item != null;
     }
 }

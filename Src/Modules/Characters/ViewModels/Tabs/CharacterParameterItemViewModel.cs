@@ -75,6 +75,34 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
 
         public bool HasDescription => !string.IsNullOrWhiteSpace(_model.Description);
 
+        // ── Подпись ──────────────────────────────────────────────────────
+        //
+        // Подпись оформляется в анкете: жирная, своего цвета, со значком
+        // слева. Подсказка поля — знаком «?» рядом с подписью.
+
+        public FontWeight LabelFontWeight => _model.LabelBold ? FontWeight.Bold : FontWeight.Normal;
+
+        /// <summary>Цвет подписи; null — цвет текста темы (берётся из стиля).</summary>
+        public IBrush? LabelBrush => ParseBrush(_model.LabelColor);
+
+        public bool HasLabelBrush => LabelBrush != null;
+
+        public string LabelIcon => _model.LabelIcon;
+
+        public bool HasLabelIcon => !string.IsNullOrWhiteSpace(_model.LabelIcon);
+
+        private double _labelWidth = DefaultLabelWidth;
+
+        /// <summary>Ширина подписи: в узких колонках строки раскладки она короче.</summary>
+        public double LabelWidth
+        {
+            get => _labelWidth;
+            set => this.RaiseAndSetIfChanged(ref _labelWidth, value);
+        }
+
+        public const double DefaultLabelWidth = 130;
+        public const double NarrowLabelWidth = 96;
+
         /// <summary>
         /// Примечание к значению: «да, но в тушёном виде», «187, сутулится
         /// и кажется ниже». Значение сравнивается и считается, примечание
@@ -232,13 +260,8 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         }
 
         /// <summary>
-        /// Значение для ползунка. Ползунок тянется плавно, а в модель уходит
-        /// число, округлённое до шага шкалы. Округлённое обратно в ползунок не
-        /// отдаётся: он двигается маленькими шагами от своего положения, и
-        /// значение, возвращаемое к ближайшему делению после каждого шага,
-        /// держало бы его на месте — ползунок нажимался, но не ехал. Прежняя
-        /// привязка к делениям самого ползунка (IsSnapToTickEnabled) делала
-        /// ровно это.
+        /// Значение для ползунка поля: в модель уходит число,
+        /// округлённое до шага шкалы и прижатое к её краям.
         /// </summary>
         public double SliderValue
         {
@@ -377,7 +400,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         {
             get => _model.IsNotApplicable || !_model.HasNumber
                 ? string.Empty
-                : _model.NumericValue.ToString("0.###", CultureInfo.CurrentCulture);
+                : FormatNumber(_model.NumericValue);
             set
             {
                 var text = (value ?? string.Empty).Trim();
@@ -415,6 +438,196 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         }
 
 
+        // ── Пределы, шаг, знаки ──────────────────────────────────────────
+
+        private int Decimals => Math.Clamp(_model.Decimals, 0, 6);
+
+        private string FormatNumber(double value)
+        {
+            var format = Decimals == 0 ? "0" : "0." + new string('#', Decimals);
+            return value.ToString(format, CultureInfo.CurrentCulture);
+        }
+
+        /// <summary>Привести число к пределам, шагу и числу знаков из анкеты.</summary>
+        private double NormalizeNumber(double value)
+        {
+            value = Clamp(value);
+            if (_model.UseStep) value = Clamp(Snap(value));
+            return Math.Round(value, Decimals);
+        }
+
+        private double Clamp(double value)
+        {
+            if (_model.NumberMin is { } min && value < min) value = min;
+            if (_model.NumberMax is { } max && value > max) value = max;
+            return value;
+        }
+
+        private double LinearStep => _model.Step > 0 ? _model.Step : 1;
+
+        /// <summary>Множитель шага «умножением»: меньше единицы шагать некуда.</summary>
+        private double Factor => _model.Step > 1 ? _model.Step : 2;
+
+        private List<double> StepValues() =>
+            CharacterFieldDefinition.SplitStates(_model.StepValuesRaw)
+                .Select(s => double.TryParse(s.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? (double?)v : null)
+                .Where(v => v.HasValue)
+                .Select(v => v!.Value)
+                .Distinct()
+                .OrderBy(v => v)
+                .ToList();
+
+        /// <summary>Ближайшее допустимое значение по правилу шага.</summary>
+        private double Snap(double value)
+        {
+            switch (_model.StepRule)
+            {
+                case CharacterStepRule.Multiply:
+                {
+                    var origin = _model.NumberMin is { } m && m > 0 ? m : 1;
+                    if (value <= origin) return origin;
+                    var power = Math.Round(Math.Log(value / origin) / Math.Log(Factor));
+                    return origin * Math.Pow(Factor, Math.Max(0, power));
+                }
+
+                case CharacterStepRule.List:
+                {
+                    var values = StepValues();
+                    return values.Count == 0 ? value : values.OrderBy(v => Math.Abs(v - value)).First();
+                }
+
+                default:
+                {
+                    var origin = _model.NumberMin ?? 0;
+                    return origin + Math.Round((value - origin) / LinearStep) * LinearStep;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Привести вписанное к пределам, шагу и числу знаков анкеты. Зовётся,
+        /// когда поле ввода отпустили, а не на каждую букву: иначе «15» при
+        /// шаге 10 превращалось бы в ноль ещё на первой цифре.
+        /// </summary>
+        public void CommitNumber(bool upper)
+        {
+            if (_model.IsNotApplicable) return;
+
+            if (upper)
+            {
+                if (_model.NumericValueTo is not { } to) return;
+                var normalized = NormalizeNumber(to);
+                if (Math.Abs(normalized - to) > double.Epsilon)
+                {
+                    _model.NumericValueTo = normalized;
+                    this.RaisePropertyChanged(nameof(ValueSummary));
+                    Edited?.Invoke();
+                }
+                this.RaisePropertyChanged(nameof(NumberToText));
+                return;
+            }
+
+            if (!_model.HasNumber) return;
+            var value = NormalizeNumber(_model.NumericValue);
+            if (Math.Abs(value - _model.NumericValue) > double.Epsilon)
+            {
+                _model.NumericValue = value;
+                this.RaisePropertyChanged(nameof(ValueSummary));
+                Edited?.Invoke();
+            }
+            this.RaisePropertyChanged(nameof(NumberText));
+        }
+
+        /// <summary>
+        /// Шаг стрелками вверх и вниз: по правилу шага, а без шага — на
+        /// единицу младшего знака. upper — верхняя граница диапазона.
+        /// </summary>
+        public void StepNumber(int direction, bool upper)
+        {
+            if (_model.IsNotApplicable || direction == 0) return;
+
+            double current = upper
+                ? _model.NumericValueTo ?? (_model.HasNumber ? _model.NumericValue : _model.NumberMin ?? 0)
+                : _model.HasNumber ? _model.NumericValue : _model.NumberMin ?? 0;
+
+            double next;
+            if (!_model.UseStep)
+            {
+                next = current + direction * Math.Pow(10, -Decimals);
+            }
+            else
+            {
+                switch (_model.StepRule)
+                {
+                    case CharacterStepRule.Multiply:
+                        next = direction > 0 ? Snap(current) * Factor : Snap(current) / Factor;
+                        break;
+
+                    case CharacterStepRule.List:
+                    {
+                        var values = StepValues();
+                        if (values.Count == 0) return;
+                        next = direction > 0
+                            ? values.FirstOrDefault(v => v > current + 1e-9, values[^1])
+                            : values.LastOrDefault(v => v < current - 1e-9, values[0]);
+                        break;
+                    }
+
+                    default:
+                        next = Snap(current) + direction * LinearStep;
+                        break;
+                }
+            }
+
+            next = NormalizeNumber(next);
+            var text = next.ToString(CultureInfo.InvariantCulture);
+            if (upper) NumberToText = text;
+            else NumberText = text;
+        }
+
+        // ── Ширина поля ввода ────────────────────────────────────────────
+        //
+        // Поле ввода не тянется во всю строку: у имени и у места рождения
+        // разная длина ответа. Ширину задаёт анкета — в конструкторе край
+        // поля перетаскивают мышью.
+
+        public const double DefaultTextWidth = 280;
+        public const double DefaultLongTextWidth = 460;
+        public const double DefaultNumberWidth = 90;
+        public const double MinInputWidth = 60;
+        public const double MaxInputWidth = 900;
+
+        private double DefaultInputWidth => _model.Type switch
+        {
+            CharacterParameterType.LongText => DefaultLongTextWidth,
+            CharacterParameterType.Number => DefaultNumberWidth,
+            _ => DefaultTextWidth
+        };
+
+        /// <summary>Ширина поля ввода текста, описания или числа.</summary>
+        public double InputWidth
+        {
+            get => _model.InputWidth is { } w && w > 0 ? w : DefaultInputWidth;
+            set
+            {
+                var clamped = Math.Clamp(value, MinInputWidth, MaxInputWidth);
+                if (_model.InputWidth.HasValue && Math.Abs(_model.InputWidth.Value - clamped) < 0.5) return;
+                _model.InputWidth = clamped;
+                this.RaisePropertyChanged();
+            }
+        }
+
+        /// <summary>
+        /// Поле показано в конструкторе анкет: у полей ввода есть ручка
+        /// ширины. В карточке персонажа её нет — там ширина уже задана.
+        /// </summary>
+        public bool IsDesignerPreview { get; set; }
+
+        /// <summary>Ширину поля дотянули и отпустили — конструктор запоминает её в анкете.</summary>
+        public event Action<double>? InputWidthCommitted;
+
+        public void CommitInputWidth() => InputWidthCommitted?.Invoke(InputWidth);
+
         // ── Вид поля ─────────────────────────────────────────────────────
         //
         // Вид задаётся в анкете, а здесь он сводится к тому, что показать:
@@ -441,6 +654,8 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                             return StepCount + 1 <= MaxBalls ? CharacterFieldDisplay.Bipolar : CharacterFieldDisplay.Slider;
                         if (display == CharacterFieldDisplay.Bar || display == CharacterFieldDisplay.Slider)
                             return display;
+                        if (display == CharacterFieldDisplay.Stars || display == CharacterFieldDisplay.Glyph)
+                            return StepCount <= MaxBalls ? display : CharacterFieldDisplay.Bar;
                         return UseDots ? CharacterFieldDisplay.Balls : CharacterFieldDisplay.Slider;
 
                     case CharacterParameterType.StateList:
@@ -463,6 +678,16 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public bool ShowBipolar => IsApplicable && IsNumeric && EffectiveDisplay == CharacterFieldDisplay.Bipolar;
         public bool ShowBar => IsApplicable && IsNumeric && EffectiveDisplay == CharacterFieldDisplay.Bar;
         public bool ShowSlider => IsApplicable && IsNumeric && EffectiveDisplay == CharacterFieldDisplay.Slider;
+
+        /// <summary>Оценка значками: звёзды или свой значок анкеты.</summary>
+        public bool ShowGlyphs => IsApplicable && IsNumeric &&
+                                  (EffectiveDisplay == CharacterFieldDisplay.Stars ||
+                                   EffectiveDisplay == CharacterFieldDisplay.Glyph);
+
+        /// <summary>Значок оценки: у звёзд — звезда, у своего — заданный в анкете, по умолчанию сердечко.</summary>
+        public string GlyphKey => EffectiveDisplay == CharacterFieldDisplay.Stars
+            ? "star"
+            : string.IsNullOrWhiteSpace(_model.RatingGlyph) ? "heart" : _model.RatingGlyph;
 
         public bool ShowChoiceChips => IsApplicable && _model.Type == CharacterParameterType.StateList &&
                                        EffectiveDisplay == CharacterFieldDisplay.Chips;
@@ -491,6 +716,8 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             this.RaisePropertyChanged(nameof(ShowBipolar));
             this.RaisePropertyChanged(nameof(ShowBar));
             this.RaisePropertyChanged(nameof(ShowSlider));
+            this.RaisePropertyChanged(nameof(ShowGlyphs));
+            this.RaisePropertyChanged(nameof(GlyphKey));
             this.RaisePropertyChanged(nameof(ShowChoiceChips));
             this.RaisePropertyChanged(nameof(ShowChoiceList));
             this.RaisePropertyChanged(nameof(ShowMultiChips));
@@ -635,6 +862,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         private void RaiseScaleValue()
         {
             this.RaisePropertyChanged(nameof(NumericValue));
+            this.RaisePropertyChanged(nameof(SliderValue));
             this.RaisePropertyChanged(nameof(ValueCaption));
             this.RaisePropertyChanged(nameof(BallIndex));
             this.RaisePropertyChanged(nameof(BipolarIndex));
@@ -867,7 +1095,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public string NumberToText
         {
             get => _model.NumericValueTo.HasValue
-                ? _model.NumericValueTo.Value.ToString("0.###", CultureInfo.CurrentCulture)
+                ? FormatNumber(_model.NumericValueTo.Value)
                 : string.Empty;
             set
             {
@@ -886,6 +1114,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                         this.RaisePropertyChanged();
                         return;
                     }
+
 
                     if (_model.NumericValueTo.HasValue &&
                         Math.Abs(_model.NumericValueTo.Value - parsed) < double.Epsilon) return;

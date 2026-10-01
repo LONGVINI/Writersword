@@ -50,7 +50,11 @@ namespace Writersword.Modules.TextEditor.Services
                 Sections = new List<SectionModel>(source.Sections.Count),
                 Annotations = new List<InlineAnnotation>(source.Annotations.Count),
                 DocumentAutoReplaceRules = CloneAutoReplaceRules(source.DocumentAutoReplaceRules),
-                TableOfContents = CloneTableOfContents(source.TableOfContents)
+                TableOfContents = CloneTableOfContents(source.TableOfContents),
+
+                // Колонтитулы и правила страниц — копией: снимок уходит в сохранение вне
+                // UI-потока, а живые настройки тем временем правят.
+                HeaderFooter = source.HeaderFooter?.Clone()
             };
 
             foreach (var style in source.Styles)
@@ -249,7 +253,10 @@ namespace Writersword.Modules.TextEditor.Services
                     {
                         Id = breakBlock.Id,
                         Hash = breakBlock.Hash,
-                        BreakType = breakBlock.BreakType
+                        BreakType = breakBlock.BreakType,
+                        InParagraph = breakBlock.InParagraph,
+                        ContinuesParagraph = breakBlock.ContinuesParagraph,
+                        FromColumnBreak = breakBlock.FromColumnBreak
                     };
                 default:
                     throw new NotSupportedException(
@@ -293,11 +300,16 @@ namespace Writersword.Modules.TextEditor.Services
         {
             // Не используется RunModel.Clone(): он генерирует новый Id,
             // а для снимка Id должен совпадать с оригиналом.
+            // Ссылка на картинку в строке копируется вместе с текстом: без неё
+            // в сохранённом снимке run оставался голым символом-заполнителем,
+            // и после перезагрузки картинки в ячейках таблиц и в надписях
+            // пропадали (их абзацы сохраняются из снимка, а не по чанкам).
             return new RunModel
             {
                 Id = source.Id,
                 Text = source.Text,
-                Properties = source.Properties?.Clone()
+                Properties = source.Properties?.Clone(),
+                InlineImageId = source.InlineImageId
             };
         }
 
@@ -314,10 +326,16 @@ namespace Writersword.Modules.TextEditor.Services
                 StyleName = source.StyleName,
                 WidthPercent = source.WidthPercent,
                 LeftIndentPt = source.LeftIndentPt,
+                Alignment = source.Alignment,
+                BidiVisual = source.BidiVisual,
                 RepeatHeader = source.RepeatHeader,
                 SplitMode = source.SplitMode,
                 BreakLabel = source.BreakLabel,
-                ContinuationLabel = source.ContinuationLabel
+                ContinuationLabel = source.ContinuationLabel,
+
+                // Заданные высоты строк — часть таблицы: копия без них теряла высоты.
+                RowMinHeightsPt = new List<double>(source.RowMinHeightsPt),
+                ExactHeightRows = source.ExactHeightRows is null ? null : new List<int>(source.ExactHeightRows)
             };
 
             foreach (var column in source.Columns)
@@ -346,8 +364,11 @@ namespace Writersword.Modules.TextEditor.Services
                 RowSpan = source.RowSpan,
                 ColSpan = source.ColSpan,
                 BackgroundColor = source.BackgroundColor,
+                ShadingPattern = source.ShadingPattern,
+                ShadingPatternColor = source.ShadingPatternColor,
                 Borders = source.Borders.Clone(),
                 VerticalAlignment = source.VerticalAlignment,
+                TextDirection = source.TextDirection,
                 PaddingTopPt = source.PaddingTopPt,
                 PaddingBottomPt = source.PaddingBottomPt,
                 PaddingLeftPt = source.PaddingLeftPt,

@@ -28,7 +28,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             // Рисовать нечего: ни рамки, ни заливки.
             bool hasBorders = renderLayout.Borders is not null && !renderLayout.Borders.IsEmpty;
-            if (!hasBorders && string.IsNullOrWhiteSpace(renderLayout.ShadingColor)) return;
+            if (!hasBorders && !renderLayout.HasShading) return;
 
             int from = Math.Max(pl.LineFrom, 0);
             int to = Math.Min(pl.LineTo, renderLayout.Lines.Count);
@@ -45,7 +45,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Заливка без рамки сливается с соседом той же заливки — сплошным фоном,
             // без просвета на интервале между абзацами.
-            bool hasShading = !string.IsNullOrWhiteSpace(renderLayout.ShadingColor);
+            bool hasShading = renderLayout.HasShading;
             bool shadeJoinPrev = hasShading && isStart
                 && JoinsNeighbour(idx - 1, pl, layouts, renderLayout, absY, sliceHeight, above: true, shading: true);
             bool shadeJoinNext = hasShading && isEnd
@@ -93,7 +93,10 @@ namespace Writersword.Modules.TextEditor.Document
             // «нет» незачем.
             if (shading)
             {
-                if (string.IsNullOrWhiteSpace(other.Vm.Model?.Properties.ShadingColor)) return false;
+                var otherProps = other.Vm.Model?.Properties;
+                if (string.IsNullOrWhiteSpace(otherProps?.ShadingColor)
+                    && string.IsNullOrWhiteSpace(otherProps?.ShadingPattern))
+                    return false;
             }
             else if (other.Vm.Model?.Properties.Borders is not { } otherBorders || otherBorders.IsEmpty)
             {
@@ -118,10 +121,8 @@ namespace Writersword.Modules.TextEditor.Document
                     : SKTextRenderer.BordersJoin(otherLayout, renderLayout);
                 if (!sameGroup) return false;
 
-                float expectedTop = other.Ypt + otherHeight
-                                    + otherLayout.SpaceAfterPt + renderLayout.SpaceBeforePt;
-
-                return Math.Abs(expectedTop - absY) <= BorderJoinTolerancePt;
+                float otherBottom = other.Ypt + otherHeight;
+                return GapMatches(absY - otherBottom, otherLayout, renderLayout);
             }
 
             // Сосед снизу должен начинаться в этом куске.
@@ -131,10 +132,52 @@ namespace Writersword.Modules.TextEditor.Document
                 : SKTextRenderer.BordersJoin(renderLayout, otherLayout);
             if (!sameGroupBelow) return false;
 
-            float expectedNextTop = absY + sliceHeight
-                                    + renderLayout.SpaceAfterPt + otherLayout.SpaceBeforePt;
-
-            return Math.Abs(expectedNextTop - other.Ypt) <= BorderJoinTolerancePt;
+            float sliceBottom = absY + sliceHeight;
+            return GapMatches(other.Ypt - sliceBottom, renderLayout, otherLayout);
         }
+
+        /// <summary>
+        /// Промежуток между соседями на листе — это их интервал и ничего больше: между
+        /// ними не стоит ни картинка, ни таблица.
+        ///
+        /// Интервал после верхнего и интервал до нижнего вёрстка не складывает, а берёт
+        /// больший из двух, как Word. Прежде проверка ждала их сумму, и соседи с
+        /// ненулевыми интервалами с обеих сторон — 6 и 12 пт, 12 и 24 пт — соседями не
+        /// считались: сплошная заливка у Word рвалась у нас на отдельные полосы. Сумма
+        /// тоже принимается — на случай вёрстки, которая интервалы складывает.
+        ///
+        /// Место под линии рамки в схлопывании не участвует (см.
+        /// <see cref="CollapsibleSpaceAfterPt"/>): ожидаемый промежуток — обе линии
+        /// целиком и больший из самих интервалов.
+        /// </summary>
+        private static bool GapMatches(float gapPt, SKTextLayout upper, SKTextLayout lower)
+        {
+            float summed = upper.SpaceAfterPt + lower.SpaceBeforePt;
+            float collapsed = summed
+                - Math.Min(CollapsibleSpaceAfterPt(upper), CollapsibleSpaceBeforePt(lower));
+
+            return Math.Abs(gapPt - collapsed) <= BorderJoinTolerancePt
+                || Math.Abs(gapPt - summed) <= BorderJoinTolerancePt;
+        }
+
+        /// <summary>
+        /// Часть интервала после абзаца, которую может поглотить интервал до следующего:
+        /// сам интервал, без места под нижнюю линию рамки.
+        ///
+        /// Раскладка кладёт место под линию в интервал (так её учитывают разбивка на
+        /// листы, каретка и попадание мышью), но схлопывается у Word только интервал.
+        /// Линия — часть абзаца: две рамки подряд стоят одна под другой, каждая со своим
+        /// зазором. Прежде схлопывание съедало место под линию, и рамка следующего
+        /// абзаца ложилась поверх рамки предыдущего.
+        /// </summary>
+        private static float CollapsibleSpaceAfterPt(SKTextLayout layout)
+            => Math.Max(0f, layout.SpaceAfterPt - (layout.Borders?.Bottom?.ExtentPt ?? 0f));
+
+        /// <summary>
+        /// Часть интервала до абзаца, которая может слиться с интервалом после
+        /// предыдущего: сам интервал, без места под верхнюю линию рамки.
+        /// </summary>
+        private static float CollapsibleSpaceBeforePt(SKTextLayout layout)
+            => Math.Max(0f, layout.SpaceBeforePt - (layout.Borders?.Top?.ExtentPt ?? 0f));
     }
 }

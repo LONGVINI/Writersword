@@ -1,0 +1,381 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             x:Class="Writersword.Modules.TextEditor.Views.Shared.PageNumberPicker">
+
+	<!--
+	    Выбор места номера страницы — содержимое меню кнопки «Номер», как галерея Word:
+	    вместо слов маленькие листы, и на каждом видно, где встанет номер. Верхний ряд —
+	    номер вверху листа, нижний — внизу. Два последних — разворот книги: номер у
+	    внешнего края или у корешка; цифры 2 и 3 показывают левую и правую страницы.
+
+	    Ниже — действия словами, с картинкой-подсказкой слева.
+
+	    Команды берёт у DataContext — вкладки «Колонтитулы» (RibbonHeaderFooterTabViewModel).
+	    После выбора меню закрывается само.
+	-->
+
+	<UserControl.Styles>
+		<Style Selector="Button.PagePick">
+			<Setter Property="Focusable" Value="False"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="Padding" Value="4"/>
+			<Setter Property="Width" Value="64"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Top"/>
+		</Style>
+		<Style Selector="Button.PagePick:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.PagePick:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+		</Style>
+
+		<Style Selector="Border.Sheet">
+			<Setter Property="Background" Value="#FFFDF8"/>
+			<Setter Property="BorderBrush" Value="#8C8C8C"/>
+			<Setter Property="BorderThickness" Value="1"/>
+		</Style>
+		<Style Selector="Rectangle.Line">
+			<Setter Property="Fill" Value="#C9C9C9"/>
+			<Setter Property="Height" Value="2"/>
+		</Style>
+		<Style Selector="TextBlock.Num">
+			<Setter Property="FontSize" Value="8"/>
+			<Setter Property="FontWeight" Value="Bold"/>
+			<Setter Property="Foreground" Value="#2B579A"/>
+			<Setter Property="Margin" Value="3,0"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+		<Style Selector="TextBlock.PickCaption">
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="TextAlignment" Value="Center"/>
+			<Setter Property="TextWrapping" Value="Wrap"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+
+		<Style Selector="TextBlock.Caption">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+
+		<Style Selector="Button.PickText">
+			<Setter Property="Focusable" Value="False"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+			<Setter Property="Padding" Value="6,4"/>
+			<Setter Property="CornerRadius" Value="3"/>
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.PickText:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<!-- Картинка слева от действия: одинаковой ширины, чтобы слова стояли ровно. -->
+		<Style Selector="TextBlock.ActionGlyph">
+			<Setter Property="Width" Value="30"/>
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="FontWeight" Value="Bold"/>
+			<Setter Property="TextAlignment" Value="Center"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="PathIcon.ActionIcon">
+			<Setter Property="Width" Value="30"/>
+			<Setter Property="Height" Value="14"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<StackPanel Spacing="6" Margin="2">
+
+		<TextBlock Classes="Caption" Text="Номер вверху страницы"/>
+		<StackPanel Orientation="Horizontal" Spacing="2">
+			<Button Classes="PagePick" Command="{Binding InsertPageNumberCommand}" CommandParameter="TopLeft"
+			        behaviours:TooltipBehavior.Tip="Вверху слева">
+				<StackPanel Spacing="3">
+					<Panel HorizontalAlignment="Center">
+						<Border Classes="Sheet" Width="30" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="0" Text="1" HorizontalAlignment="Left"/>
+							</Grid>
+						</Border>
+					</Panel>
+					<TextBlock Classes="PickCaption" Text="Слева"/>
+				</StackPanel>
+			</Button>
+			<Button Classes="PagePick" Command="{Binding InsertPageNumberCommand}" CommandParameter="TopCenter"
+			        behaviours:TooltipBehavior.Tip="Вверху по центру">
+				<StackPanel Spacing="3">
+					<Panel HorizontalAlignment="Center">
+						<Border Classes="Sheet" Width="30" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="0" Text="1" HorizontalAlignment="Center"/>
+							</Grid>
+						</Border>
+					</Panel>
+					<TextBlock Classes="PickCaption" Text="По центру"/>
+				</StackPanel>
+			</Button>
+			<Button Classes="PagePick" Command="{Binding InsertPageNumberCommand}" CommandParameter="TopRight"
+			        behaviours:TooltipBehavior.Tip="Вверху справа">
+				<StackPanel Spacing="3">
+					<Panel HorizontalAlignment="Center">
+						<Border Classes="Sheet" Width="30" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="0" Text="1" HorizontalAlignment="Right"/>
+							</Grid>
+						</Border>
+					</Panel>
+					<TextBlock Classes="PickCaption" Text="Справа"/>
+				</StackPanel>
+			</Button>
+			<Button Classes="PagePick" Command="{Binding InsertPageNumberCommand}" CommandParameter="TopOutside"
+			        behaviours:TooltipBehavior.Tip="Вверху у внешнего края — как в книге"
+			        behaviours:TooltipBehavior.Description="На левых (чётных) страницах номер слева, на правых (нечётных) — справа. Включает «Левые и правые».">
+				<StackPanel Spacing="3">
+					<StackPanel Orientation="Horizontal" Spacing="1" HorizontalAlignment="Center">
+						<Border Classes="Sheet" Width="21" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="0" Text="2" HorizontalAlignment="Left"/>
+							</Grid>
+						</Border>
+						<Border Classes="Sheet" Width="21" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="0" Text="3" HorizontalAlignment="Right"/>
+							</Grid>
+						</Border>
+					</StackPanel>
+					<TextBlock Classes="PickCaption" Text="Книга: снаружи"/>
+				</StackPanel>
+			</Button>
+			<Button Classes="PagePick" Command="{Binding InsertPageNumberCommand}" CommandParameter="TopInside"
+			        behaviours:TooltipBehavior.Tip="Вверху у корешка"
+			        behaviours:TooltipBehavior.Description="На левых (чётных) страницах номер справа, на правых (нечётных) — слева. Включает «Левые и правые».">
+				<StackPanel Spacing="3">
+					<StackPanel Orientation="Horizontal" Spacing="1" HorizontalAlignment="Center">
+						<Border Classes="Sheet" Width="21" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="0" Text="2" HorizontalAlignment="Right"/>
+							</Grid>
+						</Border>
+						<Border Classes="Sheet" Width="21" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="0" Text="3" HorizontalAlignment="Left"/>
+							</Grid>
+						</Border>
+					</StackPanel>
+					<TextBlock Classes="PickCaption" Text="Книга: у корешка"/>
+				</StackPanel>
+			</Button>
+		</StackPanel>
+
+		<TextBlock Classes="Caption" Text="Номер внизу страницы"/>
+		<StackPanel Orientation="Horizontal" Spacing="2">
+			<Button Classes="PagePick" Command="{Binding InsertPageNumberCommand}" CommandParameter="BottomLeft"
+			        behaviours:TooltipBehavior.Tip="Внизу слева">
+				<StackPanel Spacing="3">
+					<Panel HorizontalAlignment="Center">
+						<Border Classes="Sheet" Width="30" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="2" Text="1" HorizontalAlignment="Left"/>
+							</Grid>
+						</Border>
+					</Panel>
+					<TextBlock Classes="PickCaption" Text="Слева"/>
+				</StackPanel>
+			</Button>
+			<Button Classes="PagePick" Command="{Binding InsertPageNumberCommand}" CommandParameter="BottomCenter"
+			        behaviours:TooltipBehavior.Tip="Внизу по центру">
+				<StackPanel Spacing="3">
+					<Panel HorizontalAlignment="Center">
+						<Border Classes="Sheet" Width="30" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="2" Text="1" HorizontalAlignment="Center"/>
+							</Grid>
+						</Border>
+					</Panel>
+					<TextBlock Classes="PickCaption" Text="По центру"/>
+				</StackPanel>
+			</Button>
+			<Button Classes="PagePick" Command="{Binding InsertPageNumberCommand}" CommandParameter="BottomRight"
+			        behaviours:TooltipBehavior.Tip="Внизу справа">
+				<StackPanel Spacing="3">
+					<Panel HorizontalAlignment="Center">
+						<Border Classes="Sheet" Width="30" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="2" Text="1" HorizontalAlignment="Right"/>
+							</Grid>
+						</Border>
+					</Panel>
+					<TextBlock Classes="PickCaption" Text="Справа"/>
+				</StackPanel>
+			</Button>
+			<Button Classes="PagePick" Command="{Binding InsertPageNumberCommand}" CommandParameter="BottomOutside"
+			        behaviours:TooltipBehavior.Tip="Внизу у внешнего края — как в книге"
+			        behaviours:TooltipBehavior.Description="На левых (чётных) страницах номер слева, на правых (нечётных) — справа. Включает «Левые и правые».">
+				<StackPanel Spacing="3">
+					<StackPanel Orientation="Horizontal" Spacing="1" HorizontalAlignment="Center">
+						<Border Classes="Sheet" Width="21" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="2" Text="2" HorizontalAlignment="Left"/>
+							</Grid>
+						</Border>
+						<Border Classes="Sheet" Width="21" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="2" Text="3" HorizontalAlignment="Right"/>
+							</Grid>
+						</Border>
+					</StackPanel>
+					<TextBlock Classes="PickCaption" Text="Книга: снаружи"/>
+				</StackPanel>
+			</Button>
+			<Button Classes="PagePick" Command="{Binding InsertPageNumberCommand}" CommandParameter="BottomInside"
+			        behaviours:TooltipBehavior.Tip="Внизу у корешка"
+			        behaviours:TooltipBehavior.Description="На левых (чётных) страницах номер справа, на правых (нечётных) — слева. Включает «Левые и правые».">
+				<StackPanel Spacing="3">
+					<StackPanel Orientation="Horizontal" Spacing="1" HorizontalAlignment="Center">
+						<Border Classes="Sheet" Width="21" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="2" Text="2" HorizontalAlignment="Right"/>
+							</Grid>
+						</Border>
+						<Border Classes="Sheet" Width="21" Height="40">
+							<Grid RowDefinitions="9 * 9">
+								<StackPanel Grid.Row="1" Spacing="3" Margin="4,2" VerticalAlignment="Center">
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line"/>
+									<Rectangle Classes="Line" Width="10" HorizontalAlignment="Left"/>
+								</StackPanel>
+								<TextBlock Classes="Num" Grid.Row="2" Text="3" HorizontalAlignment="Left"/>
+							</Grid>
+						</Border>
+					</StackPanel>
+					<TextBlock Classes="PickCaption" Text="Книга: у корешка"/>
+				</StackPanel>
+			</Button>
+		</StackPanel>
+
+		<Separator Margin="0,2"/>
+
+		<Button Classes="PickText" Command="{Binding InsertPageOfPagesCommand}"
+		        behaviours:TooltipBehavior.Tip="Номер вместе с числом всех страниц">
+			<StackPanel Orientation="Horizontal" Spacing="8">
+				<TextBlock Classes="ActionGlyph" Text="3/12"/>
+				<TextBlock Text="Внизу по центру «Страница 3 из 12»" VerticalAlignment="Center"/>
+			</StackPanel>
+		</Button>
+		<Button Classes="PickText" Command="{Binding InsertPageFieldCommand}"
+		        behaviours:TooltipBehavior.Tip="Когда вы пишете в колонтитуле: номер встаёт в текст там, где мигает курсор">
+			<StackPanel Orientation="Horizontal" Spacing="8">
+				<TextBlock Classes="ActionGlyph" Text="#"/>
+				<TextBlock Text="Номер — туда, где сейчас курсор" VerticalAlignment="Center"/>
+			</StackPanel>
+		</Button>
+		<Button Classes="PickText" Command="{Binding InsertPagesFieldCommand}"
+		        behaviours:TooltipBehavior.Tip="Когда вы пишете в колонтитуле: число страниц документа встаёт там, где мигает курсор">
+			<StackPanel Orientation="Horizontal" Spacing="8">
+				<TextBlock Classes="ActionGlyph" Text="Σ"/>
+				<TextBlock Text="Число всех страниц — туда, где курсор" VerticalAlignment="Center"/>
+			</StackPanel>
+		</Button>
+		<Button Classes="PickText" Command="{Binding RemovePageNumbersCommand}"
+		        behaviours:TooltipBehavior.Tip="Текст колонтитулов остаётся, пропадают только номера">
+			<StackPanel Orientation="Horizontal" Spacing="8">
+				<PathIcon Classes="ActionIcon" Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+				<TextBlock Text="Убрать номера со всех страниц" VerticalAlignment="Center"/>
+			</StackPanel>
+		</Button>
+
+	</StackPanel>
+</UserControl>

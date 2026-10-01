@@ -152,6 +152,12 @@ namespace Writersword.Modules.Characters.Interfaces
         void UpdateTemplate(CharacterTemplate template);
         void DeleteTemplate(string id);
 
+        /// <summary>
+        /// Переставить свой шаблон на место index среди своих шаблонов.
+        /// Встроенные стоят отдельно и не двигаются.
+        /// </summary>
+        void MoveTemplate(string id, int index);
+
         void LoadTemplates(List<CharacterTemplate> templates);
 
         /// <summary>Пользовательские шаблоны — то, что уходит в файл проекта.</summary>

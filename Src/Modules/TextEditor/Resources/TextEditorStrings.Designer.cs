@@ -90,6 +90,7 @@ namespace Writersword.Modules.TextEditor.Resources
         public static string Format_Paste => ResourceManager.GetString("Format_Paste", _culture)!;
         public static string Format_Strikethrough => ResourceManager.GetString("Format_Strikethrough", _culture)!;
         public static string Format_Strikethrough_Letter => ResourceManager.GetString("Format_Strikethrough_Letter", _culture)!;
+        public static string Format_DoubleStrikethrough => ResourceManager.GetString("Format_DoubleStrikethrough", _culture)!;
         public static string Format_Subscript => ResourceManager.GetString("Format_Subscript", _culture)!;
         public static string Format_Superscript => ResourceManager.GetString("Format_Superscript", _culture)!;
         public static string Format_TextColor => ResourceManager.GetString("Format_TextColor", _culture)!;
@@ -356,10 +357,14 @@ namespace Writersword.Modules.TextEditor.Resources
         public static string Tab_AlignCenter => ResourceManager.GetString("Tab_AlignCenter", _culture)!;
         public static string Tab_AlignRight => ResourceManager.GetString("Tab_AlignRight", _culture)!;
         public static string Tab_AlignDecimal => ResourceManager.GetString("Tab_AlignDecimal", _culture)!;
+        public static string Tab_AlignBar => ResourceManager.GetString("Tab_AlignBar", _culture)!;
         public static string Tab_LeaderNone => ResourceManager.GetString("Tab_LeaderNone", _culture)!;
         public static string Tab_LeaderDots => ResourceManager.GetString("Tab_LeaderDots", _culture)!;
         public static string Tab_LeaderDashes => ResourceManager.GetString("Tab_LeaderDashes", _culture)!;
         public static string Tab_LeaderLine => ResourceManager.GetString("Tab_LeaderLine", _culture)!;
+        public static string Tab_LeaderDensity => ResourceManager.GetString("Tab_LeaderDensity", _culture)!;
+        public static string Tab_LeaderWordLike => ResourceManager.GetString("Tab_LeaderWordLike", _culture)!;
+        public static string Tab_LeaderDensity_Tip => ResourceManager.GetString("Tab_LeaderDensity_Tip", _culture)!;
         public static string Tab_Title => ResourceManager.GetString("Tab_Title", _culture)!;
         public static string Tab_Position => ResourceManager.GetString("Tab_Position", _culture)!;
         public static string Tab_DefaultStep => ResourceManager.GetString("Tab_DefaultStep", _culture)!;
@@ -380,6 +385,7 @@ namespace Writersword.Modules.TextEditor.Resources
         public static string Tab_Hint_WhatCenter => ResourceManager.GetString("Tab_Hint_WhatCenter", _culture)!;
         public static string Tab_Hint_WhatRight => ResourceManager.GetString("Tab_Hint_WhatRight", _culture)!;
         public static string Tab_Hint_WhatDecimal => ResourceManager.GetString("Tab_Hint_WhatDecimal", _culture)!;
+        public static string Tab_Hint_WhatBar => ResourceManager.GetString("Tab_Hint_WhatBar", _culture)!;
         public static string Tab_Hint_MarkerTitle => ResourceManager.GetString("Tab_Hint_MarkerTitle", _culture)!;
         public static string Tab_Hint_MarkerBody => ResourceManager.GetString("Tab_Hint_MarkerBody", _culture)!;
         public static string Tab_Hint_StripTitle => ResourceManager.GetString("Tab_Hint_StripTitle", _culture)!;

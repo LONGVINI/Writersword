@@ -30,12 +30,18 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
         private int _initialOutline;
         private bool _loading;
 
+        // Своё значение «не добавлять интервал между абзацами одного стиля» у абзаца на
+        // входе. null — абзац берёт его у стиля: пока флажок не тронут, так и остаётся,
+        // и окно не отменяет правило стиля одним нажатием «ОК».
+        private bool? _initialContextualSpacing;
+
         private Border _scrim = null!;
         private ScrollViewer _panelScroll = null!;
         private ToggleButton _alignLeftBtn = null!;
         private ToggleButton _alignCenterBtn = null!;
         private ToggleButton _alignRightBtn = null!;
         private ToggleButton _alignJustifyBtn = null!;
+        private ToggleButton _alignDistributeBtn = null!;
         private ToggleButton _indentCmBtn = null!;
         private ToggleButton _indentPtBtn = null!;
         private ToggleButton _intervalCmBtn = null!;
@@ -46,6 +52,8 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
         private NumericUpDown _firstLineValueBox = null!;
         private NumericUpDown _spaceBeforeBox = null!;
         private NumericUpDown _spaceAfterBox = null!;
+        private CheckBox _contextualSpacingBox = null!;
+        private CheckBox _rightToLeftBox = null!;
         private ComboBox _lineSpacingCombo = null!;
         private NumericUpDown _lineSpacingValueBox = null!;
         private TextBlock _previewSample = null!;
@@ -66,6 +74,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _alignCenterBtn = this.FindControl<ToggleButton>("AlignCenterBtn")!;
             _alignRightBtn = this.FindControl<ToggleButton>("AlignRightBtn")!;
             _alignJustifyBtn = this.FindControl<ToggleButton>("AlignJustifyBtn")!;
+            _alignDistributeBtn = this.FindControl<ToggleButton>("AlignDistributeBtn")!;
             _indentCmBtn = this.FindControl<ToggleButton>("IndentCmBtn")!;
             _indentPtBtn = this.FindControl<ToggleButton>("IndentPtBtn")!;
             _intervalCmBtn = this.FindControl<ToggleButton>("IntervalCmBtn")!;
@@ -76,6 +85,8 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _firstLineValueBox = this.FindControl<NumericUpDown>("FirstLineValueBox")!;
             _spaceBeforeBox = this.FindControl<NumericUpDown>("SpaceBeforeBox")!;
             _spaceAfterBox = this.FindControl<NumericUpDown>("SpaceAfterBox")!;
+            _contextualSpacingBox = this.FindControl<CheckBox>("ContextualSpacingBox")!;
+            _rightToLeftBox = this.FindControl<CheckBox>("RightToLeftBox")!;
             _lineSpacingCombo = this.FindControl<ComboBox>("LineSpacingCombo")!;
             _lineSpacingValueBox = this.FindControl<NumericUpDown>("LineSpacingValueBox")!;
             _previewSample = this.FindControl<TextBlock>("PreviewSample")!;
@@ -97,6 +108,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _alignCenterBtn.Click += OnAlignClick;
             _alignRightBtn.Click += OnAlignClick;
             _alignJustifyBtn.Click += OnAlignClick;
+            _alignDistributeBtn.Click += OnAlignClick;
 
             _indentCmBtn.Click += OnIndentUnitClick;
             _indentPtBtn.Click += OnIndentUnitClick;
@@ -183,6 +195,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             if (ReferenceEquals(sender, _alignCenterBtn)) _align = 1;
             else if (ReferenceEquals(sender, _alignRightBtn)) _align = 2;
             else if (ReferenceEquals(sender, _alignJustifyBtn)) _align = 3;
+            else if (ReferenceEquals(sender, _alignDistributeBtn)) _align = 4;
             else _align = 0;
             SyncAlignChecked();
             UpdatePreview();
@@ -194,6 +207,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _alignCenterBtn.IsChecked = _align == 1;
             _alignRightBtn.IsChecked = _align == 2;
             _alignJustifyBtn.IsChecked = _align == 3;
+            _alignDistributeBtn.IsChecked = _align == 4;
         }
 
         // ── Единицы ───────────────────────────────────────────────────────
@@ -308,6 +322,10 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _spaceBeforeBox.Value = (decimal)FromPt(p.SpaceBefore ?? 0, _intervalUnit);
             _spaceAfterBox.Value = (decimal)FromPt(p.SpaceAfter ?? 0, _intervalUnit);
 
+            _initialContextualSpacing = p.ContextualSpacing;
+            _contextualSpacingBox.IsChecked = p.ContextualSpacing == true;
+            _rightToLeftBox.IsChecked = p.RightToLeft;
+
             var rule = p.LineSpacingRule ?? LineSpacingRule.Auto;
             double val = p.LineSpacingValue ?? 1.0;
             if (rule == LineSpacingRule.Exact)
@@ -353,6 +371,13 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
 
             p.SpaceBefore = ToPt(_spaceBeforeBox.Value, _intervalUnit);
             p.SpaceAfter = ToPt(_spaceAfterBox.Value, _intervalUnit);
+
+            bool contextual = _contextualSpacingBox.IsChecked == true;
+            p.ContextualSpacing = _initialContextualSpacing is null && !contextual
+                ? null
+                : contextual;
+
+            p.RightToLeft = _rightToLeftBox.IsChecked == true;
 
             double lsVal = (double)(_lineSpacingValueBox.Value ?? 0m);
             switch (_lineSpacingCombo.SelectedIndex)
@@ -402,6 +427,9 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
                 1 => Avalonia.Media.TextAlignment.Center,
                 2 => Avalonia.Media.TextAlignment.Right,
                 3 => Avalonia.Media.TextAlignment.Justify,
+
+                // У образца растянутого нет — ближе всего по ширине.
+                4 => Avalonia.Media.TextAlignment.Justify,
                 _ => Avalonia.Media.TextAlignment.Left
             };
 

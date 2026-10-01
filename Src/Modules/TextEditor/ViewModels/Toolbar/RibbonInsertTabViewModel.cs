@@ -12,11 +12,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
     {
         private readonly ITextEditorCommandTarget _target;
 
+        /// <summary>
+        /// Вкладка колонтитулов: группа «Колонтитулы» на «Вставке» берёт её команды.
+        /// Ставит RibbonViewModel сразу после создания вкладок.
+        /// </summary>
+        public RibbonHeaderFooterTabViewModel? HeaderFooter { get; set; }
+
         private bool _isFileGroupExpanded = true;
         private bool _isTableGroupExpanded = true;
         private bool _isMediaGroupExpanded = true;
         private bool _isPageGroupExpanded = true;
         private bool _isLinksGroupExpanded = true;
+        private bool _isHeaderFooterGroupExpanded = true;
 
         private const double WidthTable = 100;
         private const double WidthMedia = 200;
@@ -48,6 +55,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             get => _isLinksGroupExpanded;
             set => this.RaiseAndSetIfChanged(ref _isLinksGroupExpanded, value);
+        }
+        public bool IsHeaderFooterGroupExpanded
+        {
+            get => _isHeaderFooterGroupExpanded;
+            set => this.RaiseAndSetIfChanged(ref _isHeaderFooterGroupExpanded, value);
         }
 
         /// <summary>Открывает файл документа и передаёт его редактору на импорт.</summary>
@@ -177,24 +189,38 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         }
 
         /// <summary>
-        /// Порядок сворачивания: Ссылки → Страница → Медиа → Файл → Таблица.
-        /// Пороги подняты на ширину группы «Файл», добавленной в начало вкладки.
+        /// Порядок сворачивания: Ссылки → Колонтитулы → Страница → Медиа → Файл → Таблица.
+        /// Пороги подняты на ширину группы «Файл», добавленной в начало вкладки, и на
+        /// ширину группы «Колонтитулы» (в свёрнутом виде — одна кнопка).
         /// </summary>
         public void UpdateLayout(double availableWidth)
         {
-            if (availableWidth >= 1050)
+            if (availableWidth >= 1240)
             {
                 IsFileGroupExpanded = true;
                 IsTableGroupExpanded = true;
                 IsMediaGroupExpanded = true;
                 IsPageGroupExpanded = true;
+                IsHeaderFooterGroupExpanded = true;
                 IsLinksGroupExpanded = true;
                 return;
             }
 
             IsLinksGroupExpanded = false;
 
-            if (availableWidth >= 870)
+            if (availableWidth >= 1110)
+            {
+                IsFileGroupExpanded = true;
+                IsTableGroupExpanded = true;
+                IsMediaGroupExpanded = true;
+                IsPageGroupExpanded = true;
+                IsHeaderFooterGroupExpanded = true;
+                return;
+            }
+
+            IsHeaderFooterGroupExpanded = false;
+
+            if (availableWidth >= 940)
             {
                 IsFileGroupExpanded = true;
                 IsTableGroupExpanded = true;
@@ -205,7 +231,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             IsPageGroupExpanded = false;
 
-            if (availableWidth >= 730)
+            if (availableWidth >= 800)
             {
                 IsFileGroupExpanded = true;
                 IsTableGroupExpanded = true;
@@ -215,7 +241,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             IsMediaGroupExpanded = false;
 
-            if (availableWidth >= 580)
+            if (availableWidth >= 650)
             {
                 IsFileGroupExpanded = true;
                 IsTableGroupExpanded = true;

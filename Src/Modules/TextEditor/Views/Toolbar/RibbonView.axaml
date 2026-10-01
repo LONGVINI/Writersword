@@ -154,6 +154,21 @@
 					<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
 				</Style>
 
+				<!-- Контекстная вкладка «Колонтитулы» — как у прочих контекстных. -->
+				<Style Selector="TabItem.HeaderFooterContextTab > TextBlock">
+					<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+					<Setter Property="FontWeight" Value="Medium"/>
+				</Style>
+				<Style Selector="TabItem.HeaderFooterContextTab:selected">
+					<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+				<Style Selector="TabItem.HeaderFooterContextTab:selected > TextBlock">
+					<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+				<Style Selector="TabItem.HeaderFooterContextTab:pointerover">
+					<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+
 			</TabControl.Styles>
 
 			<!-- ── Главная ──────────────────────────────────────────────── -->
@@ -291,6 +306,22 @@
 				       IsHitTestVisible="{Binding IsEditingEnabled}"
 				       Opacity="{Binding ContentOpacity}">
 					<tabs:RibbonTocTab DataContext="{Binding Toc}"/>
+				</Panel>
+			</TabItem>
+
+			<!-- ── Колонтитулы (КОНТЕКСТНАЯ) ─────────────────────────────── -->
+			<!-- Видна, пока идёт работа с колонтитулами: правка на листе     -->
+			<!-- или вызов из группы «Колонтитулы» на «Вставке».              -->
+			<!-- IsHeaderFooterTabVisible управляется из TextEditorViewModel. -->
+			<TabItem Classes="HeaderFooterContextTab"
+			         IsVisible="{Binding IsHeaderFooterTabVisible}">
+				<TabItem.Header>
+					<TextBlock Text="Колонтитулы"/>
+				</TabItem.Header>
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonHeaderFooterTab DataContext="{Binding HeaderFooter}"/>
 				</Panel>
 			</TabItem>
 

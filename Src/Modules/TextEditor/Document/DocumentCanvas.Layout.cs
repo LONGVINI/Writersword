@@ -118,6 +118,18 @@ namespace Writersword.Modules.TextEditor.Document
                     var modelCell = tableBlock.GetCell(cellLayout.Row, cellLayout.Column);
                     if (modelCell is null) continue;
 
+                    // Повёрнутая ячейка раскладывается целиком и только там, где начинается
+                    // её строка: построчный разрез по страницам идёт поперёк её строк и для
+                    // неё не имеет смысла, а остаток на следующей странице покажет клип.
+                    if (cellLayout.IsRotated)
+                    {
+                        if (effectiveOffset <= 0f)
+                            AddRotatedCellParasToLayouts(newLayouts, tableBlock, cellLayout, modelCell,
+                                tableEntryIdx, pageIdx, cellContentX, cellBaseY + cellPadTopTotal,
+                                clipX, clipY, clipW, clipH);
+                        continue;
+                    }
+
                     // Вертикальное выравнивание.
                     float contentAreaH = cellLayout.HeightPt
                         - cellLayout.PadTopPt - cellLayout.PadBottomPt
@@ -260,6 +272,81 @@ namespace Writersword.Modules.TextEditor.Document
                             Marker: cellMarker));
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Абзацы повёрнутой ячейки в _layouts. Координаты абзацев — раскладка обычного
+        /// горизонтального текста с началом в левом верхнем углу области содержимого;
+        /// на лист их переводит матрица ячейки (SKTextRenderer.RotatedCellMatrix).
+        /// </summary>
+        private void AddRotatedCellParasToLayouts(
+            List<ParaLayout> newLayouts,
+            TableBlock tableBlock,
+            SKTableCellLayout cellLayout,
+            TableCell modelCell,
+            int tableEntryIdx,
+            int pageIdx,
+            float contentLeftPt,
+            float contentTopPt,
+            float clipX, float clipY, float clipW, float clipH)
+        {
+            float contentWidthPt = cellLayout.WidthPt
+                - cellLayout.PadLeftPt - cellLayout.PadRightPt
+                - cellLayout.Borders.Left.WidthPt - cellLayout.Borders.Right.WidthPt;
+            float contentHeightPt = cellLayout.HeightPt
+                - cellLayout.PadTopPt - cellLayout.PadBottomPt
+                - cellLayout.Borders.Top.WidthPt - cellLayout.Borders.Bottom.WidthPt;
+
+            var rotation = SKTextRenderer.RotatedCellMatrix(
+                cellLayout.TextDirection, contentLeftPt, contentTopPt,
+                contentWidthPt, contentHeightPt);
+
+            float stackTopPt = contentTopPt
+                + SKTextRenderer.RotatedCellStackOffset(cellLayout, contentWidthPt);
+
+            for (int pi = 0; pi < cellLayout.Paragraphs.Count; pi++)
+            {
+                var cellPara = cellLayout.Paragraphs[pi];
+                var paraBlock = pi < modelCell.Paragraphs.Count ? modelCell.Paragraphs[pi] : null;
+                if (paraBlock is null) continue;
+
+                if (!_cellVmCache.TryGetValue(paraBlock, out var vm))
+                {
+                    vm = new ParagraphViewModel(paraBlock);
+                    _cellVmCache[paraBlock] = vm;
+                }
+
+                var info = new CellInfo(
+                    tableBlock, modelCell, paraBlock, pi, tableEntryIdx,
+                    contentLeftPt, stackTopPt,
+                    clipX, clipY, clipW, clipH,
+                    cellLayout.TextDirection, rotation);
+
+                float absParaY = stackTopPt + cellPara.Ypt + cellPara.Layout.SpaceBeforePt;
+
+                float paraHeight = cellPara.Layout.TotalHeightPt;
+                if (pi + 1 < cellLayout.Paragraphs.Count)
+                {
+                    var next = cellLayout.Paragraphs[pi + 1];
+                    float nextAbsY = stackTopPt + next.Ypt + next.Layout.SpaceBeforePt;
+                    paraHeight = Math.Max(paraHeight, nextAbsY - absParaY);
+                }
+
+                Rendering.ListMarkerInfo? cellMarker =
+                    _cellListMarkers.TryGetValue(paraBlock, out var mi) ? mi : null;
+
+                newLayouts.Add(new ParaLayout(
+                    vm,
+                    cellPara.Layout,
+                    absParaY,
+                    paraHeight,
+                    pageIdx,
+                    0,
+                    cellPara.Layout.Lines.Count,
+                    AbsXPt: contentLeftPt,
+                    Cell: info,
+                    Marker: cellMarker));
             }
         }
 
@@ -620,6 +707,20 @@ namespace Writersword.Modules.TextEditor.Document
             try
             {
                 RebuildPageModeConverge();
+
+                // Колонтитулы печатаются не на всех листах — место под них у каждого
+                // листа своё и известно только по готовой раскладке. Вышло другим, чем
+                // то, с которым раскладка строилась, — она повторяется. Потолок проходов
+                // защищает от дребезга листа на границе.
+                for (int bandPass = 0; bandPass < 2 && RefreshBandReserveFromPass(); bandPass++)
+                {
+                    _wrapZoneImagesOverride = null;
+                    _wrapZoneShapesOverride = null;
+                    _wrapAnchorIn.Clear();
+                    _wrapAnchorOut = new Dictionary<ParagraphBlock, float>();
+
+                    RebuildPageModeConverge();
+                }
             }
             finally
             {
@@ -903,6 +1004,13 @@ namespace Writersword.Modules.TextEditor.Document
             float pageWidthPt = GetPageWidthPt();
             float pageHeightPt = GetPageHeightPt();
             var (ml, mt, mr, mb) = GetPagePaddingPt();
+
+            // Поле листа без колонтитулов. Верх и низ каждого листа уточняются по его
+            // колонтитулам (DocumentCanvas.BandReserve): mt и mb ниже — поля того листа,
+            // который сейчас заполняется.
+            float baseMt = mt, baseMb = mb;
+            (mt, mb) = PagePaddingForPage(0, baseMt, baseMb);
+
             float textWidthPt = Math.Max(pageWidthPt - ml - mr, 1f);
             float canvasWPt = (float)(_canvasWidth * PxToPt);
             float pageXPt = Math.Max((canvasWPt - pageWidthPt) / 2f, 0f);
@@ -945,7 +1053,16 @@ namespace Writersword.Modules.TextEditor.Document
                     newBreakMarks,
                     pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb);
 
+                // Листы, перенесённые из прошлой раскладки, получают поля своих
+                // колонтитулов, а не общие.
+                for (int seeded = 0; seeded < newPages.Count; seeded++)
+                {
+                    var (seedTop, seedBottom) = PagePaddingForPage(seeded, baseMt, baseMb);
+                    newPages[seeded] = newPages[seeded] with { PadTopPt = seedTop, PadBottomPt = seedBottom };
+                }
+
                 pageIdx = _partialFromPage;
+                (mt, mb) = PagePaddingForPage(pageIdx, baseMt, baseMb);
                 pageYPt = newPages[pageIdx].Ypt;
                 pageBottomPt = pageYPt + pageHeightPt - mb;
                 contentYPt = pageYPt + mt;
@@ -984,11 +1101,14 @@ namespace Writersword.Modules.TextEditor.Document
             // Нумерация списков за один проход по блокам в порядке следования.
             var markerMap = Rendering.ListNumberingEngine.Compute(blocks);
 
+            // Интервалы между абзацами одного стиля: вывод о соседях — до раскладки.
+            ApplyContextualSpacing(blocks);
+
             // Абзацы в ячейках таблиц в blocks не входят, поэтому маркеры для них
             // считаются отдельно и кладутся прямо в модель: раскладка ячеек строится
             // ниже, и к этому моменту текст маркера должен быть готов.
             _cellListMarkers.Clear();
-            ApplyListMarkerTextsInTables(blocks, GetCurrentTextWidthPt());
+            ApplyListMarkerTextsInTables(blocks, GetCurrentTextWidthPt(), markerMap);
 
             // O(1) поиск ParagraphViewModel по ParagraphBlock.
             // Без этого словаря был O(n²): для каждого из N блоков — O(n) перебор Paragraphs.
@@ -1015,9 +1135,19 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (block is BreakBlock bb && bb.BreakType == BreakType.Page)
                 {
-                    newBreakMarks.Add(new PageBreakMark(pageIdx, contentYPt));
+                    // Разрыв внутри абзаца Word отмечается на последней строке куска до
+                    // разрыва; если этого куска на листе нет (свёрнут под заголовком или
+                    // перед разрывом стоит не абзац), отметка остаётся отдельной строкой.
+                    ParagraphBlock? breakTail = bb.InParagraph && bi > 0
+                        && blocks[bi - 1] is ParagraphBlock tailBlock && !IsCollapsedBlock(tailBlock)
+                        ? tailBlock
+                        : null;
+
+                    newBreakMarks.Add(new PageBreakMark(
+                        pageIdx, contentYPt, breakTail, bb.ContinuesParagraph, bb.FromColumnBreak));
 
                     pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                    (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
                     pageBottomPt = pageYPt + pageHeightPt - mb;
                     contentYPt = pageYPt + mt;
                     pageIdx++;
@@ -1028,7 +1158,8 @@ namespace Writersword.Modules.TextEditor.Document
                 if (block is TableBlock tableBlock)
                 {
                     var tableLayout = GetOrBuildTableLayout(tableBlock, textWidthPt);
-                    float tableXPt = textXPt + (float)tableBlock.LeftIndentPt;
+                    float tableXPt = textXPt
+                        + (float)tableBlock.ResolveLeftOffsetPt(textWidthPt, tableLayout.TotalWidthPt);
                     bool byCell = tableBlock.SplitMode == TableSplitMode.ByCell;
                     float fullPageH = pageHeightPt - mt - mb;
 
@@ -1093,6 +1224,21 @@ namespace Writersword.Modules.TextEditor.Document
                                         if (row.Cells[ci].ContentHeightPt > refCell.ContentHeightPt)
                                             refCell = row.Cells[ci];
                                     }
+
+                                    // Строки повёрнутой ячейки идут поперёк разреза страницы
+                                    // и опорой для него быть не могут: берём самую высокую
+                                    // из обычных ячеек строки, если такая есть.
+                                    if (refCell.IsRotated)
+                                    {
+                                        SKTableCellLayout? plain = null;
+                                        foreach (var candidate in row.Cells)
+                                        {
+                                            if (candidate.IsRotated) continue;
+                                            if (plain is null || candidate.ContentHeightPt > plain.ContentHeightPt)
+                                                plain = candidate;
+                                        }
+                                        refCell = plain;
+                                    }
                                 }
                                 if (refCell != null)
                                 {
@@ -1156,6 +1302,7 @@ namespace Writersword.Modules.TextEditor.Document
                                     rowFrom, ri + 1, sliceStartOffset, visibleH);
 
                                 pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
                                 pageBottomPt = pageYPt + pageHeightPt - mb;
                                 pageIdx++;
                                 newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
@@ -1197,6 +1344,7 @@ namespace Writersword.Modules.TextEditor.Document
                                 }
 
                                 pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
                                 pageBottomPt = pageYPt + pageHeightPt - mb;
                                 pageIdx++;
                                 newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
@@ -1241,6 +1389,7 @@ namespace Writersword.Modules.TextEditor.Document
                                     isFirstSlice = false;
                                 }
                                 pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
                                 pageBottomPt = pageYPt + pageHeightPt - mb;
                                 pageIdx++;
                                 newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
@@ -1349,6 +1498,7 @@ namespace Writersword.Modules.TextEditor.Document
                         if (shapeBoxH > pageBottomPt - contentYPt && !shapeAtPageTop)
                         {
                             pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                            (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
                             pageBottomPt = pageYPt + pageHeightPt - mb;
                             contentYPt = pageYPt + mt;
                             pageIdx++;
@@ -1484,6 +1634,7 @@ namespace Writersword.Modules.TextEditor.Document
                             if (doTransfer)
                             {
                                 pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
                                 pageBottomPt = pageYPt + pageHeightPt - mb;
                                 contentYPt = pageYPt + mt;
                                 pageIdx++;
@@ -1630,7 +1781,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (collapseSpacing && !float.IsNaN(collapseEndYPt)
                     && Math.Abs(contentYPt - collapseEndYPt) < 0.01f)
                 {
-                    float collapseBeforePt = GetOrBuildLayout(pvm, textWidthPt).SpaceBeforePt;
+                    float collapseBeforePt = CollapsibleSpaceBeforePt(GetOrBuildLayout(pvm, textWidthPt));
                     collapseAppliedPt = Math.Min(collapsePrevAfterPt, collapseBeforePt);
                     contentYPt -= collapseAppliedPt;
                 }
@@ -1665,6 +1816,7 @@ namespace Writersword.Modules.TextEditor.Document
                     if (breakBefore)
                     {
                         pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                        (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
                         pageBottomPt = pageYPt + pageHeightPt - mb;
                         contentYPt = pageYPt + mt;
                         pageIdx++;
@@ -1903,6 +2055,7 @@ namespace Writersword.Modules.TextEditor.Document
                             }
 
                             pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                            (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
                             pageBottomPt = pageYPt + pageHeightPt - mb;
                             contentYPt = pageYPt + mt + PageContinuationTopPadPt;
                             pageIdx++;
@@ -1930,6 +2083,7 @@ namespace Writersword.Modules.TextEditor.Document
                         }
 
                         pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                        (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
                         pageBottomPt = pageYPt + pageHeightPt - mb;
                         contentYPt = pageYPt + mt;
                         pageIdx++;
@@ -2030,6 +2184,7 @@ namespace Writersword.Modules.TextEditor.Document
                                 && contentYPt > pageYPt + mt)
                             {
                                 pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
                                 pageBottomPt = pageYPt + pageHeightPt - mb;
                                 contentYPt = pageYPt + mt + PageContinuationTopPadPt;
                                 pageIdx++;
@@ -2056,7 +2211,7 @@ namespace Writersword.Modules.TextEditor.Document
                     pageIdx, lineFrom, layout.Lines.Count,
                     AbsXPt: absXPt, Marker: paraMarker));
 
-                collapsePrevAfterPt = layout.SpaceAfterPt;
+                collapsePrevAfterPt = CollapsibleSpaceAfterPt(layout);
                 collapseEndYPt = contentYPt;
             }
 
@@ -2080,6 +2235,7 @@ namespace Writersword.Modules.TextEditor.Document
             while (newPages.Count < maxPinnedPage)
             {
                 pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                (mt, mb) = PagePaddingForPage(newPages.Count, baseMt, baseMb);
                 newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
             }
 
@@ -2162,6 +2318,7 @@ namespace Writersword.Modules.TextEditor.Document
             while (newPages.Count < neededPages)
             {
                 pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                (mt, mb) = PagePaddingForPage(newPages.Count, baseMt, baseMb);
                 newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
             }
 
@@ -2215,6 +2372,7 @@ namespace Writersword.Modules.TextEditor.Document
                 while (newPages.Count < keepPages)
                 {
                     pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                    (mt, mb) = PagePaddingForPage(newPages.Count, baseMt, baseMb);
                     newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
                 }
             }
@@ -2325,7 +2483,8 @@ namespace Writersword.Modules.TextEditor.Document
                 // при схлопывании второй раз не считается — как и в самой вёрстке.
                 float chainBeforePt = layout.SpaceBeforePt;
                 if (collapseSpacing && !float.IsNaN(chainPrevAfterPt))
-                    chainBeforePt = Math.Max(0f, chainBeforePt - chainPrevAfterPt);
+                    chainBeforePt = Math.Max(0f,
+                        chainBeforePt - Math.Min(chainPrevAfterPt, CollapsibleSpaceBeforePt(layout)));
                 total += chainBeforePt;
 
                 if (layout.Lines.Count == 0)
@@ -2349,7 +2508,7 @@ namespace Writersword.Modules.TextEditor.Document
                 foreach (var line in layout.Lines)
                     total += line.Height;
                 total += layout.SpaceAfterPt;
-                chainPrevAfterPt = layout.SpaceAfterPt;
+                chainPrevAfterPt = CollapsibleSpaceAfterPt(layout);
 
                 if (!continuesChain) return total;
             }
@@ -2438,6 +2597,11 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 var layout = pl.Layout;
                 if (layout is null || layout.Lines.Count == 0) continue;
+
+                // Картинка в повёрнутой ячейке рисуется вместе с её текстом, повёрнутой.
+                // Запись с прямоугольной рамкой и маркерами размера легла бы на лист не
+                // там и не той стороной, поэтому такую картинку правят через её абзац.
+                if (pl.Cell is { IsRotated: true }) continue;
 
                 int lineFrom = Math.Max(0, pl.LineFrom);
                 int lineTo = Math.Min(pl.LineTo, layout.Lines.Count);
@@ -2597,11 +2761,14 @@ namespace Writersword.Modules.TextEditor.Document
             // Нумерация списков за один проход по блокам в порядке следования.
             var markerMap = Rendering.ListNumberingEngine.Compute(blocks);
 
+            // Интервалы между абзацами одного стиля: вывод о соседях — до раскладки.
+            ApplyContextualSpacing(blocks);
+
             // Абзацы в ячейках таблиц в blocks не входят, поэтому маркеры для них
             // считаются отдельно и кладутся прямо в модель: раскладка ячеек строится
             // ниже, и к этому моменту текст маркера должен быть готов.
             _cellListMarkers.Clear();
-            ApplyListMarkerTextsInTables(blocks, GetCurrentTextWidthPt());
+            ApplyListMarkerTextsInTables(blocks, GetCurrentTextWidthPt(), markerMap);
 
             var pvmByBlock = new Dictionary<ParagraphBlock, ParagraphViewModel>(DocVm.Paragraphs.Count);
             foreach (var p in DocVm.Paragraphs)
@@ -2628,7 +2795,8 @@ namespace Writersword.Modules.TextEditor.Document
                 if (block is TableBlock tableBlock)
                 {
                     var tableLayout = GetOrBuildTableLayout(tableBlock, textWidthPt);
-                    float tableXPt = padWPt + (float)tableBlock.LeftIndentPt;
+                    float tableXPt = padWPt
+                        + (float)tableBlock.ResolveLeftOffsetPt(textWidthPt, tableLayout.TotalWidthPt);
                     int teIdx = newTables.Count;
                     newTables.Add(new TableEntry(tableBlock, tableLayout, yPt, tableXPt, 0));
                     AddCellParasToLayouts(newLayouts, tableBlock, tableLayout,
@@ -2783,7 +2951,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // Схлопывание интервалов — как в режиме страниц.
                 if (collapseSpacing && !float.IsNaN(collapseEndYPt)
                     && Math.Abs(yPt - collapseEndYPt) < 0.01f)
-                    yPt -= Math.Min(collapsePrevAfterPt, layout.SpaceBeforePt);
+                    yPt -= Math.Min(collapsePrevAfterPt, CollapsibleSpaceBeforePt(layout));
 
                 float hPt = Math.Max(layout.TotalHeightPt, FallbackLinePt);
                 newLayouts.Add(new ParaLayout(
@@ -2793,7 +2961,7 @@ namespace Writersword.Modules.TextEditor.Document
                     AbsXPt: padWPt, Marker: paraMarker));
                 yPt += layout.BlockHeightPt;
 
-                collapsePrevAfterPt = layout.SpaceAfterPt;
+                collapsePrevAfterPt = CollapsibleSpaceAfterPt(layout);
                 collapseEndYPt = yPt;
             }
 

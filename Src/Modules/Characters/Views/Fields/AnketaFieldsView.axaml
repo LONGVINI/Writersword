@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
+             xmlns:fields="using:Writersword.Modules.Characters.Views.Fields"
+             x:Class="Writersword.Modules.Characters.Views.Fields.AnketaFieldsView"
+             x:DataType="tabs:CharacterAnketaSectionViewModel">
+
+	<!-- Поля анкеты так, как их разложили в анкете: подзаголовки групп и
+	     строки из одной–трёх ячеек равной ширины. Общий для карточки
+	     персонажа и превью редактора анкет — выглядеть они должны одинаково. -->
+	<UserControl.Styles>
+		<Style Selector="TextBlock.field-group">
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="Margin" Value="0,6,0,2"/>
+		</Style>
+	</UserControl.Styles>
+
+	<ItemsControl ItemsSource="{Binding Groups}">
+		<ItemsControl.ItemTemplate>
+			<DataTemplate x:DataType="tabs:CharacterFieldGroupViewModel">
+				<StackPanel Spacing="0" Margin="0,0,0,4">
+					<TextBlock Classes="field-group"
+					           Text="{Binding Title}"
+					           IsVisible="{Binding HasTitle}"/>
+					<ItemsControl ItemsSource="{Binding Rows}">
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="tabs:CharacterFieldRowViewModel">
+								<ItemsControl ItemsSource="{Binding Cells}">
+									<ItemsControl.ItemsPanel>
+										<ItemsPanelTemplate>
+											<UniformGrid Rows="1" Columns="{Binding Columns}"/>
+										</ItemsPanelTemplate>
+									</ItemsControl.ItemsPanel>
+									<ItemsControl.ItemTemplate>
+										<DataTemplate x:DataType="tabs:CharacterFieldCellViewModel">
+											<ContentControl Margin="0,0,20,0" Content="{Binding Item}">
+												<ContentControl.ContentTemplate>
+													<DataTemplate x:DataType="tabs:CharacterParameterItemViewModel">
+														<fields:ParameterFieldView/>
+													</DataTemplate>
+												</ContentControl.ContentTemplate>
+											</ContentControl>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+				</StackPanel>
+			</DataTemplate>
+		</ItemsControl.ItemTemplate>
+	</ItemsControl>
+</UserControl>

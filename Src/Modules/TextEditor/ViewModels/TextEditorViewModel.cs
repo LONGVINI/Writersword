@@ -19,11 +19,13 @@ using Writersword.Modules.TextEditor.ViewModels.Reading;
 using Writersword.Modules.TextEditor.ViewModels.StatusBar;
 using Writersword.Modules.TextEditor.ViewModels.Toc;
 using Writersword.Modules.TextEditor.ViewModels.Toolbar;
+using TextEffectPreset = Writersword.Modules.TextEditor.Models.Inline.TextEffectPreset;
 
 namespace Writersword.Modules.TextEditor.ViewModels
 {
     public sealed class TextEditorViewModel
-        : ReactiveObject, ITextEditorCommandTarget, IReadingHost, IEditorViewHost, ITocHost, IDisposable
+        : ReactiveObject, ITextEditorCommandTarget, IReadingHost, IEditorViewHost, ITocHost,
+          IHeaderFooterHost, ITextEffectPresetHost, IDisposable
     {
         private static readonly ILogger _logger = Log.ForContext<TextEditorViewModel>();
 
@@ -286,6 +288,52 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             if (inToc) Ribbon.Toc.RefreshAll();
             else RestoreRibbonTabIfHidden(TocTabIndex);
+        }
+
+        // ── Колонтитулы ───────────────────────────────────────────────────
+
+        /// <summary>Документ, чьи колонтитулы правит вкладка «Колонтитулы».</summary>
+        public DocumentViewModel? HeaderFooterDocument => DocumentViewModel;
+
+        // Вкладка, активная до входа в колонтитулы, — к ней лента возвращается на выходе.
+        private int _tabIndexBeforeHeaderFooter = -1;
+
+        /// <summary>
+        /// Режим колонтитулов включили или выключили. Вкладка в этом случае выбирается
+        /// сразу, в отличие от оглавления: человек пришёл именно за колонтитулами —
+        /// двойным щелчком по полю листа или кнопкой на «Вставке».
+        /// </summary>
+        private void OnHeaderFooterModeChanged()
+        {
+            bool on = DocumentViewModel?.IsHeaderFooterMode == true;
+            if (Ribbon.IsHeaderFooterTabVisible == on) return;
+
+            if (on)
+            {
+                _tabIndexBeforeHeaderFooter = Ribbon.SelectedTabIndex;
+                Ribbon.IsHeaderFooterTabVisible = true;
+                Ribbon.HeaderFooter.RefreshAll();
+                Ribbon.SelectedTabIndex = HeaderFooterTabIndex;
+                return;
+            }
+
+            // Сначала уводим ленту с вкладки, потом прячем её: выбранная скрытая
+            // вкладка роняет TabControl (см. RestoreRibbonTab).
+            if (Ribbon.SelectedTabIndex == HeaderFooterTabIndex)
+            {
+                int previous = _tabIndexBeforeHeaderFooter;
+                Ribbon.SelectedTabIndex = previous >= 0 && previous != HeaderFooterTabIndex
+                    && IsRibbonTabVisible(previous) ? previous : 0;
+            }
+
+            Ribbon.IsHeaderFooterTabVisible = false;
+            _tabIndexBeforeHeaderFooter = -1;
+        }
+
+        private void OnHeaderFooterChangedForRibbon()
+        {
+            if (Ribbon.IsHeaderFooterTabVisible)
+                Ribbon.HeaderFooter.RefreshAll();
         }
 
         /// <summary>
@@ -758,6 +806,106 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ReadingRibbon.RefreshAll();
             Ribbon.Appearance.RebuildThemeItems();
             Ribbon.Appearance.RefreshAll();
+        }
+
+        // ── Мои эффекты (ITextEffectPresetHost) ─────────────────────────
+
+        /// <summary>Наборы «Мои эффекты» из общих настроек.</summary>
+        public IReadOnlyList<TextEffectPreset> TextEffectPresets => Settings.TextEffectPresets;
+
+        public event Action? TextEffectPresetsChanged;
+
+        public TextEffectPreset? CaptureCaretTextEffectPreset(string name)
+            => DocumentViewModel?.CaptureTextEffectPreset(name);
+
+        public void ApplyTextEffectPreset(TextEffectPreset preset)
+            => DocumentViewModel?.ApplyTextEffectPreset(preset);
+
+        public void AddTextEffectPreset(TextEffectPreset preset)
+        {
+            if (preset.IsBlank) return;
+
+            var list = new List<TextEffectPreset>(Settings.TextEffectPresets)
+            {
+                preset with { Name = UniqueTextEffectPresetName(preset.Name, preset.Id) }
+            };
+
+            Settings.TextEffectPresets = list;
+            SaveTextEffectPresets();
+        }
+
+        public void ReplaceTextEffectPreset(TextEffectPreset preset)
+        {
+            var list = new List<TextEffectPreset>(Settings.TextEffectPresets);
+            int index = list.FindIndex(p => string.Equals(p.Id, preset.Id, StringComparison.Ordinal));
+            if (index < 0) return;
+
+            list[index] = preset with { Name = UniqueTextEffectPresetName(preset.Name, preset.Id) };
+            Settings.TextEffectPresets = list;
+            SaveTextEffectPresets();
+        }
+
+        public void RemoveTextEffectPreset(string id)
+        {
+            var list = new List<TextEffectPreset>(Settings.TextEffectPresets);
+            if (list.RemoveAll(p => string.Equals(p.Id, id, StringComparison.Ordinal)) == 0) return;
+
+            Settings.TextEffectPresets = list;
+            SaveTextEffectPresets();
+        }
+
+        public string SuggestTextEffectPresetName()
+        {
+            for (int number = 1; ; number++)
+            {
+                string candidate = TextEffectPreset.DefaultName + " " + number;
+                if (!TextEffectPresetNameTaken(candidate, null)) return candidate;
+            }
+        }
+
+        /// <summary>
+        /// Наборы поменяли в другом открытом редакторе, и они уже перенесены в
+        /// настройки этого (см. TextEditorModule.OnSharedReadingSettingsSaved). Здесь
+        /// только обновляется меню: запись уже сделал тот, кто наборы правил.
+        /// </summary>
+        public void RefreshSharedTextEffectPresets() => TextEffectPresetsChanged?.Invoke();
+
+        /// <summary>
+        /// Наборы — общие настройки: меню обновляется, настройки уходят на запись, и
+        /// остальные открытые редакторы получают тот же список. Документ при этом не
+        /// меняется — отмечать его изменённым незачем.
+        /// </summary>
+        private void SaveTextEffectPresets()
+        {
+            TextEffectPresetsChanged?.Invoke();
+            GlobalSettingsChanged?.Invoke(Settings);
+        }
+
+        /// <summary>
+        /// Имя без повторов: пустое становится именем по умолчанию, занятое другим
+        /// набором получает номер — «Неон», «Неон 2», «Неон 3».
+        /// </summary>
+        private string UniqueTextEffectPresetName(string? name, string? ownId)
+        {
+            string baseName = string.IsNullOrWhiteSpace(name) ? TextEffectPreset.DefaultName : name.Trim();
+            if (!TextEffectPresetNameTaken(baseName, ownId)) return baseName;
+
+            for (int number = 2; ; number++)
+            {
+                string candidate = baseName + " " + number;
+                if (!TextEffectPresetNameTaken(candidate, ownId)) return candidate;
+            }
+        }
+
+        private bool TextEffectPresetNameTaken(string name, string? ownId)
+        {
+            foreach (var preset in Settings.TextEffectPresets)
+            {
+                if (ownId is not null && string.Equals(preset.Id, ownId, StringComparison.Ordinal)) continue;
+                if (string.Equals(preset.Name, name, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -1368,7 +1516,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _spellCheck = new SpellCheckService();
             _exportService = new ExportService();
 
-            Ribbon = new RibbonViewModel(this, this, this);
+            Ribbon = new RibbonViewModel(this, this, this, this);
+
+            // «Мои эффекты» живут в общих настройках — лента видит их через редактор.
+            Ribbon.Home.AttachPresetHost(this);
             StatusBar = new StatusBarViewModel();
             Navigator = new NavigatorViewModel();
             Navigator.GoToParagraphRequested = index => DocumentViewModel?.GoToParagraph(index);
@@ -1470,6 +1621,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Settings = settings ?? new TextEditorSettings();
             MonitorSizeInches = Settings.MonitorSizeInches;
 
+            // Наборы «Мои эффекты» лежат в этом же наборе настроек.
+            TextEffectPresetsChanged?.Invoke();
+
             _logger.Debug("LoadDocument: MonitorSizeInches={V}", MonitorSizeInches);
 
             if (_documentViewModel is not null)
@@ -1480,6 +1634,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 _documentViewModel.ParagraphFormatChanged -= OnStructureChangedForNavigator;
                 _documentViewModel.ActiveParagraphChanged -= OnActiveParagraphChangedForNavigator;
                 _documentViewModel.ViewPreferenceChanged -= OnViewPreferenceChanged;
+                _documentViewModel.HeaderFooterModeChanged -= OnHeaderFooterModeChanged;
+                _documentViewModel.HeaderFooterChanged -= OnHeaderFooterChangedForRibbon;
             }
 
             // Старое представление картинки «в тексте» (отдельный блок в потоке) переводим
@@ -1535,6 +1691,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
             docVm.StylesChanged += Ribbon.Home.RefreshStyles;
             docVm.ParagraphFormatChanged += OnStructureChangedForNavigator;
             docVm.ActiveParagraphChanged += OnActiveParagraphChangedForNavigator;
+
+            // Колонтитулы: вкладка появляется в режиме колонтитулов и перечитывает
+            // настройки после каждой их правки.
+            docVm.HeaderFooterModeChanged += OnHeaderFooterModeChanged;
+            docVm.HeaderFooterChanged += OnHeaderFooterChangedForRibbon;
+
+            // Новый документ открывается вне режима колонтитулов. Вкладку прежнего
+            // сначала покидаем, потом прячем: скрытая выбранная роняет TabControl.
+            if (Ribbon.SelectedTabIndex == HeaderFooterTabIndex)
+                Ribbon.SelectedTabIndex = 0;
+            Ribbon.IsHeaderFooterTabVisible = false;
 
             // Команда риббона приходит в того из двух получателей, кто оказался под рукой:
             // и модуль, и документ отвечают на один и тот же договор. Панелью при этом
@@ -1713,6 +1880,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             MonitorSizeInches = settings.MonitorSizeInches;
             Ruler.Units = settings.RulerUnits;
 
+            // Наборы «Мои эффекты» — тоже часть набора настроек.
+            TextEffectPresetsChanged?.Invoke();
+
             // Виды чтения живут в этом же наборе: сменился набор — сменился и список.
             Ribbon.Appearance.RebuildThemeItems();
             Ribbon.Appearance.RefreshAll();
@@ -1728,6 +1898,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private void OnCursorContextChanged(CursorContext ctx)
         {
             Ribbon.Home.UpdateFromCursorContext(ctx);
+
+            // Группа «Эта страница» на вкладке колонтитулов говорит о листе каретки.
+            if (Ribbon.IsHeaderFooterTabVisible)
+                Ribbon.HeaderFooter.RefreshPage();
             StatusBar.Language = ctx.Language ?? Settings.DefaultLanguage;
 
             // Стрелки линейки отсюда больше не ставятся. Их единственный источник —
@@ -1857,6 +2031,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private const int ImageTabIndex = 6;
         private const int ImagePlacementTabIndex = 7;
         private const int TocTabIndex = 8;
+        private const int HeaderFooterTabIndex = 9;
 
         // Вкладка, активная до автопереключения на «Формат» — восстанавливается
         // при снятии выделения картинки.
@@ -1877,6 +2052,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ImageTabIndex => Ribbon.IsImageTabVisible,
             ImagePlacementTabIndex => Ribbon.IsImageTabVisible,
             TocTabIndex => Ribbon.IsTocTabVisible,
+            HeaderFooterTabIndex => Ribbon.IsHeaderFooterTabVisible,
             _ => index >= 0 && index < TableTabIndex
         };
 
@@ -2462,6 +2638,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var table = DocumentViewModel?.ActiveTable;
             if (table is null) return;
             OpenRulerTableUndo(table, "Move table");
+            table.Alignment = TableBlockAlignment.Left;
             table.LeftIndentPt = leftEdgeMm * 72.0 / 25.4;
             DocumentViewModel?.FireParagraphFormatChanged();
         }
@@ -2480,6 +2657,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 return;
             }
             OpenRulerTableUndo(table, "Move table");
+            table.Alignment = TableBlockAlignment.Left;
             table.LeftIndentPt = leftEdgeMm * 72.0 / 25.4;
             CloseRulerTableUndo();
             DocumentViewModel?.FireParagraphFormatChanged();
@@ -2491,7 +2669,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ToggleBold() => DocumentViewModel?.ToggleBold();
         public void ToggleItalic() => DocumentViewModel?.ToggleItalic();
         public void ToggleUnderline() => DocumentViewModel?.ToggleUnderline();
+        public void ToggleUnderlineStyle(Writersword.Modules.TextEditor.Models.Inline.UnderlineStyle style) => DocumentViewModel?.ToggleUnderlineStyle(style);
+        public void SetUnderlineStyle(Writersword.Modules.TextEditor.Models.Inline.UnderlineStyle style) => DocumentViewModel?.SetUnderlineStyle(style);
+        public void SetUnderlineColor(string? color) => DocumentViewModel?.SetUnderlineColor(color);
         public void ToggleStrikethrough() => DocumentViewModel?.ToggleStrikethrough();
+        public void ToggleDoubleStrikethrough() => DocumentViewModel?.ToggleDoubleStrikethrough();
+        public void SetStrikethrough(bool enabled, bool isDouble) => DocumentViewModel?.SetStrikethrough(enabled, isDouble);
         public void ToggleSuperscript() => DocumentViewModel?.ToggleSuperscript();
         public void ToggleSubscript() => DocumentViewModel?.ToggleSubscript();
         public void ToggleAllCaps() => DocumentViewModel?.ToggleAllCaps();
@@ -2500,6 +2683,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// <summary>Регистр по кругу, как Shift+F3 в Word.</summary>
         public void CycleCase() => DocumentViewModel?.CycleCase();
         public void ToggleSmallCaps() => DocumentViewModel?.ToggleSmallCaps();
+        public void ToggleHiddenText() => DocumentViewModel?.ToggleHiddenText();
+        public void SetHiddenText(bool enabled) => DocumentViewModel?.SetHiddenText(enabled);
+        public void SetTextEffect(Contracts.TextEffectKind kind, bool enabled) => DocumentViewModel?.SetTextEffect(kind, enabled);
+        public void SetEmphasisMark(Writersword.Modules.TextEditor.Models.Inline.EmphasisMark mark) => DocumentViewModel?.SetEmphasisMark(mark);
+        public void SetCharBorder(bool enabled) => DocumentViewModel?.SetCharBorder(enabled);
         public void ClearFormatting() => DocumentViewModel?.ClearFormatting();
 
         public void SetTextColor(string c) => DocumentViewModel?.SetTextColor(c);
@@ -2915,6 +3103,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 _documentViewModel.ParagraphFormatChanged -= OnStructureChangedForNavigator;
                 _documentViewModel.ActiveParagraphChanged -= OnActiveParagraphChangedForNavigator;
                 _documentViewModel.ViewPreferenceChanged -= OnViewPreferenceChanged;
+                _documentViewModel.HeaderFooterModeChanged -= OnHeaderFooterModeChanged;
+                _documentViewModel.HeaderFooterChanged -= OnHeaderFooterChangedForRibbon;
             }
 
             _navigatorRefresh?.Dispose();

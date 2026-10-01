@@ -29,11 +29,84 @@ namespace Writersword.Core.Models.Rendering
         /// <summary>Подчёркнутый.</summary>
         public bool IsUnderline { get; init; }
 
+        /// <summary>
+        /// Вид подчёркивания тем же числом, что и в модели документа
+        /// (UnderlineStyle модуля текста): 0 — нет, 1 — одинарное, 2 — только слова,
+        /// 3 — двойное, 4 — жирное, 5 — точки, 6 — жирные точки, 7 — штрих,
+        /// 8 — жирный штрих, 9 — длинный штрих, 10 — жирный длинный штрих,
+        /// 11 — штрих-пунктир, 12 — жирный штрих-пунктир, 13 — штрих и две точки,
+        /// 14 — жирный штрих и две точки, 15 — волна, 16 — жирная волна,
+        /// 17 — двойная волна.
+        /// </summary>
+        public int UnderlineStyle { get; init; }
+
+        /// <summary>Цвет линии подчёркивания HEX. Null — цвет букв.</summary>
+        public string? UnderlineColor { get; init; }
+
         /// <summary>Зачёркнутый.</summary>
         public bool IsStrikethrough { get; init; }
 
-        /// <summary>Цвет текста.</summary>
-        public SKColor Color { get; init; } = SKColors.Black;
+        /// <summary>Зачёркнутый двойной линией. Сильнее одинарного зачёркивания.</summary>
+        public bool IsDoubleStrikethrough { get; init; }
+
+        /// <summary>
+        /// Растяжение знаков по ширине (w:w у Word): 1 — обычная ширина, 2 — вдвое шире,
+        /// 0,5 — вдвое уже. Кегль и высота букв не меняются.
+        /// </summary>
+        public float HorizontalScale { get; init; } = 1f;
+
+        /// <summary>
+        /// Скрытый текст (w:vanish), который сейчас не показывается: не рисуется и не
+        /// занимает места в строке. Знаки при этом остаются в сегменте — по ним считаются
+        /// позиции каретки.
+        /// </summary>
+        public bool IsHidden { get; init; }
+
+        /// <summary>
+        /// Скрытый текст, показанный вместе с непечатаемыми знаками: рисуется на своём
+        /// месте с точечным подчёркиванием, как в Word.
+        /// </summary>
+        public bool IsHiddenMarked { get; init; }
+
+        /// <summary>Контур: буквы полые, нарисован только их обвод (w:outline).</summary>
+        public bool IsOutline { get; init; }
+
+        /// <summary>Тень под буквами (w:shadow).</summary>
+        public bool IsShadow { get; init; }
+
+        /// <summary>Рельеф: буквы выпуклые (w:emboss).</summary>
+        public bool IsEmboss { get; init; }
+
+        /// <summary>Гравировка: буквы вдавленные (w:imprint).</summary>
+        public bool IsImprint { get; init; }
+
+        /// <summary>
+        /// Знак ударения тем же числом, что и в модели документа (EmphasisMark модуля
+        /// текста): 0 — нет, 1 — точка над буквой, 2 — запятая, 3 — кружок, 4 — точка под буквой.
+        /// </summary>
+        public int EmphasisMark { get; init; }
+
+        /// <summary>Цвет рамки вокруг знаков (w:bdr) в HEX. Null — рамки нет либо цвет букв.</summary>
+        public string? CharBorderColor { get; init; }
+
+        /// <summary>Толщина рамки вокруг знаков в пунктах. Ноль — рамки нет.</summary>
+        public float CharBorderWidthPt { get; init; }
+
+        /// <summary>
+        /// Вид линии рамки вокруг знаков тем же числом, что и в модели документа
+        /// (CharBorderStyle модуля текста): 0 — одинарная, 1 — двойная, 2 — точки,
+        /// 3 — штрихи, 4 — жирная.
+        /// </summary>
+        public int CharBorderStyle { get; init; }
+
+        /// <summary>Настраиваемые эффекты букв: контур, тень, свечение, отражение. Null — нет.</summary>
+        public SKTextEffects? Effects { get; init; }
+
+        /// <summary>
+        /// Цвет текста. Меняется и после сборки: текст цвета «авто» на тёмной заливке
+        /// ячейки или абзаца вёрстка перекрашивает в белый, как Word.
+        /// </summary>
+        public SKColor Color { get; set; } = SKColors.Black;
 
         /// <summary>Цвет выделения (highlight). Transparent — нет выделения.</summary>
         public SKColor HighlightColor { get; init; } = SKColors.Transparent;
@@ -75,9 +148,11 @@ namespace Writersword.Core.Models.Rendering
         /// <summary>
         /// Вертикальное смещение базовой линии сегмента в pt относительно базовой линии строки.
         /// Положительное — вверх (надстрочный), отрицательное — вниз (подстрочный), 0 — обычный.
-        /// Устанавливается при сборке сегмента из RunProperties (надстрочный/подстрочный текст).
+        /// Устанавливается при сборке сегмента из RunProperties (надстрочный/подстрочный текст);
+        /// выравнивание знаков по высоте строки (w:textAlignment) добавляет к нему свой сдвиг,
+        /// когда строка уже собрана и известен самый крупный знак.
         /// </summary>
-        public float BaselineShiftPt { get; init; }
+        public float BaselineShiftPt { get; set; }
 
         /// <summary>
         /// Межбуквенный интервал в pt: прибавка к ширине каждого знака сегмента.
@@ -114,6 +189,39 @@ namespace Writersword.Core.Models.Rendering
         public bool IsTabJump { get; set; }
 
         /// <summary>
+        /// Перенос строки внутри абзаца (Shift+Enter, w:br, w:cr): знак «\n» своим
+        /// сегментом нулевой ширины в конце строки. Не рисуется — на нём стоит позиция
+        /// каретки, а при показанных непечатаемых знаках — стрелка ↵.
+        /// </summary>
+        public bool IsLineBreak { get; set; }
+
+        /// <summary>
+        /// Мягкий перенос (w:softHyphen, U+00AD): место, где слово разрешено разорвать.
+        /// Своим сегментом; пока слово не разорвано, он не виден и места не занимает.
+        /// </summary>
+        public bool IsSoftHyphen { get; set; }
+
+        /// <summary>
+        /// Мягкий перенос пришёлся на конец строки: слово разорвано здесь, и знак
+        /// рисуется дефисом своей ширины — как у Word.
+        /// </summary>
+        public bool SoftHyphenShown { get; set; }
+
+        /// <summary>
+        /// Буквы сегмента разведены вёрсткой (последняя строка растянутого абзаца): их
+        /// места — в GlyphMetrics, и рисуются они по этим местам, а не подряд.
+        /// </summary>
+        public bool UsesGlyphPositions { get; set; }
+
+        /// <summary>
+        /// Сегмент пишется справа налево (иврит, арабский или знаки препинания между
+        /// ними в строке, набранной справа налево). Буквы рисуются в обратном порядке с
+        /// начертаниями по соседям, а места знаков в GlyphMetrics отражены: первый знак
+        /// стоит у правого края сегмента, последний — у левого.
+        /// </summary>
+        public bool IsRightToLeft { get; set; }
+
+        /// <summary>
         /// Чем заполнить пустое место прыжка. Значимо только для <see cref="IsTabJump"/>.
         /// Точками набирают оглавления: без них строка и номер страницы расходятся по
         /// разным концам листа, и глаз теряет, какой номер к какой главе.
@@ -142,8 +250,22 @@ namespace Writersword.Core.Models.Rendering
     /// </summary>
     public sealed class SKLineLayout
     {
-        /// <summary>Сегменты строки в порядке следования слева направо.</summary>
+        /// <summary>
+        /// Сегменты строки в порядке следования текста. У строки без текста справа налево
+        /// это и порядок слева направо; у строки со смешанным направлением сегменты стоят
+        /// на листе по своим X (см. <see cref="IsBidiReordered"/>).
+        /// </summary>
         public List<SKRunSegment> Segments { get; } = new();
+
+        /// <summary>Строка набрана справа налево: её начало — у правого края.</summary>
+        public bool IsRightToLeft { get; set; }
+
+        /// <summary>
+        /// Куски строки переставлены по направлению письма: X сегментов — их места на
+        /// листе, а не накопленная ширина по порядку текста. Растяжка по ширине такую
+        /// строку не трогает.
+        /// </summary>
+        public bool IsBidiReordered { get; set; }
 
         /// <summary>
         /// Y-позиция верхнего края строки в pt относительно начала параграфа.

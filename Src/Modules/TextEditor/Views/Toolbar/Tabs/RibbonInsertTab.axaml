@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="using:Writersword.Modules.TextEditor.Views.Shared"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
@@ -484,6 +485,113 @@
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Data="M5 3v12h2v-2h2v2h2V3H5zm2 8V5h2v6H7zm8 2h2V3h-4v12h2v-2zm0-8h2v6h-2V5zM3 19h18v2H3v-2z" Width="20" Height="20"/>
 									<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Page_Group}" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+						</DockPanel>
+					</Border>
+
+					<!-- ═══════════════════════════════════════════════════════
+                         КОЛОНТИТУЛЫ — развёрнутая
+                         ═══════════════════════════════════════════════════════ -->
+					<Border Classes="RibbonGroup"
+                            IsVisible="{Binding IsHeaderFooterGroupExpanded}">
+						<DockPanel>
+							<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+								<TextBlock Classes="RibbonGroupLabel" Text="Колонтитулы"/>
+							</Grid>
+							<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+								<Button Command="{Binding HeaderFooter.EditHeaderCommand}"
+								        Classes="RibbonBtnLarge"
+								        behaviours:TooltipBehavior.Tip="Верхний колонтитул"
+								        behaviours:TooltipBehavior.Description="Правка прямо на листе. То же — двойной щелчок по полю над текстом.">
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<PathIcon Data="M4 3h16v2H4V3zm0 4h16v4H4V7zm0 8h16v2H4v-2zm0 4h10v2H4v-2z" Width="20" Height="20"/>
+										<TextBlock Text="Верхний" FontSize="9" TextAlignment="Center"/>
+									</StackPanel>
+								</Button>
+								<Button Command="{Binding HeaderFooter.EditFooterCommand}"
+								        Classes="RibbonBtnLarge"
+								        behaviours:TooltipBehavior.Tip="Нижний колонтитул"
+								        behaviours:TooltipBehavior.Description="Правка прямо на листе. То же — двойной щелчок по полю под текстом.">
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<PathIcon Data="M4 3h10v2H4V3zm0 4h16v2H4V7zm0 6h16v4H4v-4zm0 6h16v2H4v-2z" Width="20" Height="20"/>
+										<TextBlock Text="Нижний" FontSize="9" TextAlignment="Center"/>
+									</StackPanel>
+								</Button>
+								<Button Classes="RibbonBtnLarge"
+								        behaviours:TooltipBehavior.Tip="Номер страницы"
+								        behaviours:TooltipBehavior.Description="Убрать номер с одного листа и вернуть его — на вкладке «Колонтитулы», группа «Эта страница».">
+									<Button.Flyout>
+										<Flyout Placement="Bottom">
+											<shared:PageNumberPicker DataContext="{Binding HeaderFooter}"/>
+										</Flyout>
+									</Button.Flyout>
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<Grid Width="20" Height="20">
+											<PathIcon Data="M6 2h9l5 5v15H6V2zm2 2v16h10V8h-4V4H8z" Width="20" Height="20"/>
+											<TextBlock Text="#" FontSize="9" FontWeight="Bold"
+											           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="2 4 0 0"/>
+										</Grid>
+										<TextBlock Text="Номер ▾" FontSize="9" TextAlignment="Center"/>
+									</StackPanel>
+								</Button>
+							</StackPanel>
+						</DockPanel>
+					</Border>
+
+					<!-- КОЛОНТИТУЛЫ — свёрнутая -->
+					<Border Classes="RibbonGroupCollapsed"
+                            IsVisible="{Binding !IsHeaderFooterGroupExpanded}">
+						<DockPanel>
+							<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+								<TextBlock Classes="RibbonGroupLabel" Text="Колонтитулы"/>
+							</Grid>
+							<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+                                    behaviours:TooltipBehavior.Tip="Колонтитулы и номер страницы">
+								<Button.Flyout>
+									<Flyout Placement="Bottom">
+										<StackPanel Orientation="Horizontal" Spacing="4" Margin="8">
+											<Button Command="{Binding HeaderFooter.EditHeaderCommand}"
+											        Classes="RibbonBtnLarge"
+											        behaviours:TooltipBehavior.Tip="Верхний колонтитул"
+											        behaviours:TooltipBehavior.Description="Правка прямо на листе. То же — двойной щелчок по полю над текстом.">
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Data="M4 3h16v2H4V3zm0 4h16v4H4V7zm0 8h16v2H4v-2zm0 4h10v2H4v-2z" Width="20" Height="20"/>
+													<TextBlock Text="Верхний" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</Button>
+											<Button Command="{Binding HeaderFooter.EditFooterCommand}"
+											        Classes="RibbonBtnLarge"
+											        behaviours:TooltipBehavior.Tip="Нижний колонтитул"
+											        behaviours:TooltipBehavior.Description="Правка прямо на листе. То же — двойной щелчок по полю под текстом.">
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Data="M4 3h10v2H4V3zm0 4h16v2H4V7zm0 6h16v4H4v-4zm0 6h16v2H4v-2z" Width="20" Height="20"/>
+													<TextBlock Text="Нижний" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</Button>
+											<Button Classes="RibbonBtnLarge"
+											        behaviours:TooltipBehavior.Tip="Номер страницы"
+											        behaviours:TooltipBehavior.Description="Убрать номер с одного листа и вернуть его — на вкладке «Колонтитулы», группа «Эта страница».">
+												<Button.Flyout>
+													<Flyout Placement="Bottom">
+														<shared:PageNumberPicker DataContext="{Binding HeaderFooter}"/>
+													</Flyout>
+												</Button.Flyout>
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<Grid Width="20" Height="20">
+														<PathIcon Data="M6 2h9l5 5v15H6V2zm2 2v16h10V8h-4V4H8z" Width="20" Height="20"/>
+														<TextBlock Text="#" FontSize="9" FontWeight="Bold"
+														           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="2 4 0 0"/>
+													</Grid>
+													<TextBlock Text="Номер ▾" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</Button>
+										</StackPanel>
+									</Flyout>
+								</Button.Flyout>
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M4 3h16v4H4V3zm0 6h16v2H4V9zm0 4h16v2H4v-2zm0 4h16v4H4v-4z" Width="20" Height="20"/>
+									<TextBlock Text="Колонтитулы" FontSize="9" TextAlignment="Center"/>
 								</StackPanel>
 							</Button>
 						</DockPanel>

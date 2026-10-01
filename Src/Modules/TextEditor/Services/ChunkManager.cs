@@ -270,6 +270,8 @@ namespace Writersword.Modules.TextEditor.Services
                 && a.IsBold == b.IsBold
                 && a.IsItalic == b.IsItalic
                 && a.IsUnderline == b.IsUnderline
+                && a.UnderlineStyle == b.UnderlineStyle
+                && a.UnderlineColor == b.UnderlineColor
                 && a.IsStrikethrough == b.IsStrikethrough
                 && a.IsSuperscript == b.IsSuperscript
                 && a.IsSubscript == b.IsSubscript

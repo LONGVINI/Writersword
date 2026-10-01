@@ -26,6 +26,11 @@ namespace Writersword.Modules.Characters.Services
         public CharacterAnketaService()
         {
             _builtInAnketas = BuildBuiltInAnketas();
+            foreach (var anketa in _builtInAnketas)
+            {
+                CharacterAnketaLayout.Normalize(anketa);
+                CharacterAnketaLayout.ApplyOrderAndGroups(anketa);
+            }
 
             // Встроенные шаблоны есть с первой секунды, ещё до открытия
             // проекта: без них список шаблонов у нового проекта был бы пуст,
@@ -95,6 +100,10 @@ namespace Writersword.Modules.Characters.Services
                 _logger.Warning("Update failed: anketa not found {Id}", anketa.Id);
                 return;
             }
+
+            // Раскладка — главная: порядок и группы полей выводятся из неё.
+            CharacterAnketaLayout.Normalize(anketa);
+            CharacterAnketaLayout.ApplyOrderAndGroups(anketa);
 
             var index = _customAnketas.IndexOf(existing);
             _customAnketas[index] = anketa;
@@ -224,6 +233,14 @@ namespace Writersword.Modules.Characters.Services
             if (anketas != null)
                 _customAnketas.AddRange(anketas.Where(a => !a.IsBuiltIn));
 
+            // Анкеты старых проектов раскладки не имеют — она строится из
+            // порядка и групп полей.
+            foreach (var anketa in _customAnketas)
+            {
+                CharacterAnketaLayout.Normalize(anketa);
+                CharacterAnketaLayout.ApplyOrderAndGroups(anketa);
+            }
+
             _logger.Debug("Custom anketas loaded: {Count}", _customAnketas.Count);
         }
 
@@ -319,6 +336,29 @@ namespace Writersword.Modules.Characters.Services
             if (template == null || template.IsBuiltIn) return;
 
             _templates.Remove(template);
+        }
+
+        public void MoveTemplate(string id, int index)
+        {
+            var template = GetTemplateById(id);
+            if (template == null || template.IsBuiltIn) return;
+
+            var custom = _templates.Where(t => !t.IsBuiltIn).ToList();
+            var from = custom.IndexOf(template);
+            if (from < 0) return;
+
+            index = Math.Clamp(index, 0, custom.Count - 1);
+            if (index == from) return;
+
+            custom.RemoveAt(from);
+            custom.Insert(index, template);
+
+            // Встроенные держатся впереди, свои — следом в новом порядке:
+            // порядок своих и есть тот, что сохраняется в проекте.
+            var builtIn = _templates.Where(t => t.IsBuiltIn).ToList();
+            _templates.Clear();
+            _templates.AddRange(builtIn);
+            _templates.AddRange(custom);
         }
 
         public void LoadTemplates(List<CharacterTemplate> templates)
@@ -444,7 +484,7 @@ namespace Writersword.Modules.Characters.Services
 
         private static List<CharacterAnketa> BuildBuiltInAnketas()
         {
-            return new List<CharacterAnketa>
+            var list = new List<CharacterAnketa>
             {
                 BuildHumanAnketa(),
                 BuildDetectiveAnketa(),
@@ -453,6 +493,27 @@ namespace Writersword.Modules.Characters.Services
                 BuildScifiAnketa(),
                 BuildCollectiveAnketa()
             };
+
+            // Значки встроенных — по смыслу анкеты: в списке их находят по
+            // значку, а не по названию.
+            var icons = new Dictionary<string, (string Icon, string Color)>
+            {
+                ["builtin_human"] = ("person", "#5B7FA8"),
+                ["builtin_detective"] = ("search", "#9A8F85"),
+                ["builtin_fantasy_warrior"] = ("shield", "#C75B5B"),
+                ["builtin_horror"] = ("skull", "#8A6FC0"),
+                ["builtin_scifi"] = ("flight", "#4FA39A"),
+                [CharacterAnketa.CollectiveId] = ("group", "#D4A33B")
+            };
+
+            foreach (var anketa in list)
+            {
+                if (!icons.TryGetValue(anketa.Id, out var icon)) continue;
+                anketa.Icon = icon.Icon;
+                anketa.IconColor = icon.Color;
+            }
+
+            return list;
         }
 
         private static CharacterAnketa BuildHumanAnketa()

@@ -6,7 +6,8 @@ namespace Writersword.Core.Models.Rendering
     /// Одна линия рамки абзаца глазами отрисовки: вид, цвет, толщина и зазор до текста.
     ///
     /// Вид — тем же числом, что и у рамок ячеек в модели документа: 0 — нет линии,
-    /// 1 — сплошная, 2 — двойная, 3 — штрих, 4 — точки, 5 — жирная.
+    /// 1 — сплошная, 2 — двойная, 3 — штрих, 4 — точки, 5 — жирная, 6 — тройная,
+    /// 7 — волна.
     /// </summary>
     public sealed class SKParagraphBorderLine
     {
@@ -16,6 +17,8 @@ namespace Writersword.Core.Models.Rendering
         public const int StyleDashed = 3;
         public const int StyleDotted = 4;
         public const int StyleThick = 5;
+        public const int StyleTriple = 6;
+        public const int StyleWave = 7;
 
         /// <summary>Вид линии.</summary>
         public int Style { get; init; } = StyleSingle;
@@ -34,9 +37,18 @@ namespace Writersword.Core.Models.Rendering
 
         /// <summary>
         /// Сколько места линия занимает поперёк себя. У двойной — две черты и
-        /// просвет между ними той же толщины.
+        /// просвет между ними той же толщины, у тройной — три черты и два просвета.
+        /// Волна занимает свой размах: от гребня до впадины — две и три четверти толщины линии.
         /// </summary>
-        public float DrawnWidthPt => !IsVisible ? 0f : (Style == StyleDouble ? WidthPt * 3f : WidthPt);
+        public float DrawnWidthPt => !IsVisible
+            ? 0f
+            : Style switch
+            {
+                StyleDouble => WidthPt * 3f,
+                StyleTriple => WidthPt * 5f,
+                StyleWave => WidthPt * 2.75f,
+                _ => WidthPt
+            };
 
         /// <summary>Линия вместе с зазором до текста — столько она отодвигает текст.</summary>
         public float ExtentPt => IsVisible ? SpacePt + DrawnWidthPt : 0f;

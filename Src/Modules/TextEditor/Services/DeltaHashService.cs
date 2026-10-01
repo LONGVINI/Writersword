@@ -136,6 +136,8 @@ namespace Writersword.Modules.TextEditor.Services
                     writer.WriteNumber("cols", table.ColumnCount);
                     writer.WriteNumber("widthPercent", table.WidthPercent);
                     writer.WriteNumber("leftIndent", table.LeftIndentPt);
+                    writer.WriteString("alignment", table.Alignment.ToString());
+                    writer.WriteBoolean("bidiVisual", table.BidiVisual);
                     writer.WriteBoolean("repeatHeader", table.RepeatHeader);
                     writer.WriteString("split", table.SplitMode.ToString());
                     writer.WriteString("style", table.StyleName ?? string.Empty);
@@ -144,6 +146,16 @@ namespace Writersword.Modules.TextEditor.Services
 
                     writer.WritePropertyName("columns");
                     JsonSerializer.Serialize(writer, table.Columns);
+
+                    // Заданные высоты строк и отметки точной высоты: без них правка
+                    // высоты строки не попадала в дельту сохранения.
+                    writer.WritePropertyName("rowHeights");
+                    JsonSerializer.Serialize(writer, table.RowMinHeightsPt);
+                    if (table.ExactHeightRows is not null)
+                    {
+                        writer.WritePropertyName("exactRows");
+                        JsonSerializer.Serialize(writer, table.ExactHeightRows);
+                    }
 
                     writer.WriteStartArray("cells");
                     foreach (var cell in table.Cells)
@@ -156,6 +168,9 @@ namespace Writersword.Modules.TextEditor.Services
                         writer.WriteNumber("colSpan", cell.ColSpan);
                         writer.WriteString("bg", cell.BackgroundColor ?? string.Empty);
                         writer.WriteString("vAlign", cell.VerticalAlignment.ToString());
+                        writer.WriteString("shdPattern", cell.ShadingPattern ?? string.Empty);
+                        writer.WriteString("shdColor", cell.ShadingPatternColor ?? string.Empty);
+                        writer.WriteString("textDir", cell.TextDirection.ToString());
                         writer.WriteNumber("padT", cell.PaddingTopPt);
                         writer.WriteNumber("padB", cell.PaddingBottomPt);
                         writer.WriteNumber("padL", cell.PaddingLeftPt);
@@ -270,6 +285,13 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 writer.WritePropertyName("readingThemes");
                 JsonSerializer.Serialize(writer, document.ReadingThemes);
+            }
+            // Колонтитулы и правила страниц живут у документа и в чанки не попадают:
+            // без них правка колонтитула не считалась изменением и не сохранялась.
+            if (document.HeaderFooter is not null)
+            {
+                writer.WritePropertyName("headerFooter");
+                JsonSerializer.Serialize(writer, document.HeaderFooter);
             }
             WriteIdArray(writer, "sections", document.Sections.Select(s => s.Id));
             writer.WriteEndObject();

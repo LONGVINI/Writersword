@@ -32,7 +32,7 @@ namespace Writersword.Modules.Characters.Views
         private CharactersListView? _listView;
         private CharacterEditView? _editView;
         private CharactersGraphView? _graphView;
-        private CharactersTemplatesView? _templatesView;
+        private CharactersLibraryView? _libraryView;
 
         private Panel? _tabContent;
         private bool _cardsProgressiveDone;
@@ -172,7 +172,7 @@ namespace Writersword.Modules.Characters.Views
             _listView = null;
             _editView = null;
             _graphView = null;
-            _templatesView = null;
+            _libraryView = null;
 
             // Контекст мог приехать уже после присоединения к дереву — тогда
             // список папок восстанавливается здесь.
@@ -277,7 +277,7 @@ namespace Writersword.Modules.Characters.Views
                 0 => _listView ??= new CharactersListView(),
                 1 => _editView ??= new CharacterEditView(),
                 2 => _graphView ??= new CharactersGraphView { DataContext = vm?.GraphViewModel },
-                3 => _templatesView ??= new CharactersTemplatesView { DataContext = vm?.TemplatesViewModel },
+                3 or 4 => _libraryView ??= new CharactersLibraryView { DataContext = vm },
                 _ => null
             };
 
@@ -371,13 +371,22 @@ namespace Writersword.Modules.Characters.Views
             // чтобы не было двойной обработки (TextBox тоже умеет Ctrl+Z).
             if (DataContext is CharactersViewModel vm)
             {
-                if (e.Key == Key.Z && e.KeyModifiers == KeyModifiers.Control)
+                // В редакторе анкет своя история у каждого листа: правки
+                // персонажа отсюда не отменяются.
+                if (vm.IsTab4Active)
                 {
-                    if (vm.CanUndo) { vm.Undo(); vm.HideUndoToast(); e.Handled = true; return; }
+                    if (vm.AnketasViewModel.HandleKey(e.Key, e.KeyModifiers)) { e.Handled = true; return; }
                 }
-                if (e.Key == Key.Y && e.KeyModifiers == KeyModifiers.Control)
+                else
                 {
-                    if (vm.CanRedo) { vm.Redo(); e.Handled = true; return; }
+                    if (e.Key == Key.Z && e.KeyModifiers == KeyModifiers.Control)
+                    {
+                        if (vm.CanUndo) { vm.Undo(); vm.HideUndoToast(); e.Handled = true; return; }
+                    }
+                    if (e.Key == Key.Y && e.KeyModifiers == KeyModifiers.Control)
+                    {
+                        if (vm.CanRedo) { vm.Redo(); e.Handled = true; return; }
+                    }
                 }
             }
 

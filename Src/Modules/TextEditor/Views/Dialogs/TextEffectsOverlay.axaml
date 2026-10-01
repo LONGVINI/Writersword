@@ -1,0 +1,358 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Writersword.Styles.UserControls"
+             x:Class="Writersword.Modules.TextEditor.Views.Dialogs.TextEffectsOverlay">
+
+	<!--
+	    Окно «Эффекты текста»: свой вид эффектов букв выделения.
+
+	    Сверху — образец, нарисованный тем же движком, что и документ: что видно в нём,
+	    то и ляжет в текст. Ниже — разделы: контур, тень, свечение, отражение и рамка
+	    вокруг знаков. Флажков включения нет: эффект есть, пока его главная величина
+	    больше нуля — толщина контура, расстояние или размытие тени, размер свечения
+	    и отражения, толщина рамки. Правка любого поля выключенного эффекта включает
+	    его с видом Word по умолчанию; «Снять» в заголовке раздела убирает эффект.
+
+	    Всё, кроме помеченного звёздочкой, — возможности Word 2010+ и переходит в .docx
+	    как есть. Помеченное звёздочкой есть только у Writersword: в Word оно покажется
+	    упрощённо, а Writersword при открытии того же файла восстановит его полностью.
+
+	    Окно работает с копией настроек и отдаёт их по «Применить» одной правкой.
+
+	    «Сохранить как мой эффект» заводит из собранного вида набор в «Моих
+	    эффектах» меню «A» — текст при этом не меняется, окно остаётся открытым.
+	-->
+
+	<UserControl.Styles>
+		<Style Selector="Border.Card">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="10"/>
+			<Setter Property="Padding"         Value="12 10"/>
+		</Style>
+		<!-- Заголовок раздела: имя эффекта, справа — «нет» либо кнопка «Снять». -->
+		<Style Selector="TextBlock.SectionTitle">
+			<Setter Property="FontSize"          Value="13"/>
+			<Setter Property="FontWeight"        Value="SemiBold"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.SectionState">
+			<Setter Property="FontSize"          Value="11"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+		<Style Selector="Button.SectionClear">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="5"/>
+			<Setter Property="Padding"         Value="8 2"/>
+			<Setter Property="FontSize"        Value="11"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Button.SectionClear:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="CheckBox.Option">
+			<Setter Property="FontSize"   Value="12"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.FieldLabel">
+			<Setter Property="FontSize"          Value="12"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="TextBlock.FieldValue">
+			<Setter Property="FontSize"          Value="12"/>
+			<Setter Property="Width"             Value="52"/>
+			<Setter Property="TextAlignment"     Value="Right"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Slider">
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Margin"            Value="0 -6"/>
+		</Style>
+		<Style Selector="ComboBox">
+			<Setter Property="FontSize"            Value="12"/>
+			<Setter Property="MinWidth"            Value="150"/>
+			<Setter Property="HorizontalAlignment" Value="Left"/>
+		</Style>
+		<Style Selector="TextBlock.Note">
+			<Setter Property="FontSize"     Value="11"/>
+			<Setter Property="TextWrapping" Value="Wrap"/>
+			<Setter Property="Foreground"   Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+		<Style Selector="Button.DialogAccent">
+			<Setter Property="Background"      Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="Padding"         Value="18 8"/>
+			<Setter Property="Foreground"      Value="White"/>
+			<Setter Property="FontWeight"      Value="SemiBold"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Button.DialogPlain">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="Padding"         Value="14 7"/>
+			<Setter Property="FontSize"        Value="12"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Button.DialogPlain:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.IconClose">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Width"           Value="28"/>
+			<Setter Property="Height"          Value="28"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Button.IconClose:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid>
+		<Border x:Name="Scrim" Background="#B3000000"/>
+
+		<Border HorizontalAlignment="Center" VerticalAlignment="Center"
+		        Margin="24" Width="760"
+		        Background="{DynamicResource BgBaseBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1" CornerRadius="16" Padding="20 18">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
+			</Border.Effect>
+
+			<DockPanel>
+
+				<!-- Заголовок -->
+				<Grid DockPanel.Dock="Top" ColumnDefinitions="* Auto" Margin="0 0 0 12">
+					<TextBlock Grid.Column="0" Text="Эффекты текста"
+					           FontSize="16" FontWeight="SemiBold"
+					           VerticalAlignment="Center"
+					           Foreground="{DynamicResource TextPrimaryBrush}"/>
+					<Button Grid.Column="1" x:Name="CloseBtn" Classes="IconClose">
+						<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+						          Width="14" Height="14"/>
+					</Button>
+				</Grid>
+
+				<!-- Образец — тем же движком, что и документ -->
+				<Border DockPanel.Dock="Top" Margin="0 0 0 12"
+				        Background="White" CornerRadius="10" ClipToBounds="True"
+				        BorderBrush="{DynamicResource BorderDefaultBrush}" BorderThickness="1">
+					<Image x:Name="PreviewImage" Width="716" Height="120" Stretch="Fill"/>
+				</Border>
+
+				<!-- Кнопки -->
+				<Grid DockPanel.Dock="Bottom" ColumnDefinitions="* Auto" Margin="0 12 0 0">
+					<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10"
+					            HorizontalAlignment="Left">
+						<Button x:Name="ResetBtn" Classes="DialogPlain" Content="Снять все эффекты"/>
+						<Button x:Name="SavePresetBtn" Classes="DialogPlain"
+						        Content="Сохранить как мой эффект…"
+						        ToolTip.Tip="Набор появится в «Моих эффектах» меню «A» и будет ставиться одним нажатием в любом проекте"/>
+						<TextBlock x:Name="SavePresetNote" Classes="Note" VerticalAlignment="Center"
+						           MaxWidth="170" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+						           IsVisible="False"/>
+					</StackPanel>
+					<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+						<Button x:Name="CancelBtn" Classes="DialogPlain" Content="Отмена"/>
+						<Button x:Name="ApplyBtn" Classes="DialogAccent" Content="Применить"/>
+					</StackPanel>
+				</Grid>
+
+				<TextBlock DockPanel.Dock="Bottom" Classes="Note" Margin="0 10 0 0"
+				           Text="✱ — есть только у Writersword. В .docx такой эффект сохранится полностью, но Word покажет его упрощённо: контур — по краю букв, длинную тень — обычной тенью. Всё остальное Word 2010+ покажет как есть."/>
+
+				<ScrollViewer MaxHeight="440" HorizontalScrollBarVisibility="Disabled">
+					<Grid ColumnDefinitions="* *" ColumnSpacing="12">
+
+						<!-- ── Левая колонка: контур и тень ─────────────── -->
+						<StackPanel Grid.Column="0" Spacing="12">
+
+							<Border Classes="Card">
+								<StackPanel Spacing="8">
+									<Grid ColumnDefinitions="* Auto">
+										<TextBlock Grid.Column="0" Classes="SectionTitle" Text="Контур букв"/>
+										<TextBlock Grid.Column="1" x:Name="OutlineOff" Classes="SectionState" Text="нет"/>
+										<Button Grid.Column="1" x:Name="OutlineClear" Classes="SectionClear" Content="Снять"/>
+									</Grid>
+									<Grid x:Name="OutlinePanel" ColumnDefinitions="110 * Auto" RowDefinitions="Auto Auto Auto Auto Auto" RowSpacing="8">
+										<TextBlock Grid.Row="0" Classes="FieldLabel" Text="Цвет"/>
+										<controls:ColorPickerButton Grid.Row="0" Grid.Column="1" x:Name="OutlineColor" HorizontalAlignment="Left"/>
+
+										<TextBlock Grid.Row="1" Classes="FieldLabel" Text="Толщина"/>
+										<Slider Grid.Row="1" Grid.Column="1" x:Name="OutlineWidth"
+										        Minimum="0" Maximum="6" TickFrequency="0.25" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="1" Grid.Column="2" x:Name="OutlineWidthText" Classes="FieldValue"/>
+
+										<TextBlock Grid.Row="2" Classes="FieldLabel" Text="Штрих"/>
+										<ComboBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" x:Name="OutlineDash">
+											<ComboBoxItem Content="Сплошной"/>
+											<ComboBoxItem Content="Штрихи"/>
+											<ComboBoxItem Content="Точки"/>
+											<ComboBoxItem Content="Штрих-точка"/>
+											<ComboBoxItem Content="Длинные штрихи"/>
+										</ComboBox>
+
+										<TextBlock Grid.Row="3" Classes="FieldLabel" Text="Где лежит"/>
+										<ComboBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" x:Name="OutlinePlacement">
+											<ComboBoxItem Content="По краю букв"/>
+											<ComboBoxItem Content="Снаружи букв ✱"/>
+										</ComboBox>
+
+										<CheckBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3" x:Name="OutlineHollow"
+										          Classes="Option" Content="Полые буквы — без заливки, только контур"/>
+									</Grid>
+								</StackPanel>
+							</Border>
+
+							<Border Classes="Card">
+								<StackPanel Spacing="8">
+									<Grid ColumnDefinitions="* Auto">
+										<TextBlock Grid.Column="0" Classes="SectionTitle" Text="Тень"/>
+										<TextBlock Grid.Column="1" x:Name="ShadowOff" Classes="SectionState" Text="нет"/>
+										<Button Grid.Column="1" x:Name="ShadowClear" Classes="SectionClear" Content="Снять"/>
+									</Grid>
+									<Grid x:Name="ShadowPanel" ColumnDefinitions="110 * Auto" RowDefinitions="Auto Auto Auto Auto Auto Auto" RowSpacing="8">
+										<TextBlock Grid.Row="0" Classes="FieldLabel" Text="Цвет"/>
+										<controls:ColorPickerButton Grid.Row="0" Grid.Column="1" x:Name="ShadowColor" HorizontalAlignment="Left"/>
+
+										<TextBlock Grid.Row="1" Classes="FieldLabel" Text="Прозрачность"/>
+										<Slider Grid.Row="1" Grid.Column="1" x:Name="ShadowTransparency"
+										        Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="1" Grid.Column="2" x:Name="ShadowTransparencyText" Classes="FieldValue"/>
+
+										<TextBlock Grid.Row="2" Classes="FieldLabel" Text="Размытие"/>
+										<Slider Grid.Row="2" Grid.Column="1" x:Name="ShadowBlur"
+										        Minimum="0" Maximum="20" TickFrequency="0.5" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="2" Grid.Column="2" x:Name="ShadowBlurText" Classes="FieldValue"/>
+
+										<TextBlock Grid.Row="3" Classes="FieldLabel" Text="Расстояние"/>
+										<Slider Grid.Row="3" Grid.Column="1" x:Name="ShadowDistance"
+										        Minimum="0" Maximum="30" TickFrequency="0.5" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="3" Grid.Column="2" x:Name="ShadowDistanceText" Classes="FieldValue"/>
+
+										<TextBlock Grid.Row="4" Classes="FieldLabel" Text="Угол"/>
+										<Slider Grid.Row="4" Grid.Column="1" x:Name="ShadowAngle"
+										        Minimum="0" Maximum="359" TickFrequency="1" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="4" Grid.Column="2" x:Name="ShadowAngleText" Classes="FieldValue"/>
+
+										<CheckBox Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="3" x:Name="ShadowLong"
+										          Classes="Option" Content="Длинная тень — сплошной след без размытия ✱"/>
+									</Grid>
+								</StackPanel>
+							</Border>
+						</StackPanel>
+
+						<!-- ── Правая колонка: свечение, отражение, рамка ── -->
+						<StackPanel Grid.Column="1" Spacing="12">
+
+							<Border Classes="Card">
+								<StackPanel Spacing="8">
+									<Grid ColumnDefinitions="* Auto">
+										<TextBlock Grid.Column="0" Classes="SectionTitle" Text="Свечение"/>
+										<TextBlock Grid.Column="1" x:Name="GlowOff" Classes="SectionState" Text="нет"/>
+										<Button Grid.Column="1" x:Name="GlowClear" Classes="SectionClear" Content="Снять"/>
+									</Grid>
+									<Grid x:Name="GlowPanel" ColumnDefinitions="110 * Auto" RowDefinitions="Auto Auto Auto" RowSpacing="8">
+										<TextBlock Grid.Row="0" Classes="FieldLabel" Text="Цвет"/>
+										<controls:ColorPickerButton Grid.Row="0" Grid.Column="1" x:Name="GlowColor" HorizontalAlignment="Left"/>
+
+										<TextBlock Grid.Row="1" Classes="FieldLabel" Text="Прозрачность"/>
+										<Slider Grid.Row="1" Grid.Column="1" x:Name="GlowTransparency"
+										        Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="1" Grid.Column="2" x:Name="GlowTransparencyText" Classes="FieldValue"/>
+
+										<TextBlock Grid.Row="2" Classes="FieldLabel" Text="Размер"/>
+										<Slider Grid.Row="2" Grid.Column="1" x:Name="GlowRadius"
+										        Minimum="0" Maximum="30" TickFrequency="0.5" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="2" Grid.Column="2" x:Name="GlowRadiusText" Classes="FieldValue"/>
+									</Grid>
+								</StackPanel>
+							</Border>
+
+							<Border Classes="Card">
+								<StackPanel Spacing="8">
+									<Grid ColumnDefinitions="* Auto">
+										<TextBlock Grid.Column="0" Classes="SectionTitle" Text="Отражение"/>
+										<TextBlock Grid.Column="1" x:Name="ReflectionOff" Classes="SectionState" Text="нет"/>
+										<Button Grid.Column="1" x:Name="ReflectionClear" Classes="SectionClear" Content="Снять"/>
+									</Grid>
+									<Grid x:Name="ReflectionPanel" ColumnDefinitions="110 * Auto" RowDefinitions="Auto Auto Auto Auto" RowSpacing="8">
+										<TextBlock Grid.Row="0" Classes="FieldLabel" Text="Прозрачность"/>
+										<Slider Grid.Row="0" Grid.Column="1" x:Name="ReflectionTransparency"
+										        Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="0" Grid.Column="2" x:Name="ReflectionTransparencyText" Classes="FieldValue"/>
+
+										<TextBlock Grid.Row="1" Classes="FieldLabel" Text="Размер"/>
+										<Slider Grid.Row="1" Grid.Column="1" x:Name="ReflectionSize"
+										        Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="1" Grid.Column="2" x:Name="ReflectionSizeText" Classes="FieldValue"/>
+
+										<TextBlock Grid.Row="2" Classes="FieldLabel" Text="Расстояние"/>
+										<Slider Grid.Row="2" Grid.Column="1" x:Name="ReflectionDistance"
+										        Minimum="0" Maximum="20" TickFrequency="0.5" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="2" Grid.Column="2" x:Name="ReflectionDistanceText" Classes="FieldValue"/>
+
+										<TextBlock Grid.Row="3" Classes="FieldLabel" Text="Размытие"/>
+										<Slider Grid.Row="3" Grid.Column="1" x:Name="ReflectionBlur"
+										        Minimum="0" Maximum="10" TickFrequency="0.5" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="3" Grid.Column="2" x:Name="ReflectionBlurText" Classes="FieldValue"/>
+									</Grid>
+								</StackPanel>
+							</Border>
+
+							<Border Classes="Card">
+								<StackPanel Spacing="8">
+									<Grid ColumnDefinitions="* Auto">
+										<TextBlock Grid.Column="0" Classes="SectionTitle" Text="Рамка вокруг знаков"/>
+										<TextBlock Grid.Column="1" x:Name="BorderOff" Classes="SectionState" Text="нет"/>
+										<Button Grid.Column="1" x:Name="BorderClear" Classes="SectionClear" Content="Снять"/>
+									</Grid>
+									<Grid x:Name="BorderPanel" ColumnDefinitions="110 * Auto" RowDefinitions="Auto Auto Auto Auto" RowSpacing="8">
+										<TextBlock Grid.Row="0" Classes="FieldLabel" Text="Цвет"/>
+										<StackPanel Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10">
+											<controls:ColorPickerButton x:Name="BorderColor"/>
+											<CheckBox x:Name="BorderAutoColor" Classes="Option" Content="Как у текста"/>
+										</StackPanel>
+
+										<TextBlock Grid.Row="1" Classes="FieldLabel" Text="Толщина"/>
+										<Slider Grid.Row="1" Grid.Column="1" x:Name="BorderWidth"
+										        Minimum="0" Maximum="6" TickFrequency="0.25" IsSnapToTickEnabled="True"/>
+										<TextBlock Grid.Row="1" Grid.Column="2" x:Name="BorderWidthText" Classes="FieldValue"/>
+
+										<TextBlock Grid.Row="2" Classes="FieldLabel" Text="Линия"/>
+										<ComboBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" x:Name="BorderStyle">
+											<ComboBoxItem Content="Одинарная"/>
+											<ComboBoxItem Content="Двойная"/>
+											<ComboBoxItem Content="Точки"/>
+											<ComboBoxItem Content="Штрихи"/>
+											<ComboBoxItem Content="Жирная"/>
+										</ComboBox>
+									</Grid>
+								</StackPanel>
+							</Border>
+						</StackPanel>
+					</Grid>
+				</ScrollViewer>
+			</DockPanel>
+		</Border>
+	</Grid>
+
+</UserControl>

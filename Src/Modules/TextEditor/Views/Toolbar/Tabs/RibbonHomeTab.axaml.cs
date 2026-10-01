@@ -25,6 +25,9 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         private RibbonScrollContainer? _scrollContainer;
         private ListBox? _fontSizeList;
 
+        // Вьюмодель, на просьбу которой открыть окно «Эффекты текста» подписан вид.
+        private RibbonHomeTabViewModel? _effectsSource;
+
         public RibbonHomeTab()
         {
             InitializeComponent();
@@ -32,6 +35,19 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         }
 
         private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+        protected override void OnDataContextChanged(EventArgs e)
+        {
+            base.OnDataContextChanged(e);
+
+            if (_effectsSource is not null)
+                _effectsSource.TextEffectsDialogRequested -= OnTextEffectsDialogRequested;
+
+            _effectsSource = DataContext as RibbonHomeTabViewModel;
+
+            if (_effectsSource is not null)
+                _effectsSource.TextEffectsDialogRequested += OnTextEffectsDialogRequested;
+        }
 
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
@@ -177,6 +193,39 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             var result = await overlay.ShowAsync(current);
             if (result is not null)
                 doc.ApplyParagraphSettings(result);
+        }
+
+        // Открывает окно «Эффекты текста» на эффектах под кареткой и применяет результат
+        // к выделению одной правкой. Меню «A», из которого пришла просьба, закрывается:
+        // окно — поверх модуля, а меню висело бы над ним.
+        private async void OnTextEffectsDialogRequested()
+        {
+            this.FindControl<Button>("TextEffectsButton")?.Flyout?.Hide();
+
+            var host = this.FindAncestorOfType<TextEditorView>();
+            if (host is null) return;
+
+            var canvas = host.FindControl<DocumentCanvas>("PageCanvas")
+                         ?? host.GetVisualDescendants().OfType<DocumentCanvas>().FirstOrDefault();
+            if (canvas?.DataContext is not DocumentViewModel doc) return;
+
+            var overlay = host.FindControl<TextEffectsOverlay>("TextEffectsOverlay")
+                          ?? host.GetVisualDescendants().OfType<TextEffectsOverlay>().FirstOrDefault();
+            if (overlay is null) return;
+
+            // «Сохранить как мой эффект» в окне заводит набор через ленту — там же,
+            // где живут «Мои эффекты» меню «A».
+            Func<string>? suggestPresetName = null;
+            Action<Models.Inline.TextEffectPreset>? savePreset = null;
+            if (_effectsSource is { } ribbon)
+            {
+                suggestPresetName = ribbon.SuggestTextEffectPresetName;
+                savePreset = ribbon.SaveTextEffectPreset;
+            }
+
+            var result = await overlay.ShowAsync(doc.GetCaretEffectSettings(), suggestPresetName, savePreset);
+            if (result is not null)
+                doc.ApplyEffectSettings(result.Effects, result.Border);
         }
 
         // Открывает оверлей «Определить новый список» и применяет результат к выделению.

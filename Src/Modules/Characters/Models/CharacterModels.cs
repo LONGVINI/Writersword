@@ -110,6 +110,28 @@ namespace Writersword.Modules.Characters.Models
         public List<string> ProjectTypeTags { get; set; } = new();
         public List<CharacterAnketaField> Fields { get; set; } = new();
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Значок анкеты — ключ из CharacterAnketaIcons. По значку и цвету анкету
+        /// находят в списке глазами, не читая названий. Пусто — значок по умолчанию.
+        /// </summary>
+        public string Icon { get; set; } = string.Empty;
+
+        /// <summary>Цвет значка строкой #RRGGBB. Пусто — цвет по умолчанию.</summary>
+        public string IconColor { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Раскладка полей: строки из одной–трёх ячеек и подзаголовки групп.
+        /// Пусто у старых анкет — тогда раскладка строится по порядку и группам
+        /// полей (CharacterAnketaLayout.Normalize).
+        /// </summary>
+        public List<CharacterAnketaRow> Layout { get; set; } = new();
+
+        /// <summary>
+        /// Свои значки анкеты — загруженные из файлов картинки для оценок и
+        /// подписей. Хранятся внутри анкеты и уезжают вместе с её файлом.
+        /// </summary>
+        public List<CharacterAnketaAsset> Assets { get; set; } = new();
     }
 
     /// <summary>
@@ -140,5 +162,20 @@ namespace Writersword.Modules.Characters.Models
         public List<string> AnketaIds { get; set; } = new();
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Значок блока шаблона (ключ из CharacterAnketaIcons), пока у него нет
+        /// своей картинки. Пусто — значок по умолчанию.
+        /// </summary>
+        public string Icon { get; set; } = string.Empty;
+
+        /// <summary>Цвет блока шаблона: рамка и подложка значка. Пусто — цвет по умолчанию.</summary>
+        public string IconColor { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Картинка блока — ссылка в хранилище картинок проекта, та же, что у
+        /// аватаров персонажей. Пусто — показывается значок.
+        /// </summary>
+        public string ImageRef { get; set; } = string.Empty;
     }
 }

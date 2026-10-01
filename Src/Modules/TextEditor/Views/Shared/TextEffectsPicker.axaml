@@ -1,0 +1,371 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
+             xmlns:shared="using:Writersword.Modules.TextEditor.Views.Shared"
+             x:Class="Writersword.Modules.TextEditor.Views.Shared.TextEffectsPicker">
+
+	<!--
+	    Эффекты текста — содержимое меню кнопки «A» на вкладке «Главная».
+
+	    То, что Word держит в окне «Шрифт», в «Текстовых эффектах» и в «Границах»:
+	    эффекты букв (контур, тень, рельеф, гравировка, свечение, отражение), регистр
+	    (все прописные, малые прописные), знак ударения, рамка вокруг знаков и скрытый
+	    текст. Всё это без потерь уходит в .docx (w:outline, w:shadow, w:emboss,
+	    w:imprint, w14:glow, w14:reflection, w:caps, w:smallCaps, w:em, w:bdr, w:vanish)
+	    и возвращается из него.
+
+	    Плитки ставят вид по умолчанию. Свой вид — цвет, толщина, размытие, угол и
+	    прочее — задаётся в окне «Настроить эффекты…» внизу меню.
+
+	    Плитка отмечена, если эффект есть под кареткой; нажатие включает эффект у
+	    выделения или снимает его. Рельеф и гравировка, как в Word, не сочетаются ни
+	    друг с другом, ни с контуром и тенью.
+
+	    Сверху — «Мои эффекты»: свои наборы. Набор ставится нажатием на плитку;
+	    «Сохранить эффекты под кареткой» заводит набор из текста под кареткой, а
+	    «Сохранить как мой эффект» в окне настройки — из собранного там вида. Правая
+	    кнопка на плитке — переименовать, заменить эффектами под кареткой, удалить.
+	    Наборы общие для всех проектов.
+
+	    Данные и команды — у вкладки «Главная» (RibbonHomeTabViewModel): контрол
+	    берёт их из DataContext кнопки, к которой приделано меню.
+	-->
+
+	<UserControl.Styles>
+		<Style Selector="TextBlock.PickerCaption">
+			<Setter Property="FontSize"   Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="Margin"     Value="0,0,0,4"/>
+		</Style>
+		<Style Selector="TextBlock.PickerNote">
+			<Setter Property="FontSize"     Value="10"/>
+			<Setter Property="Foreground"   Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="TextWrapping" Value="Wrap"/>
+			<Setter Property="Margin"       Value="0,2,0,0"/>
+		</Style>
+
+		<!-- Плитки эффектов — те же, что у меню подчёркивания и зачёркивания. -->
+		<Style Selector="Button.PenTile">
+			<Setter Property="Width"           Value="58"/>
+			<Setter Property="Height"          Value="44"/>
+			<Setter Property="Margin"          Value="0,0,4,4"/>
+			<Setter Property="Padding"         Value="2"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="FontSize"        Value="11"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="Focusable"       Value="False"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		</Style>
+		<Style Selector="Button.PenTile /template/ ContentPresenter">
+			<Setter Property="CornerRadius" Value="4"/>
+		</Style>
+		<Style Selector="Button.PenTile:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.PenTile.on /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Кнопка окна настройки внизу меню. -->
+		<Style Selector="Button.SettingsLink">
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="Padding"         Value="8,6"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="FontSize"        Value="11"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="Focusable"       Value="False"/>
+		</Style>
+		<Style Selector="Button.SettingsLink /template/ ContentPresenter">
+			<Setter Property="CornerRadius" Value="4"/>
+		</Style>
+		<Style Selector="Button.SettingsLink:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+
+		<!-- Плитки «Мои эффекты»: миниатюра набора на листе и имя. -->
+		<Style Selector="Button.PresetTile">
+			<Setter Property="Width"           Value="100"/>
+			<Setter Property="Height"          Value="58"/>
+			<Setter Property="Margin"          Value="0,0,4,4"/>
+			<Setter Property="Padding"         Value="3"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="Focusable"       Value="False"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+			<Setter Property="VerticalContentAlignment"   Value="Stretch"/>
+		</Style>
+		<Style Selector="Button.PresetTile /template/ ContentPresenter">
+			<Setter Property="CornerRadius" Value="4"/>
+		</Style>
+		<Style Selector="Button.PresetTile:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Border.PresetPaper">
+			<Setter Property="Height"       Value="34"/>
+			<Setter Property="CornerRadius" Value="3"/>
+			<Setter Property="ClipToBounds" Value="True"/>
+			<Setter Property="Background"   Value="White"/>
+		</Style>
+
+		<!-- Образец эффекта и подпись под ним. -->
+		<Style Selector="shared|TextEffectSample">
+			<Setter Property="Width"               Value="40"/>
+			<Setter Property="Height"              Value="22"/>
+			<Setter Property="HorizontalAlignment" Value="Center"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.TileSample">
+			<Setter Property="Height"              Value="22"/>
+			<Setter Property="FontSize"            Value="14"/>
+			<Setter Property="HorizontalAlignment" Value="Center"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
+			<Setter Property="TextAlignment"       Value="Center"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.TileLabel">
+			<Setter Property="FontSize"            Value="9"/>
+			<Setter Property="HorizontalAlignment" Value="Center"/>
+			<Setter Property="TextTrimming"        Value="CharacterEllipsis"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<StackPanel Width="316" Spacing="10" Margin="4">
+
+		<!-- ── Мои эффекты ─────────────────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Мои эффекты"/>
+			<ItemsControl ItemsSource="{Binding TextEffectPresets}"
+			              IsVisible="{Binding HasTextEffectPresets}">
+				<ItemsControl.ItemsPanel>
+					<ItemsPanelTemplate>
+						<WrapPanel Orientation="Horizontal"/>
+					</ItemsPanelTemplate>
+				</ItemsControl.ItemsPanel>
+				<ItemsControl.ItemTemplate>
+					<DataTemplate>
+						<Button Classes="PresetTile"
+						        Command="{Binding $parent[ItemsControl].DataContext.ApplyTextEffectPresetCommand}"
+						        CommandParameter="{Binding}"
+						        behaviours:TooltipBehavior.Tip="{Binding Name}">
+							<Button.ContextMenu>
+								<ContextMenu>
+									<MenuItem Header="Переименовать…" Click="OnRenamePresetClick"/>
+									<MenuItem Header="Заменить эффектами под кареткой" Click="OnReplacePresetClick"/>
+									<Separator/>
+									<MenuItem Header="Удалить" Click="OnDeletePresetClick"/>
+								</ContextMenu>
+							</Button.ContextMenu>
+							<StackPanel Spacing="2">
+								<Border Classes="PresetPaper">
+									<shared:TextEffectPresetSample Preset="{Binding}"/>
+								</Border>
+								<TextBlock Classes="TileLabel" Text="{Binding Name}"/>
+							</StackPanel>
+						</Button>
+					</DataTemplate>
+				</ItemsControl.ItemTemplate>
+			</ItemsControl>
+			<TextBlock Classes="PickerNote" Margin="0,0,0,6"
+			           IsVisible="{Binding !HasTextEffectPresets}"
+			           Text="Свои наборы эффектов. Оформите текст как нравится, поставьте в него каретку и сохраните — набор будет ставиться одним нажатием в любом проекте."/>
+			<Button Classes="SettingsLink"
+			        Command="{Binding SaveCaretTextEffectPresetCommand}"
+			        IsEnabled="{Binding CanSaveCaretTextEffectPreset}"
+			        behaviours:TooltipBehavior.Tip="Заводит набор из эффектов текста под кареткой: контур, тень, свечение, отражение, рельеф, гравировка, рамка знаков, знак ударения">
+				<StackPanel Orientation="Horizontal" Spacing="6">
+					<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" Width="12" Height="12"/>
+					<TextBlock Text="Сохранить эффекты под кареткой" VerticalAlignment="Center"/>
+				</StackPanel>
+			</Button>
+		</StackPanel>
+
+		<!-- ── Эффекты букв ────────────────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Эффекты букв"/>
+			<WrapPanel Orientation="Horizontal">
+				<Button Classes="PenTile" Classes.on="{Binding IsTextOutline}"
+				        Command="{Binding TextOutlineCommand}"
+				        behaviours:TooltipBehavior.Tip="Контур: полые буквы с обводкой">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="Outline"/>
+						<TextBlock Classes="TileLabel" Text="Контур"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile" Classes.on="{Binding IsTextShadow}"
+				        Command="{Binding TextShadowCommand}"
+				        behaviours:TooltipBehavior.Tip="Тень под буквами">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="Shadow"/>
+						<TextBlock Classes="TileLabel" Text="Тень"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile" Classes.on="{Binding IsTextEmboss}"
+				        Command="{Binding TextEmbossCommand}"
+				        behaviours:TooltipBehavior.Tip="Рельеф: буквы выпуклые. Снимает контур, тень и гравировку">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="Emboss"/>
+						<TextBlock Classes="TileLabel" Text="Рельеф"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile" Classes.on="{Binding IsTextImprint}"
+				        Command="{Binding TextImprintCommand}"
+				        behaviours:TooltipBehavior.Tip="Гравировка: буквы вдавленные. Снимает контур, тень и рельеф">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="Imprint"/>
+						<TextBlock Classes="TileLabel" Text="Гравировка"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile" Classes.on="{Binding IsTextGlow}"
+				        Command="{Binding TextGlowCommand}"
+				        behaviours:TooltipBehavior.Tip="Свечение вокруг букв. Цвет и размер — в окне «Настроить эффекты…»">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="Glow"/>
+						<TextBlock Classes="TileLabel" Text="Свечение"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile" Classes.on="{Binding IsTextReflection}"
+				        Command="{Binding TextReflectionCommand}"
+				        behaviours:TooltipBehavior.Tip="Отражение под буквами. Размер и прозрачность — в окне «Настроить эффекты…»">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="Reflection"/>
+						<TextBlock Classes="TileLabel" Text="Отражение"/>
+					</StackPanel>
+				</Button>
+			</WrapPanel>
+		</StackPanel>
+
+		<!-- ── Регистр ─────────────────────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Регистр"/>
+			<WrapPanel Orientation="Horizontal">
+				<Button Classes="PenTile" Classes.on="{Binding IsAllCaps}"
+				        Command="{Binding AllCapsCommand}"
+				        behaviours:TooltipBehavior.Tip="Все прописные: буквы рисуются прописными, сам текст не меняется"
+				        behaviours:TooltipBehavior.HotKey="Ctrl+Shift+A">
+					<StackPanel Spacing="1">
+						<TextBlock Classes="TileSample" Text="АА"/>
+						<TextBlock Classes="TileLabel" Text="Прописные"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile" Classes.on="{Binding IsSmallCaps}"
+				        Command="{Binding SmallCapsCommand}"
+				        behaviours:TooltipBehavior.Tip="Малые прописные: строчные буквы рисуются уменьшенными прописными"
+				        behaviours:TooltipBehavior.HotKey="Ctrl+Shift+K">
+					<StackPanel Spacing="1">
+						<TextBlock Classes="TileSample">А<Run FontSize="10">А</Run></TextBlock>
+						<TextBlock Classes="TileLabel" Text="Малые"/>
+					</StackPanel>
+				</Button>
+			</WrapPanel>
+		</StackPanel>
+
+		<!-- ── Знак ударения ───────────────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Знак ударения"/>
+			<WrapPanel Orientation="Horizontal">
+				<Button Classes="PenTile"
+				        Classes.on="{Binding EmphasisMarkKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=None}"
+				        Command="{Binding EmphasisMarkCommand}" CommandParameter="None"
+				        behaviours:TooltipBehavior.Tip="Без знака ударения">
+					<StackPanel Spacing="1">
+						<TextBlock Classes="TileSample" Text="Аа"/>
+						<TextBlock Classes="TileLabel" Text="Нет"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding EmphasisMarkKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Dot}"
+				        Command="{Binding EmphasisMarkCommand}" CommandParameter="Dot"
+				        behaviours:TooltipBehavior.Tip="Точка над каждой буквой">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="EmphasisDot"/>
+						<TextBlock Classes="TileLabel" Text="Точка"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding EmphasisMarkKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Comma}"
+				        Command="{Binding EmphasisMarkCommand}" CommandParameter="Comma"
+				        behaviours:TooltipBehavior.Tip="Запятая над каждой буквой">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="EmphasisComma"/>
+						<TextBlock Classes="TileLabel" Text="Запятая"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding EmphasisMarkKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Circle}"
+				        Command="{Binding EmphasisMarkCommand}" CommandParameter="Circle"
+				        behaviours:TooltipBehavior.Tip="Кружок над каждой буквой">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="EmphasisCircle"/>
+						<TextBlock Classes="TileLabel" Text="Кружок"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile"
+				        Classes.on="{Binding EmphasisMarkKey, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=UnderDot}"
+				        Command="{Binding EmphasisMarkCommand}" CommandParameter="UnderDot"
+				        behaviours:TooltipBehavior.Tip="Точка под каждой буквой">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="EmphasisUnderDot"/>
+						<TextBlock Classes="TileLabel" Text="Снизу"/>
+					</StackPanel>
+				</Button>
+			</WrapPanel>
+		</StackPanel>
+
+		<!-- ── Рамка и скрытый текст ───────────────────────────────── -->
+		<StackPanel>
+			<TextBlock Classes="PickerCaption" Text="Рамка и скрытый текст"/>
+			<WrapPanel Orientation="Horizontal">
+				<Button Classes="PenTile" Classes.on="{Binding IsCharBorder}"
+				        Command="{Binding CharBorderCommand}"
+				        behaviours:TooltipBehavior.Tip="Рамка вокруг знаков: тонкая линия цвета текста">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="CharBorder"/>
+						<TextBlock Classes="TileLabel" Text="Рамка"/>
+					</StackPanel>
+				</Button>
+				<Button Classes="PenTile" Classes.on="{Binding IsHiddenText}"
+				        Command="{Binding HiddenTextCommand}"
+				        behaviours:TooltipBehavior.Tip="Скрытый текст: не печатается и виден только при включённых знаках ¶"
+				        behaviours:TooltipBehavior.HotKey="Ctrl+Shift+H">
+					<StackPanel Spacing="1">
+						<shared:TextEffectSample Kind="Hidden"/>
+						<TextBlock Classes="TileLabel" Text="Скрытый"/>
+					</StackPanel>
+				</Button>
+			</WrapPanel>
+			<TextBlock Classes="PickerNote"
+			           Text="Скрытый текст виден с точечным подчёркиванием, пока включены знаки ¶ (Ctrl+Shift+8). Без них он не занимает места и не печатается."/>
+		</StackPanel>
+
+		<!-- ── Свои настройки ──────────────────────────────────────── -->
+		<Button Classes="SettingsLink"
+		        Command="{Binding OpenTextEffectsCommand}"
+		        behaviours:TooltipBehavior.Tip="Цвет, толщина и штрих контура, тень, свечение, отражение, рамка знаков — с образцом">
+			<StackPanel Orientation="Horizontal" Spacing="6">
+				<PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+				          Width="12" Height="12"/>
+				<TextBlock Text="Настроить эффекты…" VerticalAlignment="Center"/>
+			</StackPanel>
+		</Button>
+	</StackPanel>
+</UserControl>

@@ -76,5 +76,30 @@ namespace Writersword.Modules.TextEditor.Models.Document
 
         /// <summary>Тип разрыва.</summary>
         public BreakType BreakType { get; set; }
+
+        /// <summary>
+        /// Разрыв стоит внутри абзаца, который идёт перед ним: в Word это один абзац с
+        /// разрывом, а модель режет его на кусок до разрыва, сам разрыв и кусок после.
+        /// Отметка такого разрыва рисуется, как у Word, на последней строке куска до
+        /// разрыва, сразу за его текстом, а не отдельной строкой под ним.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool InParagraph { get; set; }
+
+        /// <summary>
+        /// За разрывом продолжается тот же абзац Word: знака абзаца на строке разрыва
+        /// нет, и отметка тянется до правого края текста. Без продолжения абзац
+        /// кончается разрывом, и за короткой отметкой стоит знак абзаца.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool ContinuesParagraph { get; set; }
+
+        /// <summary>
+        /// Разрыв пришёл из разрыва колонки Word (w:br type="column") в разделе из одной
+        /// колонки. Word ведёт такой разрыв на следующую страницу, поэтому он работает как
+        /// разрыв страницы, но подписан «Разрыв столбца» и в .docx уходит разрывом колонки.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool FromColumnBreak { get; set; }
     }
 }

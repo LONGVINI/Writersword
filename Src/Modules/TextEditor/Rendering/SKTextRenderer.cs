@@ -45,6 +45,12 @@ namespace Writersword.Modules.TextEditor.Rendering
         // null — система не нашла ни одного шрифта с нужным глифом.
         private static readonly ConcurrentDictionary<int, string?> _fallbackFamilyCache = new();
 
+        // Кеш системных гарнитур для знаков-символов текста (FindSymbolFallback): по
+        // знаку и начертанию, в котором его не нашлось. Отдельный от кеша маркеров:
+        // фильтр гарнитур у них разный.
+        private static readonly ConcurrentDictionary<(int Codepoint, string Family, bool Bold, bool Italic),
+            (string Family, bool Bold, bool Italic)?> _symbolFallbackFamilyCache = new();
+
         /// <summary>
         /// Сбрасывает нативные SKFont объекты из кеша.
         /// SKFont — нативные объекты SkiaSharp, накапливаются при смене вкладок.
@@ -62,6 +68,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             _fontCache?.Clear();
             _typefaceCache.Clear();
             _fallbackFamilyCache.Clear();
+            _symbolFallbackFamilyCache.Clear();
         }
 
         // ── Публичный API ─────────────────────────────────────────────────
@@ -159,16 +166,64 @@ namespace Writersword.Modules.TextEditor.Rendering
 
 
                 string markerText = listProps.ComputedMarkerText ?? string.Empty;
+
+                // Уровень списка из Word: номер стоит у точки номера по своему выравниванию,
+                // а текст отделяет от него табуляция, пробел или ничего — как у Word.
+                var wordLevel = listProps.WordLevelAt(listProps.Level);
+                bool wordSpacing = wordLevel is not null && wordLevel.Suffix != ListMarkerSuffix.Gap;
+
                 if (markerText.Length > 0)
                 {
-                    var mtf = GetOrCreateTypeface(
-                        ResolveReadingFamily(styles.ResolveFontFamily(styleName)), false, false);
-                    var mfont = GetOrCreateFont(mtf, ScaleReadingFont(styles.ResolveFontSize(styleName)));
-                    float markerW = mfont.MeasureText(markerText);
-                    // Текст ПЕРВОЙ строки идёт сразу после номера: номер + ширина + зазор.
-                    // Позиция абсолютна (от поля) и от левого края строк 2+ НЕ зависит —
-                    // значение может быть отрицательным (первая строка левее строк 2+).
-                    double offset = markerAbs + markerW + listProps.MarkerTextMinGapPt - leftIndentPt;
+                    SKFont mfont;
+                    string measuredText = markerText;
+                    if (wordLevel is not null)
+                    {
+                        mfont = ResolveListMarkerFont(
+                            markerText,
+                            ResolveReadingFamily(styles.ResolveFontFamily(styleName)),
+                            ScaleReadingFont(styles.ResolveFontSize(styleName)),
+                            wordLevel.FontFamily,
+                            out measuredText);
+                    }
+                    else
+                    {
+                        var mtf = GetOrCreateTypeface(
+                            ResolveReadingFamily(styles.ResolveFontFamily(styleName)), false, false);
+                        mfont = GetOrCreateFont(mtf, ScaleReadingFont(styles.ResolveFontSize(styleName)));
+                    }
+
+                    float markerW = mfont.MeasureText(measuredText);
+
+                    double offset;
+                    if (wordSpacing)
+                    {
+                        // Точка номера — начало, середина или конец номера.
+                        double markerStart = wordLevel!.Alignment switch
+                        {
+                            ListMarkerAlignment.Right => markerAbs - markerW,
+                            ListMarkerAlignment.Center => markerAbs - markerW / 2.0,
+                            _ => markerAbs
+                        };
+                        double markerEnd = markerStart + markerW;
+
+                        double textStart = wordLevel.Suffix switch
+                        {
+                            ListMarkerSuffix.Space => markerEnd + mfont.MeasureText(" "),
+                            ListMarkerSuffix.Nothing => markerEnd,
+                            _ => WordNumberTabStop(
+                                markerEnd, leftIndentPt, docFirstLineIndentPt < 0.0,
+                                para.Properties.TabStops, styles.DefaultTabStopPt, indentScale)
+                        };
+
+                        offset = textStart - leftIndentPt;
+                    }
+                    else
+                    {
+                        // Текст ПЕРВОЙ строки идёт сразу после номера: номер + ширина + зазор.
+                        // Позиция абсолютна (от поля) и от левого края строк 2+ НЕ зависит —
+                        // значение может быть отрицательным (первая строка левее строк 2+).
+                        offset = markerAbs + markerW + listProps.MarkerTextMinGapPt - leftIndentPt;
+                    }
 
                     // Не пускаем текст первой строки за правый край текстовой зоны: оставляем
                     // минимум места под текст, иначе строка уезжала бы за пределы страницы.
@@ -190,6 +245,19 @@ namespace Writersword.Modules.TextEditor.Rendering
                     listProps.ComputedFirstLineOffsetPt = offset;
                     listProps.ComputedMarkerIndentPt = markerAbs;
                 }
+                else if (wordSpacing && wordLevel!.Suffix == ListMarkerSuffix.Tab)
+                {
+                    // Пустой маркер Word: за ним всё равно стоит табуляция, и текст первой
+                    // строки встаёт туда же, куда встал бы за номером, — на отступ текста.
+                    double textStart = WordNumberTabStop(
+                        markerAbs, leftIndentPt, docFirstLineIndentPt < 0.0,
+                        para.Properties.TabStops, styles.DefaultTabStopPt, indentScale);
+                    double offset = textStart - leftIndentPt;
+                    firstLineIndentPt = (float)offset;
+                    listProps.ComputedMarkerWidthPt = 0;
+                    listProps.ComputedFirstLineOffsetPt = offset;
+                    listProps.ComputedMarkerIndentPt = markerAbs;
+                }
                 else
                 {
                     firstLineIndentPt = 0f;
@@ -205,6 +273,12 @@ namespace Writersword.Modules.TextEditor.Rendering
                                         ?? (isCell ? 0.0 : (double)styles.ResolveSpaceBefore(styleName)));
             float spaceAfterPt = (float)(para.Properties.SpaceAfter
                                         ?? (isCell ? 0.0 : (double)styles.ResolveSpaceAfter(styleName)));
+
+            // Абзац не добавляет интервал к соседу своего стиля (ContextualSpacingRules):
+            // вывод о соседях сделан до раскладки и лежит в самом абзаце. Снимается только
+            // интервал — место под рамку абзаца ниже прибавляется как обычно.
+            if (para.SuppressSpaceBefore) spaceBeforePt = 0f;
+            if (para.SuppressSpaceAfter) spaceAfterPt = 0f;
 
             // Рамка абзаца отодвигает соседей так же, как интервалы: верхняя линия с
             // зазором до текста встаёт над первой строкой, нижняя — под последней. Их
@@ -230,10 +304,21 @@ namespace Writersword.Modules.TextEditor.Rendering
                     styles.ResolveLineSpacing(styleName));
 
             // Конвертируем TextAlignment из модели в Core enum через int.
-            // Значения намеренно совпадают: Left=0, Center=1, Right=2, Justify=3.
+            // Значения намеренно совпадают: Left=0, Center=1, Right=2, Justify=3, Distribute=4.
             RenderAlignment alignment = para.Properties.Alignment.HasValue
                 ? (RenderAlignment)(int)para.Properties.Alignment.Value
                 : styles.ResolveAlignment(styleName);
+
+            // В абзаце справа налево Word читает «по левому» и «по правому» от начала
+            // строки: w:jc="right" у такого абзаца — к концу строки, то есть к левому
+            // краю листа. Модель хранит значение как в файле, а на лист оно ложится
+            // зеркально.
+            bool rightToLeft = para.Properties.RightToLeft;
+            if (rightToLeft)
+            {
+                if (alignment == RenderAlignment.Left) alignment = RenderAlignment.Right;
+                else if (alignment == RenderAlignment.Right) alignment = RenderAlignment.Left;
+            }
 
             // textWidthPt — ширина строки текста без учёта отступов параграфа.
             // Это та ширина по которой выполняется перенос строк.
@@ -249,12 +334,26 @@ namespace Writersword.Modules.TextEditor.Rendering
                 RightIndentPt = rightIndentPt,
                 FirstLineIndentPt = firstLineIndentPt,
                 MarkerOwnsFirstLine = markerOwnsFirstLine,
+                MarkerAlignment = (int)(listProps?.WordLevelAt(listProps.Level)?.Alignment ?? ListMarkerAlignment.Left),
+                MarkerFontFamily = listProps?.WordLevelAt(listProps.Level)?.FontFamily,
                 Alignment = alignment,
                 Borders = borders,
                 ShadingColor = string.IsNullOrWhiteSpace(para.Properties.ShadingColor)
                     ? null
                     : para.Properties.ShadingColor,
-                AllowsJustifyShrink = alignment == RenderAlignment.Justify && styles.JustifyWithShrinking
+                ShadingPattern = string.IsNullOrWhiteSpace(para.Properties.ShadingPattern)
+                    ? null
+                    : para.Properties.ShadingPattern,
+                ShadingPatternColor = string.IsNullOrWhiteSpace(para.Properties.ShadingPatternColor)
+                    ? null
+                    : para.Properties.ShadingPatternColor,
+                AllowsJustifyShrink = (alignment == RenderAlignment.Justify || alignment == RenderAlignment.Distribute)
+                    && styles.JustifyWithShrinking,
+                SpaceBeforeSuppressed = para.SuppressSpaceBefore,
+                SpaceAfterSuppressed = para.SuppressSpaceAfter,
+                LineTextAlignment = (int)para.Properties.LineTextAlignment,
+                IsRightToLeft = rightToLeft,
+                HasBidiText = rightToLeft || BidiResolver.HasRightToLeft(para.GetPlainText())
             };
 
             var tokens = CollectTokens(para, styleName, styles, InlineImageSize);
@@ -272,6 +371,22 @@ namespace Writersword.Modules.TextEditor.Rendering
                 // нет своих — символ табуляции идёт к ближайшей отметке шага.
                 para.Properties.TabStops, styles.DefaultTabStopPt);
             layout.TextLength = GetPlainTextLength(para);
+
+            // Строки со смешанным направлением письма тянутся по ширине здесь же, при
+            // вёрстке: их куски стоят на листе не в порядке текста, и растяжка, которую
+            // отрисовка копит по порядку текста, к ним не подходит.
+            if (layout.HasBidiText
+                && (alignment == RenderAlignment.Justify || alignment == RenderAlignment.Distribute))
+                JustifyReorderedLines(layout);
+
+            // Растянутое выравнивание: последнюю строку, которую по ширине не тянут,
+            // растягивает разводка букв.
+            if (alignment == RenderAlignment.Distribute && layout.Lines.Count > 0)
+                DistributeLastLine(layout, layout.Lines.Count - 1);
+
+            // Текст цвета «авто» на тёмной заливке абзаца Word пишет белым.
+            if (IsDarkFill(para.Properties.ShadingColor))
+                ApplyAutoColorOnDark(layout);
 
             return layout;
         }
@@ -358,23 +473,39 @@ namespace Writersword.Modules.TextEditor.Rendering
                     float padLeftPt = (float)cell.PaddingLeftPt * contentScale;
                     float padRightPt = (float)cell.PaddingRightPt * contentScale;
 
-                    float leftBorderW = cell.Borders.Left != BorderStyle.None ? (float)cell.Borders.ThicknessPt : 0f;
-                    float rightBorderW = cell.Borders.Right != BorderStyle.None ? (float)cell.Borders.ThicknessPt : 0f;
+                    float leftBorderW = cell.Borders.Left != BorderStyle.None ? (float)cell.Borders.EffectiveLeftThicknessPt() : 0f;
+                    float rightBorderW = cell.Borders.Right != BorderStyle.None ? (float)cell.Borders.EffectiveRightThicknessPt() : 0f;
                     float contentWidthPt = Math.Max(
                         cellWidthPt - padLeftPt - padRightPt - leftBorderW - rightBorderW,
                         1f);
 
                     var measure = new CellMeasure(cell, row, col)
                     {
+                        IsRotated = cell.IsRotated,
                         XPt = colOffsetsPt[col],
                         WidthPt = cellWidthPt,
                         PadTopPt = padTopPt,
                         PadBottomPt = padBottomPt,
                         PadLeftPt = padLeftPt,
                         PadRightPt = padRightPt,
-                        TopBorderPt = cell.Borders.Top != BorderStyle.None ? (float)cell.Borders.ThicknessPt : 0f,
-                        BottomBorderPt = cell.Borders.Bottom != BorderStyle.None ? (float)cell.Borders.ThicknessPt : 0f
+                        TopBorderPt = cell.Borders.Top != BorderStyle.None ? (float)cell.Borders.EffectiveTopThicknessPt() : 0f,
+                        BottomBorderPt = cell.Borders.Bottom != BorderStyle.None ? (float)cell.Borders.EffectiveBottomThicknessPt() : 0f
                     };
+
+                    // Повёрнутая ячейка: строки идут вдоль её высоты, поэтому длина строки —
+                    // высота области содержимого, а не ширина. У строки точной высоты она
+                    // известна сразу. Иначе, как у Word, строка не переносится, а тянет
+                    // высоту строки таблицы за собой: обмеряем текст без переноса, а на
+                    // окончательную высоту ячейки раскладка перестраивается во втором проходе.
+                    float layoutWidthPt = contentWidthPt;
+                    if (measure.IsRotated)
+                    {
+                        float rowMinPt = (float)table.GetRowMinHeightPt(row);
+                        bool rotatedExact = cell.RowSpan == 1 && rowMinPt > 0f && table.IsRowHeightExact(row);
+                        layoutWidthPt = rotatedExact
+                            ? Math.Max(rowMinPt - measure.VerticalInsetPt, 1f)
+                            : RotatedCellMeasureLengthPt;
+                    }
 
                     // Верстаем параграфы ячейки с isCell = true — подавляем дефолтный SpaceAfter.
                     float cellContentY = 0f;
@@ -386,7 +517,11 @@ namespace Writersword.Modules.TextEditor.Rendering
                         // оригинала не трогается. Ширина та же — contentWidthPt.
                         var paraSrc = (cellFontPreview != null
                             && cellFontPreview.TryGetValue(para, out var pv)) ? pv : para;
-                        var paraLayout = BuildLayout(paraSrc, contentWidthPt, styles, isCell: true);
+                        var paraLayout = BuildLayout(paraSrc, layoutWidthPt, styles, isCell: true);
+
+                        // Текст цвета «авто» на тёмной заливке ячейки Word пишет белым.
+                        if (IsDarkFill(cell.BackgroundColor))
+                            ApplyAutoColorOnDark(paraLayout);
 
                         measure.Paragraphs.Add(new SKTableParaLayout
                         {
@@ -401,6 +536,8 @@ namespace Writersword.Modules.TextEditor.Rendering
                     }
 
                     measure.ContentHeightPt = cellContentY;
+                    if (measure.IsRotated)
+                        measure.RotatedLengthPt = MeasureRotatedLength(measure.Paragraphs);
                     measured.Add(measure);
 
                     // Высота строки определяется самой высокой ячейкой без RowSpan.
@@ -408,14 +545,20 @@ namespace Writersword.Modules.TextEditor.Rendering
                         rowHeight = measure.OwnHeightPt;
                 }
 
-                // Минимальная высота строки — высота пустой строки.
-                if (rowHeight < 14f) rowHeight = 14f;
+                // Строка без единой своей ячейки (все перекрыты объединением сверху) получает
+                // высоту пустой строки. Строку с содержимым не подтягиваем до 14 пт: у
+                // таблицы из Word с нулевыми полями строка в 12 пт Times New Roman — 13,8 пт,
+                // и прибавка набегала на каждой строке длинной таблицы.
+                if (rowHeight <= 0f) rowHeight = 14f;
 
                 // Высота, заданная пользователем, работает как нижняя граница, а не как
                 // жёсткий размер: строка не станет ниже неё, но при более высоком
                 // содержимом растёт дальше, иначе текст оказался бы обрезан.
                 float userMinPt = (float)table.GetRowMinHeightPt(row);
-                if (userMinPt > rowHeight) rowHeight = userMinPt;
+
+                // Точная высота (из Word) — строка ровно такая, лишнее срезает клип ячейки.
+                if (userMinPt > 0f && table.IsRowHeightExact(row)) rowHeight = userMinPt;
+                else if (userMinPt > rowHeight) rowHeight = userMinPt;
 
                 rowHeightsPt[row] = rowHeight;
             }
@@ -445,10 +588,16 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 // Недостача делится поровну между строками объединения: вся прибавка
                 // на одной строке перекосила бы её соседей справа и слева от
-                // объединённой ячейки.
-                float sharePt = deficitPt / (lastRow - firstRow + 1);
+                // объединённой ячейки. Строки точной высоты не растут.
+                int growable = 0;
                 for (int r = firstRow; r <= lastRow; r++)
-                    rowHeightsPt[r] += sharePt;
+                    if (!(table.IsRowHeightExact(r) && table.GetRowMinHeightPt(r) > 0)) growable++;
+                if (growable == 0) continue;
+
+                float sharePt = deficitPt / growable;
+                for (int r = firstRow; r <= lastRow; r++)
+                    if (!(table.IsRowHeightExact(r) && table.GetRowMinHeightPt(r) > 0))
+                        rowHeightsPt[r] += sharePt;
             }
 
             // Второй проход — сборка. Высоты строк окончательны, поэтому вертикальные
@@ -473,6 +622,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                      r < measure.Row + measure.Cell.RowSpan && r < rowCount; r++)
                     cellHeightPt += rowHeightsPt[r];
 
+                // Повёрнутая ячейка получает строки ровно на свою окончательную высоту:
+                // выравнивание абзаца по центру или вправо отмеряется вдоль неё.
+                if (measure.IsRotated)
+                    RelayoutRotatedCell(measure,
+                        Math.Max(cellHeightPt - measure.VerticalInsetPt, 1f),
+                        styles, cellFontPreview);
+
                 var cellLayout = new SKTableCellLayout
                 {
                     Row = measure.Row,
@@ -487,7 +643,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                     PadLeftPt = measure.PadLeftPt,
                     PadRightPt = measure.PadRightPt,
                     BackgroundColor = measure.Cell.BackgroundColor,
+                    ShadingPattern = measure.Cell.ShadingPattern,
+                    ShadingPatternColor = measure.Cell.ShadingPatternColor,
                     VerticalAlignment = (int)measure.Cell.VerticalAlignment,
+                    TextDirection = (int)measure.Cell.TextDirection,
                     Borders = BuildCellBorderLayout(measure.Cell.Borders)
                 };
 
@@ -536,13 +695,183 @@ namespace Writersword.Modules.TextEditor.Rendering
             public float TopBorderPt { get; init; }
             public float BottomBorderPt { get; init; }
 
+            /// <summary>Текст ячейки повёрнут: строки идут вдоль её высоты.</summary>
+            public bool IsRotated { get; init; }
+
             public float ContentHeightPt { get; set; }
+
+            /// <summary>
+            /// Длина самой длинной строки повёрнутой ячейки вместе с отступами абзаца:
+            /// столько высоты ей нужно, чтобы текст встал без переноса.
+            /// </summary>
+            public float RotatedLengthPt { get; set; }
+
+            /// <summary>Поля и рамки ячейки по вертикали.</summary>
+            public float VerticalInsetPt => PadTopPt + PadBottomPt + TopBorderPt + BottomBorderPt;
 
             public List<SKTableParaLayout> Paragraphs { get; } = new();
 
-            /// <summary>Высота, которой ячейке хватает на собственное содержимое.</summary>
-            public float OwnHeightPt =>
-                ContentHeightPt + PadTopPt + PadBottomPt + TopBorderPt + BottomBorderPt;
+            /// <summary>
+            /// Высота, которой ячейке хватает на собственное содержимое. У повёрнутой
+            /// ячейки это длина её строк: стопка строк ложится поперёк, по ширине.
+            /// </summary>
+            public float OwnHeightPt => IsRotated
+                ? RotatedLengthPt + VerticalInsetPt
+                : ContentHeightPt + PadTopPt + PadBottomPt + TopBorderPt + BottomBorderPt;
+        }
+
+        /// <summary>
+        /// Длина строки, на которую обмеряется повёрнутая ячейка без точной высоты.
+        /// Строка такой ячейки не переносится, а растит высоту строки таблицы; предел
+        /// нужен лишь затем, чтобы очень длинный текст не дал строку выше листа.
+        /// </summary>
+        private const float RotatedCellMeasureLengthPt = 720f;
+
+        /// <summary>
+        /// Длина самой длинной строки среди абзацев ячейки — с отступами абзаца и
+        /// отступом первой строки, без хвостовых пробелов.
+        /// </summary>
+        private static float MeasureRotatedLength(List<SKTableParaLayout> paragraphs)
+        {
+            float longest = 0f;
+            foreach (var para in paragraphs)
+            {
+                var layout = para.Layout;
+                for (int li = 0; li < layout.Lines.Count; li++)
+                {
+                    float lineLength = layout.LeftIndentPt + layout.RightIndentPt
+                        + layout.Lines[li].TextWidth
+                        + (li == 0 ? layout.FirstLineIndentPt : 0f);
+                    if (lineLength > longest) longest = lineLength;
+                }
+            }
+            return longest;
+        }
+
+        /// <summary>
+        /// Перестраивает раскладки абзацев повёрнутой ячейки на длину строки lengthPt —
+        /// окончательную высоту её области содержимого — и пересчитывает толщину стопки.
+        /// </summary>
+        private void RelayoutRotatedCell(
+            CellMeasure measure,
+            float lengthPt,
+            StyleResolver styles,
+            IReadOnlyDictionary<ParagraphBlock, ParagraphBlock>? cellFontPreview)
+        {
+            var cell = measure.Cell;
+            measure.Paragraphs.Clear();
+
+            float cellContentY = 0f;
+            for (int pi = 0; pi < cell.Paragraphs.Count; pi++)
+            {
+                var para = cell.Paragraphs[pi];
+                var paraSrc = (cellFontPreview != null
+                    && cellFontPreview.TryGetValue(para, out var pv)) ? pv : para;
+                var paraLayout = BuildLayout(paraSrc, lengthPt, styles, isCell: true);
+
+                if (IsDarkFill(cell.BackgroundColor))
+                    ApplyAutoColorOnDark(paraLayout);
+
+                measure.Paragraphs.Add(new SKTableParaLayout
+                {
+                    Layout = paraLayout,
+                    Ypt = cellContentY,
+                    ParagraphIndex = pi
+                });
+
+                cellContentY += paraLayout.SpaceBeforePt
+                              + paraLayout.TotalHeightPt
+                              + paraLayout.SpaceAfterPt;
+            }
+
+            measure.ContentHeightPt = cellContentY;
+        }
+
+        /// <summary>
+        /// Матрица повёрнутой ячейки: переводит её содержимое, разложенное как обычный
+        /// горизонтальный текст с началом в (contentLeft, contentTop) и строками длиной
+        /// contentHeight, в настоящее положение на листе.
+        /// Снизу вверх (1): начало строки — у нижнего края, верх строк смотрит влево.
+        /// Сверху вниз (2): начало строки — у верхнего края, верх строк смотрит вправо.
+        /// </summary>
+        public static SKMatrix RotatedCellMatrix(
+            int textDirection, float contentLeft, float contentTop,
+            float contentWidth, float contentHeight)
+        {
+            if (textDirection == 1)
+            {
+                // x' = y − top + left;  y' = top + height − (x − left).
+                return new SKMatrix(
+                    0f, 1f, contentLeft - contentTop,
+                    -1f, 0f, contentTop + contentHeight + contentLeft,
+                    0f, 0f, 1f);
+            }
+
+            if (textDirection == 2)
+            {
+                // x' = left + width − (y − top);  y' = top + (x − left).
+                return new SKMatrix(
+                    0f, -1f, contentLeft + contentWidth + contentTop,
+                    1f, 0f, contentTop - contentLeft,
+                    0f, 0f, 1f);
+            }
+
+            return SKMatrix.Identity;
+        }
+
+        /// <summary>
+        /// Сдвиг стопки строк повёрнутой ячейки поперёк неё — по её ширине. Вертикальное
+        /// выравнивание ячейки у Word поворачивается вместе с текстом: «сверху» —
+        /// это сторона, куда смотрит верх строк.
+        /// </summary>
+        public static float RotatedCellStackOffset(SKTableCellLayout cell, float contentWidth)
+        {
+            float free = contentWidth - cell.ContentHeightPt;
+            float offset = cell.VerticalAlignment switch
+            {
+                1 => free / 2f,
+                2 => free,
+                _ => 0f
+            };
+            return Math.Max(0f, offset);
+        }
+
+        /// <summary>
+        /// Рисует абзацы повёрнутой ячейки. Клип по ячейке вызывающий ставит до вызова,
+        /// в координатах листа.
+        /// </summary>
+        private static void RenderRotatedCellParagraphs(
+            SKCanvas canvas, SKTableCellLayout cell,
+            float contentLeft, float contentTop, float contentWidth, float contentHeight)
+        {
+            var matrix = RotatedCellMatrix(
+                cell.TextDirection, contentLeft, contentTop, contentWidth, contentHeight);
+
+            canvas.Save();
+            // Через SetMatrix, а не Concat: у Concat в разных версиях SkiaSharp разная
+            // сигнатура (ref и in), а произведение матриц одинаково в любой.
+            canvas.SetMatrix(SKMatrix.Concat(canvas.TotalMatrix, matrix));
+
+            float stackY = contentTop + RotatedCellStackOffset(cell, contentWidth);
+
+            for (int cpi = 0; cpi < cell.Paragraphs.Count; cpi++)
+            {
+                var paraLayout = cell.Paragraphs[cpi];
+                float paraY = stackY + paraLayout.Ypt + paraLayout.Layout.SpaceBeforePt;
+
+                RenderCellParagraphBorders(canvas, cell.Paragraphs, cpi,
+                    contentLeft + paraLayout.Layout.LeftIndentPt, paraY);
+
+                RenderParagraphLines(
+                    canvas,
+                    paraLayout.Layout,
+                    contentLeft + paraLayout.Layout.LeftIndentPt,
+                    paraY,
+                    0,
+                    paraLayout.Layout.Lines.Count);
+            }
+
+            canvas.Restore();
         }
 
         /// <summary>
@@ -576,6 +905,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                         using var bgPaint = new SKPaint { Color = bgColor };
                         canvas.DrawRect(cellX, cellY, cell.WidthPt, cell.HeightPt, bgPaint);
                     }
+                    RenderCellShadingPattern(canvas, cell, cellX, cellY, cell.WidthPt, cell.HeightPt);
 
                     // Границы ячейки.
                     RenderCellBorders(canvas, cell, cellX, cellY, cell.HeightPt, canvasScale);
@@ -607,6 +937,17 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                     canvas.Save();
                     canvas.ClipRect(new SKRect(clipX, clipY, clipX + clipW, clipY + clipH));
+
+                    if (cell.IsRotated)
+                    {
+                        float rotatedWidth = cell.WidthPt - cell.PadLeftPt - cell.PadRightPt
+                                           - cell.Borders.Left.WidthPt - cell.Borders.Right.WidthPt;
+                        RenderRotatedCellParagraphs(canvas, cell,
+                            contentX, cellY + cell.PadTopPt + cell.Borders.Top.WidthPt,
+                            rotatedWidth, contentAreaH);
+                        canvas.Restore();
+                        continue;
+                    }
 
                     for (int cpi = 0; cpi < cell.Paragraphs.Count; cpi++)
                     {
@@ -701,7 +1042,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     if (block is TableBlock tableBlock)
                     {
                         var tableLayout = BuildTableLayout(tableBlock, textWidthPt, styles);
-                        float leftIndentPt = (float)tableBlock.LeftIndentPt;
+                        float leftIndentPt = (float)tableBlock.ResolveLeftOffsetPt(textWidthPt, tableLayout.TotalWidthPt);
                         bool repeatHeader = tableBlock.RepeatHeader && tableLayout.Rows.Count > 0;
                         bool byCell = tableBlock.SplitMode == TableSplitMode.ByCell;
                         string? breakLabel = tableBlock.BreakLabel;
@@ -999,7 +1340,7 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 // Рамка и заливка — под текстом. Соединяется с соседом по листу, только
                 // если он идёт в документе вплотную: между ними не таблица и не картинка.
-                if (para.Layout.Borders is not null || para.Layout.ShadingColor is not null)
+                if (para.Layout.Borders is not null || para.Layout.HasShading)
                 {
                     int at = page.Paragraphs.IndexOf(para);
                     var prevPara = at > 0 ? page.Paragraphs[at - 1] : null;
@@ -1146,12 +1487,23 @@ namespace Writersword.Modules.TextEditor.Rendering
                         if (!string.IsNullOrEmpty(cell.BackgroundColor)
                             && SKColor.TryParse(cell.BackgroundColor, out var bg2))
                         { using var bp = new SKPaint { Color = bg2 }; canvas.DrawRect(cellX, cellY, cell.WidthPt, cell.HeightPt, bp); }
+                        RenderCellShadingPattern(canvas, cell, cellX, cellY, cell.WidthPt, cell.HeightPt);
                         RenderCellBorders(canvas, cell, cellX, cellY, cell.HeightPt, canvasScale);
                         float cx2 = cellX + cell.PadLeftPt + cell.Borders.Left.WidthPt;
                         float cy2 = cellY + cell.PadTopPt + cell.Borders.Top.WidthPt;
                         canvas.Save();
                         canvas.ClipRect(new SKRect(cellX + cell.Borders.Left.WidthPt, cellY + cell.Borders.Top.WidthPt,
                             cellX + cell.WidthPt - cell.Borders.Right.WidthPt, cellY + cell.HeightPt - cell.Borders.Bottom.WidthPt));
+                        if (cell.IsRotated)
+                        {
+                            RenderRotatedCellParagraphs(canvas, cell, cx2, cy2,
+                                cell.WidthPt - cell.PadLeftPt - cell.PadRightPt
+                                    - cell.Borders.Left.WidthPt - cell.Borders.Right.WidthPt,
+                                cell.HeightPt - cell.PadTopPt - cell.PadBottomPt
+                                    - cell.Borders.Top.WidthPt - cell.Borders.Bottom.WidthPt);
+                            canvas.Restore();
+                            continue;
+                        }
                         for (int cpi = 0; cpi < cell.Paragraphs.Count; cpi++)
                         {
                             var p = cell.Paragraphs[cpi];
@@ -1198,6 +1550,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                             using var bgPaint = new SKPaint { Color = bgColor };
                             canvas.DrawRect(cellX, cellY + firstRowShift, cell.WidthPt, visibleRowH, bgPaint);
                         }
+                        RenderCellShadingPattern(canvas, cell, cellX, cellY + firstRowShift, cell.WidthPt, visibleRowH);
 
                         bool suppressBottom = isLastRow && hasLastRowClip;
                         float visibleCellY = cellY + firstRowShift;
@@ -1215,6 +1568,16 @@ namespace Writersword.Modules.TextEditor.Rendering
                             clipTop,
                             cellX + cell.WidthPt - cell.Borders.Right.WidthPt,
                             clipBottom));
+                        if (cell.IsRotated)
+                        {
+                            RenderRotatedCellParagraphs(canvas, cell, contentX, contentY,
+                                cell.WidthPt - cell.PadLeftPt - cell.PadRightPt
+                                    - cell.Borders.Left.WidthPt - cell.Borders.Right.WidthPt,
+                                cell.HeightPt - cell.PadTopPt - cell.PadBottomPt
+                                    - cell.Borders.Top.WidthPt - cell.Borders.Bottom.WidthPt);
+                            canvas.Restore();
+                            continue;
+                        }
                         for (int cpi = 0; cpi < cell.Paragraphs.Count; cpi++)
                         {
                             var paraLayout = cell.Paragraphs[cpi];
@@ -1274,6 +1637,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                 float lineY = paraY + line.Y;
                 float offsetX = LineAlignShift(layout, i);
 
+                // Табуляции-черты — под текстом строки.
+                DrawBarTabs(canvas, layout, paraX, lineY, line.Height);
+
                 // Прямоугольник строки — для градиента текста в режиме «построчно».
                 float lineStartX = paraX + offsetX + (line.Segments.Count > 0 ? line.Segments[0].X : 0f);
                 var lineRect = new SKRect(lineStartX, lineY, lineStartX + line.TextWidth, lineY + line.Height);
@@ -1283,6 +1649,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                 foreach (var seg in line.Segments)
                 {
                     segIdx++;
+
+                    // Скрытый текст не рисуется.
+                    if (seg.IsHidden) continue;
+
+                    // Перенос строки и невидимый мягкий перенос не рисуются.
+                    if (seg.IsLineBreak || (seg.IsSoftHyphen && !seg.SoftHyphenShown)) continue;
+
                     float segX = paraX + seg.X + offsetX;
                     float baseY = lineY + line.Baseline;
 
@@ -1299,7 +1672,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // у него нет рисунка.
                     if (seg.IsTabJump)
                     {
-                        DrawTabLeader(canvas, seg, segX, baseY);
+                        DrawTabLeader(canvas, seg, segX, baseY, paraX);
                         continue;
                     }
 
@@ -1345,37 +1718,64 @@ namespace Writersword.Modules.TextEditor.Rendering
                     };
                     if (textShader != null) paint.Shader = textShader;
 
-                    DrawSegmentText(canvas, seg, segX, baseY, font, paint);
+                    DrawSegmentGlyphs(canvas, seg, segX, baseY, font, paint);
+
+                    float decoWidth = SegHighlightWidth(line, segIdx, lastContentSeg);
 
                     if (seg.IsUnderline)
-                    {
-                        using var uPaint = new SKPaint
-                        {
-                            Color = textColor,
-                            StrokeWidth = Math.Max(0.5f, seg.FontSizePt * 0.05f),
-                            IsAntialias = true
-                        };
-                        if (textShader != null) uPaint.Shader = textShader;
-                        float underlineY = baseY + seg.FontSizePt * 0.12f;
-                        canvas.DrawLine(segX, underlineY, segX + seg.Width, underlineY, uPaint);
-                    }
+                        DrawSegmentUnderline(canvas, seg, segX, baseY, decoWidth, textColor, textShader);
 
-                    if (seg.IsStrikethrough)
-                    {
-                        using var sPaint = new SKPaint
-                        {
-                            Color = textColor,
-                            StrokeWidth = Math.Max(0.5f, seg.FontSizePt * 0.05f),
-                            IsAntialias = true
-                        };
-                        if (textShader != null) sPaint.Shader = textShader;
-                        float strikeY = baseY - seg.FontSizePt * 0.3f;
-                        canvas.DrawLine(segX, strikeY, segX + seg.Width, strikeY, sPaint);
-                    }
+                    DrawSegmentDecorations(canvas, line, segIdx, lastContentSeg, seg,
+                        segX, baseY, decoWidth, font, textColor);
+
+                    // Зачёркивание — на высоте из метрик шрифта, как в Word; хвостовые
+                    // пробелы строки не зачёркиваются, как не подчёркиваются.
+                    if (seg.IsStrikethrough || seg.IsDoubleStrikethrough)
+                        StrikePainter.Draw(canvas, seg.IsDoubleStrikethrough, segX,
+                            SegHighlightWidth(line, segIdx, lastContentSeg), baseY, seg.FontSizePt,
+                            font, textColor, textShader);
 
                     textShader?.Dispose();
                 }
             }
+        }
+
+        /// <summary>
+        /// Подчёркивание сегмента по его виду. Ширина приходит уже обрезанной по
+        /// хвостовым пробелам строки — так же, как у заливки: Word не подчёркивает
+        /// пробелы, повисшие за краем строки при переносе.
+        ///
+        /// «Только слова» пропускает сегменты из одних пробелов: вёрстка режет строку
+        /// на границе пробела и слова, так что пробел между словами — отдельный сегмент.
+        /// Свой цвет линии идёт через ту же поправку чтения, что и буквы; без своего
+        /// цвета линия берёт цвет и градиент букв.
+        /// </summary>
+        private static void DrawSegmentUnderline(
+            SKCanvas canvas, SKRunSegment seg, float segX, float baselineY, float width,
+            SKColor textColor, SKShader? textShader)
+        {
+            var style = UnderlineShape.StyleFromCode(seg.UnderlineStyle);
+            if (style == Models.Inline.UnderlineStyle.None)
+                style = Models.Inline.UnderlineStyle.Single;
+
+            if (UnderlineShape.Of(style).WordsOnly && IsBlankText(seg.Text)) return;
+
+            if (UnderlinePainter.TryParseLineColor(seg.UnderlineColor, out var ownColor))
+            {
+                UnderlinePainter.Draw(canvas, style, segX, width, baselineY, seg.FontSizePt,
+                    ApplyReadingInk(ownColor), null, seg.IsBold);
+                return;
+            }
+
+            UnderlinePainter.Draw(canvas, style, segX, width, baselineY, seg.FontSizePt,
+                textColor, textShader, seg.IsBold);
+        }
+
+        private static bool IsBlankText(string text)
+        {
+            for (int i = 0; i < text.Length; i++)
+                if (text[i] != ' ' && text[i] != '\t') return false;
+            return true;
         }
 
         // ── Рамка абзаца ──────────────────────────────────────────────────
@@ -1427,8 +1827,10 @@ namespace Writersword.Modules.TextEditor.Rendering
         public static bool ShadingJoin(SKTextLayout? a, SKTextLayout? b)
         {
             if (a is null || b is null) return false;
-            if (string.IsNullOrWhiteSpace(a.ShadingColor) || string.IsNullOrWhiteSpace(b.ShadingColor)) return false;
-            if (!string.Equals(a.ShadingColor, b.ShadingColor, StringComparison.OrdinalIgnoreCase)) return false;
+            if (!a.HasShading || !b.HasShading) return false;
+            if (!string.Equals(a.ShadingColor ?? string.Empty, b.ShadingColor ?? string.Empty, StringComparison.OrdinalIgnoreCase)) return false;
+            if (!string.Equals(a.ShadingPattern ?? string.Empty, b.ShadingPattern ?? string.Empty, StringComparison.OrdinalIgnoreCase)) return false;
+            if (!string.Equals(a.ShadingPatternColor ?? string.Empty, b.ShadingPatternColor ?? string.Empty, StringComparison.OrdinalIgnoreCase)) return false;
             if (a.Borders is { IsEmpty: false } || b.Borders is { IsEmpty: false }) return false;
 
             return Math.Abs(a.LeftIndentPt - b.LeftIndentPt) < 0.5f
@@ -1472,7 +1874,9 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             var b = layout.Borders;
             bool hasBorders = b is not null && !b.IsEmpty;
-            bool hasShading = TryParseShading(layout.ShadingColor, out var shadingColor);
+            bool hasFill = TryParseShading(layout.ShadingColor, out var shadingColor);
+            var patternShader = GetShadingPatternShader(layout.ShadingPattern, layout.ShadingPatternColor);
+            bool hasShading = hasFill || patternShader is not null;
             if (!hasBorders && !hasShading) return;
 
             int from = Math.Max(lineFrom, 0);
@@ -1497,11 +1901,16 @@ namespace Writersword.Modules.TextEditor.Rendering
             var left = hasBorders && b!.Left is { IsVisible: true } ? b.Left : null;
             var right = hasBorders && b!.Right is { IsVisible: true } ? b.Right : null;
 
-            // Середины линий рамки: линия отстоит от текста на свой зазор.
-            float topY = top is not null ? textTopY - top.SpacePt - top.DrawnWidthPt / 2f : textTopY;
-            float bottomY = bottom is not null ? textBottomY + bottom.SpacePt + bottom.DrawnWidthPt / 2f : textBottomY;
-            float leftX = left is not null ? textLeftX - left.SpacePt - left.DrawnWidthPt / 2f : textLeftX;
-            float rightX = right is not null ? textRightX + right.SpacePt + right.DrawnWidthPt / 2f : textRightX;
+            // Середины линий рамки. Зазор до текста Word отмеряет до середины ближней к
+            // тексту черты, а не до её края: черта ложится на зазор своей половиной. Место
+            // под линию в раскладке прежнее (зазор плюс вся толщина), поэтому снаружи от
+            // рамки остаётся половина черты воздуха, и рамки соседних абзацев не
+            // слипаются, а стоят с просветом, как у Word. Прежде черта стояла целиком за
+            // зазором, и нижняя линия одной рамки ложилась вплотную на верхнюю следующей.
+            float topY = top is not null ? textTopY - top.SpacePt - BorderBandInsetPt(top) : textTopY;
+            float bottomY = bottom is not null ? textBottomY + bottom.SpacePt + BorderBandInsetPt(bottom) : textBottomY;
+            float leftX = left is not null ? textLeftX - left.SpacePt - BorderBandInsetPt(left) : textLeftX;
+            float rightX = right is not null ? textRightX + right.SpacePt + BorderBandInsetPt(right) : textRightX;
 
             float boxTop = top is not null ? topY - top.DrawnWidthPt / 2f : textTopY;
             float boxBottom = bottom is not null ? bottomY + bottom.DrawnWidthPt / 2f : textBottomY;
@@ -1518,30 +1927,54 @@ namespace Writersword.Modules.TextEditor.Rendering
             // половину интервала — свой интервал до и свой интервал после.
             if (hasShading)
             {
-                float fillLeft = left is not null ? StrandPos(left, leftX, 1, -1f) : textLeftX;
-                float fillRight = right is not null ? StrandPos(right, rightX, 1, 1f) : textRightX;
+                // Заливка доходит до самой внутренней черты линии: у двойной — до второй,
+                // у тройной — до третьей.
+                float fillLeft = left is not null ? StrandPos(left, leftX, StrandCount(left) - 1, -1f) : textLeftX;
+                float fillRight = right is not null ? StrandPos(right, rightX, StrandCount(right) - 1, 1f) : textRightX;
 
                 float fillTop;
-                if (top is not null) fillTop = StrandPos(top, topY, 1, -1f);
+                if (top is not null) fillTop = StrandPos(top, topY, StrandCount(top) - 1, -1f);
                 else if (joinPrev && isStart) fillTop = sideTop;
                 else if (shadeJoinPrev && isStart) fillTop = textTopY - layout.SpaceBeforePt;
                 else fillTop = textTopY;
 
                 float fillBottom;
-                if (bottom is not null) fillBottom = StrandPos(bottom, bottomY, 1, 1f);
+                if (bottom is not null) fillBottom = StrandPos(bottom, bottomY, StrandCount(bottom) - 1, 1f);
                 else if (joinNext && isEnd) fillBottom = sideBottom;
                 else if (shadeJoinNext && isEnd) fillBottom = textBottomY + layout.SpaceAfterPt;
                 else fillBottom = textBottomY;
 
                 if (fillRight > fillLeft && fillBottom > fillTop)
                 {
-                    using var fill = new SKPaint
+                    var fillRect = SKRect.Create(fillLeft, fillTop, fillRight - fillLeft, fillBottom - fillTop);
+
+                    if (hasFill)
                     {
-                        Color = shadingColor,
-                        Style = SKPaintStyle.Fill,
-                        IsAntialias = false
-                    };
-                    canvas.DrawRect(SKRect.Create(fillLeft, fillTop, fillRight - fillLeft, fillBottom - fillTop), fill);
+                        using var fill = new SKPaint
+                        {
+                            Color = shadingColor,
+                            Style = SKPaintStyle.Fill,
+                            IsAntialias = false
+                        };
+                        canvas.DrawRect(fillRect, fill);
+                    }
+
+                    // Узор — поверх цвета заливки. Его клетки привязаны к листу, а не к
+                    // абзацу: у соседних абзацев с одним узором он идёт без шва. Клетка —
+                    // пиксель устройства, как у Word: узор не крупнеет с масштабом, точки
+                    // и штрихи остаются в пиксель при любом увеличении.
+                    if (patternShader is not null)
+                    {
+                        float cellPt = 1f / CanvasScale(canvas);
+                        using var cellShader = patternShader.WithLocalMatrix(SKMatrix.CreateScale(cellPt, cellPt));
+                        using var pattern = new SKPaint
+                        {
+                            Shader = cellShader,
+                            Style = SKPaintStyle.Fill,
+                            IsAntialias = false
+                        };
+                        canvas.DrawRect(fillRect, pattern);
+                    }
                 }
             }
 
@@ -1603,20 +2036,45 @@ namespace Writersword.Modules.TextEditor.Rendering
             }
         }
 
-        /// <summary>Сколько черт у линии: две у двойной, одна у прочих.</summary>
-        private static int StrandCount(SKParagraphBorderLine line)
-            => line.Style == SKParagraphBorderLine.StyleDouble ? 2 : 1;
+        /// <summary>
+        /// От середины ближней к тексту черты до середины всей линии. У одинарной линии
+        /// это ноль — черта одна; у двойной — толщина черты, у тройной — две.
+        /// </summary>
+        private static float BorderBandInsetPt(SKParagraphBorderLine line)
+            => Math.Max(0f, (line.DrawnWidthPt - line.WidthPt) / 2f);
+
+        /// <summary>Сколько черт у линии: две у двойной, три у тройной, одна у прочих.</summary>
+        private static int StrandCount(SKParagraphBorderLine line) => line.Style switch
+        {
+            SKParagraphBorderLine.StyleDouble => 2,
+            SKParagraphBorderLine.StyleTriple => 3,
+            _ => 1
+        };
 
         /// <summary>
         /// Середина черты. center — середина всей линии, outward — направление наружу
         /// от текста (-1 влево и вверх, +1 вправо и вниз). Черты двойной линии
         /// отстоят от середины на её толщину: внешняя (ранг 0) наружу, внутренняя
-        /// (ранг 1) к тексту. У одинарной линии черта одна и стоит посередине.
+        /// (ранг 1) к тексту. У тройной средняя черта (ранг 1) стоит посередине, а
+        /// внешняя и внутренняя — на две толщины от неё: черты и просветы между ними
+        /// одной толщины. У одинарной линии черта одна и стоит посередине.
         /// </summary>
         private static float StrandPos(SKParagraphBorderLine line, float center, int rank, float outward)
         {
-            if (line.Style != SKParagraphBorderLine.StyleDouble) return center;
-            return rank == 0 ? center + outward * line.WidthPt : center - outward * line.WidthPt;
+            if (line.Style == SKParagraphBorderLine.StyleDouble)
+                return rank == 0 ? center + outward * line.WidthPt : center - outward * line.WidthPt;
+
+            if (line.Style == SKParagraphBorderLine.StyleTriple)
+            {
+                return rank switch
+                {
+                    0 => center + outward * line.WidthPt * 2f,
+                    1 => center,
+                    _ => center - outward * line.WidthPt * 2f
+                };
+            }
+
+            return center;
         }
 
         /// <summary>Половина толщины черты такой, какой её нарисует холст.</summary>
@@ -1635,7 +2093,8 @@ namespace Writersword.Modules.TextEditor.Rendering
             SKCanvas canvas, SKParagraphBorderLine line,
             float x1, float y1, float x2, float y2, float canvasScale)
         {
-            if (line.Style == SKParagraphBorderLine.StyleDouble)
+            if (line.Style == SKParagraphBorderLine.StyleDouble
+                || line.Style == SKParagraphBorderLine.StyleTriple)
             {
                 var strand = new SKParagraphBorderLine
                 {
@@ -1649,6 +2108,128 @@ namespace Writersword.Modules.TextEditor.Rendering
             }
 
             DrawParagraphBorderLine(canvas, line, x1, y1, x2, y2, canvasScale, snapToPixel: true);
+        }
+
+        // Узоры заливки: плитка 8×8 клеток, как у Word. Плитки на пару «узор + цвет»
+        // строятся один раз в клетках-единицах; размер клетки — пиксель устройства —
+        // ставится при отрисовке (см. RenderParagraphBorders).
+        private const int ShadingPatternTile = 8;
+        private static readonly Dictionary<(string Pattern, uint Color), (SKImage Image, SKShader Shader)?> _shadingPatternCache = new();
+        private static readonly object _shadingPatternLock = new();
+
+        // Порядок клеток для процентных узоров (упорядоченное растрирование): при доле
+        // p закрашены клетки с номером меньше p·64. Точки ложатся равномерно, без
+        // полос, — так выглядят узоры «25 %», «50 %» у Word.
+        private static readonly int[,] ShadingDitherOrder =
+        {
+            {  0, 32,  8, 40,  2, 34, 10, 42 },
+            { 48, 16, 56, 24, 50, 18, 58, 26 },
+            { 12, 44,  4, 36, 14, 46,  6, 38 },
+            { 60, 28, 52, 20, 62, 30, 54, 22 },
+            {  3, 35, 11, 43,  1, 33,  9, 41 },
+            { 51, 19, 59, 27, 49, 17, 57, 25 },
+            { 15, 47,  7, 39, 13, 45,  5, 37 },
+            { 63, 31, 55, 23, 61, 29, 53, 21 }
+        };
+
+        /// <summary>
+        /// Шейдер узора заливки для кисти: клетки узора цветом узора, остальное
+        /// прозрачно — под ним виден цвет заливки. null — узора нет или имя незнакомо.
+        /// «Авто» в цвете узора — цвет текста листа, как у линий рамки.
+        /// </summary>
+        private static SKShader? GetShadingPatternShader(string? pattern, string? colorCode)
+        {
+            if (string.IsNullOrWhiteSpace(pattern)) return null;
+
+            string name = pattern.Trim();
+            SKColor color = ResolveParagraphBorderColor(colorCode);
+            var key = (name.ToLowerInvariant(), (uint)color);
+
+            lock (_shadingPatternLock)
+            {
+                if (_shadingPatternCache.TryGetValue(key, out var cached))
+                    return cached?.Shader;
+
+                var mask = BuildShadingPatternMask(name);
+                if (mask is null)
+                {
+                    _shadingPatternCache[key] = null;
+                    return null;
+                }
+
+                using var bitmap = new SKBitmap(ShadingPatternTile, ShadingPatternTile, SKColorType.Rgba8888, SKAlphaType.Premul);
+                for (int y = 0; y < ShadingPatternTile; y++)
+                    for (int x = 0; x < ShadingPatternTile; x++)
+                        bitmap.SetPixel(x, y, mask[y, x] ? color : SKColors.Transparent);
+
+                var image = SKImage.FromBitmap(bitmap);
+                var shader = image.ToShader(
+                    SKShaderTileMode.Repeat, SKShaderTileMode.Repeat,
+                    new SKSamplingOptions(SKFilterMode.Nearest),
+                    SKMatrix.Identity);
+
+                _shadingPatternCache[key] = (image, shader);
+                return shader;
+            }
+        }
+
+        /// <summary>
+        /// Клетки плитки узора Word по его имени (w:shd w:val). Процентные — равномерные
+        /// точки нужной доли; полосы — через клетку-две с шагом в четыре; «thin» — те же
+        /// полосы в одну клетку. diagStripe у Word идёт снизу слева вверх направо,
+        /// reverseDiagStripe — сверху слева вниз направо. null — имя незнакомо.
+        /// </summary>
+        private static bool[,]? BuildShadingPatternMask(string pattern)
+        {
+            var mask = new bool[ShadingPatternTile, ShadingPatternTile];
+            string p = pattern.ToLowerInvariant();
+
+            // Четверть у Word — точки через пиксель в каждой второй строке, и строки
+            // сдвинуты друг относительно друга на пиксель: точки стоят вразбежку, а не
+            // сеткой, как дало бы растрирование.
+            if (p == "pct25")
+            {
+                for (int y = 0; y < ShadingPatternTile; y++)
+                    for (int x = 0; x < ShadingPatternTile; x++)
+                        mask[y, x] = (y & 1) == 0 && ((x + (y >> 1)) & 1) == 0;
+                return mask;
+            }
+
+            if (p.StartsWith("pct", StringComparison.Ordinal)
+                && int.TryParse(p.AsSpan(3), System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out int percent))
+            {
+                int threshold = (int)Math.Round(Math.Clamp(percent, 0, 100) * 64 / 100.0);
+                for (int y = 0; y < ShadingPatternTile; y++)
+                    for (int x = 0; x < ShadingPatternTile; x++)
+                        mask[y, x] = ShadingDitherOrder[y, x] < threshold;
+                return mask;
+            }
+
+            Func<int, int, bool>? on = p switch
+            {
+                "horzstripe" => (x, y) => (y & 3) < 2,
+                "vertstripe" => (x, y) => (x & 3) < 2,
+                "diagstripe" => (x, y) => ((x + y) & 3) < 2,
+                "reversediagstripe" => (x, y) => ((x - y) & 3) < 2,
+                "horzcross" => (x, y) => (y & 3) < 2 || (x & 3) < 2,
+                "diagcross" => (x, y) => ((x + y) & 3) < 2 || ((x - y) & 3) < 2,
+                "thinhorzstripe" => (x, y) => (y & 3) == 0,
+                "thinvertstripe" => (x, y) => (x & 3) == 0,
+                "thindiagstripe" => (x, y) => ((x + y) & 3) == 0,
+                "thinreversediagstripe" => (x, y) => ((x - y) & 3) == 0,
+                "thinhorzcross" => (x, y) => (y & 3) == 0 || (x & 3) == 0,
+                "thindiagcross" => (x, y) => ((x + y) & 3) == 0 || ((x - y) & 3) == 0,
+                _ => null
+            };
+
+            if (on is null) return null;
+
+            for (int y = 0; y < ShadingPatternTile; y++)
+                for (int x = 0; x < ShadingPatternTile; x++)
+                    mask[y, x] = on(x, y);
+
+            return mask;
         }
 
         /// <summary>
@@ -1671,7 +2252,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             float textLeftX, float textTopY)
         {
             var layout = paragraphs[index].Layout;
-            if (layout is null || (layout.Borders is null && layout.ShadingColor is null)) return;
+            if (layout is null || (layout.Borders is null && !layout.HasShading)) return;
 
             bool joinPrev = index > 0 && BordersJoin(paragraphs[index - 1].Layout, layout);
             bool joinNext = index + 1 < paragraphs.Count && BordersJoin(layout, paragraphs[index + 1].Layout);
@@ -1730,6 +2311,35 @@ namespace Writersword.Modules.TextEditor.Rendering
                     break;
             }
 
+            if (line.Style == SKParagraphBorderLine.StyleWave)
+            {
+                DrawParagraphBorderWave(canvas, paint, line.WidthPt, minWidthPt, x1, y1, x2, y2, vertical);
+                return;
+            }
+
+            if (line.Style == SKParagraphBorderLine.StyleTriple)
+            {
+                // Три черты толщиной в линию с просветами той же толщины: крайние
+                // отстоят от середины на две толщины.
+                float offset = line.WidthPt * 2f;
+
+                if (vertical)
+                {
+                    canvas.DrawLine(x1 - offset, y1, x2 - offset, y2, paint);
+                    canvas.DrawLine(x1, y1, x2, y2, paint);
+                    canvas.DrawLine(x1 + offset, y1, x2 + offset, y2, paint);
+                }
+                else
+                {
+                    canvas.DrawLine(x1, y1 - offset, x2, y2 - offset, paint);
+                    canvas.DrawLine(x1, y1, x2, y2, paint);
+                    canvas.DrawLine(x1, y1 + offset, x2, y2 + offset, paint);
+                }
+
+                paint.PathEffect?.Dispose();
+                return;
+            }
+
             if (line.Style == SKParagraphBorderLine.StyleDouble)
             {
                 // Две черты толщиной в линию с просветом той же толщины: центры черт
@@ -1771,6 +2381,60 @@ namespace Writersword.Modules.TextEditor.Rendering
             canvas.DrawLine(x1, y1, x2, y2, paint);
             paint.PathEffect?.Dispose();
         }
+
+        /// <summary>
+        /// Волнистая линия рамки: зигзаг вдоль стороны. Размах от гребня до впадины —
+        /// WaveSpanShare толщин линии (столько места линия и занимает, см. DrawnWidthPt), шаг —
+        /// две с половиной толщины, сама черта — в половину толщины, но не тоньше
+        /// пикселя. Такой её рисует Word: тонкая частая волна, а не толстая полоса.
+        ///
+        /// Число волн на стороне целое: зигзаг начинается и кончается на одной высоте,
+        /// и волны соседних сторон сходятся в углах, а не обрываются на полуволне.
+        /// </summary>
+        private static void DrawParagraphBorderWave(
+            SKCanvas canvas, SKPaint paint, float widthPt, float minWidthPt,
+            float x1, float y1, float x2, float y2, bool vertical)
+        {
+            float stroke = Math.Max(minWidthPt, widthPt * 0.5f);
+            paint.StrokeWidth = stroke;
+            paint.StrokeJoin = SKStrokeJoin.Round;
+            paint.StrokeCap = SKStrokeCap.Round;
+            paint.PathEffect = null;
+
+            float amplitude = Math.Max(0f, widthPt * WaveSpanShare - stroke) / 2f;
+            float halfPeriod = Math.Max(1f, widthPt * 1.25f);
+
+            float start = vertical ? Math.Min(y1, y2) : Math.Min(x1, x2);
+            float end = vertical ? Math.Max(y1, y2) : Math.Max(x1, x2);
+            float length = end - start;
+            if (length <= 0f) return;
+
+            int halves = Math.Max(2, (int)Math.Round(length / halfPeriod));
+            if (halves % 2 != 0) halves++;
+            float step = length / halves;
+
+            using var path = new SKPath();
+            for (int i = 0; i <= halves; i++)
+            {
+                float along = start + step * i;
+                float across = i % 2 == 0 ? -amplitude : amplitude;
+
+                float px = vertical ? x1 + across : along;
+                float py = vertical ? along : y1 + across;
+
+                if (i == 0) path.MoveTo(px, py);
+                else path.LineTo(px, py);
+            }
+
+            canvas.DrawPath(path, paint);
+        }
+
+        /// <summary>
+        /// Размах волнистой линии рамки от гребня до впадины в толщинах линии. Совпадает с
+        /// местом, которое линия занимает (SKParagraphBorderLine.DrawnWidthPt): волна Word
+        /// заметно выше своей толщины — при 1,5 пт около трёх с половиной пунктов.
+        /// </summary>
+        private const float WaveSpanShare = 2.75f;
 
         /// <summary>
         /// Цвет линии рамки. «Авто» — цвет текста листа: на тёмной бумаге черта
@@ -2014,16 +2678,55 @@ namespace Writersword.Modules.TextEditor.Rendering
                         baselineShift = -resolvedSize * 0.16f;
                     }
 
+                    // Смещение от базовой линии (w:position) — поверх индекса, в пунктах,
+                    // и растёт вместе с кеглем, если чтение увеличило шрифт.
+                    if (p?.BaselineOffset is double baselineOffset)
+                    {
+                        float offsetScale = unscaledSize > 0f ? resolvedSize / unscaledSize : 1f;
+                        baselineShift += (float)baselineOffset * offsetScale;
+                    }
+
+                    // Масштаб знаков по ширине (w:w): 1 — обычная ширина.
+                    float horizontalScale = p?.CharacterScale is int scalePct && scalePct > 0
+                        ? scalePct / 100f
+                        : 1f;
+
+                    // Скрытый текст (w:vanish): при выключенных непечатаемых знаках он не
+                    // рисуется и не занимает места, при включённых — виден с точечным
+                    // подчёркиванием. Знаки в любом случае остаются в раскладке: по ним
+                    // считаются позиции каретки.
+                    bool hiddenCollapsed = p?.IsHidden == true && !styles.ShowHiddenText;
+                    bool hiddenMarked = p?.IsHidden == true && styles.ShowHiddenText;
+
+                    // Настраиваемые эффекты букв (контур, тень, свечение, отражение) —
+                    // один раз на ран: сегменты рана делят одну запись.
+                    SKTextEffects? effects = ToRenderEffects(p?.Effects);
+
                     var format = new SKRunSegment
                     {
                         FontFamily = resolvedFamily,
                         FontSizePt = segFontSize,
                         BaselineShiftPt = baselineShift,
                         CharacterSpacingPt = resolvedSpacing,
+                        HorizontalScale = horizontalScale,
                         IsBold = resolvedBold,
                         IsItalic = resolvedItalic,
                         IsUnderline = p?.IsUnderline ?? false,
+                        UnderlineStyle = (int)(p?.UnderlineStyle ?? default),
+                        UnderlineColor = p?.UnderlineColor,
                         IsStrikethrough = p?.IsStrikethrough ?? false,
+                        IsDoubleStrikethrough = p?.IsDoubleStrikethrough ?? false,
+                        IsHidden = hiddenCollapsed,
+                        IsHiddenMarked = hiddenMarked,
+                        IsOutline = p?.IsOutline ?? false,
+                        IsShadow = p?.IsShadow ?? false,
+                        IsEmboss = p?.IsEmboss ?? false,
+                        IsImprint = p?.IsImprint ?? false,
+                        EmphasisMark = (int)(p?.EmphasisMark ?? default),
+                        CharBorderColor = p?.CharBorderColor,
+                        CharBorderWidthPt = (float)(p?.CharBorderWidthPt ?? 0),
+                        CharBorderStyle = (int)(p?.CharBorderStyle ?? default),
+                        Effects = effects,
                         Color = ParseColor(p?.TextColor ?? baseColor),
                         HighlightColor = ParseHighlight(p?.HighlightColor),
                         ColorCode = p?.TextColor ?? baseColor,
@@ -2050,10 +2753,25 @@ namespace Writersword.Modules.TextEditor.Rendering
                             FontSizePt = segFontSize * SmallCapsScale,
                             BaselineShiftPt = baselineShift,
                             CharacterSpacingPt = resolvedSpacing,
+                            HorizontalScale = horizontalScale,
                             IsBold = resolvedBold,
                             IsItalic = resolvedItalic,
                             IsUnderline = p?.IsUnderline ?? false,
+                            UnderlineStyle = (int)(p?.UnderlineStyle ?? default),
+                            UnderlineColor = p?.UnderlineColor,
                             IsStrikethrough = p?.IsStrikethrough ?? false,
+                            IsDoubleStrikethrough = p?.IsDoubleStrikethrough ?? false,
+                            IsHidden = hiddenCollapsed,
+                            IsHiddenMarked = hiddenMarked,
+                            IsOutline = p?.IsOutline ?? false,
+                            IsShadow = p?.IsShadow ?? false,
+                            IsEmboss = p?.IsEmboss ?? false,
+                            IsImprint = p?.IsImprint ?? false,
+                            EmphasisMark = (int)(p?.EmphasisMark ?? default),
+                            CharBorderColor = p?.CharBorderColor,
+                            CharBorderWidthPt = (float)(p?.CharBorderWidthPt ?? 0),
+                            CharBorderStyle = (int)(p?.CharBorderStyle ?? default),
+                            Effects = effects,
                             Color = ParseColor(p?.TextColor ?? baseColor),
                             HighlightColor = ParseHighlight(p?.HighlightColor),
                             ColorCode = p?.TextColor ?? baseColor,
@@ -2093,18 +2811,41 @@ namespace Writersword.Modules.TextEditor.Rendering
                         // ниже ищет токен "\t" и получал пробел. Номер страницы в оглавлении
                         // из-за этого вставал вплотную к названию, дорожка точек не рисовалась,
                         // а длинная строка уносила номер на перенос.
-                        if (ch < ' ' && ch != '\t') drawCh = ' ';
+                        //
+                        // Перенос строки внутри абзаца (\n — Shift+Enter, w:br, w:cr) тоже не
+                        // пробел: вёрстка по нему обрывает строку, как Word. Рисовать его
+                        // нечем, и он не рисуется (сегмент IsLineBreak).
+                        if (ch < ' ' && ch != '\t' && ch != '\n') drawCh = ' ';
 
                         // Проверяем глифы только для символов вне Basic Latin (U+0080+).
                         // Basic Latin всегда есть в любом текстовом шрифте — проверять незачем,
                         // а MatchCharacter для них может вернуть Marlett/Wingdings.
-                        if (!char.IsSurrogate(drawCh) && drawCh >= '\u0080')
+                        // Неразрывный дефис и мягкий перенос рисуются дефисом самой
+                        // гарнитуры (или не рисуются вовсе) — подменять им шрифт незачем.
+                        if (!char.IsSurrogate(drawCh) && drawCh >= '\u0080'
+                            && drawCh != '\u2011' && drawCh != '\u00AD')
                         {
                             int codepoint = drawCh;
                             if (typeface.GetGlyph(codepoint) == 0)
                             {
                                 string? fallbackFamily = FindFallbackFamily(codepoint, styles);
-                                if (fallbackFamily != null && fallbackFamily != resolvedFamily)
+                                bool fallbackBold = resolvedBold;
+                                bool fallbackItalic = resolvedItalic;
+
+                                if (fallbackFamily is null
+                                    && FindSymbolFallback(codepoint, resolvedFamily, resolvedBold, resolvedItalic) is { } symbol)
+                                {
+                                    fallbackFamily = symbol.Family;
+                                    fallbackBold = symbol.Bold;
+                                    fallbackItalic = symbol.Italic;
+                                }
+
+                                // Подстановка — другая гарнитура либо другое начертание той же:
+                                // знак бывает в прямом начертании гарнитуры и отсутствует в её курсиве.
+                                if (fallbackFamily != null
+                                    && (fallbackFamily != resolvedFamily
+                                        || fallbackBold != resolvedBold
+                                        || fallbackItalic != resolvedItalic))
                                 {
                                     charFormat = new SKRunSegment
                                     {
@@ -2112,10 +2853,25 @@ namespace Writersword.Modules.TextEditor.Rendering
                                         FontSizePt = charFormat.FontSizePt,
                                         BaselineShiftPt = baselineShift,
                                         CharacterSpacingPt = resolvedSpacing,
-                                        IsBold = resolvedBold,
-                                        IsItalic = resolvedItalic,
+                                        HorizontalScale = horizontalScale,
+                                        IsBold = fallbackBold,
+                                        IsItalic = fallbackItalic,
                                         IsUnderline = p?.IsUnderline ?? false,
+                                        UnderlineStyle = (int)(p?.UnderlineStyle ?? default),
+                                        UnderlineColor = p?.UnderlineColor,
                                         IsStrikethrough = p?.IsStrikethrough ?? false,
+                                        IsDoubleStrikethrough = p?.IsDoubleStrikethrough ?? false,
+                                        IsHidden = hiddenCollapsed,
+                                        IsHiddenMarked = hiddenMarked,
+                                        IsOutline = p?.IsOutline ?? false,
+                                        IsShadow = p?.IsShadow ?? false,
+                                        IsEmboss = p?.IsEmboss ?? false,
+                                        IsImprint = p?.IsImprint ?? false,
+                                        EmphasisMark = (int)(p?.EmphasisMark ?? default),
+                                        CharBorderColor = p?.CharBorderColor,
+                                        CharBorderWidthPt = (float)(p?.CharBorderWidthPt ?? 0),
+                                        CharBorderStyle = (int)(p?.CharBorderStyle ?? default),
+                                        Effects = effects,
                                         Color = ParseColor(p?.TextColor ?? baseColor),
                                         HighlightColor = ParseHighlight(p?.HighlightColor),
                                         ColorCode = p?.TextColor ?? baseColor,
@@ -2161,6 +2917,47 @@ namespace Writersword.Modules.TextEditor.Rendering
             // textAreaWidthPt = availableWidthPt - leftIndentPt - rightIndentPt,
             // т.е. именно то пространство в котором располагаются строки.
             layout.TextAreaWidthPt = textAreaWidthPt;
+
+            // Табуляции-черты — не позиции для прыжка: они уходят в раскладку как
+            // вертикальные линии, а символ табуляции ищет только настоящие позиции. Если
+            // у абзаца одни черты, табуляция идёт по шагу по умолчанию, как у Word.
+            //
+            // На листе чтения, уже листа рукописи, черта правее текстовой области не
+            // рисуется: там у неё нет поля, и она легла бы за обрез листа.
+            if (tabStops is { Count: > 0 })
+            {
+                bool hasBar = false;
+                foreach (var stop in tabStops)
+                {
+                    if (stop.Alignment != Models.Styles.TabAlignment.Bar) continue;
+                    hasBar = true;
+                    break;
+                }
+
+                if (hasBar)
+                {
+                    var bars = new List<float>();
+                    var jumps = new List<Models.Styles.TabStop>(tabStops.Count);
+
+                    foreach (var stop in tabStops)
+                    {
+                        if (stop.Alignment != Models.Styles.TabAlignment.Bar)
+                        {
+                            jumps.Add(stop);
+                            continue;
+                        }
+
+                        float barPt = (float)stop.PositionPt;
+                        if (barPt < 0f) continue;
+                        if (ReadingContentScale < 0.999f && barPt > textAreaWidthPt + 0.01f) continue;
+
+                        bars.Add(barPt);
+                    }
+
+                    layout.BarTabPositionsPt = bars.Count > 0 ? bars : null;
+                    tabStops = jumps;
+                }
+            }
 
             // Отметка табуляции правее текстовой области подрезается по её краю.
             //
@@ -2581,6 +3378,16 @@ namespace Writersword.Modules.TextEditor.Rendering
             // с предыдущим по совпадению формата, и разрыв строки объектом потерялся бы.
             bool segmentBreakPending = false;
 
+            // Пробел, который не поместился в строку и потому в неё не лёг (ветка пробела
+            // в цикле токенов). Слово за ним встаёт в ту же строку только вместе с ним:
+            // в Word пробел между ними есть, и без этого слово прилипало бы к предыдущему
+            // вплотную («место,и»), занимая строку, в которую у Word не входит.
+            SKLineLayout? droppedSpaceLine = null;
+            int droppedSpaceFrag = -1;
+            float droppedSpaceWidth = 0f;
+            SKRunSegment? droppedSpaceFormat = null;
+            int droppedSpaceIdx = -1;
+
             // Высота, по которой посчитана полоса текущей строки. Пока в строке один текст,
             // это проба абзаца; строка, куда попадает картинка, пересчитывает полосу по
             // своей реальной высоте.
@@ -2865,6 +3672,9 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             void StartNewLine(int firstCharIndex, float probeHPt, float requiredWidthPt)
             {
+                // Слово разорвано на мягком переносе в конце строки — перенос виден дефисом.
+                ShowTrailingSoftHyphen(currentLine);
+
                 // Прыжок, за которым на этой строке так ничего и не встало, уезжает на
                 // новую строку вместе со своим куском.
                 bool carryTab = DetachPendingTabForCarry(out var carryFormat, out int carryIdx);
@@ -2906,9 +3716,24 @@ namespace Writersword.Modules.TextEditor.Rendering
                 return spacesPt * MaxJustifyShrink;
             }
 
-            void FlushWord()
+            // Слово, за которым в тексте идёт пробел, Word примеряет к строке вместе с этим
+            // пробелом: хвостовой пробел тоже входит в число сжимаемых, хоть и не рисуется.
+            // Без него строке «…три величины, которые» не хватало пункта, и слово уходило
+            // вниз, а у Word оставалось.
+            void FlushWord(float followingSpacePt = 0f)
             {
                 if (wordBuffer.Count == 0) return;
+
+                float trailingShrinkPt = layout.AllowsJustifyShrink && !hasZones
+                    ? followingSpacePt * MaxJustifyShrink
+                    : 0f;
+
+                // Сжатием пробелов Word втягивает в строку слово, которому не хватает
+                // меньше половины его собственной ширины. Короткое слово, вылезающее за край
+                // больше чем наполовину, уходит на следующую строку, даже если пробелов в
+                // строке хватило бы: у Word «…будто вспыхнули | по краям» при запасе в 7,8 пт
+                // и нехватке в 6,6 пт, а «положение каждой» с нехваткой 7,9 пт остаётся.
+                float wordShrinkCapPt = wordWidth * MaxJustifyShrinkWordShare;
 
                 float wordProbeHPt = hasZones ? WordProbeHeight(wordBuffer) : lineProbeHPt;
                 float wordRequiredPt = hasZones
@@ -2947,7 +3772,43 @@ namespace Writersword.Modules.TextEditor.Rendering
                 {
                 }
 
-                float shrinkAllowancePt = JustifyShrinkAllowance();
+                // Перед словом стоял пробел, который в строку не лёг. Слово остаётся в этой
+                // строке, только если помещается вместе с ним (с учётом сжатия пробелов,
+                // куда входит и он сам), — тогда пробел ставится обратно. Иначе слово
+                // начинает новую строку, а пробел остаётся хвостовым, как в Word.
+                if (droppedSpaceFormat is not null)
+                {
+                    bool sameSpot = ReferenceEquals(droppedSpaceLine, currentLine)
+                        && droppedSpaceFrag == fragIdx
+                        && currentLine.Segments.Count > 0;
+
+                    if (sameSpot)
+                    {
+                        float allowanceWithSpacePt = Math.Min(
+                            JustifyShrinkAllowance()
+                                + (layout.AllowsJustifyShrink && !hasZones
+                                    ? droppedSpaceWidth * MaxJustifyShrink
+                                    : 0f)
+                                + trailingShrinkPt,
+                            wordShrinkCapPt);
+
+                        if (currentW + droppedSpaceWidth + wordWidth <= fragEndW + allowanceWithSpacePt)
+                        {
+                            AppendCharToLine(currentLine, " ", droppedSpaceFormat, droppedSpaceIdx,
+                                ref currentW, droppedSpaceWidth, segmentBreakPending, fragIdx);
+                            segmentBreakPending = false;
+                        }
+                        else
+                        {
+                            StartNewLine(wordBuffer[0].GlobalIndex, wordProbeHPt, wordRequiredPt);
+                        }
+                    }
+
+                    droppedSpaceFormat = null;
+                    droppedSpaceLine = null;
+                }
+
+                float shrinkAllowancePt = Math.Min(JustifyShrinkAllowance() + trailingShrinkPt, wordShrinkCapPt);
 
                 if (currentW + wordWidth <= fragEndW + shrinkAllowancePt
                     || currentLine.Segments.Count == 0 && wordWidth <= fragEndW)
@@ -3060,25 +3921,85 @@ namespace Writersword.Modules.TextEditor.Rendering
                 }
             }
 
+            // Строку открыл перенос строки внутри абзаца: если текста за ним нет, строка
+            // всё равно есть — пустая, как у Word, со знаком абзаца на ней.
+            bool lineOpenedByBreak = false;
+            SKRunSegment? lineBreakFormat = null;
+
             foreach (var (ch, format, globalIdx) in tokens)
             {
-                if (ch == "\t")
+                lineOpenedByBreak = false;
+
+                if (ch == "\n" && !format.IsHidden)
+                {
+                    // Перенос строки внутри абзаца (Shift+Enter): строка кончается на нём,
+                    // следующий знак начинает новую. Сам знак — нулевой ширины в конце
+                    // строки: на нём стоит каретка перед переносом.
+                    FlushWord();
+                    droppedSpaceFormat = null;
+                    droppedSpaceLine = null;
+
+                    AppendCharToLine(currentLine, ch, format, globalIdx,
+                        ref currentW, 0f, true, fragIdx);
+                    currentLine.Segments[^1].IsLineBreak = true;
+                    segmentBreakPending = false;
+
+                    StartNewLine(globalIdx + 1, lineProbeHPt, minBandWidthPt);
+                    lineOpenedByBreak = true;
+                    lineBreakFormat = format;
+                }
+                else if (ch == SoftHyphen && !format.IsHidden)
+                {
+                    // Мягкий перенос: слово до него — отдельный кусок, и строка может
+                    // кончиться здесь. Сам знак своим сегментом: он станет дефисом, только
+                    // если строка на нём и оборвётся.
+                    FlushWord();
+                    AppendCharToLine(currentLine, ch, format, globalIdx,
+                        ref currentW, 0f, true, fragIdx);
+                    currentLine.Segments[^1].IsSoftHyphen = true;
+                    segmentBreakPending = false;
+                }
+                else if (ch == "\t" && format.IsHidden)
+                {
+                    // Скрытая табуляция не прыгает к позиции: у скрытого текста нет места
+                    // в строке. Знак остаётся — на нём стоит позиция каретки.
+                    FlushWord();
+                    AppendCharToLine(currentLine, ch, format, globalIdx,
+                        ref currentW, 0f, true, fragIdx);
+                    segmentBreakPending = false;
+                }
+                else if (ch == "\t")
                 {
                     FlushWord();
+
+                    // Табуляция сама отделяет следующий текст — не легший пробел перед
+                    // ней уже никому не нужен.
+                    droppedSpaceFormat = null;
+                    droppedSpaceLine = null;
+
                     AppendTab(format, globalIdx);
                 }
                 else if (ch == " ")
                 {
-                    FlushWord();
+                    float spaceWidth = MeasureChar(ch, format);
+                    FlushWord(spaceWidth);
 
                     // Пробел на границе отрезка не переносит текст за объект: он просто
-                    // не рисуется, как хвостовой пробел в конце строки.
-                    float spaceWidth = MeasureChar(ch, format);
+                    // не рисуется, как хвостовой пробел в конце строки. Слово за ним
+                    // помнит о нём (droppedSpace*) и в ту же строку без него не встанет.
                     if (currentW + spaceWidth <= fragEndW || currentLine.Segments.Count == 0)
                     {
                         AppendCharToLine(currentLine, ch, format, globalIdx,
                             ref currentW, spaceWidth, segmentBreakPending, fragIdx);
                         segmentBreakPending = false;
+                    }
+                    else if (droppedSpaceFormat is null)
+                    {
+                        droppedSpaceLine = currentLine;
+                        droppedSpaceFrag = fragIdx;
+                        droppedSpaceWidth = spaceWidth;
+                        droppedSpaceFormat = format;
+                        droppedSpaceIdx = globalIdx;
                     }
                 }
                 else
@@ -3106,6 +4027,14 @@ namespace Writersword.Modules.TextEditor.Rendering
                 currentLine.IsLastLine = true;
                 FinalizeLine(currentLine, layout, lineSpacing);
             }
+            else if (lineOpenedByBreak)
+            {
+                // Абзац кончается переносом строки: за ним пустая строка со знаком
+                // абзаца, как у Word. Высоту ей даёт формат переноса.
+                currentLine.IsLastLine = true;
+                currentLine.LastCharIndex = currentLine.FirstCharIndex - 1;
+                FinalizeLine(currentLine, layout, lineSpacing, lineBreakFormat);
+            }
 
             if (layout.Lines.Count > 0)
                 layout.Lines[^1].IsLastLine = true;
@@ -3114,6 +4043,126 @@ namespace Writersword.Modules.TextEditor.Rendering
             layout.WrapPushedDown = hasZones
                 && layout.Lines.Count > 0
                 && layout.Lines[0].WrapExtraTopPt > 0.01f;
+        }
+
+        /// <summary>
+        /// Последняя строка растянутого абзаца (w:jc="distribute"): свободное место до
+        /// правого края делится поровну между всеми промежутками между знаками строки —
+        /// и внутри слов, и на пробелах. Так Word растягивает последнюю строку: буквы
+        /// разводятся, последний знак встаёт к правому краю.
+        ///
+        /// Разводка записывается в раскладку — места знаков (GlyphMetrics), края и
+        /// ширины сегментов: каретка, выделение и отрисовка берут их оттуда, и всё
+        /// совпадает с тем, что нарисовано.
+        ///
+        /// Строка с табуляцией или объектом в строке, строка, разорванная обтекаемым
+        /// объектом, и строка, уже упёршаяся в край, не разводятся.
+        /// </summary>
+        private static void DistributeLastLine(SKTextLayout layout, int lineIndex)
+        {
+            var line = layout.Lines[lineIndex];
+            if (line.Segments.Count == 0 || line.HasWrapFragments || line.IsBidiReordered) return;
+
+            foreach (var seg in line.Segments)
+                if (seg.IsTabJump || seg.IsInlineObject) return;
+
+            // Последний видимый знак строки: хвостовые пробелы и знаки нулевой ширины
+            // (скрытый текст, перенос строки) не разводятся — дальше него места нет.
+            int lastSeg = -1, lastGlyph = -1;
+            for (int si = line.Segments.Count - 1; si >= 0 && lastSeg < 0; si--)
+            {
+                var seg = line.Segments[si];
+                if (seg.GlyphMetrics.Length != seg.Text.Length) return;
+
+                for (int gi = seg.GlyphMetrics.Length - 1; gi >= 0; gi--)
+                {
+                    if (seg.GlyphMetrics[gi].Width <= 0f || char.IsWhiteSpace(seg.Text[gi])) continue;
+                    lastSeg = si;
+                    lastGlyph = gi;
+                    break;
+                }
+            }
+            if (lastSeg < 0) return;
+
+            // Промежутки — после каждого знака ненулевой ширины до последнего видимого.
+            int gaps = 0;
+            for (int si = 0; si <= lastSeg; si++)
+            {
+                var seg = line.Segments[si];
+                int until = si == lastSeg ? lastGlyph : seg.GlyphMetrics.Length;
+                for (int gi = 0; gi < until; gi++)
+                    if (seg.GlyphMetrics[gi].Width > 0f) gaps++;
+            }
+            if (gaps == 0) return;
+
+            var endSeg = line.Segments[lastSeg];
+            float contentRight = endSeg.X + endSeg.GlyphMetrics[lastGlyph].Right;
+
+            float area = line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : layout.TextAreaWidthPt;
+            float firstExtra = lineIndex == 0 ? layout.FirstLineIndentPt : 0f;
+            float free = area - firstExtra - contentRight;
+            if (free <= 0.01f) return;
+
+            float extra = free / gaps;
+            float shift = 0f;
+
+            for (int si = 0; si < line.Segments.Count; si++)
+            {
+                var seg = line.Segments[si];
+                seg.X += shift;
+
+                var glyphs = seg.GlyphMetrics;
+                float local = 0f;
+
+                for (int gi = 0; gi < glyphs.Length; gi++)
+                {
+                    bool spreads = glyphs[gi].Width > 0f
+                        && (si < lastSeg || (si == lastSeg && gi < lastGlyph));
+
+                    float widthAdd = spreads ? extra : 0f;
+                    glyphs[gi] = new SKGlyphMetrics
+                    {
+                        CharIndex = glyphs[gi].CharIndex,
+                        X = glyphs[gi].X + local,
+                        Width = glyphs[gi].Width + widthAdd
+                    };
+                    local += widthAdd;
+                }
+
+                if (local > 0f)
+                {
+                    seg.Width += local;
+                    seg.UsesGlyphPositions = true;
+                }
+
+                shift += local;
+            }
+
+            line.TextWidth += shift;
+        }
+
+        /// <summary>Мягкий перенос (U+00AD, w:softHyphen).</summary>
+        private const string SoftHyphen = "\u00AD";
+
+        /// <summary>Неразрывный дефис (U+2011, w:noBreakHyphen).</summary>
+        private const string NonBreakingHyphen = "\u2011";
+
+        /// <summary>
+        /// Строка кончается мягким переносом — слово разорвано на нём, и перенос
+        /// становится видимым дефисом своей ширины, как у Word.
+        /// </summary>
+        private static void ShowTrailingSoftHyphen(SKLineLayout line)
+        {
+            if (line.Segments.Count == 0) return;
+
+            var seg = line.Segments[^1];
+            if (!seg.IsSoftHyphen || seg.SoftHyphenShown) return;
+
+            float width = MeasureChar("-", seg);
+            seg.SoftHyphenShown = true;
+            seg.Text = "-";
+            seg.Width = width;
+            line.TextWidth += width;
         }
 
         private static void AppendWordToLine(
@@ -3152,6 +4201,11 @@ namespace Writersword.Modules.TextEditor.Rendering
                 ? null
                 : line.Segments[^1];
 
+            // Неразрывный дефис рисуется обычным дефисом шрифта: знака U+2011 во многих
+            // гарнитурах нет, и подстановка другим шрифтом дала бы чужой дефис. Строку по
+            // нему не рвут — это решено раньше, по самому знаку (токен «\u2011»).
+            string glyphText = ch == NonBreakingHyphen ? "-" : ch;
+
             // Разрываем сегмент на границе пробел/не-пробел: тогда пробелы образуют отдельные
             // сегменты и при выравнивании по ширине между словами можно раздвигать промежутки.
             // Внутри слова и внутри групп пробелов того же формата символы по-прежнему сливаются.
@@ -3170,25 +4224,46 @@ namespace Writersword.Modules.TextEditor.Rendering
             // пробелов — сдвигать было бы нечего.
             bool tabInvolved = ch == "\t" || (lastSeg is not null && lastSeg.IsTabJump);
 
+            // Буквы, пишущиеся справа налево, не сливаются в один сегмент с остальными
+            // знаками: такой сегмент встанет в строке по направлению письма и будет
+            // нарисован справа налево целиком. Для текста без иврита и арабского ничего
+            // не меняется.
+            bool directionBreak = lastSeg is not null && DirectionGroupChanges(lastSeg, ch);
+
             if (!objectInvolved && !tabInvolved && lastSeg is not null
-                && IsSameFormat(lastSeg, format) && curSpace == lastSpace)
+                && IsSameFormat(lastSeg, format) && curSpace == lastSpace && !directionBreak)
             {
-                lastSeg.Text += ch;
+                lastSeg.Text += glyphText;
                 lastSeg.Width += charWidth;
             }
             else
             {
                 var seg = new SKRunSegment
                 {
-                    Text = ch,
+                    Text = glyphText,
                     FontFamily = format.FontFamily,
                     FontSizePt = format.FontSizePt,
                     BaselineShiftPt = format.BaselineShiftPt,
                     CharacterSpacingPt = format.CharacterSpacingPt,
+                    HorizontalScale = format.HorizontalScale,
                     IsBold = format.IsBold,
                     IsItalic = format.IsItalic,
                     IsUnderline = format.IsUnderline,
+                    UnderlineStyle = format.UnderlineStyle,
+                    UnderlineColor = format.UnderlineColor,
                     IsStrikethrough = format.IsStrikethrough,
+                    IsDoubleStrikethrough = format.IsDoubleStrikethrough,
+                    IsHidden = format.IsHidden,
+                    IsHiddenMarked = format.IsHiddenMarked,
+                    IsOutline = format.IsOutline,
+                    IsShadow = format.IsShadow,
+                    IsEmboss = format.IsEmboss,
+                    IsImprint = format.IsImprint,
+                    EmphasisMark = format.EmphasisMark,
+                    CharBorderColor = format.CharBorderColor,
+                    CharBorderWidthPt = format.CharBorderWidthPt,
+                    CharBorderStyle = format.CharBorderStyle,
+                    Effects = format.Effects,
                     Color = format.Color,
                     HighlightColor = format.HighlightColor,
                     ColorCode = format.ColorCode,
@@ -3225,7 +4300,13 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             float maxAscent = 0f;
             float maxDescent = 0f;
-            float maxLeading = 0f;
+
+            // Верх строки над базовой линией вместе с межстрочным зазором гарнитуры.
+            // Word кладёт зазор над подъёмом каждого шрифта и берёт наибольшую из этих
+            // сумм: зазор одной гарнитуры не прибавляется к подъёму другой. Строка
+            // Times и Comic Sans выходила выше вордовской на зазор Times, и страница,
+            // которую Word заполняет впритык, теряла последнюю строку.
+            float maxTop = 0f;
 
             // Метрики одного текста, без учёта габарита картинок: по ним рисуется каретка.
             // Иначе рядом с крупной картинкой каретка растягивалась бы на всю её высоту,
@@ -3233,23 +4314,48 @@ namespace Writersword.Modules.TextEditor.Rendering
             float maxTextAscent = 0f;
             float maxTextDescent = 0f;
 
+            // Кегельная площадка самого крупного знака строки: подъём и спуск, сведённые
+            // к кеглю в пропорции гарнитуры. По ней Word выравнивает знаки разного кегля
+            // (w:textAlignment), а не по полным метрикам шрифта.
+            float maxEmAscent = 0f;
+            float maxEmDescent = 0f;
+
+            // Скрытый текст высоту строки не задаёт — кроме строки, где кроме него
+            // ничего нет: у неё остаётся высота его шрифта, а не нулевая.
+            bool anyVisible = false;
+            foreach (var candidate in line.Segments)
+            {
+                if (!candidate.IsHidden) { anyVisible = true; break; }
+            }
+
             foreach (var seg in line.Segments)
             {
                 var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
                 var font = GetOrCreateFont(typeface, seg.FontSizePt);
+
+                if (seg.IsHidden && anyVisible)
+                {
+                    seg.GlyphMetrics = BuildGlyphMetrics(seg, font);
+                    continue;
+                }
 
                 font.GetFontMetrics(out var metrics);
 
                 float ascent = Math.Abs(metrics.Ascent);
                 float descent = Math.Abs(metrics.Descent);
 
-                // Межстрочный зазор гарнитуры входит в одинарный интервал Word.
-                if (Math.Abs(metrics.Leading) > maxLeading) maxLeading = Math.Abs(metrics.Leading);
+                // Межстрочный зазор гарнитуры входит в одинарный интервал Word — над
+                // подъёмом именно этой гарнитуры.
+                float top = ascent + Math.Abs(metrics.Leading);
 
                 // Шрифтовые метрики берём и у сегмента-картинки: он несёт кегль стиля,
                 // поэтому строка из одной картинки всё равно знает высоту своего текста.
                 if (ascent > maxTextAscent) maxTextAscent = ascent;
                 if (descent > maxTextDescent) maxTextDescent = descent;
+
+                var (emAscent, emDescent) = EmBoxExtents(seg.FontSizePt, ascent, descent);
+                if (emAscent > maxEmAscent) maxEmAscent = emAscent;
+                if (emDescent > maxEmDescent) maxEmDescent = emDescent;
 
                 // Картинка в строке стоит на базовой линии и поднимает высоту строки
                 // под себя — как крупный глиф. Иначе строка осталась бы высотой в
@@ -3257,10 +4363,66 @@ namespace Writersword.Modules.TextEditor.Rendering
                 if (seg.IsInlineObject && seg.ObjectHeightPt > ascent)
                     ascent = seg.ObjectHeightPt;
 
+                if (ascent > top) top = ascent;
+
+                // Знаки ударения стоят над подъёмом шрифта (точка снизу — под спуском) и
+                // раздвигают строку, как у Word: иначе они налезали бы на соседнюю строку.
+                if (seg.EmphasisMark != 0 && !seg.IsInlineObject)
+                {
+                    if (seg.EmphasisMark == (int)Models.Inline.EmphasisMark.UnderDot)
+                        descent += seg.FontSizePt * EmphasisUnderReachEm;
+                    else
+                        top = Math.Max(top, ascent + seg.FontSizePt * EmphasisOverReachEm);
+                }
+
+                // Текст, поднятый или опущенный от базовой линии (индексы, w:position),
+                // раздвигает строку, как у Word: поднятый — вверх, опущенный — вниз.
+                // Иначе он налезал бы на соседние строки.
+                if (!seg.IsInlineObject && seg.BaselineShiftPt != 0f)
+                {
+                    top += seg.BaselineShiftPt;
+                    descent -= seg.BaselineShiftPt;
+                }
+
                 if (ascent > maxAscent) maxAscent = ascent;
                 if (descent > maxDescent) maxDescent = descent;
+                if (top > maxTop) maxTop = top;
 
                 seg.GlyphMetrics = BuildGlyphMetrics(seg, font);
+            }
+
+            // Знаки разного кегля по высоте строки (w:textAlignment): мелкие встают не на
+            // общую базовую линию, а верхом к верху строки, серединой к её середине или
+            // низом к низу — по самому крупному знаку. Строка при этом не растёт: знак
+            // остаётся внутри её подъёма и спуска, двигается только его базовая линия.
+            // Верх, середина и низ берутся по кегельной площадке, как у Word: по полным
+            // метрикам Times New Roman мелкий знак при «по верху» вставал на два пункта
+            // выше вордовского, при «по середине» — на пункт.
+            if (layout.LineTextAlignment is LineTextAlignTop or LineTextAlignCenter or LineTextAlignBottom
+                && line.Segments.Count > 0)
+            {
+                foreach (var seg in line.Segments)
+                {
+                    if (seg.IsInlineObject || seg.IsTabJump || (seg.IsHidden && anyVisible)) continue;
+
+                    var segFont = GetOrCreateFont(
+                        GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic), seg.FontSizePt);
+                    segFont.GetFontMetrics(out var segMetrics);
+
+                    float segAscent = Math.Abs(segMetrics.Ascent);
+                    float segDescent = Math.Abs(segMetrics.Descent);
+                    var (segEmAscent, segEmDescent) = EmBoxExtents(seg.FontSizePt, segAscent, segDescent);
+
+                    // Сдвиг вверх — положительный, как у поднятого текста.
+                    float lift = layout.LineTextAlignment switch
+                    {
+                        LineTextAlignTop => maxEmAscent - segEmAscent,
+                        LineTextAlignBottom => -(maxEmDescent - segEmDescent),
+                        _ => -((maxEmDescent - maxEmAscent) + (segEmAscent - segEmDescent)) / 2f
+                    };
+
+                    if (Math.Abs(lift) > 0.01f) seg.BaselineShiftPt += lift;
+                }
             }
 
             if (line.Segments.Count == 0 && emptyLineMetrics is not null)
@@ -3272,12 +4434,15 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 maxAscent = maxTextAscent = Math.Abs(emptyMetrics.Ascent);
                 maxDescent = maxTextDescent = Math.Abs(emptyMetrics.Descent);
-                maxLeading = Math.Abs(emptyMetrics.Leading);
+                maxTop = maxAscent + Math.Abs(emptyMetrics.Leading);
             }
 
-            float lineHeightBase = maxAscent + maxDescent;
-            float lineHeight = lineSpacing.Resolve(maxAscent, maxDescent, maxLeading);
-            float baseline = (lineHeight - lineHeightBase) / 2f + maxAscent;
+            // Зазор уже сидит в верхе строки (maxTop), поэтому отдельно не передаётся.
+            // Базовая линия — под зазором, как у Word: прибавка от множителя интервала
+            // делится поровну сверху и снизу, как и прежде.
+            float lineHeightBase = maxTop + maxDescent;
+            float lineHeight = lineSpacing.Resolve(maxTop, maxDescent, 0f);
+            float baseline = (lineHeight - lineHeightBase) / 2f + maxTop;
 
             // Вытеснение строки под обтекаемый объект: зазор входит в высоту параграфа.
             layout.TotalHeightPt += line.WrapExtraTopPt;
@@ -3289,8 +4454,645 @@ namespace Writersword.Modules.TextEditor.Rendering
             line.TextDescentPt = maxTextDescent;
 
             layout.TotalHeightPt += lineHeight;
+
+            // Направление письма: строка абзаца справа налево начинается у правого края,
+            // а куски иврита и арабского в любой строке встают в порядке письма.
+            line.IsRightToLeft = layout.IsRightToLeft;
+            if (layout.HasBidiText) ApplyBidiOrder(line, layout);
+
             layout.Lines.Add(line);
         }
+
+        // ── Направление письма ───────────────────────────────────────────
+
+        /// <summary>
+        /// Шрифт HarfBuzz для набора текста справа налево: данные гарнитуры, её face и
+        /// шрифт в собственных единицах гарнитуры. Держатся вместе, пока жива гарнитура.
+        /// </summary>
+        private sealed class HarfBuzzFontEntry
+        {
+            public HarfBuzzFontEntry(HarfBuzzSharp.Blob blob, HarfBuzzSharp.Face face, HarfBuzzSharp.Font font, int unitsPerEm)
+            {
+                Blob = blob;
+                Face = face;
+                Font = font;
+                UnitsPerEm = unitsPerEm;
+            }
+
+            public HarfBuzzSharp.Blob Blob { get; }
+            public HarfBuzzSharp.Face Face { get; }
+            public HarfBuzzSharp.Font Font { get; }
+            public int UnitsPerEm { get; }
+        }
+
+        private static readonly Dictionary<SKTypeface, HarfBuzzFontEntry?> _harfBuzzFonts = new();
+        private static readonly object _harfBuzzLock = new();
+
+        /// <summary>
+        /// Шрифт HarfBuzz для гарнитуры — из её файла. null — файл гарнитуры недоступен
+        /// (системная подмена без данных): такой сегмент рисуется без набора.
+        /// </summary>
+        private static HarfBuzzFontEntry? GetHarfBuzzFont(SKTypeface typeface)
+        {
+            if (_harfBuzzFonts.TryGetValue(typeface, out var cached)) return cached;
+
+            HarfBuzzFontEntry? entry = null;
+            try
+            {
+                using var stream = typeface.OpenStream(out int ttcIndex);
+                if (stream is not null)
+                {
+                    var data = SKData.Create(stream);
+                    if (data is not null && data.Size > 0)
+                    {
+                        var blob = new HarfBuzzSharp.Blob(
+                            data.Data, (int)data.Size, HarfBuzzSharp.MemoryMode.ReadOnly, () => data.Dispose());
+                        var face = new HarfBuzzSharp.Face(blob, ttcIndex);
+                        var font = new HarfBuzzSharp.Font(face);
+                        int unitsPerEm = face.UnitsPerEm > 0 ? face.UnitsPerEm : 2048;
+                        font.SetScale(unitsPerEm, unitsPerEm);
+                        font.SetFunctionsOpenType();
+                        entry = new HarfBuzzFontEntry(blob, face, font, unitsPerEm);
+                    }
+                    else
+                    {
+                        data?.Dispose();
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                entry = null;
+            }
+
+            _harfBuzzFonts[typeface] = entry;
+            return entry;
+        }
+
+        /// <summary>
+        /// Набирает текст HarfBuzz справа налево шрифтом гарнитуры: знаки в обратном
+        /// порядке, арабские буквы — в начертаниях по соседям, связки и огласовки на
+        /// своих местах. Глифы идут слева направо, у каждого — индекс первого знака его
+        /// кластера в тексте (Cluster). false — набрать нечем: у гарнитуры нет файла или
+        /// в ней нет какого-то знака.
+        /// </summary>
+        private static bool TryShapeRightToLeft(
+            SKTypeface typeface,
+            string text,
+            out HarfBuzzSharp.GlyphInfo[] infos,
+            out HarfBuzzSharp.GlyphPosition[] positions,
+            out int unitsPerEm)
+        {
+            infos = Array.Empty<HarfBuzzSharp.GlyphInfo>();
+            positions = Array.Empty<HarfBuzzSharp.GlyphPosition>();
+            unitsPerEm = 0;
+
+            if (string.IsNullOrEmpty(text)) return false;
+
+            lock (_harfBuzzLock)
+            {
+                var entry = GetHarfBuzzFont(typeface);
+                if (entry is null) return false;
+
+                using var buffer = new HarfBuzzSharp.Buffer();
+                buffer.AddUtf16(text);
+                buffer.Direction = HarfBuzzSharp.Direction.RightToLeft;
+                buffer.GuessSegmentProperties();
+                entry.Font.Shape(buffer);
+
+                infos = buffer.GlyphInfos;
+                positions = buffer.GlyphPositions;
+                unitsPerEm = entry.UnitsPerEm;
+            }
+
+            if (infos.Length == 0 || positions.Length != infos.Length || unitsPerEm <= 0) return false;
+
+            foreach (var info in infos)
+            {
+                if (info.Codepoint == 0) return false;
+                if (info.Cluster >= (uint)text.Length) return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Ширины знаков сегмента справа налево по набору HarfBuzz, в порядке текста:
+        /// ширина кластера целиком достаётся его первому знаку, остальные знаки кластера
+        /// (огласовки, вторая буква связки) — нулевой ширины. null — набрать нечем,
+        /// остаются ширины, измеренные по одному знаку.
+        /// </summary>
+        private static float[]? ShapeRightToLeftAdvances(SKRunSegment seg)
+        {
+            var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
+            var font = GetOrCreateFont(typeface, seg.FontSizePt);
+
+            if (!TryShapeRightToLeft(font.Typeface, seg.Text, out var infos, out var positions, out int unitsPerEm))
+                return null;
+
+            float unitScale = font.Size / unitsPerEm;
+            var advances = new float[seg.Text.Length];
+            for (int i = 0; i < infos.Length; i++)
+                advances[(int)infos[i].Cluster] += positions[i].XAdvance * unitScale;
+
+            return advances;
+        }
+
+        /// <summary>
+        /// Меряет кусок справа налево набором HarfBuzz вместо суммы ширин отдельных
+        /// знаков. Арабские буквы в слове стоят в связных начертаниях, и связное слово
+        /// уже, чем те же буквы по одной: по прежней мерке отрисовка растягивала слово
+        /// до ширины отдельных знаков, и между связанными буквами появлялись просветы.
+        /// Масштаб по ширине и разрядка прикладываются к знаку так же, как при обычном
+        /// измерении. Места знаков — в порядке текста, от начала куска.
+        /// </summary>
+        private static void ApplyShapedAdvances(SKRunSegment seg)
+        {
+            if (seg.IsInlineObject || seg.IsHidden || seg.IsTabJump || seg.Text.Length == 0) return;
+            if (seg.GlyphMetrics.Length != seg.Text.Length) return;
+            if (!BidiResolver.HasRightToLeft(seg.Text)) return;
+
+            var advances = ShapeRightToLeftAdvances(seg);
+            if (advances is null) return;
+
+            var metrics = seg.GlyphMetrics;
+            var rebuilt = new SKGlyphMetrics[metrics.Length];
+            float x = 0f;
+            for (int k = 0; k < metrics.Length; k++)
+            {
+                float width = advances[k] * seg.HorizontalScale + seg.CharacterSpacingPt;
+                rebuilt[k] = new SKGlyphMetrics
+                {
+                    CharIndex = metrics[k].CharIndex,
+                    X = x,
+                    Width = width
+                };
+                x += width;
+            }
+
+            seg.GlyphMetrics = rebuilt;
+            seg.Width = x;
+        }
+
+        /// <summary>
+        /// Рисует сегмент справа налево. Текст набирается HarfBuzz (TryShapeRightToLeft),
+        /// и каждый кластер встаёт на место своего первого знака из вёрстки: правым краем
+        /// к правому краю места знака. Так буквы совпадают с кареткой и выделением, а
+        /// пробел, растянутый выравниванием по ширине, раздвигает слова, не растягивая их.
+        ///
+        /// Мест знаков нет (их число не совпадает с текстом) — набранная строка
+        /// укладывается в ширину сегмента целиком. Набрать нечем — знаки рисуются по
+        /// одному на отражённых местах: порядок верный, связных начертаний нет.
+        /// </summary>
+        private static void DrawRightToLeftText(
+            SKCanvas canvas, SKRunSegment seg, float x, float baseY, SKFont font, SKPaint paint)
+        {
+            if (TryShapeRightToLeft(font.Typeface, seg.Text, out var infos, out var positions, out int unitsPerEm))
+            {
+                int count = infos.Length;
+                float unitScale = font.Size / unitsPerEm;
+
+                // Сегмент с масштабом по ширине рисуется растянутым шрифтом (ScaleX), а
+                // набор HarfBuzz идёт в единицах нерастянутой гарнитуры.
+                float scaleX = font.ScaleX > 0f ? font.ScaleX : 1f;
+
+                var glyphs = new ushort[count];
+                var points = new SKPoint[count];
+                var metrics = seg.GlyphMetrics;
+
+                if (metrics.Length == seg.Text.Length)
+                {
+                    var clusterAdvance = new float[seg.Text.Length];
+                    for (int i = 0; i < count; i++)
+                        clusterAdvance[(int)infos[i].Cluster] += positions[i].XAdvance * unitScale * scaleX;
+
+                    int currentCluster = -1;
+                    float clusterLeft = 0f;
+                    float clusterPen = 0f;
+                    for (int i = 0; i < count; i++)
+                    {
+                        int cluster = (int)infos[i].Cluster;
+                        if (cluster != currentCluster)
+                        {
+                            currentCluster = cluster;
+                            clusterPen = 0f;
+
+                            // Место первого знака кластера отражено: его правый край —
+                            // начало кластера по ходу письма. Разрядка, стоящая за знаком,
+                            // остаётся слева от него.
+                            float boxRight = metrics[cluster].X + metrics[cluster].Width;
+                            clusterLeft = boxRight - clusterAdvance[cluster];
+                        }
+
+                        glyphs[i] = (ushort)infos[i].Codepoint;
+                        points[i] = new SKPoint(
+                            x + clusterLeft + clusterPen + positions[i].XOffset * unitScale * scaleX,
+                            baseY - positions[i].YOffset * unitScale);
+                        clusterPen += positions[i].XAdvance * unitScale * scaleX;
+                    }
+                }
+                else
+                {
+                    float total = 0f;
+                    for (int i = 0; i < count; i++) total += positions[i].XAdvance * unitScale;
+
+                    // Набранная ширина прижимается к ширине сегмента из вёрстки.
+                    float fit = total > 0.01f && seg.Width > 0.01f ? seg.Width / total : 1f;
+
+                    float pen = 0f;
+                    for (int i = 0; i < count; i++)
+                    {
+                        glyphs[i] = (ushort)infos[i].Codepoint;
+                        points[i] = new SKPoint(
+                            x + (pen + positions[i].XOffset * unitScale) * fit,
+                            baseY - positions[i].YOffset * unitScale);
+                        pen += positions[i].XAdvance * unitScale;
+                    }
+                }
+
+                using var builder = new SKTextBlobBuilder();
+                var run = builder.AllocatePositionedRun(font, count);
+                run.SetGlyphs(glyphs);
+                run.SetPositions(points);
+
+                using var blob = builder.Build();
+                if (blob is not null) canvas.DrawText(blob, 0f, 0f, paint);
+                return;
+            }
+
+            // Без набора: каждый знак на своём отражённом месте.
+            if (seg.GlyphMetrics.Length == seg.Text.Length)
+            {
+                for (int i = 0; i < seg.Text.Length; i++)
+                    canvas.DrawText(seg.Text[i].ToString(), x + seg.GlyphMetrics[i].X, baseY, font, paint);
+                return;
+            }
+
+            var reversed = seg.Text.ToCharArray();
+            Array.Reverse(reversed);
+            canvas.DrawText(new string(reversed), x, baseY, font, paint);
+        }
+
+        /// <summary>
+        /// Меняется ли группа направления между концом сегмента и новым знаком: буквы
+        /// справа налево (иврит, арабский) — одна группа, всё остальное — другая. Группа
+        /// сегмента — по его первому знаку: сегмент справа налево начинается с такой
+        /// буквы, а метки (огласовки арабского) внутри него группу не рвут, иначе слово
+        /// разошлось бы на куски и потеряло связное начертание.
+        /// </summary>
+        private static bool DirectionGroupChanges(SKRunSegment lastSeg, string ch)
+        {
+            if (ch.Length == 0 || lastSeg.Text.Length == 0) return false;
+
+            char c = ch[0];
+            char first = lastSeg.Text[0];
+
+            // Быстрый отсев: латиница, кириллица и знаки до блока иврита направления не
+            // меняют — обычный текст сюда и не доходит.
+            if (c < '\u0590' && first < '\u0590') return false;
+
+            if (BidiResolver.Classify(c) == BidiResolver.BidiClass.NSM) return false;
+
+            return BidiResolver.IsRightToLeftStrong(c) != BidiResolver.IsRightToLeftStrong(first);
+        }
+
+        /// <summary>
+        /// Раскладывает куски строки по направлению письма (UAX #9, см. BidiResolver):
+        /// знакам строки — уровни, сегменту, в котором уровни разные, — разрез по ним,
+        /// кускам — места на листе по правилу L2. Сегменты справа налево получают
+        /// отражённые места знаков и рисуются справа налево.
+        ///
+        /// Порядок сегментов в строке остаётся порядком текста: по нему каретка и
+        /// выделение находят знак. Меняются только X — места кусков на листе.
+        ///
+        /// Строки с табуляцией и строки, разорванные обтекаемым объектом, не
+        /// переставляются: их места считаются от позиций табуляции и отрезков полосы.
+        /// </summary>
+        private static void ApplyBidiOrder(SKLineLayout line, SKTextLayout layout)
+        {
+            var segs = line.Segments;
+            if (segs.Count == 0 || line.HasWrapFragments) return;
+
+            foreach (var seg in segs)
+                if (seg.IsTabJump) return;
+
+            var textBuilder = new System.Text.StringBuilder();
+            foreach (var seg in segs) textBuilder.Append(seg.Text);
+            string text = textBuilder.ToString();
+
+            if (!layout.IsRightToLeft && !BidiResolver.HasRightToLeft(text)) return;
+
+            byte baseLevel = (byte)(layout.IsRightToLeft ? 1 : 0);
+            byte[] levels = BidiResolver.ResolveLevels(text, baseLevel);
+
+            // Сегменты с разными уровнями внутри режутся по ним: запятая после русского
+            // слова в строке справа налево встаёт по другую сторону от слова, чем оно само.
+            var pieces = new List<SKRunSegment>(segs.Count);
+            var pieceLevels = new List<byte>(segs.Count);
+
+            int offset = 0;
+            foreach (var seg in segs)
+            {
+                int length = seg.Text.Length;
+                bool canSplit = length > 1
+                    && !seg.IsInlineObject
+                    && seg.GlyphMetrics.Length == length;
+
+                if (length == 0 || !canSplit)
+                {
+                    pieces.Add(seg);
+                    pieceLevels.Add(length == 0 ? baseLevel : levels[offset]);
+                    offset += length;
+                    continue;
+                }
+
+                int runStart = 0;
+                for (int k = 1; k <= length; k++)
+                {
+                    if (k < length && levels[offset + k] == levels[offset + runStart]) continue;
+
+                    if (runStart == 0 && k == length)
+                        pieces.Add(seg);
+                    else
+                        pieces.Add(CloneSegmentSlice(seg, runStart, k - runStart));
+
+                    pieceLevels.Add(levels[offset + runStart]);
+                    runStart = k;
+                }
+
+                offset += length;
+            }
+
+            var levelArray = pieceLevels.ToArray();
+            bool anyOdd = false;
+            foreach (byte level in levelArray)
+                if ((level & 1) == 1) { anyOdd = true; break; }
+
+            if (!anyOdd) return;
+
+            // Куски справа налево меряются набором HarfBuzz — до того, как встать на лист.
+            for (int i = 0; i < pieces.Count; i++)
+            {
+                if ((levelArray[i] & 1) == 1) ApplyShapedAdvances(pieces[i]);
+            }
+
+            float originX = float.MaxValue;
+            foreach (var seg in pieces)
+                if (seg.X < originX) originX = seg.X;
+            if (originX == float.MaxValue) originX = 0f;
+
+            int[] order = BidiResolver.VisualOrder(levelArray);
+
+            float x = originX;
+            foreach (int index in order)
+            {
+                var seg = pieces[index];
+                seg.X = x;
+                x += seg.Width;
+            }
+
+            // Набор мог изменить ширины кусков — правый край строки берётся по ним.
+            line.TextWidth = x;
+
+            for (int i = 0; i < pieces.Count; i++)
+            {
+                if ((levelArray[i] & 1) == 0) continue;
+
+                var seg = pieces[i];
+                seg.IsRightToLeft = true;
+
+                var metrics = seg.GlyphMetrics;
+                if (metrics.Length == 0) continue;
+
+                var mirrored = new SKGlyphMetrics[metrics.Length];
+                for (int g = 0; g < metrics.Length; g++)
+                {
+                    mirrored[g] = new SKGlyphMetrics
+                    {
+                        CharIndex = metrics[g].CharIndex,
+                        X = seg.Width - metrics[g].X - metrics[g].Width,
+                        Width = metrics[g].Width
+                    };
+                }
+                seg.GlyphMetrics = mirrored;
+            }
+
+            segs.Clear();
+            segs.AddRange(pieces);
+            line.IsBidiReordered = true;
+        }
+
+        /// <summary>
+        /// Выравнивание по ширине строк, куски которых переставлены по направлению письма.
+        /// Добавка на пробел считается тем же расчётом, что у обычной строки
+        /// (JustifyExtraPerSpace), и вписывается в раскладку: пробелы между словами
+        /// получают её в свою ширину, куски заново встают на лист в прежнем порядке.
+        /// Каретка, выделение и отрисовка берут места из раскладки и совпадают.
+        ///
+        /// Хвостовые пробелы строки не растягиваются — как и у обычной строки.
+        /// </summary>
+        private static void JustifyReorderedLines(SKTextLayout layout)
+        {
+            for (int i = 0; i < layout.Lines.Count; i++)
+            {
+                var line = layout.Lines[i];
+                if (!line.IsBidiReordered || line.HasWrapFragments) continue;
+
+                line.IsBidiReordered = false;
+                float extra = JustifyExtraPerSpace(layout, i, 0);
+                line.IsBidiReordered = true;
+                if (extra == 0f) continue;
+
+                var segs = line.Segments;
+
+                // Последний по тексту сегмент со словом: пробелы за ним — хвостовые.
+                int lastWordSeg = -1;
+                for (int si = segs.Count - 1; si >= 0 && lastWordSeg < 0; si--)
+                {
+                    if (segs[si].IsHidden) continue;
+                    foreach (var c in segs[si].Text)
+                    {
+                        if (c != ' ' && c != '\t') { lastWordSeg = si; break; }
+                    }
+                }
+                if (lastWordSeg < 0) continue;
+
+                bool changed = false;
+                for (int si = 0; si <= lastWordSeg; si++)
+                {
+                    if (segs[si].IsHidden) continue;
+                    if (WidenSpaces(segs[si], extra)) changed = true;
+                }
+
+                if (changed) PlaceInVisualOrder(line);
+            }
+        }
+
+        /// <summary>
+        /// Прибавляет к каждому пробелу сегмента добавку растяжки. Места знаков
+        /// пересчитываются по ходу письма: у сегмента справа налево — от правого края.
+        /// true — в сегменте были пробелы и его ширина изменилась.
+        /// </summary>
+        private static bool WidenSpaces(SKRunSegment seg, float extra)
+        {
+            var text = seg.Text;
+            var metrics = seg.GlyphMetrics;
+
+            int spaces = 0;
+            foreach (var c in text)
+                if (c == ' ' || c == '\t') spaces++;
+            if (spaces == 0) return false;
+
+            if (metrics.Length != text.Length)
+            {
+                seg.Width += spaces * extra;
+                return true;
+            }
+
+            var widths = new float[metrics.Length];
+            float total = 0f;
+            for (int k = 0; k < metrics.Length; k++)
+            {
+                float width = metrics[k].Width;
+                if (text[k] == ' ' || text[k] == '\t') width += extra;
+                widths[k] = width;
+                total += width;
+            }
+
+            var rebuilt = new SKGlyphMetrics[metrics.Length];
+            float logicalX = 0f;
+            for (int k = 0; k < metrics.Length; k++)
+            {
+                rebuilt[k] = new SKGlyphMetrics
+                {
+                    CharIndex = metrics[k].CharIndex,
+                    X = seg.IsRightToLeft ? total - logicalX - widths[k] : logicalX,
+                    Width = widths[k]
+                };
+                logicalX += widths[k];
+            }
+
+            seg.GlyphMetrics = rebuilt;
+            seg.Width = total;
+            return true;
+        }
+
+        /// <summary>
+        /// Заново ставит куски переставленной строки на лист в том порядке, в каком они
+        /// там уже стоят, — после того как их ширины изменились. Кусок нулевой ширины,
+        /// стоящий в одной точке с соседом, идёт перед ним: окажись он после соседа, его
+        /// место было бы правее.
+        /// </summary>
+        private static void PlaceInVisualOrder(SKLineLayout line)
+        {
+            var segs = line.Segments;
+            if (segs.Count == 0) return;
+
+            var visual = new List<SKRunSegment>(segs);
+            visual.Sort((a, b) =>
+            {
+                int byX = a.X.CompareTo(b.X);
+                if (byX != 0) return byX;
+                int byWidth = (a.Width > 0f ? 1 : 0).CompareTo(b.Width > 0f ? 1 : 0);
+                if (byWidth != 0) return byWidth;
+                return segs.IndexOf(a).CompareTo(segs.IndexOf(b));
+            });
+
+            float x = visual[0].X;
+            foreach (var seg in visual)
+            {
+                seg.X = x;
+                x += seg.Width;
+            }
+
+            line.TextWidth = x;
+        }
+
+        /// <summary>
+        /// Кусок сегмента: знаки [start, start + length) с тем же оформлением, своей
+        /// шириной и своими местами знаков, отсчитанными от начала куска.
+        /// </summary>
+        private static SKRunSegment CloneSegmentSlice(SKRunSegment seg, int start, int length)
+        {
+            var source = seg.GlyphMetrics;
+            float left = source[start].X;
+            float right = source[start + length - 1].Right;
+
+            var metrics = new SKGlyphMetrics[length];
+            for (int i = 0; i < length; i++)
+            {
+                var g = source[start + i];
+                metrics[i] = new SKGlyphMetrics
+                {
+                    CharIndex = g.CharIndex,
+                    X = g.X - left,
+                    Width = g.Width
+                };
+            }
+
+            return new SKRunSegment
+            {
+                Text = seg.Text.Substring(start, length),
+                FontFamily = seg.FontFamily,
+                FontSizePt = seg.FontSizePt,
+                BaselineShiftPt = seg.BaselineShiftPt,
+                CharacterSpacingPt = seg.CharacterSpacingPt,
+                HorizontalScale = seg.HorizontalScale,
+                IsBold = seg.IsBold,
+                IsItalic = seg.IsItalic,
+                IsUnderline = seg.IsUnderline,
+                UnderlineStyle = seg.UnderlineStyle,
+                UnderlineColor = seg.UnderlineColor,
+                IsStrikethrough = seg.IsStrikethrough,
+                IsDoubleStrikethrough = seg.IsDoubleStrikethrough,
+                IsHidden = seg.IsHidden,
+                IsHiddenMarked = seg.IsHiddenMarked,
+                IsOutline = seg.IsOutline,
+                IsShadow = seg.IsShadow,
+                IsEmboss = seg.IsEmboss,
+                IsImprint = seg.IsImprint,
+                EmphasisMark = seg.EmphasisMark,
+                CharBorderColor = seg.CharBorderColor,
+                CharBorderWidthPt = seg.CharBorderWidthPt,
+                CharBorderStyle = seg.CharBorderStyle,
+                Effects = seg.Effects,
+                Color = seg.Color,
+                HighlightColor = seg.HighlightColor,
+                ColorCode = seg.ColorCode,
+                HighlightCode = seg.HighlightCode,
+                GlobalCharOffset = seg.GlobalCharOffset + start,
+                InlineImageId = seg.InlineImageId,
+                ObjectWidthPt = seg.ObjectWidthPt,
+                ObjectHeightPt = seg.ObjectHeightPt,
+                WrapFragmentIndex = seg.WrapFragmentIndex,
+                X = seg.X + left,
+                Width = right - left,
+                GlyphMetrics = metrics,
+                IsLineBreak = seg.IsLineBreak,
+                IsSoftHyphen = seg.IsSoftHyphen,
+                SoftHyphenShown = seg.SoftHyphenShown,
+                UsesGlyphPositions = seg.UsesGlyphPositions
+            };
+        }
+
+        /// <summary>
+        /// Кегельная площадка знака: высота ровно в кегль, поделённая на подъём и спуск
+        /// в пропорции метрик гарнитуры. У Times New Roman это 0,805 кегля над базовой
+        /// линией и 0,195 под ней. Без метрик площадка целиком над базовой линией.
+        /// </summary>
+        private static (float Ascent, float Descent) EmBoxExtents(float fontSizePt, float ascent, float descent)
+        {
+            float total = ascent + descent;
+            if (total <= 0f || fontSizePt <= 0f) return (Math.Max(fontSizePt, 0f), 0f);
+
+            float emAscent = fontSizePt * ascent / total;
+            return (emAscent, fontSizePt - emAscent);
+        }
+
+        // Значения SKTextLayout.LineTextAlignment — числа выравнивания w:textAlignment модели.
+        private const int LineTextAlignTop = 2;
+        private const int LineTextAlignCenter = 3;
+        private const int LineTextAlignBottom = 4;
 
         private static SKLineLayout BuildEmptyLine(
             SKTextLayout layout, SKLineSpacing lineSpacing, SKRunSegment? format = null)
@@ -3304,8 +5106,11 @@ namespace Writersword.Modules.TextEditor.Rendering
             font.GetFontMetrics(out var metrics);
             float ascent = Math.Abs(metrics.Ascent);
             float descent = Math.Abs(metrics.Descent);
-            float height = lineSpacing.Resolve(ascent, descent, Math.Abs(metrics.Leading));
-            float baseline = (height - (ascent + descent)) / 2f + ascent;
+
+            // Межстрочный зазор — над подъёмом, как в FinalizeLine и у Word.
+            float top = ascent + Math.Abs(metrics.Leading);
+            float height = lineSpacing.Resolve(top, descent, 0f);
+            float baseline = (height - (top + descent)) / 2f + top;
 
             return new SKLineLayout
             {
@@ -3346,6 +5151,25 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (line.HasWrapFragments)
                 return line.WrapLeftPt + firstExtra;
 
+            // Абзац справа налево: начало строки — у правого края, туда же уходит и
+            // отступ первой строки. По ширине тянутся все строки, кроме последней, — она
+            // встаёт к началу, то есть вправо. Строка с переставленными кусками растянута
+            // при вёрстке и тоже прижимается к началу: висящие пробелы её конца уходят
+            // за левый край, как у Word.
+            if (layout.IsRightToLeft)
+            {
+                float toStart = area - firstExtra - line.TextWidth;
+
+                return line.WrapLeftPt + layout.Alignment switch
+                {
+                    RenderAlignment.Center => (area - firstExtra - line.TextWidth) / 2f,
+                    RenderAlignment.Left => 0f,
+                    RenderAlignment.Justify or RenderAlignment.Distribute =>
+                        line.IsLastLine || line.IsBidiReordered ? toStart : 0f,
+                    _ => toStart
+                };
+            }
+
             return line.WrapLeftPt + layout.Alignment switch
             {
                 RenderAlignment.Center => firstExtra + (area - firstExtra - line.TextWidth) / 2f,
@@ -3369,9 +5193,18 @@ namespace Writersword.Modules.TextEditor.Rendering
         public static float JustifyExtraPerSpace(
             SKTextLayout layout, int lineIndex, int fragmentIndex = 0)
         {
-            if (layout.Alignment != RenderAlignment.Justify) return 0f;
+            // Растянутое выравнивание тянет строки так же, как по ширине; последнюю строку
+            // оно разводит по буквам ещё при вёрстке (DistributeLastLine).
+            if (layout.Alignment != RenderAlignment.Justify && layout.Alignment != RenderAlignment.Distribute)
+                return 0f;
             if (lineIndex < 0 || lineIndex >= layout.Lines.Count) return 0f;
             var line = layout.Lines[lineIndex];
+
+            // Строка с переставленными по направлению кусками растянута ещё при вёрстке
+            // (JustifyReorderedLines): ширина пробелов уже в её раскладке, и добавки
+            // поверх неё нет. Растяжка, которая копит сдвиг по порядку текста, к такой
+            // строке не подходит — её куски стоят на листе в другом порядке.
+            if (line.IsBidiReordered) return 0f;
 
             // Последняя строка по ширине не растягивается. Сжиматься ей приходится, если
             // в неё вошло слово за счёт сжатия пробелов: иначе она вылезла бы за край.
@@ -3382,8 +5215,9 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (fragmented && (fragmentIndex < 0 || fragmentIndex >= line.WrapFragments.Count))
                 return 0f;
 
+            // Скрытый текст в растяжку не входит: его пробелы места не занимают.
             bool InFragment(SKRunSegment seg)
-                => !fragmented || seg.WrapFragmentIndex == fragmentIndex;
+                => !seg.IsHidden && (!fragmented || seg.WrapFragmentIndex == fragmentIndex);
 
             // Индекс последнего сегмента отрезка, содержащего непробельный символ.
             int lastWordSeg = -1;
@@ -3484,6 +5318,14 @@ namespace Writersword.Modules.TextEditor.Rendering
         private const float MaxJustifyShrink = 0.2f;
 
         /// <summary>
+        /// Какую долю своей ширины слово может не уместить в строку, чтобы сжатие
+        /// пробелов его всё же втянуло. Подобрано по разбивке Word на строках, где
+        /// решает именно это: короткие слова («по», «не») с нехваткой больше половины
+        /// длины Word переносит, длинные с той же нехваткой оставляет.
+        /// </summary>
+        private const float MaxJustifyShrinkWordShare = 0.5f;
+
+        /// <summary>
         /// Кегль строчных букв в «малых прописных» относительно кегля текста.
         /// </summary>
         private const float SmallCapsScale = 0.8f;
@@ -3495,6 +5337,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             for (int si = 0; si < line.Segments.Count; si++)
             {
                 var s = line.Segments[si];
+                if (s.IsHidden) continue;
                 for (int k = 0; k < s.Text.Length; k++)
                     if (s.Text[k] != ' ' && s.Text[k] != '\t') { last = si; break; }
             }
@@ -3530,6 +5373,17 @@ namespace Writersword.Modules.TextEditor.Rendering
 
         private static float MeasureChar(string ch, SKRunSegment format)
         {
+            // Скрытый текст места в строке не занимает.
+            if (format.IsHidden) return 0f;
+
+            // Перенос строки и мягкий перенос места в строке не занимают: первый стоит
+            // в её конце, второй виден только там, где по нему разорвано слово, — и
+            // тогда его ширину даёт дефис (ShowTrailingSoftHyphen).
+            if (ch == "\n" || ch == SoftHyphen) return 0f;
+
+            // Неразрывный дефис шириной обычного — им он и рисуется.
+            if (ch == NonBreakingHyphen) ch = "-";
+
             // Объект в строке занимает собственный габарит, а не ширину глифа
             // символа-заполнителя.
             if (format.IsInlineObject) return format.ObjectWidthPt;
@@ -3538,8 +5392,9 @@ namespace Writersword.Modules.TextEditor.Rendering
             var font = GetOrCreateFont(typeface, format.FontSizePt);
 
             // Разрядка прибавляется к каждому знаку, включая пробелы, — так её считает
-            // Word, и строка переносится там же, где у него.
-            return font.MeasureText(ch) + format.CharacterSpacingPt;
+            // Word, и строка переносится там же, где у него. Масштаб по ширине растягивает
+            // сам знак, разрядку — нет.
+            return font.MeasureText(ch) * format.HorizontalScale + format.CharacterSpacingPt;
         }
 
         /// <summary>
@@ -3550,7 +5405,745 @@ namespace Writersword.Modules.TextEditor.Rendering
         private static void DrawSegmentText(
             SKCanvas canvas, SKRunSegment seg, float x, float baseY, SKFont font, SKPaint paint)
         {
-            if (Math.Abs(seg.CharacterSpacingPt) < 0.0001f
+            // Масштаб по ширине (w:w): знаки рисуются шрифтом, растянутым по горизонтали.
+            // Общий шрифт из кеша не трогается — у растянутого сегмента свой экземпляр.
+            if (Math.Abs(seg.HorizontalScale - 1f) > 0.0001f && !seg.IsInlineObject)
+            {
+                using var scaledFont = new SKFont(font.Typeface, font.Size)
+                {
+                    ScaleX = seg.HorizontalScale,
+                    Subpixel = font.Subpixel,
+                    LinearMetrics = font.LinearMetrics,
+                    Edging = font.Edging,
+                    Hinting = font.Hinting
+                };
+                DrawSegmentTextWithFont(canvas, seg, x, baseY, scaledFont, paint);
+                return;
+            }
+
+            DrawSegmentTextWithFont(canvas, seg, x, baseY, font, paint);
+        }
+
+        /// <summary>
+        /// Рисует буквы сегмента с эффектами Word: тенью (w:shadow), рельефом (w:emboss),
+        /// гравировкой (w:imprint) и контуром (w:outline). Без эффектов — как обычно.
+        ///
+        /// Рельеф и гравировка — светлые буквы с тёмным краем, сдвинутым вниз-вправо у
+        /// рельефа и вверх-влево у гравировки: так Word показывает выпуклый и вдавленный
+        /// текст. Контур — обвод букв без заливки.
+        /// </summary>
+        private static void DrawSegmentGlyphs(
+            SKCanvas canvas, SKRunSegment seg, float x, float baseY, SKFont font, SKPaint paint)
+        {
+            // Настраиваемые эффекты (Word 2010+ и свои) — отдельным путём; без них
+            // буквы рисуются, как прежде.
+            if (seg.Effects is not null)
+            {
+                DrawSegmentGlyphsWithEffects(canvas, seg, x, baseY, font, paint, seg.Effects);
+                return;
+            }
+
+            if (!seg.IsOutline && !seg.IsShadow && !seg.IsEmboss && !seg.IsImprint)
+            {
+                DrawSegmentText(canvas, seg, x, baseY, font, paint);
+                return;
+            }
+
+            float offset = Math.Max(0.5f, seg.FontSizePt * 0.04f);
+            SKColor ink = paint.Color;
+
+            if (seg.IsEmboss || seg.IsImprint)
+            {
+                float edgeOffset = seg.IsEmboss ? offset : -offset;
+
+                using (var edge = new SKPaint { Color = BlendColor(ink, SKColors.Black, 0.35f), IsAntialias = true })
+                    DrawSegmentText(canvas, seg, x + edgeOffset, baseY + edgeOffset, font, edge);
+
+                using var face = new SKPaint { Color = BlendColor(ink, SKColors.White, 0.8f), IsAntialias = true };
+                DrawSegmentText(canvas, seg, x, baseY, font, face);
+                return;
+            }
+
+            if (seg.IsShadow)
+            {
+                using var shadow = new SKPaint
+                {
+                    Color = BlendColor(ink, new SKColor(0x80, 0x80, 0x80), 0.6f).WithAlpha(0xB0),
+                    IsAntialias = true
+                };
+                DrawSegmentText(canvas, seg, x + offset, baseY + offset, font, shadow);
+            }
+
+            if (seg.IsOutline)
+            {
+                using var stroke = paint.Clone();
+                stroke.Style = SKPaintStyle.Stroke;
+                stroke.StrokeWidth = Math.Max(0.3f, seg.FontSizePt * 0.03f);
+                stroke.StrokeJoin = SKStrokeJoin.Round;
+                DrawSegmentText(canvas, seg, x, baseY, font, stroke);
+                return;
+            }
+
+            DrawSegmentText(canvas, seg, x, baseY, font, paint);
+        }
+
+        /// <summary>Смесь двух цветов: 0 — первый, 1 — второй. Прозрачность — от первого.</summary>
+        private static SKColor BlendColor(SKColor from, SKColor to, float amount)
+        {
+            float t = Math.Clamp(amount, 0f, 1f);
+            return new SKColor(
+                (byte)(from.Red + (to.Red - from.Red) * t),
+                (byte)(from.Green + (to.Green - from.Green) * t),
+                (byte)(from.Blue + (to.Blue - from.Blue) * t),
+                from.Alpha);
+        }
+
+        /// <summary>
+        /// Буквы с настраиваемыми эффектами. Слои снизу вверх, как у Word: отражение,
+        /// свечение, тень, сами буквы, контур. Старые эффекты Word (w:shadow, w:outline,
+        /// w:emboss, w:imprint) идут там, где настраиваемого того же рода нет.
+        /// </summary>
+        private static void DrawSegmentGlyphsWithEffects(
+            SKCanvas canvas, SKRunSegment seg, float x, float baseY, SKFont font, SKPaint paint,
+            SKTextEffects effects)
+        {
+            float offset = Math.Max(0.5f, seg.FontSizePt * 0.04f);
+            SKColor ink = paint.Color;
+
+            if (effects.Reflection is { } reflection)
+                DrawReflectionEffect(canvas, seg, x, baseY, font, paint, reflection, effects.Outline);
+
+            if (effects.Glow is { } glow)
+                DrawGlowEffect(canvas, seg, x, baseY, font, glow);
+
+            if (effects.Shadow is { } shadow)
+            {
+                DrawShadowEffect(canvas, seg, x, baseY, font, shadow);
+            }
+            else if (seg.IsShadow)
+            {
+                using var legacyShadow = new SKPaint
+                {
+                    Color = BlendColor(ink, new SKColor(0x80, 0x80, 0x80), 0.6f).WithAlpha(0xB0),
+                    IsAntialias = true
+                };
+                DrawSegmentText(canvas, seg, x + offset, baseY + offset, font, legacyShadow);
+            }
+
+            if (seg.IsEmboss || seg.IsImprint)
+            {
+                float edgeOffset = seg.IsEmboss ? offset : -offset;
+
+                using (var edge = new SKPaint { Color = BlendColor(ink, SKColors.Black, 0.35f), IsAntialias = true })
+                    DrawSegmentText(canvas, seg, x + edgeOffset, baseY + edgeOffset, font, edge);
+
+                using var face = new SKPaint { Color = BlendColor(ink, SKColors.White, 0.8f), IsAntialias = true };
+                DrawSegmentText(canvas, seg, x, baseY, font, face);
+            }
+            else
+            {
+                bool hollow = effects.Outline is { } own ? own.Hollow : seg.IsOutline;
+                if (!hollow)
+                    DrawSegmentText(canvas, seg, x, baseY, font, paint);
+            }
+
+            if (effects.Outline is { } outline)
+            {
+                DrawOutlineEffect(canvas, seg, x, baseY, font, outline);
+            }
+            else if (seg.IsOutline)
+            {
+                using var legacyStroke = paint.Clone();
+                legacyStroke.Style = SKPaintStyle.Stroke;
+                legacyStroke.StrokeWidth = Math.Max(0.3f, seg.FontSizePt * 0.03f);
+                legacyStroke.StrokeJoin = SKStrokeJoin.Round;
+                DrawSegmentText(canvas, seg, x, baseY, font, legacyStroke);
+            }
+        }
+
+        /// <summary>
+        /// Размытие Skia в сигмах по радиусу размытия Word: радиус — примерно две сигмы.
+        /// </summary>
+        private static float BlurSigma(float radiusPt) => Math.Max(0.1f, radiusPt / 2f);
+
+        /// <summary>
+        /// Прямоугольник, в который гарантированно ложатся буквы сегмента вместе с
+        /// эффектом шириной <paramref name="pad"/>: по нему ограничиваются слои Skia,
+        /// чтобы эффект не заводил слой во весь лист.
+        /// </summary>
+        private static SKRect EffectBounds(SKRunSegment seg, float x, float baseY, SKFont font, float pad)
+        {
+            font.GetFontMetrics(out var metrics);
+            float over = seg.FontSizePt * 0.3f + pad;
+            return new SKRect(
+                x - over,
+                baseY - Math.Abs(metrics.Ascent) - seg.FontSizePt * 0.1f - pad,
+                x + seg.Width + over,
+                baseY + Math.Abs(metrics.Descent) + pad);
+        }
+
+        /// <summary>
+        /// Тень: копия букв цветом тени, сдвинутая на расстояние под углом и размытая.
+        /// Длинная тень — сплошной след букв на всё расстояние; копии кладутся в общий
+        /// слой, чтобы наложение не темнило полупрозрачную тень.
+        /// </summary>
+        private static void DrawShadowEffect(
+            SKCanvas canvas, SKRunSegment seg, float x, float baseY, SKFont font, SKShadowEffect shadow)
+        {
+            double angle = shadow.AngleDeg * Math.PI / 180.0;
+            float dx = (float)(Math.Cos(angle) * shadow.DistancePt);
+            float dy = (float)(Math.Sin(angle) * shadow.DistancePt);
+
+            if (shadow.IsLong)
+            {
+                int steps = Math.Clamp((int)MathF.Ceiling(shadow.DistancePt / 0.5f), 1, 80);
+                var bounds = EffectBounds(seg, x, baseY, font, shadow.DistancePt + 1f);
+
+                using var layerPaint = new SKPaint { Color = SKColors.Black.WithAlpha(shadow.Color.Alpha) };
+                int layer = canvas.SaveLayer(bounds, layerPaint);
+
+                using var trail = new SKPaint { Color = shadow.Color.WithAlpha(0xFF), IsAntialias = true };
+                for (int i = steps; i >= 1; i--)
+                {
+                    float t = i / (float)steps;
+                    DrawSegmentText(canvas, seg, x + dx * t, baseY + dy * t, font, trail);
+                }
+
+                canvas.RestoreToCount(layer);
+                return;
+            }
+
+            using var paint = new SKPaint { Color = shadow.Color, IsAntialias = true };
+            if (shadow.BlurPt > 0.01f)
+                paint.MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, BlurSigma(shadow.BlurPt));
+
+            DrawSegmentText(canvas, seg, x + dx, baseY + dy, font, paint);
+        }
+
+        /// <summary>Свечение: размытый ореол цвета свечения вокруг букв.</summary>
+        private static void DrawGlowEffect(
+            SKCanvas canvas, SKRunSegment seg, float x, float baseY, SKFont font, SKGlowEffect glow)
+        {
+            if (glow.RadiusPt <= 0.01f) return;
+
+            using var paint = new SKPaint
+            {
+                Color = glow.Color,
+                IsAntialias = true,
+                Style = SKPaintStyle.StrokeAndFill,
+                StrokeWidth = glow.RadiusPt,
+                StrokeJoin = SKStrokeJoin.Round,
+                MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, BlurSigma(glow.RadiusPt))
+            };
+            DrawSegmentText(canvas, seg, x, baseY, font, paint);
+        }
+
+        /// <summary>
+        /// Отражение: буквы, перевёрнутые вокруг нижней кромки строки (с зазором), тают
+        /// книзу от непрозрачности у букв до нуля на видимой доле высоты. Буквы и маска
+        /// тают в своём слое, чтобы не задеть то, что уже нарисовано под ними.
+        /// </summary>
+        private static void DrawReflectionEffect(
+            SKCanvas canvas, SKRunSegment seg, float x, float baseY, SKFont font, SKPaint paint,
+            SKReflectionEffect reflection, SKOutlineEffect? outline)
+        {
+            if (reflection.StartOpacity <= 0.001f || reflection.Size <= 0.001f) return;
+
+            font.GetFontMetrics(out var metrics);
+            float ascent = Math.Abs(metrics.Ascent);
+            float descent = Math.Abs(metrics.Descent);
+            float height = ascent + descent;
+
+            float bottom = baseY + descent;
+            float top = bottom + reflection.DistancePt;
+            float blurPad = reflection.BlurPt * 3f + 1f;
+            float over = seg.FontSizePt * 0.3f + blurPad;
+
+            var layerRect = new SKRect(x - over, top - blurPad, x + seg.Width + over, top + height + blurPad);
+            int layer = canvas.SaveLayer(layerRect, null);
+
+            canvas.Save();
+            canvas.Translate(0f, bottom * 2f + reflection.DistancePt);
+            canvas.Scale(1f, -1f);
+
+            using (var mirror = new SKPaint { Color = paint.Color, IsAntialias = true })
+            {
+                if (reflection.BlurPt > 0.01f)
+                    mirror.MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, BlurSigma(reflection.BlurPt));
+
+                // Полые буквы отражаются контуром, остальные — заливкой.
+                if (outline is { Hollow: true })
+                {
+                    mirror.Color = ApplyReadingInk(outline.Color);
+                    mirror.Style = SKPaintStyle.Stroke;
+                    mirror.StrokeWidth = outline.WidthPt;
+                    mirror.StrokeJoin = SKStrokeJoin.Round;
+                }
+
+                DrawSegmentText(canvas, seg, x, baseY, font, mirror);
+            }
+
+            canvas.Restore();
+
+            float fadeEnd = top + Math.Max(0.5f, height * reflection.Size);
+            using var fade = SKShader.CreateLinearGradient(
+                new SKPoint(0f, top),
+                new SKPoint(0f, fadeEnd),
+                new[]
+                {
+                    SKColors.Black.WithAlpha((byte)Math.Round(255f * Math.Clamp(reflection.StartOpacity, 0f, 1f))),
+                    SKColors.Black.WithAlpha(0)
+                },
+                SKShaderTileMode.Clamp);
+            using var mask = new SKPaint { Shader = fade, BlendMode = SKBlendMode.DstIn };
+            canvas.DrawRect(layerRect, mask);
+
+            canvas.RestoreToCount(layer);
+        }
+
+        /// <summary>
+        /// Контур букв своей толщины, цвета и штриха. «Снаружи» — линия двойной толщины,
+        /// у которой внутренняя половина вырезана по форме букв: буквы сохраняют свою
+        /// толщину, контур обводит их снаружи.
+        /// </summary>
+        private static void DrawOutlineEffect(
+            SKCanvas canvas, SKRunSegment seg, float x, float baseY, SKFont font, SKOutlineEffect outline)
+        {
+            float width = Math.Max(0.05f, outline.WidthPt);
+
+            using var stroke = new SKPaint
+            {
+                Color = ApplyReadingInk(outline.Color),
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = outline.Outside ? width * 2f : width,
+                StrokeJoin = SKStrokeJoin.Round,
+                StrokeCap = SKStrokeCap.Butt
+            };
+
+            float[]? dash = outline.Dash switch
+            {
+                SKOutlineDash.Dash => new[] { 4f * width, 3f * width },
+                SKOutlineDash.Dot => new[] { 1f * width, 1f * width },
+                SKOutlineDash.DashDot => new[] { 4f * width, 3f * width, 1f * width, 3f * width },
+                SKOutlineDash.LongDash => new[] { 8f * width, 3f * width },
+                _ => null
+            };
+
+            using var dashEffect = dash is null ? null : SKPathEffect.CreateDash(dash, 0f);
+            if (dashEffect is not null) stroke.PathEffect = dashEffect;
+
+            if (!outline.Outside)
+            {
+                DrawSegmentText(canvas, seg, x, baseY, font, stroke);
+                return;
+            }
+
+            var bounds = EffectBounds(seg, x, baseY, font, width * 2f + 1f);
+            int layer = canvas.SaveLayer(bounds, null);
+
+            DrawSegmentText(canvas, seg, x, baseY, font, stroke);
+
+            using var cut = new SKPaint { Color = SKColors.Black, IsAntialias = true, BlendMode = SKBlendMode.DstOut };
+            DrawSegmentText(canvas, seg, x, baseY, font, cut);
+
+            canvas.RestoreToCount(layer);
+        }
+
+        /// <summary>
+        /// Настраиваемые эффекты модели в эффекты отрисовки: цвета — в SKColor вместе с
+        /// прозрачностью, величины — в пункты. Пустой набор — null.
+        /// </summary>
+        private static SKTextEffects? ToRenderEffects(TextEffects? effects)
+        {
+            if (effects is null || effects.IsEmpty) return null;
+
+            return new SKTextEffects(
+                effects.Outline is { } outline
+                    ? new SKOutlineEffect(
+                        ParseColor(outline.Color),
+                        (float)Math.Max(0.05, outline.WidthPt),
+                        (SKOutlineDash)(int)outline.Dash,
+                        outline.Placement == OutlinePlacement.Outside,
+                        outline.Hollow)
+                    : null,
+                effects.Shadow is { } shadow
+                    ? new SKShadowEffect(
+                        WithTransparency(ParseColor(shadow.Color), shadow.Transparency),
+                        (float)Math.Max(0.0, shadow.BlurPt),
+                        (float)Math.Max(0.0, shadow.DistancePt),
+                        (float)shadow.AngleDeg,
+                        shadow.IsLong)
+                    : null,
+                effects.Glow is { } glow
+                    ? new SKGlowEffect(
+                        WithTransparency(ParseColor(glow.Color), glow.Transparency),
+                        (float)Math.Max(0.0, glow.RadiusPt))
+                    : null,
+                effects.Reflection is { } reflection
+                    ? new SKReflectionEffect(
+                        (float)Math.Clamp(1.0 - reflection.Transparency, 0.0, 1.0),
+                        (float)Math.Clamp(reflection.Size, 0.0, 1.0),
+                        (float)Math.Max(0.0, reflection.DistancePt),
+                        (float)Math.Max(0.0, reflection.BlurPt))
+                    : null);
+        }
+
+        /// <summary>Цвет с прозрачностью эффекта: 0 — сплошной, 1 — невидимый.</summary>
+        private static SKColor WithTransparency(SKColor color, double transparency)
+            => color.WithAlpha((byte)Math.Round(255.0 * Math.Clamp(1.0 - transparency, 0.0, 1.0)));
+
+        /// <summary>Ширина текста образца эффектов — чтобы поставить его по середине.</summary>
+        public static float MeasureEffectsPreview(string text, string fontFamily, float fontSizePt)
+        {
+            if (string.IsNullOrEmpty(text)) return 0f;
+
+            var font = GetOrCreateFont(GetOrCreateTypeface(fontFamily, false, false), fontSizePt);
+            return font.MeasureText(text);
+        }
+
+        /// <summary>
+        /// Образец эффектов для окна настройки: строка текста, нарисованная тем же
+        /// движком, что и документ, — со всеми эффектами букв и рамкой знаков. По нему
+        /// видно результат до применения.
+        /// </summary>
+        /// <param name="canvas">Холст образца.</param>
+        /// <param name="text">Текст образца.</param>
+        /// <param name="fontFamily">Гарнитура.</param>
+        /// <param name="fontSizePt">Кегль.</param>
+        /// <param name="textColor">Цвет букв.</param>
+        /// <param name="effects">Настраиваемые эффекты; null — без них.</param>
+        /// <param name="borderWidthPt">Толщина рамки знаков; ноль — рамки нет.</param>
+        /// <param name="borderColor">Цвет рамки знаков; null — цвет букв.</param>
+        /// <param name="borderStyle">Вид линии рамки знаков.</param>
+        /// <param name="x">Левый край текста.</param>
+        /// <param name="baselineY">Базовая линия текста.</param>
+        /// <returns>Ширина нарисованного текста.</returns>
+        public static float DrawEffectsPreview(
+            SKCanvas canvas, string text, string fontFamily, float fontSizePt, SKColor textColor,
+            TextEffects? effects, float borderWidthPt, string? borderColor, CharBorderStyle borderStyle,
+            float x, float baselineY)
+        {
+            if (string.IsNullOrEmpty(text)) return 0f;
+
+            var seg = new SKRunSegment
+            {
+                Text = text,
+                FontFamily = fontFamily,
+                FontSizePt = fontSizePt,
+                Color = textColor,
+                Effects = ToRenderEffects(effects),
+                CharBorderWidthPt = Math.Max(0f, borderWidthPt),
+                CharBorderColor = borderColor,
+                CharBorderStyle = (int)borderStyle
+            };
+
+            var typeface = GetOrCreateTypeface(fontFamily, false, false);
+            var font = GetOrCreateFont(typeface, fontSizePt);
+
+            seg.GlyphMetrics = BuildGlyphMetrics(seg, font);
+            float width = 0f;
+            foreach (var glyph in seg.GlyphMetrics) width += glyph.Width;
+            seg.Width = width;
+
+            var line = new SKLineLayout();
+            line.Segments.Add(seg);
+
+            using var paint = new SKPaint { Color = textColor, IsAntialias = true };
+            DrawSegmentGlyphs(canvas, seg, x, baselineY, font, paint);
+
+            if (seg.CharBorderWidthPt > 0f)
+                DrawCharBorder(canvas, line, 0, 0, seg, x, baselineY, width, font, textColor);
+
+            return width;
+        }
+
+        /// <summary>
+        /// Образец набора «Мои эффекты» для плитки меню: текст, нарисованный тем же
+        /// движком, что и документ, — со всем, что ставит набор: настраиваемыми
+        /// эффектами, эффектами из окна шрифта Word, рамкой знаков и знаком ударения.
+        /// </summary>
+        /// <param name="canvas">Холст образца.</param>
+        /// <param name="text">Текст образца.</param>
+        /// <param name="fontFamily">Гарнитура.</param>
+        /// <param name="fontSizePt">Кегль.</param>
+        /// <param name="textColor">Цвет букв.</param>
+        /// <param name="preset">Набор.</param>
+        /// <param name="x">Левый край текста.</param>
+        /// <param name="baselineY">Базовая линия текста.</param>
+        /// <returns>Ширина нарисованного текста.</returns>
+        public static float DrawPresetPreview(
+            SKCanvas canvas, string text, string fontFamily, float fontSizePt, SKColor textColor,
+            TextEffectPreset preset, float x, float baselineY)
+        {
+            if (string.IsNullOrEmpty(text)) return 0f;
+
+            var border = preset.Border is { Enabled: true } enabled ? enabled : null;
+
+            var seg = new SKRunSegment
+            {
+                Text = text,
+                FontFamily = fontFamily,
+                FontSizePt = fontSizePt,
+                Color = textColor,
+                Effects = ToRenderEffects(preset.Effects),
+                IsOutline = preset.IsOutline == true,
+                IsShadow = preset.IsShadow == true,
+                IsEmboss = preset.IsEmboss == true,
+                IsImprint = preset.IsImprint == true,
+                EmphasisMark = (int)(preset.EmphasisMark ?? Models.Inline.EmphasisMark.None),
+                CharBorderWidthPt = border is null ? 0f : Math.Max(0.25f, (float)border.WidthPt),
+                CharBorderColor = border?.Color,
+                CharBorderStyle = (int)(border?.Style ?? Models.Inline.CharBorderStyle.Single)
+            };
+
+            var typeface = GetOrCreateTypeface(fontFamily, false, false);
+            var font = GetOrCreateFont(typeface, fontSizePt);
+
+            seg.GlyphMetrics = BuildGlyphMetrics(seg, font);
+            float width = 0f;
+            foreach (var glyph in seg.GlyphMetrics) width += glyph.Width;
+            seg.Width = width;
+
+            var line = new SKLineLayout();
+            line.Segments.Add(seg);
+
+            using var paint = new SKPaint { Color = textColor, IsAntialias = true };
+            DrawSegmentGlyphs(canvas, seg, x, baselineY, font, paint);
+
+            if (seg.CharBorderWidthPt > 0f)
+                DrawCharBorder(canvas, line, 0, 0, seg, x, baselineY, width, font, textColor);
+
+            if (seg.EmphasisMark != 0)
+                DrawEmphasisMarks(canvas, seg, x, baselineY, font, textColor);
+
+            return width;
+        }
+
+        /// <summary>
+        /// Украшения сегмента поверх букв: точечное подчёркивание показанного скрытого
+        /// текста, рамка вокруг знаков (w:bdr) и знаки ударения (w:em).
+        /// </summary>
+        private static void DrawSegmentDecorations(
+            SKCanvas canvas, SKLineLayout line, int segIdx, int lastContentSeg, SKRunSegment seg,
+            float segX, float baseY, float width, SKFont font, SKColor textColor)
+        {
+            // Скрытый текст при показанных непечатаемых знаках — точечное подчёркивание,
+            // как в Word.
+            if (seg.IsHiddenMarked && width > 0f)
+                UnderlinePainter.Draw(canvas, Models.Inline.UnderlineStyle.Dotted,
+                    segX, width, baseY, seg.FontSizePt, textColor, null);
+
+            if (seg.CharBorderWidthPt > 0f && width > 0f)
+                DrawCharBorder(canvas, line, segIdx, lastContentSeg, seg, segX, baseY, width, font, textColor);
+
+            if (seg.EmphasisMark != 0)
+                DrawEmphasisMarks(canvas, seg, segX, baseY, font, textColor);
+        }
+
+        /// <summary>Просвет рамки знаков над подъёмом шрифта, в долях кегля (снято с Word).</summary>
+        private const float CharBorderTopPadEm = 0.15f;
+
+        /// <summary>Просвет рамки знаков под спуском шрифта, в долях кегля.</summary>
+        private const float CharBorderBottomPadEm = 0.05f;
+
+        /// <summary>Середина знака ударения над подъёмом шрифта, в долях кегля (снято с Word).</summary>
+        private const float EmphasisOverGapEm = 0.27f;
+
+        /// <summary>Середина точки снизу под спуском шрифта, в долях кегля.</summary>
+        private const float EmphasisUnderGapEm = 0.12f;
+
+        /// <summary>Радиус знака ударения в долях кегля.</summary>
+        private const float EmphasisRadiusEm = 0.055f;
+
+        /// <summary>
+        /// Сколько места над подъёмом шрифта занимает знак ударения вместе с запасом —
+        /// на столько он раздвигает строку.
+        /// </summary>
+        private const float EmphasisOverReachEm = EmphasisOverGapEm + EmphasisRadiusEm * 2f;
+
+        /// <summary>Сколько места под спуском шрифта занимает точка снизу вместе с запасом.</summary>
+        private const float EmphasisUnderReachEm = EmphasisUnderGapEm + EmphasisRadiusEm * 2f;
+
+        /// <summary>
+        /// Рамка вокруг знаков. Слова одного рана лежат в разных сегментах (пробелы —
+        /// отдельно), поэтому рамка рисуется по кускам: верх и низ у каждого сегмента,
+        /// боковые стороны — только там, где у соседнего сегмента рамки нет. Так
+        /// выходит одна рамка на весь фрагмент, как у Word, без перегородок между словами.
+        ///
+        /// Линии ставятся на сетку пикселей, как подчёркивание: иначе тонкая рамка
+        /// расплывается сглаживанием в два бледных ряда, а на стыках кусков темнеют
+        /// точки перекрытия.
+        /// </summary>
+        private static void DrawCharBorder(
+            SKCanvas canvas, SKLineLayout line, int segIdx, int lastContentSeg, SKRunSegment seg,
+            float segX, float baseY, float width, SKFont font, SKColor textColor)
+        {
+            bool SameBorder(int index)
+            {
+                if (index < 0 || index >= line.Segments.Count) return false;
+                var other = line.Segments[index];
+                if (other.IsHidden || other.IsTabJump || other.InlineImageId.HasValue) return false;
+                if (SegHighlightWidth(line, index, lastContentSeg) <= 0f) return false;
+                return Math.Abs(other.CharBorderWidthPt - seg.CharBorderWidthPt) < 0.01f
+                    && other.CharBorderColor == seg.CharBorderColor
+                    && other.CharBorderStyle == seg.CharBorderStyle;
+            }
+
+            font.GetFontMetrics(out var metrics);
+            float top = baseY - Math.Abs(metrics.Ascent) - seg.FontSizePt * CharBorderTopPadEm;
+            float bottom = baseY + Math.Abs(metrics.Descent) + seg.FontSizePt * CharBorderBottomPadEm;
+            float left = segX;
+            float right = segX + width;
+            float stroke = seg.CharBorderWidthPt;
+
+            var style = (Models.Inline.CharBorderStyle)seg.CharBorderStyle;
+
+            // Двойная рамка — две линии заданной толщины с просветом в толщину линии:
+            // внешняя и внутренняя, на полторы толщины от середины.
+            float[] rings = style == Models.Inline.CharBorderStyle.Double
+                ? new[] { stroke, -stroke }
+                : new[] { 0f };
+
+            bool openLeft = SameBorder(segIdx - 1);
+            bool openRight = SameBorder(segIdx + 1);
+
+            var matrix = canvas.TotalMatrix;
+            bool snap = UnderlinePainter.IsAxisAligned(matrix);
+            float strokePx = 0f;
+            if (snap)
+            {
+                strokePx = MathF.Max(1f, MathF.Round(stroke * matrix.ScaleY));
+                stroke = strokePx / matrix.ScaleY;
+
+                // Края кусков — на целых пикселях: соседние куски смыкаются встык, без
+                // просвета и без перекрытия.
+                left = (MathF.Round(matrix.ScaleX * left + matrix.TransX) - matrix.TransX) / matrix.ScaleX;
+                right = (MathF.Round(matrix.ScaleX * right + matrix.TransX) - matrix.TransX) / matrix.ScaleX;
+            }
+
+            SKColor color = textColor;
+            if (UnderlinePainter.TryParseLineColor(seg.CharBorderColor, out var own))
+                color = ApplyReadingInk(own);
+
+            using var pen = new SKPaint
+            {
+                Color = color,
+                StrokeWidth = stroke,
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeCap = SKStrokeCap.Butt
+            };
+
+            // Точки и штрихи отсчитываются от нулевой отметки холста, как у подчёркивания:
+            // у соседних кусков рамки рисунок продолжается, а не начинается заново.
+            float[]? dash = style switch
+            {
+                Models.Inline.CharBorderStyle.Dotted => new[] { stroke, stroke },
+                Models.Inline.CharBorderStyle.Dashed => new[] { stroke * 3f, stroke * 2f },
+                _ => null
+            };
+            using var dashEffect = dash is null ? null : SKPathEffect.CreateDash(dash, 0f);
+            if (dashEffect is not null) pen.PathEffect = dashEffect;
+
+            float half = stroke / 2f;
+
+            foreach (float ring in rings)
+            {
+                // Кольцо рамки: у двойной внешнее отходит от середины наружу, внутреннее —
+                // внутрь. Боковые стороны сдвигаются только у закрытых краёв фрагмента.
+                float ringTop = top - ring;
+                float ringBottom = bottom + ring;
+                float ringLeft = openLeft ? left : left - ring;
+                float ringRight = openRight ? right : right + ring;
+
+                if (snap)
+                {
+                    ringTop = UnderlinePainter.SnapLineY(ringTop, strokePx, matrix);
+                    ringBottom = UnderlinePainter.SnapLineY(ringBottom, strokePx, matrix);
+                }
+
+                // Верх и низ у крайних кусков заходят на полтолщины за боковую сторону —
+                // углы рамки закрыты. Между кусками линии идут встык.
+                float hLeft = openLeft ? ringLeft : ringLeft - half;
+                float hRight = openRight ? ringRight : ringRight + half;
+
+                canvas.DrawLine(hLeft, ringTop, hRight, ringTop, pen);
+                canvas.DrawLine(hLeft, ringBottom, hRight, ringBottom, pen);
+
+                if (!openLeft)
+                    canvas.DrawLine(ringLeft, ringTop, ringLeft, ringBottom, pen);
+                if (!openRight)
+                    canvas.DrawLine(ringRight, ringTop, ringRight, ringBottom, pen);
+            }
+        }
+
+        /// <summary>
+        /// Знаки ударения над каждой буквой сегмента (под буквой — у «точки снизу»).
+        /// Пробелы знака не получают — как в Word. Высота знака — над подъёмом шрифта:
+        /// так Word ставит его выше самых высоких букв, и строка под него раздвигается
+        /// (FinalizeLine).
+        /// </summary>
+        private static void DrawEmphasisMarks(
+            SKCanvas canvas, SKRunSegment seg, float segX, float baseY, SKFont font, SKColor textColor)
+        {
+            if (seg.GlyphMetrics.Length != seg.Text.Length) return;
+
+            font.GetFontMetrics(out var metrics);
+            float radius = Math.Max(0.6f, seg.FontSizePt * EmphasisRadiusEm);
+
+            bool below = seg.EmphasisMark == (int)Models.Inline.EmphasisMark.UnderDot;
+            float centerY = below
+                ? baseY + Math.Abs(metrics.Descent) + seg.FontSizePt * EmphasisUnderGapEm
+                : baseY - Math.Abs(metrics.Ascent) - seg.FontSizePt * EmphasisOverGapEm;
+
+            using var paint = new SKPaint { Color = textColor, IsAntialias = true };
+            if (seg.EmphasisMark == (int)Models.Inline.EmphasisMark.Circle)
+            {
+                paint.Style = SKPaintStyle.Stroke;
+                paint.StrokeWidth = Math.Max(0.3f, radius * 0.35f);
+            }
+
+            using var tail = new SKPaint
+            {
+                Color = textColor,
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = Math.Max(0.3f, radius * 0.6f),
+                StrokeCap = SKStrokeCap.Round
+            };
+
+            for (int i = 0; i < seg.Text.Length; i++)
+            {
+                if (char.IsWhiteSpace(seg.Text[i])) continue;
+
+                var glyph = seg.GlyphMetrics[i];
+                float centerX = segX + glyph.X + glyph.Width / 2f;
+
+                canvas.DrawCircle(centerX, centerY, radius, paint);
+
+                // Запятая — точка с хвостиком вниз-влево.
+                if (seg.EmphasisMark == (int)Models.Inline.EmphasisMark.Comma)
+                    canvas.DrawLine(centerX + radius * 0.6f, centerY,
+                        centerX - radius * 0.4f, centerY + radius * 2.2f, tail);
+            }
+        }
+
+        /// <summary>
+        /// Рисует текст сегмента готовым шрифтом: без разрядки — обычным DrawText, с
+        /// разрядкой — знаками на позициях из метрик глифов.
+        /// </summary>
+        private static void DrawSegmentTextWithFont(
+            SKCanvas canvas, SKRunSegment seg, float x, float baseY, SKFont font, SKPaint paint)
+        {
+            // Сегмент справа налево рисуется целиком по правилам своей письменности:
+            // обратный порядок букв, у арабского — связные начертания по соседям.
+            if (seg.IsRightToLeft && !seg.IsInlineObject && seg.Text.Length > 0)
+            {
+                DrawRightToLeftText(canvas, seg, x, baseY, font, paint);
+                return;
+            }
+            if ((Math.Abs(seg.CharacterSpacingPt) < 0.0001f && !seg.UsesGlyphPositions)
                 || seg.IsInlineObject
                 || seg.GlyphMetrics.Length != seg.Text.Length)
             {
@@ -3594,13 +6187,25 @@ namespace Writersword.Modules.TextEditor.Rendering
         ///
         /// Крайняя точка у номера отбрасывается: зазор перед цифрой читается как воздух,
         /// а слипшиеся точка и цифра — как опечатка.
+        ///
+        /// Так рисуется заполнитель с заданной плотностью — наш, настраиваемый. Без
+        /// плотности (ноль: позиция пришла из Word или поставлена без настройки)
+        /// заполнитель рисуется как у Word, см. <see cref="DrawWordTabLeader"/>.
         /// </summary>
-        private static void DrawTabLeader(SKCanvas canvas, SKRunSegment seg, float xPt, float baseYPt)
+        /// <param name="gridOriginPt">Левый край текстовой области абзаца: от него Word
+        /// отсчитывает сетку знаков заполнителя.</param>
+        private static void DrawTabLeader(SKCanvas canvas, SKRunSegment seg, float xPt, float baseYPt, float gridOriginPt)
         {
             if (seg.TabLeader == SKTabLeader.None) return;
             if (seg.Width <= 0.5f) return;
 
             SKColor color = ApplyReadingInk(seg.Color);
+
+            if (seg.TabLeaderDensity <= 0.01f)
+            {
+                DrawWordTabLeader(canvas, seg, xPt, baseYPt, gridOriginPt, color);
+                return;
+            }
 
             if (seg.TabLeader == SKTabLeader.Line)
             {
@@ -3626,9 +6231,11 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             // Шаг сетки: у точки он шире собственной ширины знака — сплошная дорожка точек
             // читается как многоточие, а не как ведущая линия.
+            // Чёрточки идут вплотную, шаг в ширину самого знака: так Word рисует
+            // заполнитель «дефисы» — сплошным рядом, а не пунктиром с просветами.
             float stepPt = seg.TabLeader == SKTabLeader.Dots
                 ? Math.Max(markWidth * 1.35f, seg.FontSizePt * 0.2f)
-                : Math.Max(markWidth * 1.6f, seg.FontSizePt * 0.22f);
+                : markWidth;
 
             // Плотность из позиции табуляции: вдвое больше единицы — вдвое чаще знаки.
             // Ноль означает «как обычно» — так рисуются прыжки, собранные без этой
@@ -3710,6 +6317,105 @@ namespace Writersword.Modules.TextEditor.Rendering
         }
 
         /// <summary>
+        /// Заполнитель как у Word: целые знаки — точки, дефисы или подчёркивания — с шагом
+        /// в ширину самого знака, на сетке, отсчитанной от левого края текстовой области.
+        /// Рисуются только знаки, целиком вошедшие в прыжок, поэтому у концов остаются
+        /// неполные клетки сетки — зазоры до текста, как в Word («349.90 ___ 4198.80»).
+        /// Сетка общая для всех строк абзаца: знаки соседних строк стоят столбиками.
+        /// Линия-заполнитель у Word — тоже ряд знаков подчёркивания, а не сплошная черта.
+        /// </summary>
+        private static void DrawWordTabLeader(
+            SKCanvas canvas, SKRunSegment seg, float xPt, float baseYPt, float gridOriginPt, SKColor color)
+        {
+            char markChar = seg.TabLeader switch
+            {
+                SKTabLeader.Dots => '.',
+                SKTabLeader.Dashes => '-',
+                _ => '_'
+            };
+            string mark = markChar.ToString();
+
+            var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
+            var font = GetOrCreateFont(typeface, seg.FontSizePt);
+
+            float pitchPt = MeasureChar(mark, seg);
+            if (pitchPt <= 0.01f) return;
+
+            float startPt = xPt;
+            float endPt = xPt + seg.Width;
+
+            // Первая клетка сетки, начинающаяся не левее начала прыжка, и последняя,
+            // целиком кончающаяся до его конца. Допуск — на дробные ошибки сложения.
+            int first = (int)Math.Ceiling((startPt - gridOriginPt) / pitchPt - 0.001f);
+            int last = (int)Math.Floor((endPt - gridOriginPt) / pitchPt + 0.001f) - 1;
+
+            int count = last - first + 1;
+            if (count <= 0) return;
+            if (count > MaxLeaderMarks) count = MaxLeaderMarks;
+
+            ushort glyph = typeface.GetGlyph(markChar);
+            if (glyph == 0) return;
+
+            EnsureLeaderBuffers(count);
+
+            var glyphs = _leaderGlyphs!;
+            var positions = _leaderPositions!;
+
+            for (int i = 0; i < count; i++)
+            {
+                glyphs[i] = glyph;
+                positions[i] = gridOriginPt + (first + i) * pitchPt;
+            }
+
+            using var paint = new SKPaint { Color = color, IsAntialias = true };
+
+            using var builder = new SKTextBlobBuilder();
+            var run = builder.AllocateHorizontalRun(font, count, baseYPt);
+            run.SetGlyphs(new ReadOnlySpan<ushort>(glyphs, 0, count));
+            run.SetPositions(new ReadOnlySpan<float>(positions, 0, count));
+
+            using var blob = builder.Build();
+            if (blob is null) return;
+
+            canvas.DrawText(blob, 0f, 0f, paint);
+        }
+
+        /// <summary>
+        /// Табуляции-черты абзаца на одной строке: тонкая вертикальная линия во всю
+        /// высоту строки на каждой отметке-черте. Цвет — цвет текста листа, как у линий
+        /// рамки «авто». Линия ставится на целый пиксель, иначе на экране расплывается.
+        /// </summary>
+        /// <param name="textLeftX">Левый край текстовой области абзаца — от него отсчитаны отметки.</param>
+        private static void DrawBarTabs(SKCanvas canvas, SKTextLayout layout, float textLeftX, float lineTopY, float lineHeight)
+        {
+            var bars = layout.BarTabPositionsPt;
+            if (bars is null || bars.Count == 0 || lineHeight <= 0f) return;
+
+            float scale = CanvasScale(canvas);
+            float minWidthPt = 1f / scale;
+
+            using var paint = new SKPaint
+            {
+                Color = ResolveParagraphBorderColor(null),
+                StrokeWidth = Math.Max(minWidthPt, BarTabWidthPt),
+                IsStroke = true,
+                IsAntialias = false
+            };
+
+            foreach (float positionPt in bars)
+            {
+                float x = textLeftX + positionPt;
+                float xPx = (float)Math.Round(x * scale - 0.5f) + 0.5f;
+                x = xPx / scale;
+
+                canvas.DrawLine(x, lineTopY, x, lineTopY + lineHeight, paint);
+            }
+        }
+
+        /// <summary>Толщина табуляции-черты: пиксель при 100 %, как у Word.</summary>
+        private const float BarTabWidthPt = 0.75f;
+
+        /// <summary>
         /// Предел знаков в одной дорожке заполнителя.
         ///
         /// Нужен не ради красоты: плотность приезжает из файла, где её мог поправить кто
@@ -3782,9 +6488,19 @@ namespace Writersword.Modules.TextEditor.Rendering
             {
                 float width = (widths is not null && i < widths.Length) ? widths[i] : 0f;
 
+                // Масштаб по ширине растягивает знак вместе с его местом в строке.
+                width *= seg.HorizontalScale;
+
                 // Разрядка — часть ширины знака: каретка и выделение встают туда же,
                 // где знак нарисован.
                 width += seg.CharacterSpacingPt;
+
+                // Скрытый текст — нулевой ширины: все его позиции каретки в одной точке.
+                if (seg.IsHidden) width = 0f;
+
+                // Перенос строки и невидимый мягкий перенос — тоже нулевой ширины.
+                if (seg.IsLineBreak || (seg.IsSoftHyphen && !seg.SoftHyphenShown)) width = 0f;
+
                 glyphs[i] = new SKGlyphMetrics
                 {
                     CharIndex = seg.GlobalCharOffset + i,
@@ -3859,6 +6575,26 @@ namespace Writersword.Modules.TextEditor.Rendering
             bool suppressTop = false, bool suppressBottom = false)
             => RenderCellBorders(canvas, cell, cellX, cellY, visibleH, canvasScale, suppressTop, suppressBottom);
 
+        /// <summary>
+        /// Узор заливки ячейки (pct25, diagStripe…) поверх её цвета фона — тем же узором,
+        /// что у заливки абзаца. Публичная: заливку ячеек рисует и полотно.
+        /// </summary>
+        public static void RenderCellShadingPattern(
+            SKCanvas canvas, SKTableCellLayout cell, float x, float y, float width, float height)
+        {
+            var shader = GetShadingPatternShader(cell.ShadingPattern, cell.ShadingPatternColor);
+            if (shader is null || width <= 0f || height <= 0f) return;
+
+            using var paint = new SKPaint { Shader = shader, IsAntialias = false };
+            canvas.DrawRect(x, y, width, height, paint);
+        }
+
+        // Стороны ячейки для объёмных рамок: у них светлая и тёмная половины зависят от стороны.
+        private const int BorderSideTop = 1;
+        private const int BorderSideBottom = 2;
+        private const int BorderSideLeft = 3;
+        private const int BorderSideRight = 4;
+
         private static void RenderCellBorders(
             SKCanvas canvas,
             SKTableCellLayout cell,
@@ -3872,20 +6608,20 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (!suppressTop)
                 DrawBorderLine(canvas, cell.Borders.Top,
                     cellX, cellY,
-                    cellX + cell.WidthPt, cellY, canvasScale);
+                    cellX + cell.WidthPt, cellY, canvasScale, BorderSideTop);
 
             if (!suppressBottom)
                 DrawBorderLine(canvas, cell.Borders.Bottom,
                     cellX, cellY + visibleH,
-                    cellX + cell.WidthPt, cellY + visibleH, canvasScale);
+                    cellX + cell.WidthPt, cellY + visibleH, canvasScale, BorderSideBottom);
 
             DrawBorderLine(canvas, cell.Borders.Left,
                 cellX, cellY,
-                cellX, cellY + visibleH, canvasScale);
+                cellX, cellY + visibleH, canvasScale, BorderSideLeft);
 
             DrawBorderLine(canvas, cell.Borders.Right,
                 cellX + cell.WidthPt, cellY,
-                cellX + cell.WidthPt, cellY + visibleH, canvasScale);
+                cellX + cell.WidthPt, cellY + visibleH, canvasScale, BorderSideRight);
         }
 
         /// <summary>
@@ -3904,9 +6640,38 @@ namespace Writersword.Modules.TextEditor.Rendering
             SKCanvas canvas,
             SKTableBorderLineLayout border,
             float x1, float y1, float x2, float y2,
-            float canvasScale = 1f)
+            float canvasScale = 1f,
+            int side = 0)
         {
             if (border.Style == 3) return; // None
+
+            if (border.Style is >= 7 and <= 10)
+            {
+                Draw3DBorderLine(canvas, border, x1, y1, x2, y2, canvasScale, side);
+                return;
+            }
+
+            // Двойная, тройная, точки и волна рисуются так же, как рамка абзаца: у Word
+            // это одни и те же линии, и толщина у них значит одно и то же — толщину черты.
+            int strandStyle = border.Style switch
+            {
+                2 => SKParagraphBorderLine.StyleDouble,
+                4 => SKParagraphBorderLine.StyleDotted,
+                5 => SKParagraphBorderLine.StyleTriple,
+                6 => SKParagraphBorderLine.StyleWave,
+                _ => SKParagraphBorderLine.StyleNone
+            };
+            if (strandStyle != SKParagraphBorderLine.StyleNone)
+            {
+                var line = new SKParagraphBorderLine
+                {
+                    Style = strandStyle,
+                    Color = border.Color,
+                    WidthPt = border.WidthPt
+                };
+                DrawParagraphBorderLine(canvas, line, x1, y1, x2, y2, canvasScale);
+                return;
+            }
 
             if (!SKColor.TryParse(border.Color, out var color))
                 color = ReadingBorderColorOverride ?? SKColors.Black;
@@ -3942,15 +6707,102 @@ namespace Writersword.Modules.TextEditor.Rendering
             canvas.DrawLine(x1, y1, x2, y2, paint);
         }
 
+        /// <summary>
+        /// Объёмная рамка, как у Word: линия из светлой и тёмной половин. Выпуклая (outset)
+        /// светлая сверху и слева, тёмная снизу и справа; вдавленная (inset) — наоборот.
+        /// Объёмные выпуклая и вдавленная (threeDEmboss, threeDEngrave) — две черты по
+        /// половине толщины: снаружи светлая и внутри тёмная, на противоположных сторонах
+        /// наоборот.
+        /// </summary>
+        private static void Draw3DBorderLine(
+            SKCanvas canvas, SKTableBorderLineLayout border,
+            float x1, float y1, float x2, float y2, float canvasScale, int side)
+        {
+            SKColor color = ResolveParagraphBorderColor(border.Color);
+            SKColor light = BlendColor(color, SKColors.White, 0.55f);
+            SKColor dark = BlendColor(color, SKColors.Black, 0.35f);
+
+            float minWidthPt = canvasScale > 0f ? 1f / canvasScale : 0.75f;
+            float width = Math.Max(minWidthPt, border.WidthPt);
+            bool vertical = Math.Abs(x1 - x2) < 0.01f;
+
+            // Сторона сверху или слева — «освещённая» у выпуклой рамки.
+            bool litSide = side is BorderSideTop or BorderSideLeft || side == 0;
+
+            // Наружу от ячейки: вверх или влево — минус, вниз или вправо — плюс.
+            float outward = side is BorderSideBottom or BorderSideRight ? 1f : -1f;
+
+            using var paint = new SKPaint { IsStroke = true, IsAntialias = true };
+
+            if (border.Style is 9 or 10)
+            {
+                bool outset = border.Style == 9;
+                paint.Color = (outset == litSide) ? light : dark;
+                paint.StrokeWidth = width;
+                canvas.DrawLine(x1, y1, x2, y2, paint);
+                return;
+            }
+
+            // Две черты по половине толщины: наружная и внутренняя.
+            bool emboss = border.Style == 7;
+            float half = Math.Max(minWidthPt, width / 2f);
+            float offset = width / 4f;
+            SKColor outer = (emboss == litSide) ? light : dark;
+            SKColor inner = (emboss == litSide) ? dark : light;
+
+            paint.StrokeWidth = half;
+
+            paint.Color = outer;
+            if (vertical) canvas.DrawLine(x1 + outward * offset, y1, x2 + outward * offset, y2, paint);
+            else canvas.DrawLine(x1, y1 + outward * offset, x2, y2 + outward * offset, paint);
+
+            paint.Color = inner;
+            if (vertical) canvas.DrawLine(x1 - outward * offset, y1, x2 - outward * offset, y2, paint);
+            else canvas.DrawLine(x1, y1 - outward * offset, x2, y2 - outward * offset, paint);
+        }
+
         private static SKTableCellBorderLayout BuildCellBorderLayout(CellBorders borders)
         {
+            // У каждой стороны свои цвет и толщина, если они заданы (таблицы из Word).
             return new SKTableCellBorderLayout
             {
-                Top = BorderLineToLayout(borders.Top, borders.ThicknessPt, borders.Color),
-                Bottom = BorderLineToLayout(borders.Bottom, borders.ThicknessPt, borders.Color),
-                Left = BorderLineToLayout(borders.Left, borders.ThicknessPt, borders.Color),
-                Right = BorderLineToLayout(borders.Right, borders.ThicknessPt, borders.Color)
+                Top = BorderLineToLayout(borders.Top, borders.EffectiveTopThicknessPt(), borders.EffectiveTopColor()),
+                Bottom = BorderLineToLayout(borders.Bottom, borders.EffectiveBottomThicknessPt(), borders.EffectiveBottomColor()),
+                Left = BorderLineToLayout(borders.Left, borders.EffectiveLeftThicknessPt(), borders.EffectiveLeftColor()),
+                Right = BorderLineToLayout(borders.Right, borders.EffectiveRightThicknessPt(), borders.EffectiveRightColor())
             };
+        }
+
+        /// <summary>
+        /// Заливка тёмная настолько, что текст цвета «авто» Word пишет на ней белым:
+        /// яркость по YIQ ниже половины шкалы.
+        /// </summary>
+        private static bool IsDarkFill(string? color)
+        {
+            if (string.IsNullOrWhiteSpace(color)) return false;
+            string hex = color.Trim();
+            if (!hex.StartsWith("#", StringComparison.Ordinal)) hex = "#" + hex;
+            if (!SKColor.TryParse(hex, out var fill) || fill.Alpha == 0) return false;
+
+            double brightness = (fill.Red * 299 + fill.Green * 587 + fill.Blue * 114) / 1000.0;
+            return brightness < 128.0;
+        }
+
+        /// <summary>
+        /// Текст без своего цвета (цвет «авто») становится белым: так его пишет Word на
+        /// тёмной заливке. Текст со своим цветом не трогается.
+        /// </summary>
+        private static void ApplyAutoColorOnDark(SKTextLayout layout)
+        {
+            foreach (var line in layout.Lines)
+            {
+                foreach (var seg in line.Segments)
+                {
+                    if (string.IsNullOrWhiteSpace(seg.ColorCode)
+                        || string.Equals(seg.ColorCode, "auto", StringComparison.OrdinalIgnoreCase))
+                        seg.Color = SKColors.White;
+                }
+            }
         }
 
         private static SKTableBorderLineLayout BorderLineToLayout(
@@ -3964,7 +6816,14 @@ namespace Writersword.Modules.TextEditor.Rendering
                 {
                     BorderStyle.None => 3,
                     BorderStyle.Dashed => 1,
-                    BorderStyle.Dotted => 1,
+                    BorderStyle.Double => 2,
+                    BorderStyle.Dotted => 4,
+                    BorderStyle.Triple => 5,
+                    BorderStyle.Wave => 6,
+                    BorderStyle.ThreeDEmboss => 7,
+                    BorderStyle.ThreeDEngrave => 8,
+                    BorderStyle.Outset => 9,
+                    BorderStyle.Inset => 10,
                     _ => 0
                 }
             };
@@ -3992,14 +6851,31 @@ namespace Writersword.Modules.TextEditor.Rendering
             };
 
         private static bool IsSameFormat(SKRunSegment a, SKRunSegment b)
-            => a.FontFamily == b.FontFamily
+            => a.IsLineBreak == b.IsLineBreak
+            && a.IsSoftHyphen == b.IsSoftHyphen
+            && a.FontFamily == b.FontFamily
             && a.FontSizePt == b.FontSizePt
             && a.BaselineShiftPt == b.BaselineShiftPt
             && a.CharacterSpacingPt == b.CharacterSpacingPt
+            && a.HorizontalScale == b.HorizontalScale
             && a.IsBold == b.IsBold
             && a.IsItalic == b.IsItalic
             && a.IsUnderline == b.IsUnderline
+            && a.UnderlineStyle == b.UnderlineStyle
+            && a.UnderlineColor == b.UnderlineColor
             && a.IsStrikethrough == b.IsStrikethrough
+            && a.IsDoubleStrikethrough == b.IsDoubleStrikethrough
+            && a.IsHidden == b.IsHidden
+            && a.IsHiddenMarked == b.IsHiddenMarked
+            && a.IsOutline == b.IsOutline
+            && a.IsShadow == b.IsShadow
+            && a.IsEmboss == b.IsEmboss
+            && a.IsImprint == b.IsImprint
+            && a.EmphasisMark == b.EmphasisMark
+            && a.CharBorderColor == b.CharBorderColor
+            && a.CharBorderWidthPt == b.CharBorderWidthPt
+            && a.CharBorderStyle == b.CharBorderStyle
+            && Equals(a.Effects, b.Effects)
             && a.Color == b.Color
             && a.HighlightColor == b.HighlightColor;
 
@@ -4133,6 +7009,109 @@ namespace Writersword.Modules.TextEditor.Rendering
         }
 
         /// <summary>
+        /// Системный шрифт для знака-символа — стрелки, математического знака, фигуры,
+        /// типографского знака, — которого нет в гарнитуре текста. Так делает Word, и так
+        /// же рисуется маркер списка (DrawListMarker).
+        ///
+        /// Буквы и цифры сюда не попадают: их подмена чужим шрифтом остаётся под
+        /// настройкой SubstituteMissingGlyphs (FindFallbackFamily) — иначе человек не
+        /// видел бы, что текст набран не той гарнитурой. У знака же своей гарнитуры в
+        /// тексте нет: квадрат вместо стрелки ничего не сообщает, только портит строку.
+        /// </summary>
+        private static (string Family, bool Bold, bool Italic)? FindSymbolFallback(
+            int codepoint, string family, bool bold, bool italic)
+        {
+            if (!IsSymbolCodepoint(codepoint)) return null;
+
+            return _symbolFallbackFamilyCache.GetOrAdd((codepoint, family, bold, italic), key =>
+            {
+                // Поиск идёт от гарнитуры и начертания текста: система сперва смотрит
+                // другие начертания той же гарнитуры и родственные ей шрифты, а не
+                // первый попавшийся шрифт со знаком.
+                var style = new SKFontStyle(
+                    key.Bold ? SKFontStyleWeight.Bold : SKFontStyleWeight.Normal,
+                    SKFontStyleWidth.Normal,
+                    key.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright);
+
+                using var match = SKFontManager.Default.MatchCharacter(
+                    key.Family, style, Array.Empty<string>(), key.Codepoint);
+
+                // Segoe UI Symbol — обычный юникодный шрифт знаков, а не декоративный:
+                // в нём стрелки и математика стоят на своих местах. Прочие гарнитуры
+                // из списка декоративных рисуют на месте знака картинку.
+                bool usable = match is not null
+                    && match.GetGlyph(key.Codepoint) != 0
+                    && (!IsDecorationFont(match.FamilyName)
+                        || match.FamilyName.Equals("Segoe UI Symbol", StringComparison.OrdinalIgnoreCase));
+
+                // Система предложила шрифт эмодзи или декоративный (так бывает с «✓»
+                // U+2713: Windows отдаёт его Segoe UI Emoji) либо ничего. Тогда знак ищется
+                // в юникодных шрифтах знаков по порядку — так же, как его находит Word.
+                // Без этого вместо галочки рисовался квадрат.
+                if (!usable)
+                {
+                    foreach (var candidate in SymbolFallbackFamilies)
+                    {
+                        var candidateFace = GetOrCreateTypeface(candidate, key.Bold, key.Italic);
+                        if (!string.Equals(candidateFace.FamilyName, candidate, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        if (candidateFace.GetGlyph(key.Codepoint) == 0) continue;
+
+                        return (candidate, key.Bold, key.Italic);
+                    }
+
+                    return null;
+                }
+
+                if (match is null) return null;
+
+                string matchFamily = match.FamilyName;
+
+                bool matchBold = match.FontStyle.Weight >= (int)SKFontStyleWeight.SemiBold;
+                bool matchItalic = match.FontStyle.Slant != SKFontStyleSlant.Upright;
+
+                // Другая гарнитура — в начертании текста, если знак в нём есть: жирный и
+                // курсив сохраняются. Нет — тем начертанием, в котором знак нашёлся.
+                if (!string.Equals(matchFamily, key.Family, StringComparison.OrdinalIgnoreCase))
+                {
+                    bool sameStyleHasGlyph = GetOrCreateTypeface(matchFamily, key.Bold, key.Italic)
+                        .GetGlyph(key.Codepoint) != 0;
+                    return sameStyleHasGlyph
+                        ? (matchFamily, key.Bold, key.Italic)
+                        : (matchFamily, matchBold, matchItalic);
+                }
+
+                // Та же гарнитура: знак есть в другом её начертании (у курсива Arial нет
+                // «₂», у прямого есть). Рисуется тем начертанием, где он есть.
+                if (matchBold == key.Bold && matchItalic == key.Italic) return null;
+
+                return (matchFamily, matchBold, matchItalic);
+            });
+        }
+
+        /// <summary>
+        /// Знак-символ или знак препинания, а не буква, обычная цифра или пробел.
+        /// Подстрочные и надстрочные цифры (₂, ²), дроби (½) и цифры в кружках — тоже
+        /// знаки: в текстовых гарнитурах их часто нет, а Word рисует их подстановкой.
+        /// </summary>
+        private static bool IsSymbolCodepoint(int codepoint)
+        {
+            var category = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(codepoint);
+            return category is System.Globalization.UnicodeCategory.MathSymbol
+                or System.Globalization.UnicodeCategory.OtherNumber
+                or System.Globalization.UnicodeCategory.CurrencySymbol
+                or System.Globalization.UnicodeCategory.ModifierSymbol
+                or System.Globalization.UnicodeCategory.OtherSymbol
+                or System.Globalization.UnicodeCategory.DashPunctuation
+                or System.Globalization.UnicodeCategory.OpenPunctuation
+                or System.Globalization.UnicodeCategory.ClosePunctuation
+                or System.Globalization.UnicodeCategory.InitialQuotePunctuation
+                or System.Globalization.UnicodeCategory.FinalQuotePunctuation
+                or System.Globalization.UnicodeCategory.OtherPunctuation
+                or System.Globalization.UnicodeCategory.ConnectorPunctuation;
+        }
+
+        /// <summary>
         /// Определяет имя Unicode-скрипта по кодпоинту.
         /// Используется для поиска в пользовательской карте шрифтов.
         /// </summary>
@@ -4156,6 +7135,23 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// Такие шрифты отображают ASCII-символы как иконки/стрелки,
         /// поэтому не подходят для текстового фолбэка.
         /// </summary>
+        /// <summary>
+        /// Юникодные шрифты знаков, в которых ищется знак, когда система подходящего не
+        /// предложила. Порядок — от шрифтов Windows, которыми знаки рисует Word, к
+        /// шрифтам других систем.
+        /// </summary>
+        private static readonly string[] SymbolFallbackFamilies =
+        {
+            "Segoe UI Symbol",
+            "Cambria Math",
+            "Segoe UI",
+            "Arial Unicode MS",
+            "MS Gothic",
+            "DejaVu Sans",
+            "Noto Sans Symbols",
+            "Noto Sans Symbols 2"
+        };
+
         private static bool IsDecorationFont(string familyName)
         {
             return familyName.Equals("Marlett", StringComparison.OrdinalIgnoreCase)
@@ -4260,11 +7256,19 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public static SKColor ResolveInk(SKColor authorColor) => ApplyReadingInk(authorColor);
 
+        /// <summary>
+        /// Гарнитура из того же кеша, что у текста документа: шрифт, уложенный в проект,
+        /// идёт впереди системного. Нужна тем, кто рисует текст рядом с документом и
+        /// обязан попасть в его шрифт, — колонтитулам в первую очередь.
+        /// </summary>
+        public static SKTypeface ResolveTypeface(string family, bool bold, bool italic)
+            => GetOrCreateTypeface(family, bold, italic);
+
         private static SKColor ApplyReadingInk(SKColor c)
         {
             if (DefaultTextColorOverride is not { } ink) return c;
             if (c.Alpha == 0) return c;
-            if (!IsNeutralInk(c)) return c;
+            if (!IsNeutralTextInk(c)) return c;
 
             // Насколько документная краска светлее чёрного. Серый текст (сноски,
             // служебные пометки) обязан остаться светлее основного, иначе чтение
@@ -4272,14 +7276,37 @@ namespace Writersword.Modules.TextEditor.Rendering
             float grey = Math.Max(c.Red, Math.Max(c.Green, c.Blue)) / 140f;
             if (grey <= 0.02f) return ink.WithAlpha(c.Alpha);
 
+            // Доля бумаги растёт со светлотой серого без ступеньки: светлее в
+            // документе — светлее и на бумаге. Раньше доля упиралась в 0.6 уже у
+            // #8C8C8C, а серый светлее вовсе не считался краской: «Заголовок 7»
+            // (#888888) перекрашивался в цвет темы, а «Заголовок 8» (#999999) рядом
+            // оставался чистым серым — два соседних серых выглядели разными цветами.
             var paper = ReadingPaperColorOverride ?? SKColors.White;
-            float k = Math.Clamp(grey * 0.6f, 0f, 0.6f);
+            float k = Math.Clamp(grey * 0.6f, 0f, MaxTextInkPaperShare);
 
             return new SKColor(
                 MixChannel(ink.Red, paper.Red, k),
                 MixChannel(ink.Green, paper.Green, k),
                 MixChannel(ink.Blue, paper.Blue, k),
                 c.Alpha);
+        }
+
+        /// <summary>
+        /// Предельная доля бумаги в перекрашенном сером тексте: самый светлый серый
+        /// остаётся заметно темнее бумаги и читается.
+        /// </summary>
+        private const float MaxTextInkPaperShare = 0.85f;
+
+        /// <summary>
+        /// Серый без оттенка любой светлоты — краска по умолчанию, которую тема
+        /// перекрашивает. У рамок таблиц предел по светлоте свой (IsNeutralInk):
+        /// светлая рамка — это выбор автора, а не цвет по умолчанию.
+        /// </summary>
+        private static bool IsNeutralTextInk(SKColor c)
+        {
+            int max = Math.Max(c.Red, Math.Max(c.Green, c.Blue));
+            int min = Math.Min(c.Red, Math.Min(c.Green, c.Blue));
+            return max - min <= 12 && max < 250;
         }
 
         private static byte MixChannel(byte from, byte to, float k)
@@ -4335,6 +7362,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                 var line = layout.Lines[i];
                 float lineY = paraY + (line.Y - yBase);
 
+                // Табуляции-черты — под текстом строки: черта во всю высоту строки, и у
+                // строк подряд она сливается в одну линию через абзац.
+                DrawBarTabs(canvas, layout, paraX, lineY, line.Height);
+
                 // Единый сдвиг строки по выравниванию (центр/право + абзацный отступ первой
                 // строки по вордовской модели). Тот же расчёт у каретки/хит-теста/выделения.
                 float lineShift = LineAlignShift(layout, i);
@@ -4368,6 +7399,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                         justifyShift = 0f;
                     }
 
+                    // Скрытый текст не рисуется, и растяжка по его пробелам не копится:
+                    // места в строке у него нет.
+                    if (seg.IsHidden) continue;
+
+                    // Перенос строки и невидимый мягкий перенос не рисуются.
+                    if (seg.IsLineBreak || (seg.IsSoftHyphen && !seg.SoftHyphenShown)) continue;
+
                     float segX = paraX + seg.X + lineShift + justifyShift;
                     float baseY = lineY + line.Baseline;
 
@@ -4387,7 +7425,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // у него нет рисунка.
                     if (seg.IsTabJump)
                     {
-                        DrawTabLeader(canvas, seg, segX, baseY);
+                        DrawTabLeader(canvas, seg, segX, baseY, paraX);
                         continue;
                     }
 
@@ -4454,32 +7492,31 @@ namespace Writersword.Modules.TextEditor.Rendering
                     };
                     if (textShader != null) paint.Shader = textShader;
 
-                    DrawSegmentText(canvas, seg, segX, segBaseY, font, paint);
+                    DrawSegmentGlyphs(canvas, seg, segX, segBaseY, font, paint);
+
+                    // Ширина линий и рамки под сегментом: без хвостовых пробелов строки и
+                    // с добавкой растяжки под растянутыми пробелами — иначе между словами
+                    // зияли бы щели.
+                    float decoWidth = SegHighlightWidth(line, segIdx, lastContentSeg);
+                    if (doJustify && segSpaces > 0 && segIdx < lastContentSeg)
+                        decoWidth += segSpaces * extraPerSpace;
 
                     if (seg.IsUnderline)
-                    {
-                        using var uPaint = new SKPaint
-                        {
-                            Color = textColor,
-                            StrokeWidth = Math.Max(0.5f, seg.FontSizePt * 0.05f),
-                            IsAntialias = true
-                        };
-                        if (textShader != null) uPaint.Shader = textShader;
-                        float underlineY = segBaseY + seg.FontSizePt * 0.12f;
-                        canvas.DrawLine(segX, underlineY, segX + seg.Width, underlineY, uPaint);
-                    }
+                        DrawSegmentUnderline(canvas, seg, segX, segBaseY, decoWidth, textColor, textShader);
 
-                    if (seg.IsStrikethrough)
+                    DrawSegmentDecorations(canvas, line, segIdx, lastContentSeg, seg,
+                        segX, segBaseY, decoWidth, font, textColor);
+
+                    // Зачёркивание — на высоте из метрик шрифта, как в Word. Под
+                    // растянутыми пробелами линия тянется на добавку растяжки, как и
+                    // подчёркивание: иначе между зачёркнутыми словами оставались бы щели.
+                    if (seg.IsStrikethrough || seg.IsDoubleStrikethrough)
                     {
-                        using var sPaint = new SKPaint
-                        {
-                            Color = textColor,
-                            StrokeWidth = Math.Max(0.5f, seg.FontSizePt * 0.05f),
-                            IsAntialias = true
-                        };
-                        if (textShader != null) sPaint.Shader = textShader;
-                        float strikeY = segBaseY - seg.FontSizePt * 0.3f;
-                        canvas.DrawLine(segX, strikeY, segX + seg.Width, strikeY, sPaint);
+                        float strikeWidth = SegHighlightWidth(line, segIdx, lastContentSeg);
+                        if (doJustify && segSpaces > 0 && segIdx < lastContentSeg)
+                            strikeWidth += segSpaces * extraPerSpace;
+                        StrikePainter.Draw(canvas, seg.IsDoubleStrikethrough, segX, strikeWidth,
+                            segBaseY, seg.FontSizePt, font, textColor, textShader);
                     }
 
                     textShader?.Dispose();
@@ -4490,6 +7527,115 @@ namespace Writersword.Modules.TextEditor.Rendering
                         justifyShift += segSpaces * extraPerSpace;
                 }
             }
+        }
+
+        /// <summary>
+        /// Позиция текста за номером Word, отделённым табуляцией: ближайшая справа от номера
+        /// из отступа текста (он служит позицией табуляции, когда у абзаца выступ) и своих
+        /// позиций табуляции абзаца; нет таких — следующая отметка шага табуляции от поля.
+        /// Так Word ставит текст «1.» и «01.» на один отступ, а длинный номер «Один» или
+        /// «118.» — на следующую отметку шага.
+        /// </summary>
+        private static double WordNumberTabStop(
+            double markerEnd, double leftIndentPt, bool hanging,
+            List<Models.Styles.TabStop>? tabStops, double defaultTabStopPt, float indentScale)
+        {
+            const double Epsilon = 0.01;
+            double? best = null;
+
+            if (hanging && leftIndentPt > markerEnd + Epsilon)
+                best = leftIndentPt;
+
+            if (tabStops is not null)
+            {
+                foreach (var stop in tabStops)
+                {
+                    double position = stop.PositionPt * indentScale;
+                    if (position > markerEnd + Epsilon && (best is null || position < best))
+                        best = position;
+                }
+            }
+
+            if (best is double found) return found;
+
+            double step = defaultTabStopPt * indentScale;
+            if (step <= Epsilon) return markerEnd;
+
+            return (Math.Floor((markerEnd + Epsilon) / step) + 1.0) * step;
+        }
+
+        /// <summary>
+        /// Шрифт маркера уровня Word. Шрифт уровня есть в системе и знак в нём есть —
+        /// маркер рисуется им; в символьном шрифте код меньше 0x100 — это знак U+F0xx, как
+        /// читает его Word. Шрифта нет — знак из символьного шрифта заменяется юникодным
+        /// двойником. Знака нет в шрифте текста — его ищут в юникодных шрифтах знаков.
+        /// </summary>
+        /// <param name="drawText">Текст, которым маркер рисуется выбранным шрифтом.</param>
+        private static SKFont ResolveListMarkerFont(
+            string markerText, string textFamily, float sizePt, string? levelFamily, out string drawText)
+        {
+            drawText = markerText;
+
+            if (!string.IsNullOrWhiteSpace(levelFamily))
+            {
+                var levelFace = GetOrCreateTypeface(levelFamily, false, false);
+                if (string.Equals(levelFace.FamilyName, levelFamily, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (HasAllGlyphs(levelFace, markerText))
+                        return GetOrCreateFont(levelFace, sizePt);
+
+                    if (Services.SymbolFontMarkers.IsSymbolFont(levelFamily))
+                    {
+                        string shifted = ShiftToSymbolArea(markerText);
+                        if (HasAllGlyphs(levelFace, shifted))
+                        {
+                            drawText = shifted;
+                            return GetOrCreateFont(levelFace, sizePt);
+                        }
+                    }
+                }
+
+                if (Services.SymbolFontMarkers.ToUnicode(levelFamily, markerText) is { } unicode)
+                    drawText = unicode;
+            }
+
+            var textFace = GetOrCreateTypeface(textFamily, false, false);
+            int codepoint = drawText.Length > 0 ? drawText[0] : 0;
+            if (codepoint >= 0x0080 && textFace.GetGlyph(codepoint) == 0
+                && FindSymbolFallback(codepoint, textFamily, false, false) is { } fallback)
+            {
+                var fallbackFace = GetOrCreateTypeface(fallback.Family, fallback.Bold, fallback.Italic);
+                return GetOrCreateFont(fallbackFace, sizePt);
+            }
+
+            return GetOrCreateFont(textFace, sizePt);
+        }
+
+        /// <summary>В шрифте есть все знаки текста (пробелы не проверяются).</summary>
+        private static bool HasAllGlyphs(SKTypeface typeface, string text)
+        {
+            if (text.Length == 0) return true;
+
+            foreach (char c in text)
+            {
+                if (c == ' ') continue;
+                if (typeface.GetGlyph(c) == 0) return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>Коды символьного шрифта меньше 0x100 — в область U+F000, где шрифт их хранит.</summary>
+        private static string ShiftToSymbolArea(string text)
+        {
+            var chars = text.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                if (chars[i] >= 0x20 && chars[i] < 0x100)
+                    chars[i] = (char)(0xF000 + chars[i]);
+            }
+
+            return new string(chars);
         }
 
         /// <summary>
@@ -4525,6 +7671,14 @@ namespace Writersword.Modules.TextEditor.Rendering
             var typeface = GetOrCreateTypeface(family, false, false);
             var font = GetOrCreateFont(typeface, sizePt);
 
+            // Маркер уровня Word со своим шрифтом (Symbol, Wingdings, Courier New) рисуется
+            // этим шрифтом, как у Word; нет шрифта — юникодным двойником знака.
+            if (layout.MarkerFontFamily is not null)
+            {
+                font = ResolveListMarkerFont(markerText, family, sizePt, layout.MarkerFontFamily, out markerText);
+                typeface = font.Typeface;
+            }
+
             // Некоторые символы маркеров (например ➤) могут отсутствовать в основном шрифте —
             // подставляем системный фолбэк, иначе вместо маркера рисуется .notdef-квадрат.
             int mcp = markerText.Length > 0 ? markerText[0] : 0;
@@ -4544,6 +7698,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                     typeface = GetOrCreateTypeface(fb!, false, false);
                     font = GetOrCreateFont(typeface, sizePt);
                 }
+                else if (FindSymbolFallback(mcp, family, false, false) is { } symbolFallback)
+                {
+                    // Система отдала знак декоративному шрифту («★» — Segoe UI Symbol), и он
+                    // отсеян. Знак ищется так же, как для текста: в юникодных шрифтах знаков.
+                    typeface = GetOrCreateTypeface(symbolFallback.Family, symbolFallback.Bold, symbolFallback.Italic);
+                    font = GetOrCreateFont(typeface, sizePt);
+                }
             }
 
             float lineY = paraY + (line.Y - yBase);
@@ -4552,6 +7713,13 @@ namespace Writersword.Modules.TextEditor.Rendering
             // линейке). Зазор до текста обеспечивает отступ первой строки, вычисленный в раскладке
             // по ширине цифры, — поэтому здесь маркер не сдвигаем.
             float markerX = paraX - markerHangingPt;
+
+            // Номер Word, выровненный по правому краю или по центру, кончается или стоит
+            // серединой в точке номера: «i.», «ii.», «iii.» — по правому краю.
+            if (layout.MarkerAlignment == 2)
+                markerX -= font.MeasureText(markerText);
+            else if (layout.MarkerAlignment == 1)
+                markerX -= font.MeasureText(markerText) / 2f;
 
             using var paint = new SKPaint
             {

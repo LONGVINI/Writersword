@@ -1483,6 +1483,10 @@ namespace Writersword.Modules.TextEditor
                     // «везде» обязан быть под рукой и в чужой рукописи.
                     CarryOverReadingPreferences(_globalSettings, _localSettings);
 
+                    // «Мои эффекты» — наборы человека, а не рукописи: в любом проекте
+                    // под рукой те, что он завёл последними, а не копия из файла.
+                    CarryOverTextEffectPresets(_globalSettings, _localSettings);
+
                     // Вид листа при правке — тоже предпочтение человека, а не
                     // рукописи. Копия в файле проекта снята в момент его последнего
                     // сохранения, а смена вида проект изменённым не делает: выбранный
@@ -1995,6 +1999,8 @@ namespace Writersword.Modules.TextEditor
                         _viewModel.CycleCase(); return;
                     case "TextEditor.Format.SmallCaps":
                         _viewModel.ToggleSmallCaps(); return;
+                    case "TextEditor.Format.HiddenText":
+                        _viewModel.ToggleHiddenText(); return;
                     case "TextEditor.Format.ClearFormatting":
                         _viewModel.ClearFormatting(); return;
                     case "TextEditor.Format.IncreaseFontSize":
@@ -2010,6 +2016,8 @@ namespace Writersword.Modules.TextEditor
                         _viewModel.SetAlignment(TextAlignment.Right); return;
                     case "TextEditor.Format.AlignJustify":
                         _viewModel.SetAlignment(TextAlignment.Justify); return;
+                    case "TextEditor.Format.AlignDistribute":
+                        _viewModel.SetAlignment(TextAlignment.Distribute); return;
                     case "TextEditor.Format.IncreaseIndent":
                         _viewModel.IncreaseIndent(); return;
                     case "TextEditor.Format.DecreaseIndent":
@@ -2369,6 +2377,15 @@ namespace Writersword.Modules.TextEditor
         }
 
         /// <summary>
+        /// Переносит «Мои эффекты» из общих настроек в другой набор. Наборы — вещь
+        /// человека, как и виды чтения: заведённый в одном проекте нужен во всех.
+        /// </summary>
+        private static void CarryOverTextEffectPresets(TextEditorSettings from, TextEditorSettings to)
+        {
+            to.TextEffectPresets = from.TextEffectPresets;
+        }
+
+        /// <summary>
         /// Переносит предпочтения вкладки «Вид» из одного набора в другой: вид листа
         /// при правке и его рабочую копию, что убирать в фокусе, свёрнутость ленты,
         /// строку состояния и цвет каретки. Всё это общее для всех документов —
@@ -2471,13 +2488,16 @@ namespace Writersword.Modules.TextEditor
 
                 CarryOverReadingPreferences(snapshot, _globalSettings);
                 CarryOverEditorViewPreferences(snapshot, _globalSettings);
+                CarryOverTextEffectPresets(snapshot, _globalSettings);
                 if (!ReferenceEquals(_localSettings, _globalSettings))
                 {
                     CarryOverReadingPreferences(snapshot, _localSettings);
                     CarryOverEditorViewPreferences(snapshot, _localSettings);
+                    CarryOverTextEffectPresets(snapshot, _localSettings);
                 }
 
                 _viewModel?.RefreshSharedReadingThemes();
+                _viewModel?.RefreshSharedTextEffectPresets();
                 if (editorViewChanged) _viewModel?.RefreshSharedEditorView();
             }
             catch (Exception ex)

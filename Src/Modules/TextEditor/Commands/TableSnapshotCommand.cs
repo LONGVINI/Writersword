@@ -92,11 +92,14 @@ namespace Writersword.Modules.TextEditor.Commands
             // границы строки и поля «Высота строки» ложилась в стек (снимки «до» и
             // «после» различались именно этим списком), но ничего не возвращала.
             target.RowMinHeightsPt = source.RowMinHeightsPt ?? new List<double>();
+            target.ExactHeightRows = source.ExactHeightRows;
 
             target.Cells = source.Cells;
             target.StyleName = source.StyleName;
             target.WidthPercent = source.WidthPercent;
             target.LeftIndentPt = source.LeftIndentPt;
+            target.Alignment = source.Alignment;
+            target.BidiVisual = source.BidiVisual;
             target.RepeatHeader = source.RepeatHeader;
             target.SplitMode = source.SplitMode;
             target.BreakLabel = source.BreakLabel;

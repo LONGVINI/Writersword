@@ -38,11 +38,18 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
         private RadioButton _alignCenter = null!;
         private RadioButton _alignRight = null!;
         private RadioButton _alignDecimal = null!;
+        private RadioButton _alignBar = null!;
 
         private RadioButton _leaderNone = null!;
         private RadioButton _leaderDots = null!;
         private RadioButton _leaderDashes = null!;
         private RadioButton _leaderLine = null!;
+
+        private CheckBox _leaderWordLike = null!;
+        private NumericUpDown _leaderDensity = null!;
+
+        // Густота, которую предлагает поле, когда «Как в Word» снимают: обычный шаг.
+        private const double DefaultDensityPercent = 100.0;
 
         private readonly List<TabStop> _stops = new();
         private RulerUnits _units = RulerUnits.Centimeters;
@@ -73,11 +80,16 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _alignCenter = this.FindControl<RadioButton>("AlignCenterBtn")!;
             _alignRight = this.FindControl<RadioButton>("AlignRightBtn")!;
             _alignDecimal = this.FindControl<RadioButton>("AlignDecimalBtn")!;
+            _alignBar = this.FindControl<RadioButton>("AlignBarBtn")!;
 
             _leaderNone = this.FindControl<RadioButton>("LeaderNoneBtn")!;
             _leaderDots = this.FindControl<RadioButton>("LeaderDotsBtn")!;
             _leaderDashes = this.FindControl<RadioButton>("LeaderDashesBtn")!;
             _leaderLine = this.FindControl<RadioButton>("LeaderLineBtn")!;
+
+            _leaderWordLike = this.FindControl<CheckBox>("LeaderWordLikeBox")!;
+            _leaderDensity = this.FindControl<NumericUpDown>("LeaderDensityBox")!;
+            _leaderWordLike.IsCheckedChanged += (_, _) => _leaderDensity.IsEnabled = _leaderWordLike.IsChecked != true;
 
             this.FindControl<Button>("SetBtn")!.Click += OnSet;
             this.FindControl<Button>("RemoveBtn")!.Click += OnRemove;
@@ -129,6 +141,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
 
             SetAlignment(TabAlignment.Left);
             SetLeader(TabLeaderStyle.None);
+            SetDensity(0);
 
             RebuildList(-1);
 
@@ -166,6 +179,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
                 TabAlignment.Center => Strings.Tab_AlignCenter,
                 TabAlignment.Right => Strings.Tab_AlignRight,
                 TabAlignment.Decimal => Strings.Tab_AlignDecimal,
+                TabAlignment.Bar => Strings.Tab_AlignBar,
                 _ => Strings.Tab_AlignLeft
             };
 
@@ -178,7 +192,15 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             };
 
             string text = FormatUnits(stop.PositionPt) + " " + UnitSuffix() + "   " + align;
-            if (leader.Length > 0) text += "   " + leader;
+            if (leader.Length > 0)
+            {
+                text += "   " + leader;
+
+                // Своя густота видна прямо в списке: иначе две позиции с точками не
+                // отличить, пока не выберешь каждую.
+                if (stop.LeaderDensity > 0.01)
+                    text += " " + Math.Round(stop.LeaderDensity * 100.0).ToString("0", CultureInfo.CurrentCulture) + "%";
+            }
             return text;
         }
 
@@ -193,6 +215,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _positionBox.Text = FormatUnits(stop.PositionPt);
             SetAlignment(stop.Alignment);
             SetLeader(stop.Leader);
+            SetDensity(stop.LeaderDensity);
         }
 
         // ── Кнопки ────────────────────────────────────────────────────────
@@ -209,6 +232,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
 
             var alignment = ReadAlignment();
             var leader = ReadLeader();
+            double density = ReadDensity();
 
             // Одна и та же точка не может нести два разных выравнивания: попадание в
             // существующую позицию правит её, а не кладёт вторую поверх.
@@ -220,6 +244,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
                     _stops[i].PositionPt = positionPt;
                     _stops[i].Alignment = alignment;
                     _stops[i].Leader = leader;
+                    _stops[i].LeaderDensity = density;
                     RebuildList(i);
                     return;
                 }
@@ -229,7 +254,8 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             {
                 PositionPt = positionPt,
                 Alignment = alignment,
-                Leader = leader
+                Leader = leader,
+                LeaderDensity = density
             });
             _stops.Sort(static (a, b) => a.PositionPt.CompareTo(b.PositionPt));
 
@@ -277,6 +303,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _alignCenter.IsChecked = alignment == TabAlignment.Center;
             _alignRight.IsChecked = alignment == TabAlignment.Right;
             _alignDecimal.IsChecked = alignment == TabAlignment.Decimal;
+            _alignBar.IsChecked = alignment == TabAlignment.Bar;
         }
 
         private TabAlignment ReadAlignment()
@@ -284,6 +311,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             if (_alignCenter.IsChecked == true) return TabAlignment.Center;
             if (_alignRight.IsChecked == true) return TabAlignment.Right;
             if (_alignDecimal.IsChecked == true) return TabAlignment.Decimal;
+            if (_alignBar.IsChecked == true) return TabAlignment.Bar;
             return TabAlignment.Left;
         }
 
@@ -301,6 +329,29 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             if (_leaderDashes.IsChecked == true) return TabLeaderStyle.Dashes;
             if (_leaderLine.IsChecked == true) return TabLeaderStyle.Line;
             return TabLeaderStyle.None;
+        }
+
+        /// <summary>
+        /// Густота заполнителя в поля окна. Ноль — «Как в Word»: поле процентов гаснет и
+        /// держит обычный шаг, чтобы, сняв флажок, человек начинал с понятного числа.
+        /// </summary>
+        private void SetDensity(double density)
+        {
+            bool wordLike = density <= 0.01;
+            _leaderWordLike.IsChecked = wordLike;
+            _leaderDensity.IsEnabled = !wordLike;
+            _leaderDensity.Value = (decimal)(wordLike
+                ? DefaultDensityPercent
+                : Math.Clamp(density * 100.0, 25.0, 400.0));
+        }
+
+        /// <summary>Густота из полей окна: ноль — как в Word, иначе доля обычного шага.</summary>
+        private double ReadDensity()
+        {
+            if (_leaderWordLike.IsChecked == true) return 0;
+
+            double percent = (double)(_leaderDensity.Value ?? (decimal)DefaultDensityPercent);
+            return Math.Clamp(percent, 25.0, 400.0) / 100.0;
         }
 
         // ── Единицы ───────────────────────────────────────────────────────

@@ -28,7 +28,7 @@ using Writersword.Modules.TextEditor.ViewModels.Toolbar;
 
 namespace Writersword.Modules.TextEditor.ViewModels
 {
-    public sealed class DocumentViewModel : ReactiveObject, ITextEditorCommandTarget
+    public sealed partial class DocumentViewModel : ReactiveObject, ITextEditorCommandTarget
     {
         private static readonly ILogger _log = Log.ForContext<DocumentViewModel>();
 
@@ -1157,10 +1157,23 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (rp is not null)
             {
                 ctx.IsUnderline = rp.IsUnderline;
+                ctx.UnderlineStyle = rp.UnderlineStyle;
+                ctx.UnderlineColor = rp.UnderlineColor;
                 ctx.IsStrikethrough = rp.IsStrikethrough;
+                ctx.IsDoubleStrikethrough = rp.IsDoubleStrikethrough;
                 ctx.IsSuperscript = rp.IsSuperscript;
                 ctx.IsSubscript = rp.IsSubscript;
                 ctx.IsAllCaps = rp.IsAllCaps;
+                ctx.IsSmallCaps = rp.IsSmallCaps;
+                ctx.IsHidden = rp.IsHidden;
+                ctx.IsOutline = rp.IsOutline || rp.Effects?.Outline is not null;
+                ctx.IsShadow = rp.IsShadow || rp.Effects?.Shadow is not null;
+                ctx.IsGlow = rp.Effects?.Glow is not null;
+                ctx.IsReflection = rp.Effects?.Reflection is not null;
+                ctx.IsEmboss = rp.IsEmboss;
+                ctx.IsImprint = rp.IsImprint;
+                ctx.EmphasisMark = rp.EmphasisMark;
+                ctx.HasCharBorder = rp.CharBorderWidthPt is double borderWidth && borderWidth > 0;
                 ctx.TextColor = rp.TextColor ?? "#1A1A1A";
                 ctx.HighlightColor = rp.HighlightColor;
                 ctx.FontFamily = fontsDiffer
@@ -1177,7 +1190,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Если выделена блок-картинка — риббон показывает её выравнивание, а не абзаца.
             var imageAlign = GetSelectedImageAlignmentDelegate?.Invoke();
-            ctx.Alignment = imageAlign ?? block.Properties.Alignment ?? TextAlignment.Left;
+            ctx.Alignment = imageAlign
+                ?? MirrorForDirection(block.Properties.Alignment ?? TextAlignment.Left, block.Properties.RightToLeft);
             ctx.StyleName = block.Properties.StyleName ?? "Normal";
             bool isListCtx = block.ListProperties is not null
                 && block.ListProperties.MarkerType != ListMarkerType.None;
@@ -1204,6 +1218,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ctx.RightIndentPt = block.Properties.RightIndent ?? 0;
             ctx.HasSpaceBefore = ResolveEffectiveSpaceBefore(block) > 0;
             ctx.HasSpaceAfter = ResolveEffectiveSpaceAfter(block) > 0;
+
+            // Для окна «Эффекты текста»: свойства под кареткой и чем рисовать образец.
+            _caretRunProperties = rp;
+            _caretFontFamily = ctx.FontFamily ?? ResolveStyleFontFamily(block.Properties.StyleName);
+            _caretTextColor = ctx.TextColor ?? "#1A1A1A";
             return ctx;
         }
 
@@ -1885,8 +1904,63 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             return (bold, italic);
         }
-        public void ToggleUnderline() => ApplyCharProperty(p => p.IsUnderline = !p.IsUnderline);
-        public void ToggleStrikethrough() => ApplyCharProperty(p => p.IsStrikethrough = !p.IsStrikethrough);
+        public void ToggleUnderline() => ToggleUnderlineStyle(UnderlineStyle.Single);
+
+        /// <summary>
+        /// Кнопка подчёркивания на ленте: неподчёркнутый фрагмент получает заданный вид,
+        /// подчёркнутый любым видом — теряет подчёркивание.
+        /// </summary>
+        public void ToggleUnderlineStyle(UnderlineStyle style)
+        {
+            var target = style == UnderlineStyle.None ? UnderlineStyle.Single : style;
+            ApplyCharProperty(p => p.UnderlineStyle = p.UnderlineStyle == UnderlineStyle.None
+                ? target
+                : UnderlineStyle.None);
+        }
+
+        /// <summary>Ставит вид подчёркивания; None снимает подчёркивание.</summary>
+        public void SetUnderlineStyle(UnderlineStyle style)
+            => ApplyCharProperty(p => p.UnderlineStyle = style);
+
+        /// <summary>
+        /// Цвет линии подчёркивания. Null — «авто», цвет букв. Цвет для текста без
+        /// подчёркивания ставит заодно одинарную линию — как в Word: выбор цвета
+        /// линии без самой линии ничего бы не показал.
+        /// </summary>
+        public void SetUnderlineColor(string? color)
+        {
+            string? value = string.IsNullOrWhiteSpace(color) ? null : color;
+            ApplyCharProperty(p =>
+            {
+                p.UnderlineColor = value;
+                if (value is not null && p.UnderlineStyle == UnderlineStyle.None)
+                    p.UnderlineStyle = UnderlineStyle.Single;
+            });
+        }
+        // Одинарное и двойное зачёркивание, как в Word, не сочетаются: включённое
+        // одинарное снимает двойное, иначе вместо одинарного так и рисовалось бы двойное.
+        public void ToggleStrikethrough()
+            => ApplyCharProperty(p =>
+            {
+                p.IsStrikethrough = !p.IsStrikethrough;
+                if (p.IsStrikethrough) p.IsDoubleStrikethrough = false;
+            });
+
+        // Двойное включается вместо одинарного — так же, как в Word.
+        public void ToggleDoubleStrikethrough()
+            => ApplyCharProperty(p =>
+            {
+                p.IsDoubleStrikethrough = !p.IsDoubleStrikethrough;
+                if (p.IsDoubleStrikethrough) p.IsStrikethrough = false;
+            });
+
+        // Вид зачёркивания из меню кнопки: снять, одинарное или двойное.
+        public void SetStrikethrough(bool enabled, bool isDouble)
+            => ApplyCharProperty(p =>
+            {
+                p.IsStrikethrough = enabled && !isDouble;
+                p.IsDoubleStrikethrough = enabled && isDouble;
+            });
 
         public void ToggleSuperscript()
             => ApplyCharProperty(p => { p.IsSuperscript = !p.IsSuperscript; if (p.IsSuperscript) p.IsSubscript = false; });
@@ -2141,6 +2215,219 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
         }
         public void ToggleSmallCaps() => ApplyCharProperty(p => p.IsSmallCaps = !p.IsSmallCaps);
+
+        // Скрытый текст (w:vanish) — Ctrl+Shift+H, как в Word.
+        public void ToggleHiddenText() => ApplyCharProperty(p => p.IsHidden = !p.IsHidden);
+
+        public void SetHiddenText(bool enabled) => ApplyCharProperty(p => p.IsHidden = enabled);
+
+        /// <summary>
+        /// Эффект букв. Как в окне шрифта Word: рельеф и гравировка исключают друг друга
+        /// и снимают контур с тенью, а контур или тень снимают рельеф и гравировку.
+        /// </summary>
+        public void SetTextEffect(TextEffectKind kind, bool enabled)
+            => ApplyCharProperty(p =>
+            {
+                // Выключенный контур или тень снимаются целиком — и старый включатель
+                // Word, и настройки из окна «Эффекты текста».
+                switch (kind)
+                {
+                    case TextEffectKind.Outline:
+                        p.IsOutline = enabled;
+                        if (enabled) { p.IsEmboss = false; p.IsImprint = false; }
+                        else if (p.Effects is not null) p.Effects = TextEffects.Normalize(p.Effects with { Outline = null });
+                        break;
+                    case TextEffectKind.Shadow:
+                        p.IsShadow = enabled;
+                        if (enabled) { p.IsEmboss = false; p.IsImprint = false; }
+                        else if (p.Effects is not null) p.Effects = TextEffects.Normalize(p.Effects with { Shadow = null });
+                        break;
+                    case TextEffectKind.Emboss:
+                        p.IsEmboss = enabled;
+                        if (enabled)
+                        {
+                            p.IsImprint = false; p.IsOutline = false; p.IsShadow = false;
+                            if (p.Effects is not null)
+                                p.Effects = TextEffects.Normalize(p.Effects with { Outline = null, Shadow = null });
+                        }
+                        break;
+                    case TextEffectKind.Imprint:
+                        p.IsImprint = enabled;
+                        if (enabled)
+                        {
+                            p.IsEmboss = false; p.IsOutline = false; p.IsShadow = false;
+                            if (p.Effects is not null)
+                                p.Effects = TextEffects.Normalize(p.Effects with { Outline = null, Shadow = null });
+                        }
+                        break;
+                    case TextEffectKind.Glow:
+                        // Свечение из меню — вид Word по умолчанию; своё настраивается в окне.
+                        p.Effects = TextEffects.Normalize((p.Effects ?? new TextEffects()) with
+                        {
+                            Glow = enabled ? p.Effects?.Glow ?? new TextGlowEffect() : null
+                        });
+                        break;
+                    case TextEffectKind.Reflection:
+                        p.Effects = TextEffects.Normalize((p.Effects ?? new TextEffects()) with
+                        {
+                            Reflection = enabled ? p.Effects?.Reflection ?? new TextReflectionEffect() : null
+                        });
+                        break;
+                }
+            });
+
+        public void SetEmphasisMark(EmphasisMark mark) => ApplyCharProperty(p => p.EmphasisMark = mark);
+
+        /// <summary>
+        /// Рамка вокруг знаков. Включается тонкой линией в полпункта цвета текста — как
+        /// рамка Word по умолчанию; снимается вместе со своим цветом.
+        /// </summary>
+        public void SetCharBorder(bool enabled)
+            => ApplyCharProperty(p =>
+            {
+                if (enabled)
+                {
+                    if (p.CharBorderWidthPt is not double width || width <= 0)
+                        p.CharBorderWidthPt = DefaultCharBorderWidthPt;
+                }
+                else
+                {
+                    p.CharBorderWidthPt = null;
+                    p.CharBorderColor = null;
+                    p.CharBorderStyle = CharBorderStyle.Single;
+                }
+            });
+
+        /// <summary>Толщина рамки знаков, которую ставит кнопка, — как у Word по умолчанию.</summary>
+        private const double DefaultCharBorderWidthPt = 0.5;
+
+        // Свойства фрагмента под кареткой, гарнитура и цвет текста — для окна «Эффекты
+        // текста». Обновляются вместе с контекстом каретки (BuildCursorContext).
+        private RunProperties? _caretRunProperties;
+        private string _caretFontFamily = "Times New Roman";
+        private string _caretTextColor = "#1A1A1A";
+
+        /// <summary>
+        /// Эффекты под кареткой — для окна «Эффекты текста». Старые включатели Word
+        /// (w:outline, w:shadow) приходят настраиваемыми эффектами с видом по умолчанию:
+        /// так их можно донастроить, а не заводить заново.
+        /// </summary>
+        public TextEffectsDialogState GetCaretEffectSettings()
+        {
+            var rp = _caretRunProperties;
+            var effects = rp?.Effects;
+
+            if (rp is not null
+                && ((rp.IsOutline && effects?.Outline is null) || (rp.IsShadow && effects?.Shadow is null)))
+            {
+                effects = (effects ?? new TextEffects()) with
+                {
+                    Outline = effects?.Outline ?? (rp.IsOutline
+                        ? new TextOutlineEffect { Color = rp.TextColor ?? _caretTextColor, Hollow = true }
+                        : null),
+                    Shadow = effects?.Shadow ?? (rp.IsShadow ? new TextShadowEffect() : null)
+                };
+            }
+
+            bool hasBorder = rp?.CharBorderWidthPt is double width && width > 0;
+            var border = new CharBorderSettings(
+                hasBorder,
+                rp?.CharBorderColor,
+                hasBorder ? rp!.CharBorderWidthPt!.Value : DefaultCharBorderWidthPt,
+                rp?.CharBorderStyle ?? CharBorderStyle.Single);
+
+            return new TextEffectsDialogState(TextEffects.Normalize(effects), border, _caretFontFamily, _caretTextColor);
+        }
+
+        /// <summary>
+        /// Эффекты из окна «Эффекты текста» — выделению одной правкой. Окно показывает
+        /// и старые включатели контура и тени, поэтому они снимаются: их место заняли
+        /// настройки. Настраиваемый контур или тень снимают рельеф и гравировку, как в Word.
+        /// </summary>
+        /// <summary>
+        /// Набор «Мои эффекты» из текста под кареткой: настраиваемые эффекты, рамка
+        /// знаков, эффекты из окна шрифта Word и знак ударения — ровно как у текста.
+        /// </summary>
+        public TextEffectPreset CaptureTextEffectPreset(string name)
+        {
+            var rp = _caretRunProperties;
+            bool hasBorder = rp?.CharBorderWidthPt is double width && width > 0;
+
+            return new TextEffectPreset
+            {
+                Name = name,
+                Effects = TextEffects.Normalize(rp?.Effects),
+                Border = hasBorder
+                    ? new CharBorderSettings(true, rp!.CharBorderColor, rp.CharBorderWidthPt!.Value, rp.CharBorderStyle)
+                    : null,
+                IsOutline = rp?.IsOutline ?? false,
+                IsShadow = rp?.IsShadow ?? false,
+                IsEmboss = rp?.IsEmboss ?? false,
+                IsImprint = rp?.IsImprint ?? false,
+                EmphasisMark = rp?.EmphasisMark ?? Models.Inline.EmphasisMark.None
+            };
+        }
+
+        /// <summary>
+        /// Ставит набор «Мои эффекты» выделению одной правкой. Настраиваемые эффекты и
+        /// рамка знаков становятся ровно такими, как в наборе; остальное — только то,
+        /// что набор задаёт.
+        /// </summary>
+        public void ApplyTextEffectPreset(TextEffectPreset preset)
+            => ApplyCharProperty(p =>
+            {
+                p.Effects = TextEffects.Normalize(preset.Effects);
+
+                if (preset.Border is { Enabled: true } border)
+                {
+                    p.CharBorderWidthPt = Math.Max(0.25, border.WidthPt);
+                    p.CharBorderColor = string.IsNullOrWhiteSpace(border.Color) ? null : border.Color;
+                    p.CharBorderStyle = border.Style;
+                }
+                else
+                {
+                    p.CharBorderWidthPt = null;
+                    p.CharBorderColor = null;
+                    p.CharBorderStyle = CharBorderStyle.Single;
+                }
+
+                if (preset.IsOutline is bool outline) p.IsOutline = outline;
+                if (preset.IsShadow is bool shadow) p.IsShadow = shadow;
+                if (preset.IsEmboss is bool emboss) p.IsEmboss = emboss;
+                if (preset.IsImprint is bool imprint) p.IsImprint = imprint;
+                if (preset.EmphasisMark is { } mark) p.EmphasisMark = mark;
+            });
+
+        public void ApplyEffectSettings(TextEffects? effects, CharBorderSettings border)
+        {
+            var normalized = TextEffects.Normalize(effects);
+
+            ApplyCharProperty(p =>
+            {
+                p.Effects = normalized;
+                p.IsOutline = false;
+                p.IsShadow = false;
+
+                if (normalized?.Outline is not null || normalized?.Shadow is not null)
+                {
+                    p.IsEmboss = false;
+                    p.IsImprint = false;
+                }
+
+                if (border.Enabled)
+                {
+                    p.CharBorderWidthPt = Math.Max(0.25, border.WidthPt);
+                    p.CharBorderColor = string.IsNullOrWhiteSpace(border.Color) ? null : border.Color;
+                    p.CharBorderStyle = border.Style;
+                }
+                else
+                {
+                    p.CharBorderWidthPt = null;
+                    p.CharBorderColor = null;
+                    p.CharBorderStyle = CharBorderStyle.Single;
+                }
+            });
+        }
         public void ClearFormatting() => ApplyCharProperty(_ => { }, clearAll: true);
 
         public void SetTextColor(string color) => ApplyCharProperty(p => p.TextColor = color);
@@ -2238,7 +2525,27 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             // Если выделена блок-картинка — выравниваем её в колонке, а не абзац.
             if (TrySetImageAlignmentDelegate?.Invoke(a) == true) return;
-            ApplyParaProperty(p => p.Alignment = a);
+
+            // Кнопка говорит о стороне листа. Абзац справа налево хранит выравнивание
+            // от начала строки, как Word (w:jc="left" — к началу, то есть вправо), —
+            // поэтому для него «влево» и «вправо» записываются зеркально.
+            ApplyParaProperty(p => p.Alignment = MirrorForDirection(a, p.RightToLeft));
+        }
+
+        /// <summary>
+        /// Переводит выравнивание между стороной листа и началом строки: у абзаца
+        /// справа налево левое и правое меняются местами, у обычного — остаются.
+        /// Перевод сам себе обратный.
+        /// </summary>
+        private static TextAlignment MirrorForDirection(TextAlignment alignment, bool rightToLeft)
+        {
+            if (!rightToLeft) return alignment;
+            return alignment switch
+            {
+                TextAlignment.Left => TextAlignment.Right,
+                TextAlignment.Right => TextAlignment.Left,
+                _ => alignment
+            };
         }
 
         // ── Команды выделенной картинки (контекстная вкладка «Формат») ─────
@@ -2422,9 +2729,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// </summary>
         public ParagraphProperties? GetActiveParagraphProperties()
         {
-            if (TableActiveCellParagraph is not null)
-                return TableActiveCellParagraph.Properties.Clone();
-            return _activeParagraph?.Model.Properties.Clone();
+            var props = TableActiveCellParagraph is not null
+                ? TableActiveCellParagraph.Properties.Clone()
+                : _activeParagraph?.Model.Properties.Clone();
+
+            // Окно «Абзац» показывает выравнивание по стороне листа — как кнопки ленты.
+            if (props is not null && props.RightToLeft)
+                props.Alignment = MirrorForDirection(props.Alignment ?? TextAlignment.Left, true);
+
+            return props;
         }
 
         /// <summary>
@@ -2434,13 +2747,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// </summary>
         public void ApplyParagraphSettings(ParagraphProperties s) => ApplyParaProperty(p =>
         {
-            p.Alignment = s.Alignment;
+            // Окно отдаёт выравнивание по стороне листа (см. GetActiveParagraphProperties):
+            // у абзаца справа налево оно записывается от начала строки.
+            p.Alignment = s.Alignment is TextAlignment chosen
+                ? MirrorForDirection(chosen, s.RightToLeft)
+                : null;
             p.OutlineLevel = s.OutlineLevel;
             p.LeftIndent = s.LeftIndent;
             p.RightIndent = s.RightIndent;
             p.FirstLineIndent = s.FirstLineIndent;
             p.SpaceBefore = s.SpaceBefore;
             p.SpaceAfter = s.SpaceAfter;
+            p.ContextualSpacing = s.ContextualSpacing;
+            p.RightToLeft = s.RightToLeft;
             p.LineSpacingRule = s.LineSpacingRule;
             p.LineSpacingValue = s.LineSpacingValue;
         });
@@ -2867,6 +3186,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 if (b.ListProperties is null) return;
                 b.ListProperties.MarkerTextMinGapPt = Math.Max(0.0, gapPt);
+
+                // У пункта из Word текст за номером ставит табуляция, и зазор на неё не
+                // действует. Потянули стрелку — пункт переходит на зазор, иначе жест
+                // ничего бы не менял.
+                if (b.ListProperties.WordLevelAt(b.ListProperties.Level) is { Suffix: ListMarkerSuffix.Tab } wordLevel)
+                    wordLevel.Suffix = ListMarkerSuffix.Gap;
             });
 
         // Схема по умолчанию для многоуровневого списка: чередование десятичной, буквенной и
@@ -4285,6 +4610,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// устаревшие числа уйдут навсегда.
         /// </summary>
         public Action? FlushTocPageNumbersDelegate { get; set; }
+
+        /// <summary>
+        /// Выгрузка в PDF листами полотна: путь к файлу и байты картинок по имени файла.
+        ///
+        /// Ставит полотно — только оно знает листы такими, какими их видно в режиме
+        /// страниц. Итог null означает, что листами выгрузить нельзя (другой режим
+        /// просмотра, раскладка ещё не собрана), и PDF собирается прежним способом.
+        /// </summary>
+        public Func<string, Func<string, byte[]?>, Task<ExportResult?>>? ExportPdfFromPagesDelegate { get; set; }
 
         /// <summary>
         /// Проставляет строкам всех оглавлений свежие номера страниц, не пересобирая
@@ -6044,6 +6378,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _document.CollapseParagraphSpacing = imported.CollapseParagraphSpacing;
             _document.JustifyWithShrinking = imported.JustifyWithShrinking;
 
+            // Колонтитулы и нумерация Word приезжают вместе с текстом; документ без
+            // колонтитулов снимает прежние — иначе номера чужой рукописи остались бы
+            // на новой.
+            _document.HeaderFooter = imported.HeaderFooter;
+
             _document.Sections.Clear();
             foreach (var section in imported.Sections)
                 _document.Sections.Add(section);
@@ -6072,6 +6411,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // листе и со старым набором стилей, и число страниц не меняется.
             RaisePageSettingsChanged();
             this.RaisePropertyChanged(nameof(CanvasSettings));
+            RaiseHeaderFooterChanged();
 
             // Кэш раскладки абзацев ключуется по их вью-моделям: после импорта они
             // все новые, поэтому чистим кэш целиком.
@@ -6156,8 +6496,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 var exporter = new ExportService();
                 result = format switch
                 {
-                    ExportFileFormat.Docx => await exporter.ExportToDocxAsync(_document, path, ResolveImage),
-                    ExportFileFormat.Pdf => await exporter.ExportToPdfAsync(_document, path, ResolveImage),
+                    ExportFileFormat.Docx => await exporter.ExportToDocxAsync(_document, path, ResolveImage,
+                        ViewMode == EditorViewMode.Page ? CurrentPageFacts : null),
+                    ExportFileFormat.Pdf => await ExportPdfAsync(exporter, path, ResolveImage),
                     ExportFileFormat.Txt => await exporter.ExportToTxtAsync(_document, path),
                     _ => await exporter.ExportToMarkdownAsync(_document, path)
                 };
@@ -6183,6 +6524,52 @@ namespace Writersword.Modules.TextEditor.ViewModels
             foreach (var warning in result.Warnings)
                 notifications?.ShowWarning(warning);
         }
+
+        /// <summary>
+        /// PDF: листы полотна один в один, если документ открыт в режиме страниц;
+        /// иначе — прежняя упрощённая вёрстка с предупреждением, что она не точная.
+        /// </summary>
+        private async Task<ExportResult> ExportPdfAsync(
+            ExportService exporter, string path, Func<string, byte[]?> resolveImage)
+        {
+            if (ExportPdfFromPagesDelegate is { } fromPages)
+            {
+                var pagesResult = await fromPages(path, resolveImage);
+                if (pagesResult is not null) return pagesResult;
+            }
+
+            // Не режим «Страницы» (чтение, поток): листы собирает движок печати — та
+            // же вёрстка страниц и тот же SKTextRenderer, что и у печати. PDF выходит
+            // полным, со всеми эффектами букв, а не упрощённой вёрсткой.
+            try
+            {
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                var printDocument = new TextEditorPrintDocument(_document);
+                printDocument.WritePdf(path, PrintPdfRasterDpi);
+
+                _log.Information("[EXPORT] PDF движком печати: {Pages} стр. за {Ms} мс (режим {Mode}) → {Path}",
+                    printDocument.PageCount, stopwatch.ElapsedMilliseconds, ViewMode, path);
+                return ExportResult.Ok(path);
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "[EXPORT] PDF движком печати не записан, собираю упрощённой вёрсткой: {Path}", path);
+            }
+
+            var result = await exporter.ExportToPdfAsync(_document, path, resolveImage);
+            if (!result.Success) return result;
+
+            _log.Information("[EXPORT] PDF собран упрощённой вёрсткой: листами полотна выгрузить не удалось (режим {Mode})", ViewMode);
+
+            var warnings = new List<string>(result.Warnings)
+            {
+                "PDF собран упрощённо: чтобы листы в файле совпали с редактором, выгружайте из режима «Страницы»."
+            };
+            return ExportResult.Ok(path, warnings.ToArray());
+        }
+
+        // Разрешение, в котором PDF движка печати растрирует то, что не выражается векторно.
+        private const float PrintPdfRasterDpi = 300f;
 
         /// <summary>Имя файла по умолчанию для диалога экспорта — из заголовка документа.</summary>
         private string BuildExportFileName(string extension)
@@ -6916,12 +7303,27 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 && a.IsBold == b.IsBold
                 && a.IsItalic == b.IsItalic
                 && a.IsUnderline == b.IsUnderline
+                && a.UnderlineStyle == b.UnderlineStyle
+                && a.UnderlineColor == b.UnderlineColor
                 && a.IsStrikethrough == b.IsStrikethrough
+                && a.IsDoubleStrikethrough == b.IsDoubleStrikethrough
                 && a.IsSuperscript == b.IsSuperscript
                 && a.IsSubscript == b.IsSubscript
                 && a.IsAllCaps == b.IsAllCaps
                 && a.IsSmallCaps == b.IsSmallCaps
                 && a.CharacterSpacing == b.CharacterSpacing
+                && a.CharacterScale == b.CharacterScale
+                && a.BaselineOffset == b.BaselineOffset
+                && a.IsHidden == b.IsHidden
+                && a.IsOutline == b.IsOutline
+                && a.IsShadow == b.IsShadow
+                && a.IsEmboss == b.IsEmboss
+                && a.IsImprint == b.IsImprint
+                && a.EmphasisMark == b.EmphasisMark
+                && a.CharBorderColor == b.CharBorderColor
+                && a.CharBorderWidthPt == b.CharBorderWidthPt
+                && a.CharBorderStyle == b.CharBorderStyle
+                && Equals(a.Effects, b.Effects)
                 && a.TextColor == b.TextColor
                 && a.HighlightColor == b.HighlightColor
                 && a.Language == b.Language;
@@ -7357,6 +7759,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (IsReadOnly) return;
             cell.BackgroundColor = color;
+
+            // Новый цвет фона снимает узор заливки, пришедший из Word.
+            cell.ShadingPattern = null;
+            cell.ShadingPatternColor = null;
             ParagraphFormatChanged?.Invoke();
         }
 
@@ -7366,6 +7772,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var b = cell.Borders;
             if (color is not null) b.Color = color;
             b.ThicknessPt = thicknessPt > 0 ? thicknessPt : b.ThicknessPt;
+
+            // Свой цвет и толщина стороны (у таблиц из Word) уступают правке: сторона,
+            // которую поменяли, берёт общие цвет и толщину.
+            bool top = side is "top" or "all" or "outer" or "inner";
+            bool bottom = side is "bottom" or "all" or "outer" or "inner";
+            bool left = side is "left" or "all" or "outer" or "inner";
+            bool right = side is "right" or "all" or "outer" or "inner";
+            if (top) { if (color is not null) b.TopColor = null; if (thicknessPt > 0) b.TopThicknessPt = null; }
+            if (bottom) { if (color is not null) b.BottomColor = null; if (thicknessPt > 0) b.BottomThicknessPt = null; }
+            if (left) { if (color is not null) b.LeftColor = null; if (thicknessPt > 0) b.LeftThicknessPt = null; }
+            if (right) { if (color is not null) b.RightColor = null; if (thicknessPt > 0) b.RightThicknessPt = null; }
+
             switch (side)
             {
                 case "top": b.Top = style; break;
@@ -7383,7 +7801,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (IsReadOnly) return;
             foreach (var para in cell.Paragraphs)
-                para.Properties.Alignment = align;
+                para.Properties.Alignment = MirrorForDirection(align, para.Properties.RightToLeft);
             ParagraphFormatChanged?.Invoke();
         }
 
