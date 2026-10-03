@@ -57,7 +57,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 if (block is TableBlock table)
                 {
                     foreach (var cell in OrderedCells(table))
-                        foreach (var cellPara in cell.Paragraphs)
+                        foreach (var cellPara in cell.ParagraphsDeep())
                             if (cellPara.ListProperties?.WordLevels is not null)
                                 ComputeParagraph(cellPara, counters, result);
                     continue;
@@ -423,7 +423,24 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             string prefix = lp.NumberPrefix ?? string.Empty;
             string suffix = lp.NumberSuffix ?? ".";
-            return prefix + FormatNumber(number, type) + suffix;
+            return prefix + FormatListNumber(number, type, lp.NumberLanguage) + suffix;
+        }
+
+        /// <summary>
+        /// Номер пункта в заданной системе счёта — для списка, созданного в редакторе, и
+        /// для образца в окне настройки списка. Порядковые («1-й»), числительные словом,
+        /// русские буквы и знаки сносок пишутся так же, как в списках из Word: система
+        /// счёта одна, откуда бы список ни пришёл.
+        /// </summary>
+        /// <param name="language">Язык числительных; null — русский.</param>
+        public static string FormatListNumber(int number, ListMarkerType type, string? language)
+        {
+            if (number < 1) number = 1;
+
+            return type is ListMarkerType.Ordinal or ListMarkerType.CardinalText or ListMarkerType.OrdinalText
+                or ListMarkerType.RussianLower or ListMarkerType.RussianUpper or ListMarkerType.Chicago
+                ? FormatWordNumber(number, type, language)
+                : FormatNumber(number, type);
         }
 
         private static string BuildSequenceMarker(ListProperties lp, int number)

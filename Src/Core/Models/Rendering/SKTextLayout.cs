@@ -76,6 +76,25 @@ namespace Writersword.Core.Models.Rendering
         public string? MarkerFontFamily { get; set; }
 
         /// <summary>
+        /// Гарнитура текста, которой набран номер списка: шрифт первого фрагмента пункта.
+        /// По ней вёрстка посчитала ширину номера, ею же он рисуется. null — номера нет.
+        /// </summary>
+        public string? MarkerTextFontFamily { get; set; }
+
+        /// <summary>Кегль номера списка в pt. Ноль — номера нет.</summary>
+        public float MarkerTextFontSizePt { get; set; }
+
+        /// <summary>
+        /// Верх шрифта номера списка над базовой линией вместе с межстрочным зазором
+        /// гарнитуры, в pt. Вместе с <see cref="MarkerLineDescentPt"/> раздвигает первую
+        /// строку абзаца, когда шрифт номера выше строки. Ноль — номера нет.
+        /// </summary>
+        public float MarkerLineTopPt { get; set; }
+
+        /// <summary>Спуск шрифта номера списка под базовую линию в pt.</summary>
+        public float MarkerLineDescentPt { get; set; }
+
+        /// <summary>
         /// Первая строка вытеснена под обтекаемый объект (полоса рядом с ним оказалась
         /// уже самого длинного слова абзаца). Канвас запоминает это значение и передаёт
         /// в следующую пересборку — на нём построен гистерезис: чтобы вернуться сбоку от
@@ -379,6 +398,65 @@ namespace Writersword.Core.Models.Rendering
             var targetLine = Lines[targetIdx];
             var result = HitTestLinePoint(targetLine, preferredX - LeftIndentPt);
             return result.CharIndex;
+        }
+
+        /// <summary>
+        /// Левый и правый край строки на листе — по её сегментам, в тех же координатах,
+        /// что X каретки (<see cref="HitTestPosition"/>): с отступом абзаца и отступом
+        /// первой строки, без сдвига выравнивания. У строки без сегментов оба края —
+        /// в её начале.
+        ///
+        /// Нужен там, где конец строки на листе не совпадает с концом её текста: в
+        /// строке с кусками, переставленными по направлению письма, последний знак
+        /// текста может стоять посреди строки.
+        /// </summary>
+        public (float Left, float Right) GetLineVisualExtent(int lineIndex)
+        {
+            float origin = LeftIndentPt + (lineIndex == 0 ? FirstLineIndentPt : 0f);
+            if (lineIndex < 0 || lineIndex >= Lines.Count) return (origin, origin);
+
+            var line = Lines[lineIndex];
+            if (line.Segments.Count == 0) return (origin, origin);
+
+            float left = float.MaxValue;
+            float right = float.MinValue;
+            foreach (var seg in line.Segments)
+            {
+                if (seg.X < left) left = seg.X;
+                if (seg.X + seg.Width > right) right = seg.X + seg.Width;
+            }
+
+            return (origin + left, origin + right);
+        }
+
+        /// <summary>
+        /// Место знака в строке: его левый и правый край на листе, в тех же координатах,
+        /// что X каретки. В отличие от пары «каретка перед знаком — каретка после»,
+        /// годится для строки с переставленными кусками: там соседние по тексту знаки
+        /// могут стоять в разных концах строки.
+        /// </summary>
+        /// <returns>false — знака в этой строке нет или у его сегмента нет мест знаков.</returns>
+        public bool TryGetCharBox(int lineIndex, int charIndex, out float left, out float right)
+        {
+            left = 0f;
+            right = 0f;
+            if (lineIndex < 0 || lineIndex >= Lines.Count) return false;
+
+            float origin = LeftIndentPt + (lineIndex == 0 ? FirstLineIndentPt : 0f);
+
+            foreach (var seg in Lines[lineIndex].Segments)
+            {
+                int local = charIndex - seg.GlobalCharOffset;
+                if (local < 0 || local >= seg.Text.Length) continue;
+                if (seg.GlyphMetrics.Length != seg.Text.Length) return false;
+
+                var glyph = seg.GlyphMetrics[local];
+                left = origin + seg.X + glyph.X;
+                right = origin + seg.X + glyph.Right;
+                return true;
+            }
+
+            return false;
         }
 
         // ── Вспомогательные методы ────────────────────────────────────────

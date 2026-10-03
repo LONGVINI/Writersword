@@ -389,6 +389,19 @@ namespace Writersword.Modules.TextEditor.Models.Document
         public FloatAnchor Anchor { get; set; } = FloatAnchor.Paragraph;
 
         /// <summary>
+        /// Опора плавающей картинки, пришедшей из Word: от листа, от полей или от своего
+        /// абзаца, по смещению или по стороне. Null — опоры нет, и картинка отсчитывается
+        /// от начала текстовой области своей страницы, как любая вставленная в редакторе.
+        ///
+        /// С опорой точка отсчёта другая, а смещения (<see cref="OffsetXPt"/>,
+        /// <see cref="OffsetYPt"/>) прибавляются к ней так же: перетаскивание сдвигает
+        /// картинку от её места у абзаца, и она продолжает ходить за ним. Опора от
+        /// абзаца — это место блока картинки в потоке: он стоит прямо перед абзацем.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public TableFloatPosition? AnchorPosition { get; set; }
+
+        /// <summary>
         /// Жёсткая привязка к номеру страницы (1-based). 0 — привязки нет, картинка
         /// переезжает между страницами сама, следуя за своим местом в потоке.
         ///
@@ -567,6 +580,15 @@ namespace Writersword.Modules.TextEditor.Models.Document
         public FloatAnchor Anchor { get; set; } = FloatAnchor.Page;
 
         /// <summary>
+        /// Опора плавающей фигуры, пришедшей из Word: от листа, от полей или от своего
+        /// абзаца. Null — опоры нет, и фигура отсчитывается от начала текстовой области
+        /// своей страницы. Устроена так же, как у картинки
+        /// (<see cref="ImageBlock.AnchorPosition"/>): смещения прибавляются к опоре.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public TableFloatPosition? AnchorPosition { get; set; }
+
+        /// <summary>
         /// Жёсткая привязка к номеру страницы (1-based). 0 — привязки нет, фигура
         /// переезжает между страницами сама, следуя за своим местом в потоке.
         /// Работает так же, как привязка картинки.
@@ -582,9 +604,46 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// <summary>Z-порядок среди плавающих объектов (больше = поверх).</summary>
         public int ZOrder { get; set; }
 
-        /// <summary>Текст внутри фигуры (для прямоугольников, выносок).</summary>
+        /// <summary>
+        /// Текст внутри фигуры — надпись. Абзацы разделены переводом строки; строки
+        /// переносятся по ширине фигуры сами. Есть только у замкнутой фигуры: у линии
+        /// и стрелки писать негде.
+        /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? InnerText { get; set; }
+
+        /// <summary>Шрифт текста фигуры. Null — шрифт по умолчанию.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? TextFontFamily { get; set; }
+
+        /// <summary>Кегль текста фигуры, пт.</summary>
+        public double TextSizePt { get; set; } = DefaultTextSizePt;
+
+        /// <summary>Цвет текста фигуры в hex. Null — чёрный.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? TextColor { get; set; }
+
+        /// <summary>Полужирный текст фигуры.</summary>
+        public bool TextBold { get; set; }
+
+        /// <summary>Курсивный текст фигуры.</summary>
+        public bool TextItalic { get; set; }
+
+        /// <summary>Выравнивание строк текста по ширине фигуры.</summary>
+        public TextAlignment TextAlign { get; set; } = TextAlignment.Center;
+
+        /// <summary>Положение текста по высоте фигуры.</summary>
+        public VerticalAlignment TextVerticalAlign { get; set; } = VerticalAlignment.Middle;
+
+        /// <summary>Отступ текста от левого и правого края фигуры, пт (как у надписи Word).</summary>
+        public double TextInsetHorizontalPt { get; set; } = DefaultTextInsetHorizontalPt;
+
+        /// <summary>Отступ текста от верхнего и нижнего края фигуры, пт (как у надписи Word).</summary>
+        public double TextInsetVerticalPt { get; set; } = DefaultTextInsetVerticalPt;
+
+        public const double DefaultTextSizePt = 11.0;
+        public const double DefaultTextInsetHorizontalPt = 7.2;
+        public const double DefaultTextInsetVerticalPt = 3.6;
 
         public bool IsGrouped { get; set; }
 
@@ -691,4 +750,18 @@ namespace Writersword.Modules.TextEditor.Models.Document
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? GroupId { get; set; }
     }
+
+    /// <summary>
+    /// Текст фигуры и его оформление одним значением: так лента читает надпись
+    /// выделенной фигуры и так же записывает её обратно.
+    /// </summary>
+    public sealed record ShapeTextInfo(
+        string Text,
+        string? FontFamily,
+        double SizePt,
+        string? Color,
+        bool Bold,
+        bool Italic,
+        TextAlignment Align,
+        VerticalAlignment VerticalAlign);
 }

@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Writersword.Modules.TextEditor.Models.Document;
+using Writersword.Modules.TextEditor.Rendering;
 
 namespace Writersword.Modules.TextEditor.Views.Dialogs
 {
@@ -176,6 +177,12 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             3 => ListMarkerType.UpperAlpha,
             4 => ListMarkerType.LowerRoman,
             5 => ListMarkerType.UpperRoman,
+            6 => ListMarkerType.Ordinal,
+            7 => ListMarkerType.CardinalText,
+            8 => ListMarkerType.OrdinalText,
+            9 => ListMarkerType.RussianLower,
+            10 => ListMarkerType.RussianUpper,
+            11 => ListMarkerType.Chicago,
             _ => ListMarkerType.Decimal
         };
 
@@ -187,6 +194,12 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             ListMarkerType.UpperAlpha => 3,
             ListMarkerType.LowerRoman => 4,
             ListMarkerType.UpperRoman => 5,
+            ListMarkerType.Ordinal => 6,
+            ListMarkerType.CardinalText => 7,
+            ListMarkerType.OrdinalText => 8,
+            ListMarkerType.RussianLower => 9,
+            ListMarkerType.RussianUpper => 10,
+            ListMarkerType.Chicago => 11,
             _ => 0
         };
 
@@ -413,6 +426,12 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
                 ListMarkerType.UpperAlpha => ToAlpha(n, true),
                 ListMarkerType.LowerRoman => ToRoman(n, false),
                 ListMarkerType.UpperRoman => ToRoman(n, true),
+
+                // Порядковые, числительные словом, русские буквы и знаки сносок пишет
+                // тот же счётчик, что и в документе: образец совпадает с результатом.
+                ListMarkerType.Ordinal or ListMarkerType.CardinalText or ListMarkerType.OrdinalText
+                    or ListMarkerType.RussianLower or ListMarkerType.RussianUpper or ListMarkerType.Chicago
+                    => ListNumberingEngine.FormatListNumber(n, type, null),
                 _ => n.ToString()
             };
             return prefix + num + suffix;

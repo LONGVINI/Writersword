@@ -170,7 +170,13 @@ namespace Writersword.Modules.TextEditor.Services
                 || (differentOddEven && !(s.EvenHeader.IsEmpty && s.EvenFooter.IsEmpty)));
             bool anyNumbering = sections.Any(s => s.Start is not null || s.Format != PageNumberFormat.Arabic);
 
-            if (!anyText && !anyNumbering) return null;
+            // «Разные для чётных и нечётных» у Word решает ещё и сторону переплёта: на
+            // чётных листах он справа. Документ с переплётом хранит этот признак, даже
+            // когда в колонтитулах пусто, — иначе текст чётных листов встал бы не там.
+            bool gutterAlternates = differentOddEven && sections.Any(s =>
+                (s.SectPr?.GetFirstChild<W.PageMargin>()?.Gutter?.Value ?? 0) > 0);
+
+            if (!anyText && !anyNumbering && !gutterAlternates) return null;
 
             // Раздел-образец: первый, где у обычных листов есть колонтитулы.
             int baseIndex = sections.FindIndex(s => !s.DefaultEmpty);

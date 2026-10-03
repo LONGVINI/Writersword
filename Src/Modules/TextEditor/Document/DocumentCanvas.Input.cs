@@ -293,6 +293,9 @@ namespace Writersword.Modules.TextEditor.Document
                         var dragPage = _pages[te.PageIndex];
                         _tableDragStartVal = te.XPt - (dragPage.PadLeftPt + dragPage.MarginLeftPt);
                     }
+
+                    // Таблица с обтеканием двигается по обеим осям и от своей опоры.
+                    BeginFloatingTableDrag(te, yPt);
                 }
 
                 // Входим в таблицу если ещё не там
@@ -960,10 +963,22 @@ namespace Writersword.Modules.TextEditor.Document
                     // Сдвигаем всю таблицу: LeftIndentPt += delta (без ограничений)
                     if (_activeTableBlock is not null)
                     {
-                        _activeTableBlock.Alignment = TableBlockAlignment.Left;
-                        _activeTableBlock.LeftIndentPt = _tableDragStartVal + deltaPt;
+                        if (_activeTableBlock.FloatPosition is { } dragFloat)
+                        {
+                            // Таблица с обтеканием идёт за указателем по обеим осям: её
+                            // положение становится смещением от своей опоры.
+                            dragFloat.HorizontalAlign = TableFloatAlign.Offset;
+                            dragFloat.XPt = _tableDragStartVal + deltaPt;
+                            dragFloat.VerticalAlign = TableFloatAlign.Offset;
+                            dragFloat.YPt = _tableDragStartFloatYPt + (yPt - _tableDragStartPointerYPt);
+                        }
+                        else
+                        {
+                            _activeTableBlock.Alignment = TableBlockAlignment.Left;
+                            _activeTableBlock.LeftIndentPt = _tableDragStartVal + deltaPt;
+                        }
                         if (DocVm is not null) DocVm.ActiveTable = _activeTableBlock;
-                        InvalidateCellLayoutCaches();
+                        InvalidateTableLayout(_activeTableBlock);
                         RebuildLayouts();
                         NotifyCaretEnteredTableCallback();
                         InvalidateFull();
@@ -982,7 +997,7 @@ namespace Writersword.Modules.TextEditor.Document
                         _activeTableBlock.Columns[_tableDragColIndex].WidthType = TableColumnWidthType.Fixed;
                         _activeTableBlock.Columns[_tableDragColIndex].WidthValue = newMm;
                         if (DocVm is not null) DocVm.ActiveTable = _activeTableBlock;
-                        InvalidateCellLayoutCaches();
+                        InvalidateTableLayout(_activeTableBlock);
                         RebuildLayouts();
                         NotifyCaretEnteredTableCallback();
                         InvalidateFull();
@@ -999,7 +1014,7 @@ namespace Writersword.Modules.TextEditor.Document
                         double newHeightPt = Math.Max(14.0, _tableDragStartVal + deltaYPt);
                         _activeTableBlock.SetRowMinHeightPt(_tableDragColIndex, newHeightPt);
                         if (DocVm is not null) DocVm.ActiveTable = _activeTableBlock;
-                        InvalidateCellLayoutCaches();
+                        InvalidateTableLayout(_activeTableBlock);
                         RebuildLayouts();
                         NotifyCaretEnteredTableCallback();
                         InvalidateFull();
@@ -1750,11 +1765,20 @@ namespace Writersword.Modules.TextEditor.Document
             // Жест целиком даёт ровно один шаг отмены — снимок один на всё нажатие,
             // а не на каждое движение мыши. Щелчок по ручке без перетаскивания в
             // историю не попадёт: снимок сравнивает состояния и пустой шаг отбросит.
-            if (_tableDragMode != TableDragMode.None) CommitTableEdit();
+            bool wasTableDrag = _tableDragMode != TableDragMode.None;
+            if (wasTableDrag) CommitTableEdit();
 
             _tableDragMode = TableDragMode.None;
             _tableDragEntryIdx = -1;
             _tableDragColIndex = -1;
+
+            // Во время жеста обтекание сходилось одним проходом — итоговая раскладка
+            // пересчитывается с полной сходимостью.
+            if (wasTableDrag)
+            {
+                RebuildLayouts();
+                InvalidateFull();
+            }
 
             // Жест за ручку таблицы делает её активной, не трогая каретку (см. OnPointerPressed,
             // ветка _tableDragMode). Линейка при этом уходит в табличный режим и держит маркеры
@@ -1910,6 +1934,11 @@ namespace Writersword.Modules.TextEditor.Document
             if (_selectedImage is not null && e.Key == Key.F && e.KeyModifiers == KeyModifiers.None)
             {
                 BeginImageEdit("Режим изображения");
+
+                // Переход в поток или из потока меняет отсчёт смещений: опора из Word
+                // с ними несовместима.
+                _selectedImage.AnchorPosition = null;
+
                 if (_selectedImage.WrapMode == WrapMode.Inline)
                 {
                     var entry = _images.FirstOrDefault(x => ReferenceEquals(x.Block, _selectedImage));
@@ -2107,6 +2136,15 @@ namespace Writersword.Modules.TextEditor.Document
                     vm.TableDeleteColDelegate = ExecuteTableDeleteColumn;
                     vm.TableDeleteDelegate = ExecuteTableDelete;
                     vm.TableSetCellBackgroundDelegate = ExecuteTableSetCellBackground;
+                    vm.TableSetCellShadingPatternDelegate = ExecuteTableSetCellShadingPattern;
+                    vm.TableGetCellShadingPatternDelegate = QueryTableCellShadingPattern;
+                    vm.TableSetFloatPositionDelegate = ExecuteTableSetFloatPosition;
+                    vm.TableToggleDirectionDelegate = ExecuteTableToggleDirection;
+                    vm.TableSetAlignmentDelegate = ExecuteTableSetAlignment;
+                    vm.TableSetCellTextDirectionDelegate = ExecuteTableSetCellTextDirection;
+                    vm.TableGetCellTextDirectionDelegate = QueryTableCellTextDirection;
+                    vm.TableToggleRowHeightExactDelegate = ExecuteTableToggleRowHeightExact;
+                    vm.TableGetRowHeightExactDelegate = QueryTableRowHeightExact;
                     vm.TableSetCellVAlignDelegate = ExecuteTableSetCellVAlign;
                     vm.TableSetCellHAlignDelegate = ExecuteTableSetCellHAlign;
                     vm.TableSetCellPaddingDelegate = ExecuteTableSetCellPadding;
@@ -2124,8 +2162,19 @@ namespace Writersword.Modules.TextEditor.Document
                     vm.TableSetLeftEdgeDelegate = leftIndentPt =>
                     {
                         if (_activeTableBlock is null) return;
-                        _activeTableBlock.Alignment = TableBlockAlignment.Left;
-                        _activeTableBlock.LeftIndentPt = leftIndentPt; // без ограничений
+
+                        if (_activeTableBlock.FloatPosition is { } edgeFloat)
+                        {
+                            // У таблицы с обтеканием левый край — её смещение от текста.
+                            edgeFloat.HorizontalAnchor = TableFloatAnchor.Text;
+                            edgeFloat.HorizontalAlign = TableFloatAlign.Offset;
+                            edgeFloat.XPt = leftIndentPt;
+                        }
+                        else
+                        {
+                            _activeTableBlock.Alignment = TableBlockAlignment.Left;
+                            _activeTableBlock.LeftIndentPt = leftIndentPt; // без ограничений
+                        }
                         InvalidateCellLayoutCaches();
                         RebuildLayouts();
                         NotifyCaretEnteredTableCallback();
@@ -2152,6 +2201,15 @@ namespace Writersword.Modules.TextEditor.Document
                 vm.TableDeleteColDelegate = null;
                 vm.TableDeleteDelegate = null;
                 vm.TableSetCellBackgroundDelegate = null;
+                vm.TableSetCellShadingPatternDelegate = null;
+                vm.TableGetCellShadingPatternDelegate = null;
+                vm.TableSetFloatPositionDelegate = null;
+                vm.TableToggleDirectionDelegate = null;
+                vm.TableSetAlignmentDelegate = null;
+                vm.TableSetCellTextDirectionDelegate = null;
+                vm.TableGetCellTextDirectionDelegate = null;
+                vm.TableToggleRowHeightExactDelegate = null;
+                vm.TableGetRowHeightExactDelegate = null;
                 vm.TableSetCellVAlignDelegate = null;
                 vm.TableSetCellHAlignDelegate = null;
                 vm.TableSetCellPaddingDelegate = null;
@@ -2393,6 +2451,11 @@ namespace Writersword.Modules.TextEditor.Document
                 // Удаляем промежуточные и последний параграфы
                 int fromIdx = startCell.CellParaIndex + 1;
                 int toIdx = endCell.CellParaIndex;
+
+                // Вложенные таблицы, стоявшие между удаляемыми абзацами, уходят вместе
+                // с ними: выделение проходило через них целиком.
+                startCell.Cell.RemoveNestedTablesBetween(fromIdx, toIdx);
+
                 for (int i = toIdx; i >= fromIdx; i--)
                     startCell.Cell.Paragraphs.RemoveAt(i);
 
@@ -2771,8 +2834,10 @@ namespace Writersword.Modules.TextEditor.Document
                 _caretChar = p - 1;
                 mergeTarget = cell.ParaBlock;
             }
-            else if (cell.CellParaIndex > 0)
+            else if (cell.CellParaIndex > 0 && !tableCell.HasNestedTableBefore(cell.CellParaIndex))
             {
+                // Перед абзацем стоит вложенная таблица — склеивать его с абзацем над
+                // ней нельзя: текст перепрыгнул бы через таблицу. Так же ведёт себя Word.
                 var prev = tableCell.Paragraphs[cell.CellParaIndex - 1];
                 string pt = prev.GetPlainText();
                 // Слияние с сохранением ранов: дописываем раны текущего абзаца в предыдущий,
@@ -2844,8 +2909,11 @@ namespace Writersword.Modules.TextEditor.Document
                 int p = Clamp(_caretChar, 0, t.Length - 1);
                 SpliceCellText(tableCell, cell.CellParaIndex, p, p + 1, string.Empty);
             }
-            else if (cell.CellParaIndex < tableCell.Paragraphs.Count - 1)
+            else if (cell.CellParaIndex < tableCell.Paragraphs.Count - 1
+                     && !tableCell.HasNestedTableBefore(cell.CellParaIndex + 1))
             {
+                // За абзацем стоит вложенная таблица — следующий абзац через неё
+                // не подтягивается.
                 var next = tableCell.Paragraphs[cell.CellParaIndex + 1];
                 // Слияние с сохранением ранов: дописываем раны следующего абзаца в текущий.
                 AppendParagraphRuns(cell.ParaBlock, next);
@@ -4147,6 +4215,16 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // Отмена импорта возвращает прежний документ целиком — об этом спрашиваем.
+            // Ответ приходит позже: окно вопроса не блокирует полотно, и отмена
+            // запускается заново уже с полученным согласием.
+            if (!_importUndoConfirmed && NextUndoIsImport())
+            {
+                _logger.Debug("[UNDO] ExecuteUndo: следующий шаг — импорт, запрошено подтверждение");
+                _ = ConfirmImportUndoAsync();
+                return;
+            }
+
             // Откатываем строго в хронологическом порядке: какой стек трогать, решает _undoOrder.
             //
             // Записи порядка и сами стеки расходятся: оба стека ограничены сотней шагов
@@ -4174,6 +4252,74 @@ namespace Writersword.Modules.TextEditor.Document
             if (TextUndoStack is not null && TextUndoStack.CanUndo && DocVm is not null) { UndoTextStep(); return; }
             if (UndoStack is not null && UndoStack.CanUndo) { UndoSnapshotStep(); return; }
             _logger.Debug("[UNDO] ExecuteUndo: nothing to undo");
+        }
+
+        // Согласие на отмену импорта получено: следующий вход в ExecuteUndo идёт без вопроса.
+        private bool _importUndoConfirmed;
+
+        // Вопрос об отмене импорта сейчас на экране: повторное нажатие Ctrl+Z второго
+        // окна не открывает.
+        private bool _importUndoPrompting;
+
+        // Следующий шаг отмены — импорт документа. Порядок просматривается так же, как
+        // его проходит ExecuteUndo: запись, за которой в стеке уже ничего нет, пропускается.
+        private bool NextUndoIsImport()
+        {
+            for (var node = _undoOrder.Last; node is not null; node = node.Previous)
+            {
+                if (node.Value == UndoSource.Text)
+                {
+                    if (TextUndoStack is not null && TextUndoStack.CanUndo && DocVm is not null) return false;
+                    continue;
+                }
+
+                if (UndoStack is not null && UndoStack.CanUndo)
+                    return UndoStack.UndoDescription == DocumentViewModel.ImportUndoDescription;
+            }
+
+            if (TextUndoStack is not null && TextUndoStack.CanUndo && DocVm is not null) return false;
+
+            return UndoStack is not null && UndoStack.CanUndo
+                && UndoStack.UndoDescription == DocumentViewModel.ImportUndoDescription;
+        }
+
+        private async Task ConfirmImportUndoAsync()
+        {
+            if (_importUndoPrompting || DocVm is null) return;
+
+            _importUndoPrompting = true;
+            bool confirmed;
+            try
+            {
+                confirmed = await DocVm.ConfirmUndoImportAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "[UNDO] Вопрос об отмене импорта не показан, импорт не отменён");
+                return;
+            }
+            finally
+            {
+                _importUndoPrompting = false;
+            }
+
+            if (!confirmed)
+            {
+                _logger.Debug("[UNDO] Отмена импорта отклонена пользователем");
+                return;
+            }
+
+            _importUndoConfirmed = true;
+            try
+            {
+                ExecuteUndo();
+            }
+            finally
+            {
+                _importUndoConfirmed = false;
+            }
+
+            if (!IsFocused) Focus();
         }
 
         public void ExecuteRedo()
@@ -4252,12 +4398,46 @@ namespace Writersword.Modules.TextEditor.Document
             RebuildLayouts();
             _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
             _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+            ReattachActiveTable();
             SyncSel();
             ResetCaret();
             // Отпечаток сброшен выше, поэтому measure-проход теперь обязан пересчитать
             // раскладку — без этого запроса он может и не состояться.
             InvalidateMeasure();
             InvalidateFull();
+        }
+
+        // Откат снимка таблицы-хозяина возвращает её ячейки новыми объектами, а вместе
+        // с ними — и вложенные таблицы. Если активной была вложенная таблица, ссылка на
+        // неё после этого указывает на объект, которого в документе уже нет, и кнопки
+        // вкладки правили бы пустоту. Активная таблица перевешивается на новый объект с
+        // тем же идентификатором; если таблицы в документе не осталось (отменена её
+        // вставка) — контекст ячейки берётся заново от каретки.
+        private void ReattachActiveTable()
+        {
+            if (_activeTableBlock is null || DocVm is null) return;
+
+            foreach (var entry in _tables)
+                if (ReferenceEquals(entry.Table, _activeTableBlock)) return;
+
+            foreach (var section in DocVm.Document.Sections)
+            {
+                foreach (var block in section.Blocks)
+                {
+                    if (ReferenceEquals(block, _activeTableBlock)) return;
+                    if (block is not TableBlock host) continue;
+                    if (host.FindNestedOwner(_activeTableBlock) is not { } owner) continue;
+
+                    if (!ReferenceEquals(owner.Nested.Table, _activeTableBlock))
+                    {
+                        _activeTableBlock = owner.Nested.Table;
+                        DocVm.ActiveTable = owner.Nested.Table;
+                    }
+                    return;
+                }
+            }
+
+            UpdateCellContext(true, IsInCell(_caretPara));
         }
 
         // Откат одного снапшота документа (цвет, картинки, таблицы, вставка и т.п.).
@@ -4401,7 +4581,7 @@ namespace Writersword.Modules.TextEditor.Document
                     && te.RowFrom < te.Layout.Rows.Count)
                 {
                     foreach (var c in te.Layout.Rows[te.RowFrom].Cells)
-                        maxPadTop = Math.Max(maxPadTop, c.PadTopPt + c.Borders.Top.WidthPt);
+                        maxPadTop = Math.Max(maxPadTop, c.PadTopPt + c.TopInsetPt);
                 }
 
                 float accY = te.Ypt;

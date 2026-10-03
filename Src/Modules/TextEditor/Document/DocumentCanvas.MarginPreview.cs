@@ -480,6 +480,10 @@ namespace Writersword.Modules.TextEditor.Document
                 if (mark.PageIndex >= fromPage) continue;
                 newBreakMarks.Add(mark);
             }
+
+            // Перенесённое взято из показанной раскладки, где листы с переплётом справа
+            // уже сдвинуты. Проход работает без сдвига и сдвинет их заново при показе.
+            WithoutGutterSides(pages, newLayouts, newTables, newImages, newShapes);
         }
 
         // ── Каретка и выделение по абзацу ──────────────────────────────────

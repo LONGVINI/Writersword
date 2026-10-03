@@ -100,6 +100,7 @@ namespace Writersword.Modules.TextEditor.Commands
             target.LeftIndentPt = source.LeftIndentPt;
             target.Alignment = source.Alignment;
             target.BidiVisual = source.BidiVisual;
+            target.FloatPosition = source.FloatPosition;
             target.RepeatHeader = source.RepeatHeader;
             target.SplitMode = source.SplitMode;
             target.BreakLabel = source.BreakLabel;
@@ -109,9 +110,17 @@ namespace Writersword.Modules.TextEditor.Commands
         private TableBlock? FindTable(DocumentModel doc)
         {
             foreach (var section in doc.Sections)
+            {
                 foreach (var block in section.Blocks)
-                    if (block is TableBlock table && table.Id == _tableId)
-                        return table;
+                {
+                    if (block is not TableBlock table) continue;
+                    if (table.Id == _tableId) return table;
+
+                    // Таблица может стоять внутри ячейки другой таблицы.
+                    foreach (var nested in table.NestedTablesDeep())
+                        if (nested.Id == _tableId) return nested;
+                }
+            }
             return null;
         }
     }

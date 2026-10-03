@@ -30,6 +30,14 @@ namespace Writersword.Modules.TextEditor.Commands
         // Сколько строк дорастили снизу, чтобы вместить вставку.
         private int _addedRows;
 
+        // Вложенные таблицы скопированных ячеек: по списку абзацев ячейки-источника —
+        // таблицы и номера абзацев, перед которыми они стоят. Null — вложенных нет.
+        private readonly IReadOnlyDictionary<List<ParagraphBlock>, List<(TableBlock Table, int Position)>>? _sourceNested;
+
+        // Вложенные таблицы перезаписанных ячеек до вставки — для отката. Таблицы
+        // хранятся ссылками, место — номером абзаца: абзацы откат возвращает копиями.
+        private List<(int row, int col, List<(NestedTable Nested, int Position)>? nested)>? _savedNested;
+
         public string Description => "Paste cells";
 
         /// <summary>
@@ -39,12 +47,14 @@ namespace Writersword.Modules.TextEditor.Commands
         public Action? AfterChange { get; set; }
 
         public PasteCellsCommand(TableBlock table, int row0, int col0,
-            List<(int r, int c, List<ParagraphBlock> paras, string? bg)> source)
+            List<(int r, int c, List<ParagraphBlock> paras, string? bg)> source,
+            IReadOnlyDictionary<List<ParagraphBlock>, List<(TableBlock Table, int Position)>>? sourceNested = null)
         {
             _table = table;
             _row0 = row0;
             _col0 = col0;
             _source = source;
+            _sourceNested = sourceNested;
         }
 
         public void Apply(DocumentModel doc)
@@ -56,11 +66,13 @@ namespace Writersword.Modules.TextEditor.Commands
             if (_saved is null)
             {
                 _saved = new List<(int, int, List<ParagraphBlock>, string?)>();
+                _savedNested = new List<(int, int, List<(NestedTable, int)>?)>();
                 foreach (var (row, col, _, _) in _targets!)
                 {
                     var cell = _table.GetCell(row, col);
                     if (cell is null) continue;
                     _saved.Add((row, col, CloneParas(cell.Paragraphs), cell.BackgroundColor));
+                    _savedNested.Add((row, col, CaptureNested(cell)));
                 }
             }
 
@@ -70,6 +82,22 @@ namespace Writersword.Modules.TextEditor.Commands
                 if (cell is null) continue;
                 cell.Paragraphs = CloneParas(paras);
                 cell.BackgroundColor = bg;
+
+                // Содержимое ячейки заменяется целиком: её прежние вложенные таблицы
+                // уходят, а таблицы скопированной ячейки встают копиями перед теми же
+                // по счёту абзацами.
+                cell.NestedTables = null;
+                if (_sourceNested is not null && _sourceNested.TryGetValue(paras, out var nestedSource))
+                {
+                    foreach (var (nestedTable, position) in nestedSource)
+                    {
+                        if (Services.DocumentCloner.CloneBlock(nestedTable) is not TableBlock nestedCopy)
+                            continue;
+
+                        nestedCopy.RenewIds();
+                        cell.InsertNestedTable(nestedCopy, position, first: false);
+                    }
+                }
             }
 
             AfterChange?.Invoke();
@@ -85,6 +113,17 @@ namespace Writersword.Modules.TextEditor.Commands
                     if (cell is null) continue;
                     cell.Paragraphs = CloneParas(oldParas);
                     cell.BackgroundColor = oldBg;
+                }
+            }
+
+            // После абзацев: таблицы привязываются к абзацам, только что вставшим в ячейку.
+            if (_savedNested is not null)
+            {
+                foreach (var (row, col, nested) in _savedNested)
+                {
+                    var cell = _table.GetCell(row, col);
+                    if (cell is null) continue;
+                    RestoreNested(cell, nested);
                 }
             }
 
@@ -129,6 +168,38 @@ namespace Writersword.Modules.TextEditor.Commands
                     _table.Cells.Add(new TableCell { Row = newRow, Column = c });
                 _table.RowCount++;
             }
+        }
+
+        private static List<(NestedTable Nested, int Position)>? CaptureNested(TableCell cell)
+        {
+            if (cell.NestedTables is not { Count: > 0 } nestedTables) return null;
+
+            var anchors = new List<(NestedTable Nested, int Position)>(nestedTables.Count);
+            foreach (var nested in nestedTables)
+                anchors.Add((nested, cell.NestedTablePosition(nested)));
+            return anchors;
+        }
+
+        private static void RestoreNested(TableCell cell, List<(NestedTable Nested, int Position)>? anchors)
+        {
+            if (anchors is not { Count: > 0 })
+            {
+                cell.NestedTables = null;
+                return;
+            }
+
+            var nestedTables = new List<NestedTable>(anchors.Count);
+            foreach (var (nested, savedPosition) in anchors)
+            {
+                int position = Math.Clamp(savedPosition, 0, cell.Paragraphs.Count);
+                nested.BeforeParagraphIndex = position;
+                nested.BeforeParagraphId = position < cell.Paragraphs.Count
+                    ? cell.Paragraphs[position].Id
+                    : Guid.Empty;
+                nestedTables.Add(nested);
+            }
+
+            cell.NestedTables = nestedTables;
         }
 
         private static List<ParagraphBlock> CloneParas(List<ParagraphBlock> src)

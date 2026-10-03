@@ -152,7 +152,7 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         /// Новая анкета — лист без записи в проекте. В проект она попадёт по
         /// «Сохранить»; до этого живёт черновиком.
         /// </summary>
-        public void CreateAnketa()
+        public AnketaSheetViewModel CreateAnketa()
         {
             var draft = new CharacterAnketa
             {
@@ -162,8 +162,22 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                 CreatedAt = DateTime.UtcNow
             };
 
-            OpenNew(draft, focusName: true);
+            return OpenNew(draft, focusName: true);
         }
+
+        /// <summary>
+        /// Новая анкета для шаблона: лист помнит шаблон, и после первого
+        /// сохранения анкета встаёт в него (AnketaCreatedForTemplate).
+        /// </summary>
+        public void CreateAnketaFor(string templateId)
+        {
+            var sheet = CreateAnketa();
+            sheet.PendingTemplateId = templateId;
+            ScheduleDrafts();
+        }
+
+        /// <summary>Анкету, начатую из шаблона, впервые сохранили: (анкета, шаблон).</summary>
+        public event Action<string, string>? AnketaCreatedForTemplate;
 
         /// <summary>
         /// Копия анкеты — своя, её можно править. Так правят встроенные:
@@ -249,6 +263,8 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         {
             if (sheet == null || sheet.IsReadOnly) return;
 
+            var pendingTemplate = sheet.IsNew ? sheet.PendingTemplateId : null;
+
             if (sheet.IsNew)
             {
                 // Первое сохранение: анкета впервые встаёт в проект.
@@ -269,6 +285,12 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
 
             _logger.Debug("Anketa saved: {Id}, {Count} fields", anketa.Id, anketa.Fields.Count);
             AnketaSaved?.Invoke(anketa.Id);
+
+            if (pendingTemplate != null)
+            {
+                sheet.PendingTemplateId = null;
+                AnketaCreatedForTemplate?.Invoke(anketa.Id, pendingTemplate);
+            }
         }
 
         public void SaveAll()
@@ -345,6 +367,7 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                     {
                         AnketaId = s.AnketaId,
                         IsNew = s.IsNew,
+                        TemplateId = s.IsNew ? s.PendingTemplateId : null,
                         Draft = s.IsDirty ? s.CurrentJson : null
                     }).ToList()
                 };
@@ -449,7 +472,10 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                 draft.Fields ??= new List<CharacterAnketaField>();
                 draft.Layout ??= new List<CharacterAnketaRow>();
                 draft.Assets ??= new List<CharacterAnketaAsset>();
-                Sheets.Add(new AnketaSheetViewModel(draft, _anketaService, isNew: true));
+                Sheets.Add(new AnketaSheetViewModel(draft, _anketaService, isNew: true)
+                {
+                    PendingTemplateId = string.IsNullOrWhiteSpace(entry.TemplateId) ? null : entry.TemplateId
+                });
                 return;
             }
 
@@ -610,6 +636,9 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
 
         /// <summary>Анкеты ещё нет в проекте: она появится там по первому «Сохранить».</summary>
         public bool IsNew { get; private set; }
+
+        /// <summary>Шаблон, из которого начали новую анкету: после первого сохранения она встанет в него.</summary>
+        public string? PendingTemplateId { get; set; }
 
         /// <summary>Состояние листа меняется: правка, отмена, сохранение.</summary>
         public event Action? StateChanged;

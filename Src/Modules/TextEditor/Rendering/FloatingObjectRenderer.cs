@@ -21,6 +21,38 @@ namespace Writersword.Modules.TextEditor.Rendering
         public static readonly SKSamplingOptions Sampling = new(SKCubicResampler.Mitchell);
 
         /// <summary>
+        /// Ресемплинг для заметно уменьшенной картинки: усреднение по уменьшенным копиям.
+        /// Кубический фильтр берёт для точки экрана шестнадцать соседних точек файла; когда
+        /// картинка уменьшена в несколько раз, между ними остаются непрочитанные полосы, и
+        /// тонкие линии — оси графика, рамка в пиксель — пропадают или рвутся.
+        /// </summary>
+        public static readonly SKSamplingOptions MinifySampling = new(SKFilterMode.Linear, SKMipmapMode.Linear);
+
+        /// <summary>Во сколько раз картинка должна быть уменьшена, чтобы перейти на усреднение.</summary>
+        private const float MinifyThreshold = 1.5f;
+
+        /// <summary>
+        /// Ресемплинг под то, как картинка ложится на экран: уменьшенная в полтора раза и
+        /// сильнее — усреднением, остальные — кубическим фильтром. source — часть файла в
+        /// его точках, destination — место на холсте; масштаб холста учитывается.
+        /// </summary>
+        public static SKSamplingOptions SamplingFor(SKCanvas canvas, SKRect source, SKRect destination)
+        {
+            var matrix = canvas.TotalMatrix;
+            float scaleX = MathF.Sqrt(matrix.ScaleX * matrix.ScaleX + matrix.SkewY * matrix.SkewY);
+            float scaleY = MathF.Sqrt(matrix.ScaleY * matrix.ScaleY + matrix.SkewX * matrix.SkewX);
+
+            float deviceWidth = Math.Abs(destination.Width) * scaleX;
+            float deviceHeight = Math.Abs(destination.Height) * scaleY;
+            if (deviceWidth <= 0f || deviceHeight <= 0f) return Sampling;
+
+            bool shrinks = Math.Abs(source.Width) >= deviceWidth * MinifyThreshold
+                || Math.Abs(source.Height) >= deviceHeight * MinifyThreshold;
+
+            return shrinks ? MinifySampling : Sampling;
+        }
+
+        /// <summary>
         /// Замкнутый контур фигуры. По нему идёт и заливка, и обводка, и обрезка
         /// картинки-заливки — один источник геометрии на всё, иначе они разъезжаются.
         /// Для линии и стрелки контура нет: возвращается null.
@@ -215,7 +247,10 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             bool hasImageFill = fillImage is not null && shape.IsClosedShape;
 
-            if (!hasFill && !hasStroke && !hasImageFill) return;
+            // Надпись: текст рисуется и у фигуры без заливки и обводки.
+            bool hasText = shape.IsClosedShape && !string.IsNullOrEmpty(shape.InnerText);
+
+            if (!hasFill && !hasStroke && !hasImageFill && !hasText) return;
 
             using var fillPaint = new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = true };
             using var strokePaint = new SKPaint
@@ -285,12 +320,14 @@ namespace Writersword.Modules.TextEditor.Rendering
                         shape.CropLeftFrac, shape.CropTopFrac,
                         shape.CropRightFrac, shape.CropBottomFrac);
 
+                    var fillRect = FillImageRect(
+                        srcRect.Width, srcRect.Height, rect, shape.FillImageStretch);
+
                     canvas.DrawImage(
                         fillImage!,
                         srcRect,
-                        FillImageRect(
-                            srcRect.Width, srcRect.Height, rect, shape.FillImageStretch),
-                        Sampling, imagePaint);
+                        fillRect,
+                        SamplingFor(canvas, srcRect, fillRect), imagePaint);
                     canvas.Restore();
                 }
 
@@ -313,6 +350,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                         canvas.DrawPath(strokePath ?? path, strokePaint);
                     }
                 }
+
+                // Текст — поверх всего: и заливки, и обводки.
+                if (hasText) DrawShapeText(canvas, shape, rect, alpha);
             }
             finally
             {
@@ -320,6 +360,144 @@ namespace Writersword.Modules.TextEditor.Rendering
                 dash?.Dispose();
                 if (hasXform) canvas.Restore();
             }
+        }
+
+        /// <summary>Шрифт надписи, когда у фигуры он не задан.</summary>
+        private const string DefaultShapeFontFamily = "Times New Roman";
+
+        /// <summary>
+        /// Текст фигуры. Абзацы разделены переводом строки, строки переносятся по
+        /// ширине фигуры за вычетом отступов; то, что не поместилось по высоте,
+        /// обрезается по габариту. Поворот у текста общий с фигурой, а отражение на
+        /// него не действует: буквы остаются читаемыми.
+        /// </summary>
+        private static void DrawShapeText(SKCanvas canvas, ShapeBlock shape, SKRect rect, byte alpha)
+        {
+            float insetX = (float)Math.Max(0.0, shape.TextInsetHorizontalPt);
+            float insetY = (float)Math.Max(0.0, shape.TextInsetVerticalPt);
+
+            var area = new SKRect(
+                rect.Left + insetX, rect.Top + insetY,
+                rect.Right - insetX, rect.Bottom - insetY);
+            if (area.Width < 1f || area.Height < 1f) return;
+
+            SKColor color = SKColors.Black;
+            if (!string.IsNullOrEmpty(shape.TextColor) && SKColor.TryParse(shape.TextColor, out var parsed))
+                color = parsed;
+
+            string family = string.IsNullOrWhiteSpace(shape.TextFontFamily)
+                ? DefaultShapeFontFamily
+                : shape.TextFontFamily!;
+            float size = (float)Math.Clamp(shape.TextSizePt, 1.0, 400.0);
+
+            var typeface = SKTextRenderer.ResolveTypeface(family, shape.TextBold, shape.TextItalic);
+            using var font = new SKFont(typeface, size) { Subpixel = true };
+            using var paint = new SKPaint
+            {
+                IsAntialias = true,
+                Color = color.WithAlpha((byte)(color.Alpha * alpha / 255))
+            };
+
+            var lines = WrapShapeText(shape.InnerText!, font, area.Width);
+            if (lines.Count == 0) return;
+
+            var metrics = font.Metrics;
+            float lineHeight = metrics.Descent - metrics.Ascent + metrics.Leading;
+            float totalHeight = lineHeight * lines.Count;
+
+            float top = shape.TextVerticalAlign switch
+            {
+                VerticalAlignment.Top => area.Top,
+                VerticalAlignment.Bottom => area.Bottom - totalHeight,
+                _ => area.MidY - totalHeight / 2f
+            };
+
+            canvas.Save();
+            try
+            {
+                // Отражение фигуры снимается повторным отражением: текст не зеркалится.
+                if (shape.FlipHorizontal || shape.FlipVertical)
+                    canvas.Scale(
+                        shape.FlipHorizontal ? -1f : 1f,
+                        shape.FlipVertical ? -1f : 1f,
+                        rect.MidX, rect.MidY);
+
+                canvas.ClipRect(rect);
+
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    string line = lines[i];
+                    if (line.Length == 0) continue;
+
+                    float width = font.MeasureText(line);
+                    float x = shape.TextAlign switch
+                    {
+                        Models.Styles.TextAlignment.Left or Models.Styles.TextAlignment.Justify => area.Left,
+                        Models.Styles.TextAlignment.Right => area.Right - width,
+                        _ => area.MidX - width / 2f
+                    };
+
+                    float baseline = top + lineHeight * i - metrics.Ascent;
+                    canvas.DrawText(line, x, baseline, SKTextAlign.Left, font, paint);
+                }
+            }
+            finally
+            {
+                canvas.Restore();
+            }
+        }
+
+        /// <summary>
+        /// Делит текст фигуры на строки по ширине: абзацы — по переводу строки, слова
+        /// переносятся целиком, слово шире фигуры рвётся по знакам.
+        /// </summary>
+        private static System.Collections.Generic.List<string> WrapShapeText(
+            string text, SKFont font, float maxWidth)
+        {
+            var lines = new System.Collections.Generic.List<string>();
+
+            foreach (var paragraph in text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+            {
+                if (paragraph.Length == 0)
+                {
+                    lines.Add(string.Empty);
+                    continue;
+                }
+
+                var current = new System.Text.StringBuilder();
+                foreach (var word in paragraph.Split(' '))
+                {
+                    string candidate = current.Length == 0 ? word : current + " " + word;
+                    if (font.MeasureText(candidate) <= maxWidth)
+                    {
+                        current.Clear().Append(candidate);
+                        continue;
+                    }
+
+                    if (current.Length > 0)
+                    {
+                        lines.Add(current.ToString());
+                        current.Clear();
+                    }
+
+                    // Слово не помещается в пустую строку — рвётся по знакам.
+                    string rest = word;
+                    while (rest.Length > 1 && font.MeasureText(rest) > maxWidth)
+                    {
+                        int fit = 1;
+                        while (fit < rest.Length && font.MeasureText(rest.Substring(0, fit + 1)) <= maxWidth)
+                            fit++;
+
+                        lines.Add(rest.Substring(0, fit));
+                        rest = rest.Substring(fit);
+                    }
+                    current.Append(rest);
+                }
+
+                lines.Add(current.ToString());
+            }
+
+            return lines;
         }
 
         /// <summary>
@@ -465,7 +643,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     canvas.ClipPath(clip, SKClipOperation.Intersect, antialias: true);
                 }
 
-                canvas.DrawImage(image, srcRect, rect, Sampling, paint);
+                canvas.DrawImage(image, srcRect, rect, SamplingFor(canvas, srcRect, rect), paint);
 
                 if (clip is not null) canvas.Restore();
 

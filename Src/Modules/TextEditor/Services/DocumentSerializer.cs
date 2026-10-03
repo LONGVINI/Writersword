@@ -295,10 +295,11 @@ namespace Writersword.Modules.TextEditor.Services
                 }
                 else if (block is TableBlock table)
                 {
-                    // Рекурсивно обходим ячейки таблицы.
+                    // Рекурсивно обходим ячейки таблицы — вместе с таблицами, вложенными
+                    // в ячейки: их абзацы хранят текст в таких же чанках.
                     foreach (var cell in table.Cells)
                     {
-                        foreach (var cellPara in cell.Paragraphs)
+                        foreach (var cellPara in cell.ParagraphsDeep())
                         {
                             _chunkManager.NormalizeChunks(cellPara);
 

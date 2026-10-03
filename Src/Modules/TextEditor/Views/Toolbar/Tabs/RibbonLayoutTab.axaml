@@ -208,13 +208,53 @@
 									</MenuFlyout>
 								</SplitButton.Flyout>
 							</SplitButton>
-							<Button Command="{Binding SetMarginsCommand}"
-                                    Classes="RibbonBtnLarge"
+							<!-- Поля страницы и переплёт: числа в миллиметрах, правка сразу
+							     ложится на документ. -->
+							<Button Classes="RibbonBtnLarge"
                                     behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_Margins}">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Data="M3 3v18h18V3H3zm16 16H5V5h14v14z" Width="20" Height="20"/>
 									<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Margins}" FontSize="9" TextAlignment="Center"/>
 								</StackPanel>
+								<Button.Flyout>
+									<Flyout Placement="Bottom" ShowMode="Standard" Opening="OnMarginsFlyoutOpening">
+										<Grid Margin="4" RowSpacing="6" ColumnSpacing="8"
+											  RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+											  ColumnDefinitions="Auto,Auto">
+											<TextBlock Grid.Row="0" Grid.Column="0" Text="Верхнее, мм" FontSize="11" VerticalAlignment="Center"
+													   Foreground="{DynamicResource TextSecondaryBrush}"/>
+											<NumericUpDown Grid.Row="0" Grid.Column="1" Classes="Ribbon" Width="86"
+														   Minimum="0" Maximum="200" Increment="1"
+														   FormatString="0.##" ClipValueToMinMax="True"
+														   Value="{Binding MarginTopMm, Mode=TwoWay}"/>
+											<TextBlock Grid.Row="1" Grid.Column="0" Text="Нижнее, мм" FontSize="11" VerticalAlignment="Center"
+													   Foreground="{DynamicResource TextSecondaryBrush}"/>
+											<NumericUpDown Grid.Row="1" Grid.Column="1" Classes="Ribbon" Width="86"
+														   Minimum="0" Maximum="200" Increment="1"
+														   FormatString="0.##" ClipValueToMinMax="True"
+														   Value="{Binding MarginBottomMm, Mode=TwoWay}"/>
+											<TextBlock Grid.Row="2" Grid.Column="0" Text="Левое, мм" FontSize="11" VerticalAlignment="Center"
+													   Foreground="{DynamicResource TextSecondaryBrush}"/>
+											<NumericUpDown Grid.Row="2" Grid.Column="1" Classes="Ribbon" Width="86"
+														   Minimum="0" Maximum="200" Increment="1"
+														   FormatString="0.##" ClipValueToMinMax="True"
+														   Value="{Binding MarginLeftMm, Mode=TwoWay}"/>
+											<TextBlock Grid.Row="3" Grid.Column="0" Text="Правое, мм" FontSize="11" VerticalAlignment="Center"
+													   Foreground="{DynamicResource TextSecondaryBrush}"/>
+											<NumericUpDown Grid.Row="3" Grid.Column="1" Classes="Ribbon" Width="86"
+														   Minimum="0" Maximum="200" Increment="1"
+														   FormatString="0.##" ClipValueToMinMax="True"
+														   Value="{Binding MarginRightMm, Mode=TwoWay}"/>
+											<TextBlock Grid.Row="4" Grid.Column="0" Text="Переплёт, мм" FontSize="11" VerticalAlignment="Center"
+													   Foreground="{DynamicResource TextSecondaryBrush}"/>
+											<NumericUpDown Grid.Row="4" Grid.Column="1" Classes="Ribbon" Width="86"
+														   Minimum="0" Maximum="100" Increment="1"
+														   FormatString="0.##" ClipValueToMinMax="True"
+														   Value="{Binding GutterMm, Mode=TwoWay}"
+														   behaviours:TooltipBehavior.Tip="Полоса под сшивку у корешка: прибавляется к полю. При разных колонтитулах чётных и нечётных страниц переплёт на нечётных листах слева, на чётных справа"/>
+										</Grid>
+									</Flyout>
+								</Button.Flyout>
 							</Button>
 						</StackPanel>
 					</DockPanel>
@@ -267,13 +307,51 @@
 												</MenuFlyout>
 											</SplitButton.Flyout>
 										</SplitButton>
-										<Button Command="{Binding SetMarginsCommand}"
-                                                Classes="RibbonBtnLarge"
+										<Button Classes="RibbonBtnLarge"
                                                 behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_Margins}">
 											<StackPanel Spacing="2" HorizontalAlignment="Center">
 												<PathIcon Data="M3 3v18h18V3H3zm16 16H5V5h14v14z" Width="20" Height="20"/>
 												<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Margins}" FontSize="9" TextAlignment="Center"/>
 											</StackPanel>
+											<Button.Flyout>
+												<Flyout Placement="Bottom" ShowMode="Standard" Opening="OnMarginsFlyoutOpening">
+													<Grid Margin="4" RowSpacing="6" ColumnSpacing="8"
+														  RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+														  ColumnDefinitions="Auto,Auto">
+														<TextBlock Grid.Row="0" Grid.Column="0" Text="Верхнее, мм" FontSize="11" VerticalAlignment="Center"
+																   Foreground="{DynamicResource TextSecondaryBrush}"/>
+														<NumericUpDown Grid.Row="0" Grid.Column="1" Classes="Ribbon" Width="86"
+																	   Minimum="0" Maximum="200" Increment="1"
+																	   FormatString="0.##" ClipValueToMinMax="True"
+																	   Value="{Binding MarginTopMm, Mode=TwoWay}"/>
+														<TextBlock Grid.Row="1" Grid.Column="0" Text="Нижнее, мм" FontSize="11" VerticalAlignment="Center"
+																   Foreground="{DynamicResource TextSecondaryBrush}"/>
+														<NumericUpDown Grid.Row="1" Grid.Column="1" Classes="Ribbon" Width="86"
+																	   Minimum="0" Maximum="200" Increment="1"
+																	   FormatString="0.##" ClipValueToMinMax="True"
+																	   Value="{Binding MarginBottomMm, Mode=TwoWay}"/>
+														<TextBlock Grid.Row="2" Grid.Column="0" Text="Левое, мм" FontSize="11" VerticalAlignment="Center"
+																   Foreground="{DynamicResource TextSecondaryBrush}"/>
+														<NumericUpDown Grid.Row="2" Grid.Column="1" Classes="Ribbon" Width="86"
+																	   Minimum="0" Maximum="200" Increment="1"
+																	   FormatString="0.##" ClipValueToMinMax="True"
+																	   Value="{Binding MarginLeftMm, Mode=TwoWay}"/>
+														<TextBlock Grid.Row="3" Grid.Column="0" Text="Правое, мм" FontSize="11" VerticalAlignment="Center"
+																   Foreground="{DynamicResource TextSecondaryBrush}"/>
+														<NumericUpDown Grid.Row="3" Grid.Column="1" Classes="Ribbon" Width="86"
+																	   Minimum="0" Maximum="200" Increment="1"
+																	   FormatString="0.##" ClipValueToMinMax="True"
+																	   Value="{Binding MarginRightMm, Mode=TwoWay}"/>
+														<TextBlock Grid.Row="4" Grid.Column="0" Text="Переплёт, мм" FontSize="11" VerticalAlignment="Center"
+																   Foreground="{DynamicResource TextSecondaryBrush}"/>
+														<NumericUpDown Grid.Row="4" Grid.Column="1" Classes="Ribbon" Width="86"
+																	   Minimum="0" Maximum="100" Increment="1"
+																	   FormatString="0.##" ClipValueToMinMax="True"
+																	   Value="{Binding GutterMm, Mode=TwoWay}"
+																	   behaviours:TooltipBehavior.Tip="Полоса под сшивку у корешка: прибавляется к полю. При разных колонтитулах чётных и нечётных страниц переплёт на нечётных листах слева, на чётных справа"/>
+													</Grid>
+												</Flyout>
+											</Button.Flyout>
 										</Button>
 									</StackPanel>
 								</Flyout>

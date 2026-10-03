@@ -308,6 +308,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                     cell.Paragraphs.Clear();
                     cell.Paragraphs.Add(new Writersword.Modules.TextEditor.Models.Document.ParagraphBlock());
+                    cell.NestedTables = null;
                 }
             }
 
@@ -539,6 +540,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 cell.Paragraphs.Clear();
                 cell.Paragraphs.Add(new ParagraphBlock());
+                cell.NestedTables = null;
             }
         }
 
@@ -1101,6 +1103,7 @@ namespace Writersword.Modules.TextEditor.Document
             WrapMode = s.WrapMode,
             Alignment = s.Alignment,
             Anchor = s.Anchor,
+            AnchorPosition = s.AnchorPosition?.Clone(),
             WrapPadTopPt = s.WrapPadTopPt,
             WrapPadBottomPt = s.WrapPadBottomPt,
             WrapPadLeftPt = s.WrapPadLeftPt,
@@ -1242,6 +1245,23 @@ namespace Writersword.Modules.TextEditor.Document
                 }
                 if (dstCell.Paragraphs.Count == 0)
                     dstCell.Paragraphs.Add(new ParagraphBlock());
+
+                // Вложенные таблицы копируются целиком и встают перед теми же по счёту
+                // абзацами. Идентификаторы у копии свои: вставленная рядом с оригиналом,
+                // она не должна делить их с ним.
+                if (srcCell.NestedTables is { Count: > 0 } srcNestedTables)
+                {
+                    foreach (var srcNested in srcNestedTables)
+                    {
+                        if (Services.DocumentCloner.CloneBlock(srcNested.Table) is not TableBlock nestedCopy)
+                            continue;
+
+                        nestedCopy.RenewIds();
+                        dstCell.InsertNestedTable(
+                            nestedCopy, srcCell.NestedTablePosition(srcNested), first: false);
+                    }
+                }
+
                 dst.Cells.Add(dstCell);
             }
 
@@ -1356,6 +1376,7 @@ namespace Writersword.Modules.TextEditor.Document
             PinnedPage = src.PinnedPage,
             Alignment = src.Alignment,
             Anchor = src.Anchor,
+            AnchorPosition = src.AnchorPosition?.Clone(),
             WrapPadTopPt = src.WrapPadTopPt,
             WrapPadBottomPt = src.WrapPadBottomPt,
             WrapPadLeftPt = src.WrapPadLeftPt,
@@ -1451,13 +1472,27 @@ namespace Writersword.Modules.TextEditor.Document
             int col0 = anchorCell.Column;
 
             // Источник: относительные координаты скопированных ячеек + параграфы + фон.
+            // Вложенные таблицы скопированных ячеек едут отдельным указателем — по списку
+            // абзацев ячейки: команда ставит их копии перед теми же по счёту абзацами.
             var source = new List<(int r, int c, List<ParagraphBlock> paras, string? bg)>();
+            Dictionary<List<ParagraphBlock>, List<(TableBlock Table, int Position)>>? sourceNested = null;
             foreach (var cell in copied.Cells)
+            {
                 source.Add((cell.Row, cell.Column, cell.Paragraphs, cell.BackgroundColor));
+
+                if (cell.NestedTables is not { Count: > 0 } copiedNested) continue;
+
+                var nestedOfCell = new List<(TableBlock Table, int Position)>(copiedNested.Count);
+                foreach (var nested in copiedNested)
+                    nestedOfCell.Add((nested.Table, cell.NestedTablePosition(nested)));
+
+                sourceNested ??= new Dictionary<List<ParagraphBlock>, List<(TableBlock Table, int Position)>>();
+                sourceNested[cell.Paragraphs] = nestedOfCell;
+            }
             if (source.Count == 0) return false;
 
             var cmd = new Writersword.Modules.TextEditor.Commands.PasteCellsCommand(
-                table, row0, col0, source);
+                table, row0, col0, source, sourceNested);
 
             cmd.AfterChange = () =>
             {
@@ -2055,8 +2090,14 @@ namespace Writersword.Modules.TextEditor.Document
             // ниже текста, padding, область между параграфами) должен попасть в эту ячейку,
             // а не в соседнюю с yDist=0. Ищем ячейку по clip-прямоугольнику, затем внутри
             // неё — ближайший параграф по Y.
+            //
+            // Точка может лежать сразу в двух ячейках: в ячейке таблицы и в ячейке таблицы,
+            // вложенной в неё. Выигрывает внутренняя — та, чей clip меньше: клик по пустому
+            // месту вложенной ячейки должен попасть в неё, а не в абзац хозяйской ячейки,
+            // оказавшийся ближе по высоте.
             int clipBestIdx = -1;
             float clipBestYDist = float.MaxValue;
+            float clipBestArea = float.MaxValue;
 
             for (int i = 0; i < layouts.Count; i++)
             {
@@ -2074,9 +2115,14 @@ namespace Writersword.Modules.TextEditor.Document
                 float bot = pl.Ypt + pl.HeightPt;
                 float yDist = cellY < top ? top - cellY : cellY > bot ? cellY - bot : 0f;
 
-                if (yDist < clipBestYDist)
+                float area = c.ClipW * c.ClipH;
+                bool innerCell = area < clipBestArea - 0.5f;
+                bool sameCell = Math.Abs(area - clipBestArea) <= 0.5f;
+
+                if (innerCell || (sameCell && yDist < clipBestYDist))
                 {
                     clipBestYDist = yDist;
+                    clipBestArea = area;
                     clipBestIdx = i;
                 }
             }

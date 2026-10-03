@@ -80,6 +80,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Action? TableDeleteDelegate { get; set; }
 
         /// <summary>
+        /// Вставка таблицы в ячейку, где стоит каретка. Заполняет канвас: только он
+        /// знает, в какой ячейке каретка и в каком месте абзаца. Возвращает false, если
+        /// каретка не в ячейке, — тогда таблица встаёт в поток документа обычным путём.
+        /// </summary>
+        public Func<TableBlock, bool>? InsertNestedTableDelegate { get; set; }
+
+        /// <summary>
         /// Вызывается после вставки разрыва страницы с блоком-якорём новой страницы.
         /// DocumentCanvas подписывается и откладывает переход каретки до конца rebuild.
         /// </summary>
@@ -208,6 +215,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Action<bool>? SetShapeZOrderDelegate { get; set; }
         public Action<string?>? SetShapeFillImageDelegate { get; set; }
         public Action<bool>? SetShapeFillImageStretchDelegate { get; set; }
+        public Func<ShapeTextInfo?>? GetSelectedShapeTextDelegate { get; set; }
+        public Action<ShapeTextInfo>? SetShapeTextDelegate { get; set; }
         public Action? DeleteSelectedShapeDelegate { get; set; }
 
         public Action<ShapeDashStyle>? SetImageBorderDashDelegate { get; set; }
@@ -274,6 +283,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Func<int?>? TableGetCellVAlignDelegate { get; set; }
         public Func<Writersword.Modules.TextEditor.Models.Styles.TextAlignment?>? TableGetCellHAlignDelegate { get; set; }
         public Action<string?>? TableSetCellBackgroundDelegate { get; set; }
+
+        // Узор заливки ячеек, обтекание таблицы и её направление исполняет полотно:
+        // оно знает выделенные ячейки и ячейку под кареткой и ведёт историю правок.
+        public Action<string?, string?>? TableSetCellShadingPatternDelegate { get; set; }
+        public Func<(string? Pattern, string? Color)>? TableGetCellShadingPatternDelegate { get; set; }
+        public Action<TableFloatPosition?>? TableSetFloatPositionDelegate { get; set; }
+        public Action? TableToggleDirectionDelegate { get; set; }
+        public Action<TableBlockAlignment>? TableSetAlignmentDelegate { get; set; }
+        public Action<CellTextDirection>? TableSetCellTextDirectionDelegate { get; set; }
+        public Func<CellTextDirection>? TableGetCellTextDirectionDelegate { get; set; }
+        public Action? TableToggleRowHeightExactDelegate { get; set; }
+        public Func<bool>? TableGetRowHeightExactDelegate { get; set; }
         public Action<string, BorderStyle, double, string?>? TableSetCellBorderDelegate { get; set; }
         public Action<double>? TableSetColumnWidthDelegate { get; set; }
         public Action<double>? TableSetRowHeightDelegate { get; set; }
@@ -2573,6 +2594,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetShapeZOrder(bool toFront) { if (IsReadOnly) return; SetShapeZOrderDelegate?.Invoke(toFront); }
         public void SetShapeFillImage(string? filePath) { if (IsReadOnly) return; SetShapeFillImageDelegate?.Invoke(filePath); }
         public void SetShapeFillImageStretch(bool stretch) { if (IsReadOnly) return; SetShapeFillImageStretchDelegate?.Invoke(stretch); }
+        public ShapeTextInfo? GetSelectedShapeText() => GetSelectedShapeTextDelegate?.Invoke();
+        public void SetShapeText(ShapeTextInfo text) { if (IsReadOnly) return; SetShapeTextDelegate?.Invoke(text); }
         public void DeleteSelectedShape() { if (IsReadOnly) return; DeleteSelectedShapeDelegate?.Invoke(); }
 
         public void SetImageBorderDash(ShapeDashStyle dash)
@@ -2762,6 +2785,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             p.RightToLeft = s.RightToLeft;
             p.LineSpacingRule = s.LineSpacingRule;
             p.LineSpacingValue = s.LineSpacingValue;
+
+            // Положение на странице и выравнивание знаков по высоте строки.
+            p.KeepWithNext = s.KeepWithNext;
+            p.KeepTogether = s.KeepTogether;
+            p.PageBreakBefore = s.PageBreakBefore;
+            p.LineTextAlignment = s.LineTextAlignment;
         });
 
         /// <summary>Ставит выделенным абзацам структурный уровень (0 — основной текст, 1…9).</summary>
@@ -2905,6 +2934,35 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 result |= ParagraphBorderSides.Right;
 
             return result;
+        }
+
+        // ── ITextEditorCommandTarget: заливка абзаца ──────────────────────
+
+        /// <summary>
+        /// Заливка выделенных абзацев одной командой отмены: цвет фона, узор поверх него
+        /// и цвет узора. Узор без цвета фона ложится на бумагу листа. Пустая строка в
+        /// любом поле — то же, что null.
+        /// </summary>
+        public void SetParagraphShading(string? color, string? pattern, string? patternColor)
+        {
+            string? fill = string.IsNullOrWhiteSpace(color) ? null : color;
+            string? fillPattern = string.IsNullOrWhiteSpace(pattern) ? null : pattern;
+            string? fillPatternColor = fillPattern is null || string.IsNullOrWhiteSpace(patternColor)
+                ? null
+                : patternColor;
+
+            ApplyParaProperty(p =>
+            {
+                p.ShadingColor = fill;
+                p.ShadingPattern = fillPattern;
+                p.ShadingPatternColor = fillPatternColor;
+            });
+        }
+
+        public (string? Color, string? Pattern, string? PatternColor) GetActiveParagraphShading()
+        {
+            var props = TableActiveCellParagraph?.Properties ?? _activeParagraph?.Model.Properties;
+            return (props?.ShadingColor, props?.ShadingPattern, props?.ShadingPatternColor);
         }
 
         /// <summary>
@@ -3349,6 +3407,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             if (string.IsNullOrWhiteSpace(ext)) ext = ".png";
             if (!ext.StartsWith(".")) ext = "." + ext;
+
+            // Формат берётся по содержимому файла, а TIFF, EMF и WMF переводятся в PNG:
+            // сам лист их не читает, и картинка осталась бы пустым местом.
+            if (Services.ImageFormats.TryNormalize(data, ext, out var normalizedData, out var normalizedExt))
+            {
+                data = normalizedData;
+                ext = normalizedExt;
+            }
+
             string fileName = $"img_{System.Guid.NewGuid():N}{ext}";
             ctx.WriteFile($"TextEditor/Images/{fileName}", data);
 
@@ -3463,7 +3530,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     else if (block is TableBlock table)
                     {
                         foreach (var cell in table.Cells)
-                            foreach (var cellPara in cell.Paragraphs)
+                            foreach (var cellPara in cell.ParagraphsDeep())
                                 yield return cellPara;
                     }
                     else if (block is FloatingTextBlock floatingText)
@@ -3621,6 +3688,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 PinnedPage = src.PinnedPage,
                 Alignment = src.Alignment,
                 Anchor = src.Anchor,
+                AnchorPosition = src.AnchorPosition?.Clone(),
                 WrapPadTopPt = src.WrapPadTopPt,
                 WrapPadBottomPt = src.WrapPadBottomPt,
                 WrapPadLeftPt = src.WrapPadLeftPt,
@@ -4164,6 +4232,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             PinnedPage = src.PinnedPage,
             Alignment = src.Alignment,
             Anchor = src.Anchor,
+            AnchorPosition = src.AnchorPosition?.Clone(),
             WrapPadTopPt = src.WrapPadTopPt,
             WrapPadBottomPt = src.WrapPadBottomPt,
             WrapPadLeftPt = src.WrapPadLeftPt,
@@ -5721,6 +5790,101 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public bool TableGetSplitModeByCell() =>
             ActiveTable?.SplitMode == Models.Document.TableSplitMode.ByCell;
 
+        /// <summary>
+        /// Расстояние от таблицы с обтеканием до текста слева и справа по умолчанию, пт —
+        /// как у Word (0,32 см).
+        /// </summary>
+        private const double DefaultTableWrapGapPt = 9.0;
+
+        public void TableToggleFloating()
+        {
+            if (IsReadOnly) return;
+            var table = ActiveTable;
+            if (table is null) return;
+
+            if (table.FloatPosition is not null)
+            {
+                TableSetFloatPositionDelegate?.Invoke(null);
+                return;
+            }
+
+            // Таблица остаётся там, где стояла в потоке: от текста, со своим отступом
+            // слева, у верха абзаца под ней.
+            TableSetFloatPositionDelegate?.Invoke(new TableFloatPosition
+            {
+                HorizontalAnchor = TableFloatAnchor.Text,
+                HorizontalAlign = table.Alignment switch
+                {
+                    TableBlockAlignment.Center => TableFloatAlign.Center,
+                    TableBlockAlignment.Right => TableFloatAlign.End,
+                    _ => TableFloatAlign.Offset
+                },
+                XPt = table.Alignment == TableBlockAlignment.Left ? table.LeftIndentPt : 0,
+                VerticalAnchor = TableFloatAnchor.Text,
+                VerticalAlign = TableFloatAlign.Offset,
+                YPt = 0,
+                LeftFromTextPt = DefaultTableWrapGapPt,
+                RightFromTextPt = DefaultTableWrapGapPt
+            });
+        }
+
+        public TableFloatPosition? TableGetFloatPosition() => ActiveTable?.FloatPosition?.Clone();
+
+        public void TableSetFloatPosition(TableFloatPosition? position)
+        {
+            if (IsReadOnly) return;
+            if (ActiveTable is null) return;
+            TableSetFloatPositionDelegate?.Invoke(position);
+        }
+
+        public void TableToggleDirection()
+        {
+            if (IsReadOnly) return;
+            if (ActiveTable is null) return;
+            TableToggleDirectionDelegate?.Invoke();
+        }
+
+        public bool TableGetRightToLeft() => ActiveTable?.BidiVisual ?? false;
+
+        public void TableSetAlignment(TableBlockAlignment alignment)
+        {
+            if (IsReadOnly) return;
+            if (ActiveTable is null) return;
+            TableSetAlignmentDelegate?.Invoke(alignment);
+        }
+
+        public TableBlockAlignment? TableGetAlignment() => ActiveTable?.Alignment;
+
+        public void TableSetCellTextDirection(CellTextDirection direction)
+        {
+            if (IsReadOnly) return;
+            TableSetCellTextDirectionDelegate?.Invoke(direction);
+        }
+
+        public CellTextDirection TableGetCellTextDirection()
+            => TableGetCellTextDirectionDelegate?.Invoke() ?? CellTextDirection.Horizontal;
+
+        public void TableToggleRowHeightExact()
+        {
+            if (IsReadOnly) return;
+            TableToggleRowHeightExactDelegate?.Invoke();
+        }
+
+        public bool TableGetRowHeightExact() => TableGetRowHeightExactDelegate?.Invoke() ?? false;
+
+        public void TableSetCellShadingPattern(string? pattern, string? patternColor)
+        {
+            if (IsReadOnly) return;
+            TableSetCellShadingPatternDelegate?.Invoke(pattern, patternColor);
+        }
+
+        // Чтение состояния идёт и в режиме сравнения: подсветка кнопок не правка.
+        public (string? Pattern, string? Color) TableGetCellShadingPattern()
+        {
+            var state = TableGetCellShadingPatternDelegate?.Invoke();
+            return state ?? (Pattern: (string?)null, Color: (string?)null);
+        }
+
         public void TableSetBreakLabel(string? text)
         {
             if (IsReadOnly) return;
@@ -5786,13 +5950,42 @@ namespace Writersword.Modules.TextEditor.ViewModels
             CommitTableUndoStep();
         }
 
+        /// <summary>
+        /// Убирает таблицу из документа, где бы она ни стояла: в потоке раздела или в
+        /// ячейке другой таблицы. Для вложенной возвращает абзац ячейки, рядом с которым
+        /// она стояла, — туда канвас ставит каретку. Для таблицы из потока — null.
+        /// </summary>
+        public ParagraphBlock? RemoveTableBlock(TableBlock table)
+        {
+            foreach (var section in _document.Sections)
+            {
+                if (section.Blocks.Remove(table)) return null;
+
+                foreach (var block in section.Blocks)
+                {
+                    if (block is not TableBlock host) continue;
+                    if (host.FindNestedOwner(table) is not { } owner) continue;
+
+                    int position = owner.Cell.NestedTablePosition(owner.Nested);
+                    owner.Cell.RemoveNestedTable(owner.Nested);
+
+                    if (owner.Cell.Paragraphs.Count == 0)
+                        owner.Cell.Paragraphs.Add(new ParagraphBlock());
+
+                    return owner.Cell.Paragraphs[Math.Min(position, owner.Cell.Paragraphs.Count - 1)];
+                }
+            }
+
+            return null;
+        }
+
         public void TableDeleteRow(TableBlock table, int row)
         {
             if (IsReadOnly) return;
             BeginUndoStep("Delete row");
             if (table.RowCount <= 1)
             {
-                _document.Sections[0].Blocks.Remove(table);
+                RemoveTableBlock(table);
                 CommitUndoStep();
                 RebuildParagraphViewModels();
                 return;
@@ -5840,7 +6033,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             BeginUndoStep("Delete column");
             if (table.ColumnCount <= 1)
             {
-                _document.Sections[0].Blocks.Remove(table);
+                RemoveTableBlock(table);
                 CommitUndoStep();
                 RebuildParagraphViewModels();
                 return;
@@ -5945,6 +6138,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _document.PageSettings.MarginBottomMm = bottom;
             _document.PageSettings.MarginLeftMm = left;
             _document.PageSettings.MarginRightMm = right;
+            this.RaisePropertyChanged(nameof(PageSettings));
+        }
+
+        public (double TopMm, double BottomMm, double LeftMm, double RightMm, double GutterMm) GetPageMargins()
+        {
+            var ps = _document.PageSettings;
+            return (ps.MarginTopMm, ps.MarginBottomMm, ps.MarginLeftMm, ps.MarginRightMm, ps.MarginGutterMm);
+        }
+
+        public void SetPageGutter(double gutterMm)
+        {
+            if (IsReadOnly) return;
+            _document.PageSettings.MarginGutterMm = Math.Max(0.0, gutterMm);
             this.RaisePropertyChanged(nameof(PageSettings));
         }
 
@@ -6354,9 +6560,36 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// Сам объект документа не подменяется: на него ссылаются вкладка, канвас
         /// и сериализатор проекта — заменяется только содержимое.
         /// </summary>
+        /// <summary>
+        /// Спрашивает, отменять ли импорт. Отмена этого шага убирает импортированный
+        /// документ целиком, и случайное нажатие Ctrl+Z стоило бы всей работы после
+        /// импорта, если её не видно в истории. Без службы диалогов вопроса нет —
+        /// отмена идёт как раньше.
+        /// </summary>
+        public async Task<bool> ConfirmUndoImportAsync()
+        {
+            var dialogs = CoreServices.GetService<IDialogService>();
+            if (dialogs is null) return true;
+
+            var answer = await dialogs.ShowMessageAsync(
+                TextEditorStrings.Undo_Import_Title,
+                TextEditorStrings.Undo_Import_Message,
+                Writersword.Core.Enums.MessageBoxType.Warning,
+                Writersword.Core.Enums.MessageBoxButtons.YesNo);
+
+            return answer == Writersword.Core.Enums.MessageBoxResult.Yes;
+        }
+
+        /// <summary>
+        /// Название шага отмены, которым записан импорт. По нему полотно узнаёт шаг,
+        /// отмена которого возвращает прежний документ целиком, и спрашивает
+        /// подтверждение.
+        /// </summary>
+        public const string ImportUndoDescription = "Импорт документа";
+
         private void ApplyImportedDocument(DocumentModel imported)
         {
-            BeginEditDelegate?.Invoke("Импорт документа");
+            BeginEditDelegate?.Invoke(ImportUndoDescription);
 
             _document.Title = imported.Title;
 
@@ -6952,6 +7185,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
             int paraIdx = para is null ? -1 : section.Blocks.IndexOf(para);
             if (paraIdx < 0)
             {
+                // Каретка в ячейке таблицы: новая таблица встаёт в эту ячейку вложенной.
+                // Шаг отмены и пересборку раскладки ведёт канвас.
+                if (block is TableBlock nestedTable && para is not null
+                    && InsertNestedTableDelegate?.Invoke(nestedTable) == true)
+                {
+                    _log.Debug("[BLOCK] Таблица {Rows}x{Cols} вставлена в ячейку — вложенной",
+                        nestedTable.RowCount, nestedTable.ColumnCount);
+                    return;
+                }
+
                 _log.Debug(
                     "[BLOCK] Каретка не в абзаце раздела (нет цели {NoTarget}, ячейка таблицы или устаревший абзац) — вставка {Kind} после активного абзаца",
                     target is null, block.GetType().Name);
@@ -7384,8 +7627,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 // (разрыв в конце документа или за ним стоит не-параграф блок).
                 // Если параграф уже есть — он и будет якорём: Backspace в его начале
                 // вызовет DeleteBreakWithAnchor через IsBreakAnchor.
-                bool hasFollowingParagraph = i + 1 < blocks.Count
-                    && blocks[i + 1] is ParagraphBlock;
+                // Плавающие картинки и фигуры между разрывом и абзацем не считаются:
+                // строки в потоке они не занимают, и абзац за ними — тот самый, что
+                // начинает страницу. Иначе перед картинкой, привязанной к первому
+                // абзацу страницы, вставала бы лишняя пустая строка.
+                int followingIdx = i + 1;
+                while (followingIdx < blocks.Count
+                       && blocks[followingIdx] is IFloatingObject { WrapMode: not WrapMode.Inline })
+                    followingIdx++;
+
+                bool hasFollowingParagraph = followingIdx < blocks.Count
+                    && blocks[followingIdx] is ParagraphBlock;
                 if (!hasFollowingParagraph)
                     blocks.Insert(i + 1, new ParagraphBlock());
             }

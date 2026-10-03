@@ -18,6 +18,15 @@ namespace Writersword.Modules.TextEditor.Commands
         private readonly List<ParagraphBlock> _before;
         private List<ParagraphBlock>? _after;
 
+        // Вложенные таблицы ячейки и их места среди абзацев. Абзацы шаг возвращает
+        // копиями с новыми идентификаторами, поэтому привязка таблицы к абзацу по
+        // идентификатору отката не переживает — место запоминается номером абзаца.
+        // Сами таблицы хранятся ссылками: их содержимое этим шагом не меняется.
+        private readonly List<NestedAnchor>? _nestedBefore;
+        private List<NestedAnchor>? _nestedAfter;
+
+        private readonly record struct NestedAnchor(NestedTable Nested, int Position);
+
         private readonly int _caretParaBefore;
         private readonly int _caretCharBefore;
         private int _caretParaAfter;
@@ -34,6 +43,7 @@ namespace Writersword.Modules.TextEditor.Commands
         {
             _cell = cell;
             _before = CloneList(cell.Paragraphs);
+            _nestedBefore = CaptureNested(cell);
             _caretParaBefore = caretParaIdx;
             _caretCharBefore = caretChar;
             Description = description;
@@ -42,6 +52,7 @@ namespace Writersword.Modules.TextEditor.Commands
         public void Commit(int caretParaIdx, int caretChar)
         {
             _after = CloneList(_cell.Paragraphs);
+            _nestedAfter = CaptureNested(_cell);
             _caretParaAfter = caretParaIdx;
             _caretCharAfter = caretChar;
         }
@@ -50,12 +61,14 @@ namespace Writersword.Modules.TextEditor.Commands
         {
             if (_after is null) return;
             SetParagraphs(CloneList(_after));
+            SetNestedTables(_nestedAfter);
             AfterChange?.Invoke(_cell, _caretParaAfter, _caretCharAfter);
         }
 
         public void Revert(DocumentModel doc)
         {
             SetParagraphs(CloneList(_before));
+            SetNestedTables(_nestedBefore);
             AfterChange?.Invoke(_cell, _caretParaBefore, _caretCharBefore);
         }
 
@@ -68,6 +81,40 @@ namespace Writersword.Modules.TextEditor.Commands
                 _cell.Paragraphs.Add(p);
             if (_cell.Paragraphs.Count == 0)
                 _cell.Paragraphs.Add(new ParagraphBlock());
+        }
+
+        private static List<NestedAnchor>? CaptureNested(TableCell cell)
+        {
+            if (cell.NestedTables is not { Count: > 0 } nestedTables) return null;
+
+            var anchors = new List<NestedAnchor>(nestedTables.Count);
+            foreach (var nested in nestedTables)
+                anchors.Add(new NestedAnchor(nested, cell.NestedTablePosition(nested)));
+            return anchors;
+        }
+
+        // Вызывается после SetParagraphs: таблицы привязываются к абзацам, которые
+        // только что встали в ячейку.
+        private void SetNestedTables(List<NestedAnchor>? anchors)
+        {
+            if (anchors is not { Count: > 0 })
+            {
+                _cell.NestedTables = null;
+                return;
+            }
+
+            var nestedTables = new List<NestedTable>(anchors.Count);
+            foreach (var anchor in anchors)
+            {
+                int position = Math.Clamp(anchor.Position, 0, _cell.Paragraphs.Count);
+                anchor.Nested.BeforeParagraphIndex = position;
+                anchor.Nested.BeforeParagraphId = position < _cell.Paragraphs.Count
+                    ? _cell.Paragraphs[position].Id
+                    : Guid.Empty;
+                nestedTables.Add(anchor.Nested);
+            }
+
+            _cell.NestedTables = nestedTables;
         }
 
         private static List<ParagraphBlock> CloneList(List<ParagraphBlock> src)

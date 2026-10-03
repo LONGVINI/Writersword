@@ -29,6 +29,9 @@ namespace Writersword.Modules.Characters.Services
             /// <summary>Анкета ещё ни разу не сохранялась: в проекте её нет, есть только черновик.</summary>
             [JsonPropertyName("new")] public bool IsNew { get; set; }
 
+            /// <summary>Шаблон, в который новая анкета встанет после первого сохранения.</summary>
+            [JsonPropertyName("template")] public string? TemplateId { get; set; }
+
             /// <summary>Несохранённое состояние листа; null — лист совпадает с сохранённой анкетой.</summary>
             [JsonPropertyName("draft")] public string? Draft { get; set; }
         }
@@ -103,6 +106,7 @@ namespace Writersword.Modules.Characters.Services
                 var y = b.Sheets[i];
                 if (!string.Equals(x.AnketaId, y.AnketaId, StringComparison.Ordinal)) return false;
                 if (x.IsNew != y.IsNew) return false;
+                if (!string.Equals(x.TemplateId, y.TemplateId, StringComparison.Ordinal)) return false;
                 if (!string.Equals(x.Draft, y.Draft, StringComparison.Ordinal)) return false;
             }
 
@@ -117,6 +121,7 @@ namespace Writersword.Modules.Characters.Services
             {
                 AnketaId = s.AnketaId,
                 IsNew = s.IsNew,
+                TemplateId = s.TemplateId,
                 Draft = s.Draft
             })
         };

@@ -162,11 +162,28 @@ namespace Writersword.Modules.TextEditor.Document
                         && ch != '\n' && ch != '\u000B' && ch != '\u2028')
                         continue;
 
-                    float left = CharScreenX(layout, xPt, li, c);
-                    float right = c < line.LastCharIndex
-                        ? CharScreenX(layout, xPt, li, c + 1)
-                        : left + size * 0.3f;
-                    if (right < left) right = left;
+                    float left;
+                    float right;
+
+                    // Строка с кусками, переставленными по направлению письма: соседние
+                    // по тексту знаки стоят на листе в разных местах, и середина между
+                    // кареткой перед знаком и кареткой после него — не середина знака.
+                    // Место знака берётся из раскладки напрямую.
+                    if (line.IsBidiReordered && layout.TryGetCharBox(li, c, out float boxLeft, out float boxRight))
+                    {
+                        float lineOrigin = xPt + LineAlignShift(layout, li)
+                            - (li == 0 ? layout.FirstLineIndentPt : 0f);
+                        left = lineOrigin + boxLeft;
+                        right = lineOrigin + boxRight;
+                    }
+                    else
+                    {
+                        left = CharScreenX(layout, xPt, li, c);
+                        right = c < line.LastCharIndex
+                            ? CharScreenX(layout, xPt, li, c + 1)
+                            : left + size * 0.3f;
+                        if (right < left) right = left;
+                    }
 
                     switch (ch)
                     {
@@ -317,6 +334,10 @@ namespace Writersword.Modules.TextEditor.Document
             float baseline;
             float size;
 
+            // Абзац справа налево кончается у левого края строки: знак рисуется влево
+            // от своего места, а не вправо.
+            bool markGrowsLeft = layout.IsRightToLeft;
+
             if (layout.Lines.Count == 0 || text.Length == 0)
             {
                 // Пустой абзац: знак встаёт туда же, куда встала бы каретка, — с учётом
@@ -331,7 +352,11 @@ namespace Writersword.Modules.TextEditor.Document
                 int baseLine = Math.Max(pl.LineFrom, 0);
                 float yBase = baseLine < layout.Lines.Count ? layout.Lines[baseLine].Y : 0f;
 
-                x = xPt + caret.X + alignOffset;
+                // Пустая строка абзаца справа налево начинается у правого края, и отступ
+                // первой строки отсчитывается от него же — это уже учтено в сдвиге строки.
+                x = layout.IsRightToLeft && layout.Lines.Count > 0
+                    ? xPt + layout.LeftIndentPt + LineAlignShift(layout, 0)
+                    : xPt + caret.X + alignOffset;
                 baseline = yPt + (caret.Y - yBase) + caret.Baseline;
                 size = Math.Clamp(caret.Height * 0.72f, 5f, 28f);
             }
@@ -342,13 +367,36 @@ namespace Writersword.Modules.TextEditor.Document
                 int baseLine = Math.Max(pl.LineFrom, 0);
                 float yBase = baseLine < layout.Lines.Count ? layout.Lines[baseLine].Y : 0f;
 
-                x = CharScreenX(layout, xPt, lastLine, text.Length) + 1f;
+                // Знак конца абзаца стоит в конце строки на листе. Обычно это и есть
+                // место каретки за последним знаком. Но в абзаце справа налево конец
+                // строки — её левый край, а в строке с переставленными кусками последний
+                // знак текста может стоять посреди строки (иврит в конце обычного абзаца,
+                // русское слово в конце абзаца справа налево) — и знак, поставленный за
+                // ним, лёг бы поверх соседнего текста.
+                if (layout.IsRightToLeft || line.IsBidiReordered)
+                {
+                    var (lineLeft, lineRight) = layout.GetLineVisualExtent(lastLine);
+                    float lineOrigin = xPt + LineAlignShift(layout, lastLine)
+                        - (lastLine == 0 ? layout.FirstLineIndentPt : 0f);
+
+                    x = layout.IsRightToLeft
+                        ? lineOrigin + lineLeft - 1f
+                        : lineOrigin + lineRight + 1f;
+                }
+                else
+                {
+                    x = CharScreenX(layout, xPt, lastLine, text.Length) + 1f;
+                }
+
                 baseline = yPt + (line.Y - yBase) + line.Baseline;
                 size = MarkSize(line);
             }
 
             using var font = new SKFont(FormattingMarkTypeface, size);
-            canvas.DrawText(glyph, x, baseline, SKTextAlign.Left, font, fill);
+            canvas.DrawText(
+                glyph, x, baseline,
+                markGrowsLeft ? SKTextAlign.Right : SKTextAlign.Left,
+                font, fill);
         }
 
         /// <summary>
@@ -430,8 +478,9 @@ namespace Writersword.Modules.TextEditor.Document
                 if (mark.PageIndex < 0 || mark.PageIndex >= pages.Count) continue;
 
                 var page = pages[mark.PageIndex];
+                // На листе с переплётом справа правое поле шире на переплёт.
                 float left = page.PadLeftPt + page.MarginLeftPt;
-                float right = page.PadLeftPt + page.WidthPt - marginRight;
+                float right = page.PadLeftPt + page.WidthPt - marginRight + page.GutterShiftPt;
                 if (right <= left) continue;
 
                 // Отметка стоит на месте разрыва: на строке под последним текстом листа.

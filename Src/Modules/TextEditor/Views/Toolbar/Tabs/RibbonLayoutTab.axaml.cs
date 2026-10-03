@@ -1,3 +1,4 @@
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
@@ -25,6 +26,16 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         {
             base.OnAttachedToVisualTree(e);
             _scrollContainer = this.FindControl<RibbonScrollContainer>("ScrollContainer");
+        }
+
+        /// <summary>
+        /// Меню «Поля» открывается: поля и переплёт перечитываются из документа — их
+        /// могли поменять линейкой или импортом, пока меню было закрыто.
+        /// </summary>
+        private void OnMarginsFlyoutOpening(object? sender, EventArgs e)
+        {
+            if (DataContext is RibbonLayoutTabViewModel vm)
+                vm.RefreshPageMargins();
         }
 
         private void OnSizeChanged(object? sender, SizeChangedEventArgs e)

@@ -2724,6 +2724,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public ParagraphBorderSides GetSelectedParagraphBorderSides()
             => DocumentViewModel?.GetSelectedParagraphBorderSides() ?? ParagraphBorderSides.None;
 
+        public void SetParagraphShading(string? color, string? pattern, string? patternColor)
+            => DocumentViewModel?.SetParagraphShading(color, pattern, patternColor);
+
+        public (string? Color, string? Pattern, string? PatternColor) GetActiveParagraphShading()
+        {
+            var state = DocumentViewModel?.GetActiveParagraphShading();
+            return state ?? (Color: (string?)null, Pattern: (string?)null, PatternColor: (string?)null);
+        }
+
         // Кнопка «¶» и Ctrl+Shift+8 приходят сюда оба, поэтому кнопку ленты
         // освежаем здесь же: переключение с клавиатуры должно отражаться на ней.
         public void ToggleFormattingMarks()
@@ -2796,6 +2805,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetShapeZOrder(bool toFront) => DocumentViewModel?.SetShapeZOrder(toFront);
         public void SetShapeFillImage(string? filePath) => DocumentViewModel?.SetShapeFillImage(filePath);
         public void SetShapeFillImageStretch(bool stretch) => DocumentViewModel?.SetShapeFillImageStretch(stretch);
+        public ShapeTextInfo? GetSelectedShapeText() => DocumentViewModel?.GetSelectedShapeText();
+        public void SetShapeText(ShapeTextInfo text) => DocumentViewModel?.SetShapeText(text);
         public void DeleteSelectedShape() => DocumentViewModel?.DeleteSelectedShape();
 
         // ── Изображение ───────────────────────────────────────────────────
@@ -2882,6 +2893,29 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableToggleSplitMode() => DocumentViewModel?.TableToggleSplitMode();
         public bool TableGetSplitModeByCell() => DocumentViewModel?.TableGetSplitModeByCell() ?? false;
+
+        public void TableToggleFloating() => DocumentViewModel?.TableToggleFloating();
+        public TableFloatPosition? TableGetFloatPosition() => DocumentViewModel?.TableGetFloatPosition();
+        public void TableSetFloatPosition(TableFloatPosition? position)
+            => DocumentViewModel?.TableSetFloatPosition(position);
+        public void TableToggleDirection() => DocumentViewModel?.TableToggleDirection();
+        public bool TableGetRightToLeft() => DocumentViewModel?.TableGetRightToLeft() ?? false;
+        public void TableSetAlignment(TableBlockAlignment alignment)
+            => DocumentViewModel?.TableSetAlignment(alignment);
+        public TableBlockAlignment? TableGetAlignment() => DocumentViewModel?.TableGetAlignment();
+        public void TableSetCellTextDirection(CellTextDirection direction)
+            => DocumentViewModel?.TableSetCellTextDirection(direction);
+        public CellTextDirection TableGetCellTextDirection()
+            => DocumentViewModel?.TableGetCellTextDirection() ?? CellTextDirection.Horizontal;
+        public void TableToggleRowHeightExact() => DocumentViewModel?.TableToggleRowHeightExact();
+        public bool TableGetRowHeightExact() => DocumentViewModel?.TableGetRowHeightExact() ?? false;
+        public void TableSetCellShadingPattern(string? pattern, string? patternColor)
+            => DocumentViewModel?.TableSetCellShadingPattern(pattern, patternColor);
+        public (string? Pattern, string? Color) TableGetCellShadingPattern()
+        {
+            var state = DocumentViewModel?.TableGetCellShadingPattern();
+            return state ?? (Pattern: (string?)null, Color: (string?)null);
+        }
         public void TableSetBreakLabel(string? text) => DocumentViewModel?.TableSetBreakLabel(text);
         public void TableSetContinuationLabel(string? text) => DocumentViewModel?.TableSetContinuationLabel(text);
         public string? TableGetBreakLabel() => DocumentViewModel?.TableGetBreakLabel();
@@ -2895,6 +2929,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetPageMargins(double t, double b, double l, double r)
         {
             DocumentViewModel?.SetPageMargins(t, b, l, r);
+            if (DocumentViewModel is not null)
+                SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
+        public (double TopMm, double BottomMm, double LeftMm, double RightMm, double GutterMm) GetPageMargins()
+        {
+            var margins = DocumentViewModel?.GetPageMargins();
+            return margins ?? (TopMm: 0.0, BottomMm: 0.0, LeftMm: 0.0, RightMm: 0.0, GutterMm: 0.0);
+        }
+
+        public void SetPageGutter(double gutterMm)
+        {
+            DocumentViewModel?.SetPageGutter(gutterMm);
             if (DocumentViewModel is not null)
                 SyncRulerToDocument(DocumentViewModel.Document);
         }
@@ -3071,7 +3118,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
                 case TableBlock table:
                     foreach (var cell in table.Cells)
-                        foreach (var cellParagraph in cell.Paragraphs)
+                        foreach (var cellParagraph in cell.ParagraphsDeep())
                             CollectParagraphs(cellParagraph, paragraphs);
                     break;
             }

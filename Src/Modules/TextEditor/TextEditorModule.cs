@@ -783,7 +783,7 @@ namespace Writersword.Modules.TextEditor
                         // такие ссылки тоже живые.
                         case Models.Document.TableBlock table:
                             foreach (var cell in table.Cells)
-                                Walk(cell.Paragraphs);
+                                Walk(cell.ParagraphsDeep());
                             break;
 
                         case Models.Document.FloatingTextBlock floatingText:
@@ -1092,7 +1092,7 @@ namespace Writersword.Modules.TextEditor
 
                     case Models.Document.TableBlock table:
                         foreach (var cell in table.Cells)
-                            WalkFonts(cell.Paragraphs, note);
+                            WalkFonts(cell.ParagraphsDeep(), note);
                         break;
 
                     case Models.Document.FloatingTextBlock floatingText:

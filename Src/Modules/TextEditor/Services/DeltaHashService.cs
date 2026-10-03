@@ -138,6 +138,14 @@ namespace Writersword.Modules.TextEditor.Services
                     writer.WriteNumber("leftIndent", table.LeftIndentPt);
                     writer.WriteString("alignment", table.Alignment.ToString());
                     writer.WriteBoolean("bidiVisual", table.BidiVisual);
+
+                    // Положение таблицы с обтеканием: без него перенос таблицы в поток
+                    // и обратно не попадал бы в дельту сохранения.
+                    if (table.FloatPosition is not null)
+                    {
+                        writer.WritePropertyName("float");
+                        JsonSerializer.Serialize(writer, table.FloatPosition);
+                    }
                     writer.WriteBoolean("repeatHeader", table.RepeatHeader);
                     writer.WriteString("split", table.SplitMode.ToString());
                     writer.WriteString("style", table.StyleName ?? string.Empty);
@@ -178,6 +186,24 @@ namespace Writersword.Modules.TextEditor.Services
                         writer.WritePropertyName("borders");
                         JsonSerializer.Serialize(writer, cell.Borders);
                         WriteIdArray(writer, "paragraphs", cell.Paragraphs.Select(p => p.Id));
+
+                        // Вложенные таблицы: место в ячейке и хеш свойств каждой. Без них
+                        // правка структуры или оформления вложенной таблицы не попадала
+                        // бы в дельту сохранения.
+                        if (cell.NestedTables is { Count: > 0 } nestedTables)
+                        {
+                            writer.WriteStartArray("nested");
+                            foreach (var nested in nestedTables)
+                            {
+                                writer.WriteStartObject();
+                                writer.WriteString("id", nested.Table.Id.ToString());
+                                writer.WriteNumber("at", cell.NestedTablePosition(nested));
+                                writer.WriteString("hash", ComputeBlockPropertiesHash(nested.Table));
+                                writer.WriteEndObject();
+                            }
+                            writer.WriteEndArray();
+                        }
+
                         writer.WriteEndObject();
                     }
                     writer.WriteEndArray();

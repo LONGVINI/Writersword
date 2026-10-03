@@ -947,6 +947,117 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             }
         }
 
+        // --- Заливка абзаца ---
+        // Цвет фона абзаца и узор поверх него (точки, полосы, сетка) — «Заливка» из окна
+        // «Границы и заливка» Word. Имя узора — то же, что в файле Word: pct25, diagStripe…
+
+        private string? _shadingColor;
+        private string? _shadingPattern;
+        private string? _shadingPatternColor;
+        private string _shadingColorPick = "#FFF2CC";
+        private string _shadingPatternColorPick = "#1A1A1A";
+
+        // Подстановка заливки из абзаца под кареткой не должна тут же писать её обратно.
+        private bool _syncingShading;
+
+        /// <summary>У абзаца под кареткой нет цвета фона.</summary>
+        public bool IsShadingColorNone => string.IsNullOrEmpty(_shadingColor);
+
+        /// <summary>Узор абзаца под кареткой: имя узора или «none». По нему подсвечивается плитка.</summary>
+        public string ShadingPatternKey => string.IsNullOrEmpty(_shadingPattern) ? "none" : _shadingPattern!;
+
+        /// <summary>Цвет узора «авто» — цвет текста листа.</summary>
+        public bool IsShadingPatternColorAuto => string.IsNullOrEmpty(_shadingPatternColor);
+
+        /// <summary>Цвет фона абзаца в HEX. Выбор сразу ложится на выделенные абзацы.</summary>
+        public string ShadingColorPick
+        {
+            get => _shadingColorPick;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value)) return;
+
+                bool same = string.Equals(_shadingColorPick, value, StringComparison.OrdinalIgnoreCase);
+                if (!same) this.RaiseAndSetIfChanged(ref _shadingColorPick, value);
+                if (_syncingShading) return;
+
+                // Тот же цвет, что уже стоит у абзаца, второй раз не пишется; у абзаца без
+                // фона выбор цвета, совпавшего с показанным в поле, — всё равно выбор.
+                if (same && !IsShadingColorNone) return;
+
+                SetShading(value, _shadingPattern, _shadingPatternColor);
+            }
+        }
+
+        /// <summary>Цвет узора в HEX. Выбор сразу перекрашивает узор выделенных абзацев.</summary>
+        public string ShadingPatternColorPick
+        {
+            get => _shadingPatternColorPick;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value)) return;
+                if (string.Equals(_shadingPatternColorPick, value, StringComparison.OrdinalIgnoreCase)) return;
+                this.RaiseAndSetIfChanged(ref _shadingPatternColorPick, value);
+                if (_syncingShading) return;
+
+                SetShading(_shadingColor, _shadingPattern, value);
+            }
+        }
+
+        /// <summary>Убирает цвет фона абзаца; узор, если он есть, остаётся.</summary>
+        public ICommand ShadingColorNoneCommand { get; }
+
+        /// <summary>Ставит узор заливки; параметр — имя узора Word или «none».</summary>
+        public ICommand ShadingPatternCommand { get; }
+
+        /// <summary>Возвращает узору цвет «авто» — цвет текста листа.</summary>
+        public ICommand ShadingPatternColorAutoCommand { get; }
+
+        private void SetShading(string? color, string? pattern, string? patternColor)
+        {
+            _shadingColor = string.IsNullOrWhiteSpace(color) ? null : color;
+            _shadingPattern = string.IsNullOrWhiteSpace(pattern) ? null : pattern;
+            _shadingPatternColor = _shadingPattern is null || string.IsNullOrWhiteSpace(patternColor)
+                ? null
+                : patternColor;
+
+            RaiseShadingChanged();
+            _target.SetParagraphShading(_shadingColor, _shadingPattern, _shadingPatternColor);
+        }
+
+        private void RaiseShadingChanged()
+        {
+            this.RaisePropertyChanged(nameof(IsShadingColorNone));
+            this.RaisePropertyChanged(nameof(ShadingPatternKey));
+            this.RaisePropertyChanged(nameof(IsShadingPatternColorAuto));
+        }
+
+        /// <summary>Заливка — по абзацу под кареткой.</summary>
+        private void SyncShadingFromCaret()
+        {
+            var (color, pattern, patternColor) = _target.GetActiveParagraphShading();
+
+            _syncingShading = true;
+            try
+            {
+                _shadingColor = string.IsNullOrWhiteSpace(color) ? null : color;
+                _shadingPattern = string.IsNullOrWhiteSpace(pattern) ? null : pattern;
+                _shadingPatternColor = string.IsNullOrWhiteSpace(patternColor) ? null : patternColor;
+
+                if (_shadingColor is not null) ShadingColorPick = WithHash(_shadingColor);
+                if (_shadingPatternColor is not null) ShadingPatternColorPick = WithHash(_shadingPatternColor);
+            }
+            finally
+            {
+                _syncingShading = false;
+            }
+
+            RaiseShadingChanged();
+        }
+
+        private static string WithHash(string hex)
+            => hex.StartsWith("#", StringComparison.Ordinal) ? hex : "#" + hex;
+
         // --- Непечатаемые знаки ---
 
         private bool _isFormattingMarksVisible;
@@ -1420,6 +1531,15 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 _target.ClearParagraphBorders();
                 RefreshBorderSides();
             });
+            // Заливка абзаца: цвет фона ставит поле цвета, здесь — снятие фона, узор и
+            // цвет узора «авто».
+            ShadingColorNoneCommand = ReactiveCommand.Create(
+                () => SetShading(null, _shadingPattern, _shadingPatternColor));
+            ShadingPatternCommand = ReactiveCommand.Create<string>(param =>
+                SetShading(_shadingColor, param == "none" ? null : param, _shadingPatternColor));
+            ShadingPatternColorAutoCommand = ReactiveCommand.Create(
+                () => SetShading(_shadingColor, _shadingPattern, null));
+
             BorderColorAutoCommand = ReactiveCommand.Create(() =>
             {
                 _borderColorPick = "#1A1A1A";
@@ -1492,6 +1612,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             // Рамка: отметки сторон по выделению, перо — по рамке абзаца под кареткой.
             SyncBorderPenFromCaret(activeProps);
             RefreshBorderSides();
+            SyncShadingFromCaret();
             RefreshFormattingMarks();
 
             this.RaisePropertyChanged(nameof(IsBold));

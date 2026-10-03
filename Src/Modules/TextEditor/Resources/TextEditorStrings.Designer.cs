@@ -400,5 +400,7 @@ namespace Writersword.Modules.TextEditor.Resources
         public static string Tab_Hint_IndentRightWhat => ResourceManager.GetString("Tab_Hint_IndentRightWhat", _culture)!;
         public static string Tab_Hint_IndentListWhat => ResourceManager.GetString("Tab_Hint_IndentListWhat", _culture)!;
         public static string Tab_Hint_TypeLine => ResourceManager.GetString("Tab_Hint_TypeLine", _culture)!;
+        public static string Undo_Import_Title => ResourceManager.GetString("Undo_Import_Title", _culture)!;
+        public static string Undo_Import_Message => ResourceManager.GetString("Undo_Import_Message", _culture)!;
     }
 }

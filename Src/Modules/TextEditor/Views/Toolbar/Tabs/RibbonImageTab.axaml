@@ -389,6 +389,124 @@
 					</DockPanel>
 				</Border>
 
+				<!-- ── Группа: Текст (надпись внутри фигуры) ────────────────── -->
+				<!-- Текст есть только у замкнутой фигуры: у линии и стрелки писать
+				     негде, а у картинки своего текста нет. Поля остаются на месте
+				     серыми — набор инструментов вкладки одинаков для всех объектов. -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Текст"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+
+							<TextBox Width="170" Height="54" FontSize="11"
+							         VerticalAlignment="Center"
+							         AcceptsReturn="True" TextWrapping="Wrap"
+							         IsEnabled="{Binding IsClosedShape}"
+							         Text="{Binding ShapeText, Mode=TwoWay}"
+							         behaviours:TooltipBehavior.Tip="Текст внутри фигуры. Enter начинает новую строку; по ширине фигуры строки переносятся сами"/>
+
+							<StackPanel Spacing="3" VerticalAlignment="Center">
+
+								<StackPanel Orientation="Horizontal" Spacing="4">
+									<NumericUpDown Classes="Ribbon" Width="64"
+									               IsEnabled="{Binding IsClosedShape}"
+									               Value="{Binding ShapeTextSize, Mode=TwoWay}"
+									               Minimum="4" Maximum="200"
+									               Increment="1"
+									               FormatString="0.#"
+									               ClipValueToMinMax="True"
+									               behaviours:TooltipBehavior.Tip="Кегль текста фигуры, пт"/>
+
+									<controls:ColorPickerButton Width="20" Height="20" VerticalAlignment="Center"
+									                            IsEnabled="{Binding IsClosedShape}"
+									                            HexColor="{Binding ShapeTextHexColor, Mode=TwoWay}"
+									                            behaviours:TooltipBehavior.Tip="Цвет текста фигуры"/>
+
+									<ToggleButton Classes="SegSquare"
+									              IsEnabled="{Binding IsClosedShape}"
+									              IsChecked="{Binding ShapeTextBold, Mode=TwoWay}"
+									              behaviours:TooltipBehavior.Tip="Полужирный текст фигуры">
+										<TextBlock FontSize="12" FontWeight="Bold" Text="Ж"
+										           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+									</ToggleButton>
+
+									<ToggleButton Classes="SegSquare"
+									              IsEnabled="{Binding IsClosedShape}"
+									              IsChecked="{Binding ShapeTextItalic, Mode=TwoWay}"
+									              behaviours:TooltipBehavior.Tip="Курсивный текст фигуры">
+										<TextBlock FontSize="12" FontStyle="Italic" Text="К"
+										           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+									</ToggleButton>
+								</StackPanel>
+
+								<StackPanel Orientation="Horizontal" Spacing="4">
+									<ToggleButton Classes="SegSquare"
+									              IsEnabled="{Binding IsClosedShape}"
+									              Command="{Binding ShapeTextAlignLeftCommand}"
+									              IsChecked="{Binding ShapeTextAlign, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Left, Mode=OneWay}"
+									              behaviours:TooltipBehavior.Tip="Текст фигуры по левому краю">
+										<PathIcon Width="14" Height="14"
+										          Data="M3 5h18v2H3V5zm0 4h12v2H3V9zm0 4h18v2H3v-2zm0 4h12v2H3v-2z"/>
+									</ToggleButton>
+
+									<ToggleButton Classes="SegSquare"
+									              IsEnabled="{Binding IsClosedShape}"
+									              Command="{Binding ShapeTextAlignCenterCommand}"
+									              IsChecked="{Binding ShapeTextAlign, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Center, Mode=OneWay}"
+									              behaviours:TooltipBehavior.Tip="Текст фигуры по центру">
+										<PathIcon Width="14" Height="14"
+										          Data="M3 5h18v2H3V5zm3 4h12v2H6V9zm-3 4h18v2H3v-2zm3 4h12v2H6v-2z"/>
+									</ToggleButton>
+
+									<ToggleButton Classes="SegSquare"
+									              IsEnabled="{Binding IsClosedShape}"
+									              Command="{Binding ShapeTextAlignRightCommand}"
+									              IsChecked="{Binding ShapeTextAlign, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Right, Mode=OneWay}"
+									              behaviours:TooltipBehavior.Tip="Текст фигуры по правому краю">
+										<PathIcon Width="14" Height="14"
+										          Data="M3 5h18v2H3V5zm6 4h12v2H9V9zm-6 4h18v2H3v-2zm6 4h12v2H9v-2z"/>
+									</ToggleButton>
+
+									<Rectangle Width="1" Height="18" Margin="2 0"
+									           VerticalAlignment="Center"
+									           Fill="{DynamicResource BorderSubtleBrush}"/>
+
+									<ToggleButton Classes="SegSquare"
+									              IsEnabled="{Binding IsClosedShape}"
+									              Command="{Binding ShapeTextAlignTopCommand}"
+									              IsChecked="{Binding ShapeTextVerticalAlign, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Top, Mode=OneWay}"
+									              behaviours:TooltipBehavior.Tip="Текст у верхнего края фигуры">
+										<PathIcon Width="14" Height="14"
+										          Data="M3 3h18v2H3V3zm4 5h10v2H7V8zm0 4h10v2H7v-2z"/>
+									</ToggleButton>
+
+									<ToggleButton Classes="SegSquare"
+									              IsEnabled="{Binding IsClosedShape}"
+									              Command="{Binding ShapeTextAlignMiddleCommand}"
+									              IsChecked="{Binding ShapeTextVerticalAlign, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Middle, Mode=OneWay}"
+									              behaviours:TooltipBehavior.Tip="Текст по середине высоты фигуры">
+										<PathIcon Width="14" Height="14"
+										          Data="M7 9h10v2H7V9zm0 4h10v2H7v-2zM3 3h18v1H3V3zm0 17h18v1H3v-1z"/>
+									</ToggleButton>
+
+									<ToggleButton Classes="SegSquare"
+									              IsEnabled="{Binding IsClosedShape}"
+									              Command="{Binding ShapeTextAlignBottomCommand}"
+									              IsChecked="{Binding ShapeTextVerticalAlign, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Bottom, Mode=OneWay}"
+									              behaviours:TooltipBehavior.Tip="Текст у нижнего края фигуры">
+										<PathIcon Width="14" Height="14"
+										          Data="M7 10h10v2H7v-2zm0 4h10v2H7v-2zm-4 5h18v2H3v-2z"/>
+									</ToggleButton>
+								</StackPanel>
+
+							</StackPanel>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
 				<!-- ── Группа: Наконечники (только у линии и стрелки) ───────── -->
 				<!-- Наконечник требует открытого контура. У картинки его нет и не
 				     будет: линия и стрелка ей не назначаются. Группа, которая не

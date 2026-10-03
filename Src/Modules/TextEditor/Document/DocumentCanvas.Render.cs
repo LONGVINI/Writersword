@@ -571,12 +571,29 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
+        /// <summary>
+        /// Шапка таблицы над куском-продолжением: копия первой строки — фон, рамки и текст.
+        /// Это изображение, а не содержимое: абзацев шапки в раскладке страницы нет, каретка
+        /// в копию не встаёт, а правится шапка в первой строке таблицы — как у Word.
+        /// </summary>
+        private void RenderRepeatedTableHeader(SKCanvas canvas, TableEntry te)
+        {
+            if (te.RepeatedHeaderHeightPt <= 0f || te.Layout.Rows.Count == 0) return;
+
+            float headerY = te.Ypt - te.RepeatedHeaderHeightPt;
+
+            // Линию под повторённым заголовком рисует первая строка куска — своей
+            // верхней, поэтому сам заголовок низ не замыкает.
+            RenderTableStructureOnly(canvas, te.Layout, te.XPt, headerY, 0, 1, closeSliceBottom: false);
+            SKTextRenderer.RenderTableRowContent(canvas, te.Layout, 0, te.XPt, headerY);
+        }
+
         // Рисует только рамки и фон таблицы (без параграфов — они в _layouts).
         private void RenderTableStructureOnly(
             SKCanvas canvas, SKTableLayout tableLayout, float tableX, float tableY,
             int rowFrom = 0, int rowTo = -1,
             float lastRowVisibleHeightPt = -1f, float firstRowContentOffsetPt = 0f,
-            bool isContinuation = false)
+            bool isContinuation = false, bool closeSliceBottom = true)
         {
             var m = canvas.TotalMatrix;
             float canvasScale = MathF.Sqrt(m.ScaleX * m.ScaleX + m.SkewY * m.SkewY);
@@ -594,54 +611,73 @@ namespace Writersword.Modules.TextEditor.Document
             if (isContinuation && firstRowContentOffsetPt > 0f && rowFrom < tableLayout.Rows.Count)
             {
                 foreach (var cell in tableLayout.Rows[rowFrom].Cells)
-                    maxPadTop = Math.Max(maxPadTop, cell.PadTopPt + cell.Borders.Top.WidthPt);
+                    maxPadTop = Math.Max(maxPadTop, cell.PadTopPt + cell.TopInsetPt);
             }
 
-            foreach (var row in tableLayout.Rows)
+            // Два прохода по одним и тем же ячейкам: сначала фон всех, потом рамки всех.
+            // Вертикальная линия лежит серединой на границе двух ячеек, а линия,
+            // замыкающая кусок таблицы на конце страницы, — под нижним краем ячейки.
+            // В один проход заливка соседней ячейки закрывала бы половину такой линии.
+            for (int pass = 0; pass < 2; pass++)
             {
-                if (row.Row < rowFrom || row.Row >= effectiveRowTo) continue;
+                bool fillPass = pass == 0;
 
-                bool isFirstRow = row.Row == rowFrom;
-                bool isLastRow = row.Row == effectiveRowTo - 1;
-                float rowShift = isFirstRow ? firstRowContentOffsetPt : 0f;
-                float effectiveRowH = isFirstRow
-                    ? row.HeightPt - rowShift + maxPadTop
-                    : row.HeightPt;
-
-                float visibleH = (isLastRow && lastRowVisibleHeightPt >= 0f)
-                    ? lastRowVisibleHeightPt
-                    : effectiveRowH;
-
-                // Для строк после rowFrom сдвигаем вверх на (firstRowContentOffsetPt - maxPadTop),
-                // чтобы верхняя граница строки N совпадала с нижней границей строки rowFrom.
-                float extraShift = isFirstRow ? 0f : (firstRowContentOffsetPt - maxPadTop);
-
-                foreach (var cell in row.Cells)
+                foreach (var row in tableLayout.Rows)
                 {
-                    float cellX = tableX + cell.Xpt;
-                    float cellY = tableY + cell.Ypt - rowOffsetY - rowShift - extraShift;
+                    if (row.Row < rowFrom || row.Row >= effectiveRowTo) continue;
 
-                    // Рамка и заливка идут на всю высоту ячейки, а не её первой
-                    // строки: объединённая по вертикали иначе замыкается под первой
-                    // строкой, и ниже остаётся полоса без границ.
-                    float cellVisibleH = CellSpanHeightPt(
-                        tableLayout, cell, effectiveRowTo, lastRowVisibleHeightPt, visibleH);
+                    bool isFirstRow = row.Row == rowFrom;
+                    bool isLastRow = row.Row == effectiveRowTo - 1;
+                    float rowShift = isFirstRow ? firstRowContentOffsetPt : 0f;
+                    float effectiveRowH = isFirstRow
+                        ? row.HeightPt - rowShift + maxPadTop
+                        : row.HeightPt;
 
-                    if (!string.IsNullOrEmpty(cell.BackgroundColor)
-                        && SKColor.TryParse(cell.BackgroundColor, out var bgColor))
+                    float visibleH = (isLastRow && lastRowVisibleHeightPt >= 0f)
+                        ? lastRowVisibleHeightPt
+                        : effectiveRowH;
+
+                    // Для строк после rowFrom сдвигаем вверх на (firstRowContentOffsetPt - maxPadTop),
+                    // чтобы верхняя граница строки N совпадала с нижней границей строки rowFrom.
+                    float extraShift = isFirstRow ? 0f : (firstRowContentOffsetPt - maxPadTop);
+
+                    foreach (var cell in row.Cells)
                     {
-                        // Мутируем Color кешированного паинта — безопасно на compositor-треде.
-                        _paintCellBg.Color = bgColor;
-                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, cellVisibleH, _paintCellBg);
+                        float cellX = tableX + cell.Xpt;
+                        float cellY = tableY + cell.Ypt - rowOffsetY - rowShift - extraShift;
+
+                        // Рамка и заливка идут на всю высоту ячейки, а не её первой
+                        // строки: объединённая по вертикали иначе замыкается под первой
+                        // строкой, и ниже остаётся полоса без границ.
+                        float cellVisibleH = CellSpanHeightPt(
+                            tableLayout, cell, effectiveRowTo, lastRowVisibleHeightPt, visibleH);
+
+                        if (fillPass)
+                        {
+                            if (!string.IsNullOrEmpty(cell.BackgroundColor)
+                                && SKColor.TryParse(cell.BackgroundColor, out var bgColor))
+                            {
+                                // Мутируем Color кешированного паинта — безопасно на compositor-треде.
+                                _paintCellBg.Color = bgColor;
+                                canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, cellVisibleH, _paintCellBg);
+                            }
+
+                            // Узор заливки (pct25, diagStripe…) поверх цвета фона.
+                            SKTextRenderer.RenderCellShadingPattern(canvas, cell, cellX, cellY + rowShift, cell.WidthPt, cellVisibleH);
+                            continue;
+                        }
+
+                        float visibleCellY = cellY + rowShift;
+
+                        // Кусок таблицы кончается этой ячейкой: если таблица идёт дальше,
+                        // линии между строками на этой странице нет (её рисует ячейка
+                        // снизу), и кусок замыкается линией под ячейкой.
+                        bool sliceEnd = closeSliceBottom
+                            && row.Row + Math.Max(cell.RowSpan, 1) >= effectiveRowTo;
+
+                        SKTextRenderer.RenderCellBordersPublic(canvas, tableLayout, cell, cellX, visibleCellY,
+                            cellVisibleH, canvasScale, false, false, sliceEnd);
                     }
-
-                    // Узор заливки (pct25, diagStripe…) поверх цвета фона.
-                    SKTextRenderer.RenderCellShadingPattern(canvas, cell, cellX, cellY + rowShift, cell.WidthPt, cellVisibleH);
-
-                    float visibleCellY = cellY + rowShift;
-
-                    SKTextRenderer.RenderCellBordersPublic(canvas, cell, cellX, visibleCellY,
-                        cellVisibleH, canvasScale, false, false);
                 }
             }
         }
@@ -732,7 +768,7 @@ namespace Writersword.Modules.TextEditor.Document
                     && te.RowFrom < te.Layout.Rows.Count)
                 {
                     foreach (var cell in te.Layout.Rows[te.RowFrom].Cells)
-                        maxPadTop = Math.Max(maxPadTop, cell.PadTopPt + cell.Borders.Top.WidthPt);
+                        maxPadTop = Math.Max(maxPadTop, cell.PadTopPt + cell.TopInsetPt);
                 }
 
                 // Фильтра по minRow/maxRow здесь нет намеренно: объединённая ячейка
@@ -1439,7 +1475,8 @@ namespace Writersword.Modules.TextEditor.Document
                 if (srcRect.Right <= srcRect.Left + 1f) srcRect.Right = srcRect.Left + 1f;
                 if (srcRect.Bottom <= srcRect.Top + 1f) srcRect.Bottom = srcRect.Top + 1f;
                 bool shapeClip = PushImageShapeClip(canvas, ie.Block, imgRect);
-                canvas.DrawImage(skImg, srcRect, imgRect, _imageSampling, imgPaint);
+                canvas.DrawImage(skImg, srcRect, imgRect,
+                    FloatingObjectRenderer.SamplingFor(canvas, srcRect, imgRect), imgPaint);
                 if (shapeClip) canvas.Restore();
                 _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
                 // Рамка картинки — в той же системе координат (поворот + отражение).
@@ -1478,6 +1515,7 @@ namespace Writersword.Modules.TextEditor.Document
                     float pageBottom = pg.Ypt + pg.HeightPt;
                     canvas.Save();
                     canvas.ClipRect(new SKRect(0, pageTop, pageRight, pageBottom));
+                    RenderRepeatedTableHeader(canvas, te);
                     RenderTableStructureOnly(canvas, te.Layout, te.XPt, te.Ypt,
                         te.RowFrom, te.RowTo,
                         te.LastRowVisibleHeightPt, te.FirstRowContentOffsetPt,
@@ -1486,6 +1524,7 @@ namespace Writersword.Modules.TextEditor.Document
                 }
                 else
                 {
+                    RenderRepeatedTableHeader(canvas, te);
                     RenderTableStructureOnly(canvas, te.Layout, te.XPt, te.Ypt,
                         te.RowFrom, te.RowTo,
                         te.LastRowVisibleHeightPt, te.FirstRowContentOffsetPt,
@@ -1604,7 +1643,8 @@ namespace Writersword.Modules.TextEditor.Document
                 if (srcRect.Right <= srcRect.Left + 1f) srcRect.Right = srcRect.Left + 1f;
                 if (srcRect.Bottom <= srcRect.Top + 1f) srcRect.Bottom = srcRect.Top + 1f;
                 bool shapeClip = PushImageShapeClip(canvas, ie.Block, imgRect);
-                canvas.DrawImage(skImg, srcRect, imgRect, _imageSampling, imgPaint);
+                canvas.DrawImage(skImg, srcRect, imgRect,
+                    FloatingObjectRenderer.SamplingFor(canvas, srcRect, imgRect), imgPaint);
                 if (shapeClip) canvas.Restore();
                 _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
                 // Рамка картинки — в той же системе координат (поворот + отражение).
@@ -1924,7 +1964,8 @@ namespace Writersword.Modules.TextEditor.Document
             if (src.Bottom <= src.Top + 1f) src.Bottom = src.Top + 1f;
 
             bool inlineShapeClip = PushImageShapeClip(canvas, block, dst);
-            canvas.DrawImage(skImg, src, dst, _imageSampling, _paintImageDraw);
+            canvas.DrawImage(skImg, src, dst,
+                FloatingObjectRenderer.SamplingFor(canvas, src, dst), _paintImageDraw);
             if (inlineShapeClip) canvas.Restore();
             _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
 
@@ -2281,7 +2322,7 @@ namespace Writersword.Modules.TextEditor.Document
                     && te.RowFrom < te.Layout.Rows.Count)
                 {
                     foreach (var cell in te.Layout.Rows[te.RowFrom].Cells)
-                        maxPadTop = Math.Max(maxPadTop, cell.PadTopPt + cell.Borders.Top.WidthPt);
+                        maxPadTop = Math.Max(maxPadTop, cell.PadTopPt + cell.TopInsetPt);
                 }
 
                 foreach (var row in te.Layout.Rows)
@@ -2545,7 +2586,8 @@ namespace Writersword.Modules.TextEditor.Document
             if (src.Bottom <= src.Top + 1f) src.Bottom = src.Top + 1f;
 
             bool flowShapeClip = PushImageShapeClip(canvas, ie.Block, dst);
-            canvas.DrawImage(skImg, src, dst, _imageSampling, _paintImageDraw);
+            canvas.DrawImage(skImg, src, dst,
+                FloatingObjectRenderer.SamplingFor(canvas, src, dst), _paintImageDraw);
             if (flowShapeClip) canvas.Restore();
             _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
 

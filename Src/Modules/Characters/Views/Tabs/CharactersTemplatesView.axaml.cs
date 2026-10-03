@@ -247,6 +247,23 @@ namespace Writersword.Modules.Characters.Views.Tabs
             block.RefreshPicker();
         }
 
+        /// <summary>Меню открылось — курсор сразу в поиске: можно печатать, не целясь мышью.</summary>
+        private void OnPickerOpened(object? sender, EventArgs e)
+        {
+            if (sender is not Flyout { Content: Control content }) return;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                var search = content.GetLogicalDescendants()
+                    .OfType<TextBox>()
+                    .FirstOrDefault(t => t.Classes.Contains("picker-search"));
+                if (search == null) return;
+
+                search.Focus();
+                search.SelectAll();
+            }, DispatcherPriority.Loaded);
+        }
+
         private void OnPickAnketaClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
@@ -266,6 +283,21 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
             // Меню остаётся открытым: в шаблон обычно добавляют несколько анкет подряд.
             vm.FindBlock(templateId)?.RefreshPicker();
+        }
+
+        /// <summary>
+        /// Новая анкета прямо из шаблона: открывается в редакторе анкет и
+        /// после первого сохранения сама встаёт в этот шаблон.
+        /// </summary>
+        private void OnNewAnketaForTemplateClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+
+            var templateId = _pickerTemplateId;
+            _pickerFlyout?.Hide();
+            _pickerTemplateId = null;
+
+            if (templateId != null) Vm?.RequestNewAnketa(templateId);
         }
 
         private void OnRemoveAnketaClick(object? sender, RoutedEventArgs e)

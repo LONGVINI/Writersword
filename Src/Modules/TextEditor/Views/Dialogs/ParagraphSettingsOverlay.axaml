@@ -279,6 +279,36 @@
                         </StackPanel>
                     </Grid>
 
+                    <StackPanel Spacing="3">
+                        <TextBlock Classes="FieldLabel" Text="Знаки разного размера в строке"/>
+                        <ComboBox x:Name="LineTextAlignCombo" Classes="Field" SelectedIndex="0"
+                                  ToolTip.Tip="Как в одной строке встают знаки разного размера: на общую базовую линию, верхом к верху строки, серединой к середине или низом к низу">
+                            <ComboBoxItem>Авто</ComboBoxItem>
+                            <ComboBoxItem>По базовой линии</ComboBoxItem>
+                            <ComboBoxItem>По верху строки</ComboBoxItem>
+                            <ComboBoxItem>По середине строки</ComboBoxItem>
+                            <ComboBoxItem>По низу строки</ComboBoxItem>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <!-- Положение на странице -->
+                    <TextBlock Classes="Section" Text="ПОЛОЖЕНИЕ НА СТРАНИЦЕ"/>
+                    <CheckBox x:Name="KeepWithNextBox"
+                              FontSize="12"
+                              Foreground="{DynamicResource TextPrimaryBrush}"
+                              Content="Не отрывать от следующего"
+                              ToolTip.Tip="Абзац остаётся на одной странице с началом следующего: заголовок не повисает один внизу листа"/>
+                    <CheckBox x:Name="KeepTogetherBox"
+                              FontSize="12"
+                              Foreground="{DynamicResource TextPrimaryBrush}"
+                              Content="Не разрывать абзац"
+                              ToolTip.Tip="Абзац не делится между страницами: если не помещается целиком, уходит на следующую"/>
+                    <CheckBox x:Name="PageBreakBeforeBox"
+                              FontSize="12"
+                              Foreground="{DynamicResource TextPrimaryBrush}"
+                              Content="С новой страницы"
+                              ToolTip.Tip="Абзац всегда начинает новую страницу"/>
+
                     <!-- Образец -->
                     <TextBlock Classes="Section" Text="ОБРАЗЕЦ"/>
                     <Border Background="{DynamicResource BgSurfaceBrush}"

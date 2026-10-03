@@ -1179,6 +1179,16 @@ namespace Writersword.Modules.Characters.ViewModels
             AnketasViewModel = new CharactersAnketasViewModel(anketaService, characterService);
             AnketasViewModel.AnketaSaved += OnAnketaSaved;
 
+            // «Новая анкета» из меню шаблона: лист в редакторе, а после первого
+            // сохранения анкета встаёт в тот шаблон.
+            TemplatesViewModel.NewAnketaRequested += templateId =>
+            {
+                AnketasViewModel.CreateAnketaFor(templateId);
+                MainTabIndex = 4;
+            };
+            AnketasViewModel.AnketaCreatedForTemplate += (anketaId, templateId) =>
+                TemplatesViewModel.AddAnketa(templateId, anketaId);
+
             GraphViewModel = new CharactersGraphViewModel(characterService, relationshipService,
                 id => { MainTabIndex = 0; OpenCharacter(id); });
 

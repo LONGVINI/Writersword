@@ -50,9 +50,19 @@ namespace Writersword.Modules.TextEditor.Commands
                 WrapPadRightPt = s.WrapPadRightPt;
                 Alignment = s.Alignment;
                 Anchor = s.Anchor;
+                AnchorPosition = s.AnchorPosition?.Clone();
                 PinnedPage = s.PinnedPage;
                 ZOrder = s.ZOrder;
                 InnerText = s.InnerText;
+                TextFontFamily = s.TextFontFamily;
+                TextSizePt = s.TextSizePt;
+                TextColor = s.TextColor;
+                TextBold = s.TextBold;
+                TextItalic = s.TextItalic;
+                TextAlign = s.TextAlign;
+                TextVerticalAlign = s.TextVerticalAlign;
+                TextInsetHorizontalPt = s.TextInsetHorizontalPt;
+                TextInsetVerticalPt = s.TextInsetVerticalPt;
             }
 
             public ShapeType ShapeType { get; }
@@ -88,9 +98,19 @@ namespace Writersword.Modules.TextEditor.Commands
             public double WrapPadRightPt { get; }
             public Models.Styles.TextAlignment Alignment { get; }
             public FloatAnchor Anchor { get; }
+            public TableFloatPosition? AnchorPosition { get; }
             public int PinnedPage { get; }
             public int ZOrder { get; }
             public string? InnerText { get; }
+            public string? TextFontFamily { get; }
+            public double TextSizePt { get; }
+            public string? TextColor { get; }
+            public bool TextBold { get; }
+            public bool TextItalic { get; }
+            public Models.Styles.TextAlignment TextAlign { get; }
+            public VerticalAlignment TextVerticalAlign { get; }
+            public double TextInsetHorizontalPt { get; }
+            public double TextInsetVerticalPt { get; }
 
             public void ApplyTo(ShapeBlock s)
             {
@@ -127,9 +147,19 @@ namespace Writersword.Modules.TextEditor.Commands
                 s.WrapPadRightPt = WrapPadRightPt;
                 s.Alignment = Alignment;
                 s.Anchor = Anchor;
+                s.AnchorPosition = AnchorPosition?.Clone();
                 s.PinnedPage = PinnedPage;
                 s.ZOrder = ZOrder;
                 s.InnerText = InnerText;
+                s.TextFontFamily = TextFontFamily;
+                s.TextSizePt = TextSizePt;
+                s.TextColor = TextColor;
+                s.TextBold = TextBold;
+                s.TextItalic = TextItalic;
+                s.TextAlign = TextAlign;
+                s.TextVerticalAlign = TextVerticalAlign;
+                s.TextInsetHorizontalPt = TextInsetHorizontalPt;
+                s.TextInsetVerticalPt = TextInsetVerticalPt;
             }
         }
 

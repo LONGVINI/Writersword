@@ -124,6 +124,29 @@ namespace Writersword.Modules.TextEditor.Document
                 InverseRotation = Rotation.TryInvert(out var inverse) ? inverse : SKMatrix.Identity;
             }
 
+            /// <summary>
+            /// Та же ячейка, сдвинутая по X вместе со своим листом: содержимое, клип и
+            /// поворот. Поворот задан в координатах листа, поэтому сдвинутая ячейка
+            /// крутится вокруг сдвинутой точки: сначала точка возвращается на прежнее
+            /// место, там поворачивается, затем уезжает обратно.
+            /// </summary>
+            public CellInfo ShiftedX(float dxPt)
+            {
+                SKMatrix? rotation = null;
+                if (IsRotated)
+                {
+                    var back = SKMatrix.CreateTranslation(-dxPt, 0f);
+                    var forth = SKMatrix.CreateTranslation(dxPt, 0f);
+                    rotation = SKMatrix.Concat(SKMatrix.Concat(forth, Rotation), back);
+                }
+
+                return new CellInfo(
+                    Table, Cell, ParaBlock, CellParaIndex, TableEntryIdx,
+                    ContentXPt + dxPt, ContentYPt,
+                    ClipX + dxPt, ClipY, ClipW, ClipH,
+                    TextDirection, rotation);
+            }
+
             /// <summary>Точка листа в координатах раскладки повёрнутой ячейки.</summary>
             public (float X, float Y) ToLocal(float xPt, float yPt)
             {
@@ -160,7 +183,11 @@ namespace Writersword.Modules.TextEditor.Document
             float PadLeftPt,
             float PadTopPt,
             float MarginLeftPt,
-            float PadBottomPt = 0f);
+            float PadBottomPt = 0f,
+            // Сдвиг содержимого листа по X из-за стороны переплёта: на листе, где
+            // переплёт справа, текст стоит левее на его ширину (отрицательное значение).
+            // MarginLeftPt такого листа уже включает сдвиг. См. DocumentCanvas.GutterSide.
+            float GutterShiftPt = 0f);
 
         // ── Layout таблиц (только для рендера рамок/фона) ─────────────────
         // Одна запись = один слайс таблицы на одной странице.
@@ -175,7 +202,12 @@ namespace Writersword.Modules.TextEditor.Document
             int RowTo = -1,
             float LastRowVisibleHeightPt = -1f,
             float FirstRowContentOffsetPt = 0f,
-            bool IsContinuation = false);
+            bool IsContinuation = false,
+            // Высота шапки, повторённой над этим куском: копия первой строки таблицы
+            // рисуется выше Ypt, на отрезке [Ypt - высота, Ypt]. Ypt остаётся верхом
+            // строк куска, поэтому попадание мышью, выделение и ручки таблицы шапку
+            // не замечают. Ноль — шапки над куском нет.
+            float RepeatedHeaderHeightPt = 0f);
 
         // ── Layout изображений ────────────────────────────────────────────
         // Одна запись = одно изображение-блок на своей странице.
@@ -902,6 +934,25 @@ namespace Writersword.Modules.TextEditor.Document
         {
             _cellLayoutCache.Clear();
             _tableLayoutCache.Clear();
+        }
+
+        // Сброс раскладки одной таблицы. Нужен жестам мыши: линию таблицы тянут десятками
+        // движений в секунду, и общий сброс заставлял на каждое из них заново верстать
+        // все таблицы документа, хотя меняется одна. У вложенной таблицы своей записи в
+        // кеше нет — её раскладка живёт внутри раскладки таблицы-хозяйки, сбрасывается она.
+        private void InvalidateTableLayout(TableBlock table)
+        {
+            if (_tableLayoutCache.Remove(table)) return;
+
+            TableBlock? host = null;
+            foreach (var cached in _tableLayoutCache.Keys)
+            {
+                if (cached.FindNestedOwner(table) is null) continue;
+                host = cached;
+                break;
+            }
+
+            if (host is not null) _tableLayoutCache.Remove(host);
         }
 
         // Возвращает раскладку таблицы из кеша либо строит и кеширует её.
@@ -2163,7 +2214,13 @@ namespace Writersword.Modules.TextEditor.Document
 
             var (dxPt, _) = PageVisualDelta(pageIdx, pages);
 
-            return (_layoutPageXPt + dxPt) * PtToPx * Zoom
+            // Лист с переплётом справа держит текст левее на ширину переплёта: ноль
+            // линейки уезжает вместе с ним, и её поля встают по тексту этого листа.
+            float gutterShiftPt = pageIdx >= 0 && pageIdx < pages.Count
+                ? pages[pageIdx].GutterShiftPt
+                : 0f;
+
+            return (_layoutPageXPt + dxPt + gutterShiftPt) * PtToPx * Zoom
                    - (_parentScrollViewer?.Offset.X ?? 0);
         }
 
@@ -2260,6 +2317,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.CommitUndoStepDelegate = null;
                 _docVm.BeginTableUndoStepDelegate = null;
                 _docVm.CommitTableUndoStepDelegate = null;
+                _docVm.InsertNestedTableDelegate = null;
             }
 
             _docVm = DataContext as DocumentViewModel;
@@ -2355,6 +2413,7 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.CommitParagraphPropertyGranularDelegate = CommitParagraphPropertyGranular;
             DocVm.GetCaretWordRangeDelegate = GetCaretWordRange;
             DocVm.GetCaretTargetDelegate = GetCaretTarget;
+            DocVm.InsertNestedTableDelegate = TryInsertNestedTable;
             DocVm.InlineImageInserted -= OnInlineImageInserted;
             DocVm.InlineImageInserted += OnInlineImageInserted;
             DocVm.ShapeInserted -= OnShapeInserted;
@@ -2381,6 +2440,8 @@ namespace Writersword.Modules.TextEditor.Document
             // контур, у картинки заменяет файл (DocumentCanvas.FloatingRouting).
             DocVm.SetShapeFillImageDelegate = SetFloatingFillImage;
             DocVm.SetShapeFillImageStretchDelegate = SetSelectedShapeFillImageStretch;
+            DocVm.GetSelectedShapeTextDelegate = GetSelectedShapeText;
+            DocVm.SetShapeTextDelegate = SetSelectedShapeText;
             DocVm.DeleteSelectedShapeDelegate = DeleteSelectedShape;
             DocVm.InlineObjectsChanged -= RefreshParagraphAfterInlineChange;
             DocVm.InlineObjectsChanged += RefreshParagraphAfterInlineChange;
@@ -2505,6 +2566,12 @@ namespace Writersword.Modules.TextEditor.Document
 
             BeginImageEdit("Обтекание изображения");
 
+            // Переход в поток или из потока меняет сам отсчёт: смещения ниже считаются
+            // от текстовой области листа, и опора из Word с ними несовместима. Смена
+            // одного плавающего режима на другой опору не трогает.
+            if (_selectedImage.WrapMode == WrapMode.Inline || mode == WrapMode.Inline)
+                _selectedImage.AnchorPosition = null;
+
             // Переход из строки текста в плавающий режим: фиксируем текущее положение
             // как смещение якоря, чтобы картинка не прыгнула в угол страницы.
             double offsetXPt = _selectedImage.OffsetXPt;
@@ -2610,6 +2677,7 @@ namespace Writersword.Modules.TextEditor.Document
                     && pinEntry.PageIndex >= 0 && pinEntry.PageIndex < _pages.Count)
                 {
                     var pg = _pages[pinEntry.PageIndex];
+                    _selectedImage.AnchorPosition = null;
                     _selectedImage.OffsetXPt = pinEntry.XPt - (pg.PadLeftPt + pg.MarginLeftPt);
                     _selectedImage.OffsetYPt = pinEntry.Ypt - (pg.Ypt + pg.PadTopPt);
                 }
@@ -2727,6 +2795,9 @@ namespace Writersword.Modules.TextEditor.Document
             float docX = Math.Clamp(targetXPt, left, maxX);
             float docY = Math.Clamp(targetYPt, top, maxY);
 
+            // Смещения записаны от текстовой области листа: опора из Word, от которой
+            // картинка отсчитывалась раньше, больше не действует.
+            image.AnchorPosition = null;
             image.OffsetXPt = docX - (flowPage.PadLeftPt + flowPage.MarginLeftPt);
             image.OffsetYPt = docY - (flowPage.Ypt + flowPage.PadTopPt);
         }
@@ -4166,6 +4237,14 @@ namespace Writersword.Modules.TextEditor.Document
 
                 foreach (var cell in table.Cells)
                 {
+                    // Таблицы внутри ячейки считаются так же: каждая их ячейка — свой поток.
+                    if (cell.NestedTables is { Count: > 0 } nestedTables)
+                    {
+                        var nestedBlocks = new List<Models.Document.BlockModel>(nestedTables.Count);
+                        foreach (var nested in nestedTables) nestedBlocks.Add(nested.Table);
+                        ApplyListMarkerTextsInTables(nestedBlocks, textWidthPt, flowMarkers);
+                    }
+
                     var cellMap = Rendering.ListNumberingEngine.Compute(cell.Paragraphs);
 
                     // Диагностика пропадающих маркеров: видно, у скольких абзацев

@@ -808,6 +808,11 @@ namespace Writersword.Modules.TextEditor.Services
 
                     foreach (var cell in table.Cells)
                         NormalizeBorderGroups(cell.Paragraphs);
+
+                    // Ячейки таблиц, вложенных в ячейки, — такие же отдельные потоки.
+                    foreach (var nestedTable in table.NestedTablesDeep())
+                        foreach (var nestedCell in nestedTable.Cells)
+                            NormalizeBorderGroups(nestedCell.Paragraphs);
                 }
             }
 
@@ -910,10 +915,20 @@ namespace Writersword.Modules.TextEditor.Services
                             mainPart, extractedImages, warnings, depth: 0);
                         if (tableBlock is not null)
                         {
-                            // Слитые Word таблицы с разным выравниванием строк встают
-                            // отдельными таблицами, как они видны на листе.
-                            foreach (var part in SplitTableByRowAlignment(t, tableBlock))
-                                section.Blocks.Add(part);
+                            // Своё выравнивание у строк таблицы (w:jc у w:trPr или у
+                            // w:tblPrEx) Word 2013 и новее на листе не показывает: в режиме
+                            // совместимости 15 таблица стоит целиком по выравниванию самой
+                            // таблицы, все строки одна под другой. Документы старых режимов
+                            // по-прежнему делятся по выравниванию строк.
+                            if (_compatibilityMode >= 15)
+                            {
+                                section.Blocks.Add(tableBlock);
+                            }
+                            else
+                            {
+                                foreach (var part in SplitTableByRowAlignment(t, tableBlock))
+                                    section.Blocks.Add(part);
+                            }
                         }
                         break;
 
@@ -1008,9 +1023,21 @@ namespace Writersword.Modules.TextEditor.Services
                 para.Chunks.Add(chunk);
                 chunk.Runs.Clear();
 
-                foreach (var runElement in segments[i])
-                    AppendRunOrDrawing(runElement, chunk, section, resolver, effPara,
-                        mainPart, extractedImages, warnings);
+                // Плавающие картинки абзаца ставятся в поток блоками перед ним: место
+                // блока в потоке даёт раскладке и страницу, и верх абзаца-опоры.
+                _pendingFloats.Clear();
+                _floatingAllowed = true;
+                try
+                {
+                    foreach (var runElement in segments[i])
+                        AppendRunOrDrawing(runElement, chunk, section, resolver, effPara,
+                            mainPart, extractedImages, warnings);
+                }
+                finally
+                {
+                    _floatingAllowed = false;
+                }
+                FlushPendingFloats(section);
 
                 // Пустой хвост после разрыва в конце абзаца: у Word 2013 и новее знак абзаца
                 // остаётся на строке разрыва, и новая страница начинается сразу со следующего
@@ -1366,7 +1393,18 @@ namespace Writersword.Modules.TextEditor.Services
                         break;
 
                     case W.Drawing drawing:
-                        ImportDrawing(drawing, chunk, section, runProps, mainPart, extractedImages, warnings);
+                        ImportDrawing(drawing, chunk, section, runProps, resolver, mainPart, extractedImages, warnings);
+                        break;
+
+                    // Фигуры Word лежат в mc:AlternateContent: современный вид и запасной.
+                    case OpenXmlElement alternate when alternate.LocalName == "AlternateContent":
+                        ImportAlternateContent(alternate, chunk, section, runProps, resolver,
+                            mainPart, extractedImages, warnings);
+                        break;
+
+                    // Картинка старого вида (w:pict): опознаётся по имени элемента.
+                    case OpenXmlElement legacyPicture when legacyPicture.LocalName == "pict":
+                        ImportVmlPicture(legacyPicture, chunk, section, runProps, mainPart, extractedImages, warnings);
                         break;
 
                     case W.FootnoteReference:
@@ -1459,74 +1497,6 @@ namespace Writersword.Modules.TextEditor.Services
             || (c >= '\uFB1D' && c <= '\uFDFF')
             || (c >= '\uFE70' && c <= '\uFEFC');
 
-        private void ImportDrawing(
-            W.Drawing drawing,
-            TextChunk chunk,
-            SectionModel section,
-            RunProperties runProps,
-            MainDocumentPart mainPart,
-            Dictionary<string, byte[]> extractedImages,
-            List<string> warnings)
-        {
-            Wp.Inline? inline = drawing.Inline;
-            Wp.Anchor? anchor = drawing.Anchor;
-            bool isFloating = anchor is not null;
-
-            // У плавающего объекта (wp:anchor) графика лежит дочерним элементом:
-            // отдельного свойства, как у wp:inline, у него нет.
-            Dr.Graphic? graphic = inline?.Graphic ?? anchor?.GetFirstChild<Dr.Graphic>();
-            long extentCx = inline?.Extent?.Cx ?? anchor?.Extent?.Cx ?? 0;
-            long extentCy = inline?.Extent?.Cy ?? anchor?.Extent?.Cy ?? 0;
-
-            var blip = graphic?.GraphicData?.Descendants<Dr.Blip>().FirstOrDefault();
-            string? relId = blip?.Embed?.Value;
-            if (string.IsNullOrEmpty(relId))
-                return; // не растровая картинка (например, диаграмма/OLE) — пропускаем молча, это не потеря текста
-
-            if (mainPart.GetPartById(relId!) is not ImagePart imagePart)
-                return;
-
-            byte[] data;
-            using (var stream = imagePart.GetStream(FileMode.Open, FileAccess.Read))
-            using (var mem = new MemoryStream())
-            {
-                stream.CopyTo(mem);
-                data = mem.ToArray();
-            }
-
-            string ext = ContentTypeToExtension(imagePart.ContentType);
-            if (ext.Length == 0)
-            {
-                warnings.Add("Изображение неподдерживаемого формата (векторное или неизвестное) пропущено.");
-                return;
-            }
-
-            string fileName = $"img_{Guid.NewGuid():N}{ext}";
-            extractedImages[fileName] = data;
-
-            double widthPt = extentCx > 0 ? extentCx / EmuPerPoint : 100;
-            double heightPt = extentCy > 0 ? extentCy / EmuPerPoint : 100;
-
-            var image = new ImageBlock
-            {
-                ImageFileName = fileName,
-                WidthPt = widthPt,
-                HeightPt = heightPt,
-                WrapMode = WrapMode.Inline
-            };
-
-            if (isFloating)
-                warnings.Add("Обтекание текстом у плавающих картинок не переносится — картинка вставлена как обычная (в тексте).");
-
-            section.InlineObjects.Add(image);
-            chunk.Runs.Add(new RunModel
-            {
-                Text = RunModel.ObjectPlaceholder.ToString(),
-                Properties = runProps,
-                InlineImageId = image.Id
-            });
-        }
-
         private static string ContentTypeToExtension(string contentType) => contentType switch
         {
             "image/png" => ".png",
@@ -1541,6 +1511,12 @@ namespace Writersword.Modules.TextEditor.Services
 
         // ── Таблицы ─────────────────────────────────────────────────────────
 
+        /// <summary>
+        /// Сколько уровней таблиц в таблицах строится. Глубже содержимое таблицы
+        /// переносится в ячейку абзацами: защита от файла с бесконечной вложенностью.
+        /// </summary>
+        private const int MaxNestedTableDepth = 6;
+
         private TableBlock? ImportTable(
             W.Table table,
             SectionModel section,
@@ -1552,12 +1528,6 @@ namespace Writersword.Modules.TextEditor.Services
             List<string> warnings,
             int depth)
         {
-            if (depth > 0)
-            {
-                warnings.Add("Вложенные таблицы не поддерживаются и были пропущены.");
-                return null;
-            }
-
             var grid = table.GetFirstChild<W.TableGrid>();
             var columnWidthsTwips = grid?.Elements<W.GridColumn>()
                 .Select(c => ParseLong(c.Width?.Value) ?? 0L)
@@ -1664,10 +1634,19 @@ namespace Writersword.Modules.TextEditor.Services
             };
             string? styleFill = ResolveTableStyleFill(table, mainPart);
 
+            // Таблица с обтеканием текстом (w:tblpPr): стоит в своей точке листа, и
+            // текст обходит её с обеих сторон.
+            var floating = table.GetFirstChild<W.TableProperties>()?.GetFirstChild<W.TablePositionProperties>();
+            if (floating is not null)
+                block.FloatPosition = ReadTableFloatPosition(floating);
+
             // Границы ячеек считаются, когда известна вся сетка: сторона ячейки у края
             // таблицы берёт внешнюю границу, внутри — внутреннюю (insideH/insideV), а
             // объединённая по вертикали ячейка узнаёт свой низ только в конце.
             var pendingBorders = new List<(TableCell Cell, W.TableCellBorders? Own, bool LastInRow)>();
+
+            // Границы каждой строки: границы таблицы с исключениями строки (w:tblPrEx).
+            var rowBorders = new TableBorderSet[rows.Count];
 
             // Поля ячеек: умолчания Word, стиль таблицы по умолчанию, стиль самой таблицы,
             // её w:tblCellMar; дальше строка (w:tblPrEx) и ячейка (w:tcMar).
@@ -1704,6 +1683,23 @@ namespace Writersword.Modules.TextEditor.Services
                     && (header.Val is null || header.Val.Value != W.OnOffOnlyValues.Off))
                     block.RepeatHeader = true;
 
+                // Разрыв строки между страницами. У Word строка разрывается, если ей не
+                // запрещено (w:cantSplit): её начало остаётся на странице, остаток уходит
+                // на следующую. Без этого таблица из одной высокой строки уезжала на новую
+                // страницу целиком и уводила за собой заголовок, который держится за неё.
+                if (rowIndex == 0)
+                {
+                    var cantSplit = rows[rowIndex].TableRowProperties?.GetFirstChild<W.CantSplit>();
+                    bool keepsWhole = cantSplit is not null
+                        && (cantSplit.Val is null || cantSplit.Val.Value != W.OnOffOnlyValues.Off);
+                    block.SplitMode = keepsWhole ? TableSplitMode.ByRow : TableSplitMode.ByCell;
+                }
+
+                // Границы строки (w:tblPrEx/w:tblBorders) — поверх границ таблицы: Word
+                // пишет их, когда строки одной таблицы оформлены по-разному, например у
+                // двух таблиц, слитых в одну.
+                rowBorders[rowIndex] = tableBorders.With(rows[rowIndex].TablePropertyExceptions?.TableBorders);
+
                 foreach (var wCell in cells)
                 {
                     var cellProps = wCell.TableCellProperties;
@@ -1722,17 +1718,56 @@ namespace Writersword.Modules.TextEditor.Services
                     }
 
                     var paragraphs = new List<ParagraphBlock>();
+
+                    // Таблицы внутри ячейки. У Word таблица в ячейке стоит между абзацами,
+                    // и после неё всегда идёт абзац: к нему таблица и привязывается.
+                    // pendingNested — таблицы, за которыми абзац ещё не встретился.
+                    List<NestedTable>? nestedTables = null;
+                    var pendingNested = new List<TableBlock>();
+
+                    void AttachPendingNested(ParagraphBlock anchor, int anchorIndex)
+                    {
+                        if (pendingNested.Count == 0) return;
+
+                        nestedTables ??= new List<NestedTable>();
+                        foreach (var pendingTable in pendingNested)
+                        {
+                            nestedTables.Add(new NestedTable
+                            {
+                                BeforeParagraphId = anchor.Id,
+                                BeforeParagraphIndex = anchorIndex,
+                                Table = pendingTable
+                            });
+                        }
+                        pendingNested.Clear();
+                    }
+
                     foreach (var cellChild in wCell.ChildElements)
                     {
                         switch (cellChild)
                         {
                             case W.Paragraph cellParagraph:
-                                paragraphs.Add(ImportCellParagraph(cellParagraph, section, resolver,
-                                    numbering, listIdMap, mainPart, extractedImages, warnings));
+                                var importedParagraph = ImportCellParagraph(cellParagraph, section, resolver,
+                                    numbering, listIdMap, mainPart, extractedImages, warnings);
+                                paragraphs.Add(importedParagraph);
+                                AttachPendingNested(importedParagraph, paragraphs.Count - 1);
                                 break;
 
                             case W.Table nested:
-                                warnings.Add("Вложенные таблицы не поддерживаются: их содержимое " +
+                                var nestedBlock = depth < MaxNestedTableDepth
+                                    ? ImportTable(nested, section, resolver, numbering, listIdMap,
+                                        mainPart, extractedImages, warnings, depth + 1)
+                                    : null;
+
+                                if (nestedBlock is not null)
+                                {
+                                    pendingNested.Add(nestedBlock);
+                                    break;
+                                }
+
+                                // Глубже предела вложенности таблица не строится: её текст
+                                // остаётся в ячейке обычными абзацами и не теряется.
+                                warnings.Add("Таблица вложена слишком глубоко: её содержимое " +
                                              "перенесено в ячейку обычными абзацами.");
                                 foreach (var nestedParagraph in nested.Descendants<W.Paragraph>())
                                     paragraphs.Add(ImportCellParagraph(nestedParagraph, section, resolver,
@@ -1741,6 +1776,15 @@ namespace Writersword.Modules.TextEditor.Services
                         }
                     }
                     if (paragraphs.Count == 0) paragraphs.Add(new ParagraphBlock());
+
+                    // Таблица в самом конце ячейки (в файлах не от Word): абзац за ней
+                    // добавляется, как его добавил бы Word.
+                    if (pendingNested.Count > 0)
+                    {
+                        var closingParagraph = new ParagraphBlock();
+                        paragraphs.Add(closingParagraph);
+                        AttachPendingNested(closingParagraph, paragraphs.Count - 1);
+                    }
 
                     var cellMargins = ApplyCellMargin(rowMargins, cellProps?.TableCellMargin);
 
@@ -1751,6 +1795,7 @@ namespace Writersword.Modules.TextEditor.Services
                         RowSpan = 1,
                         ColSpan = gridSpan,
                         Paragraphs = paragraphs,
+                        NestedTables = nestedTables,
                         BackgroundColor = cellProps?.Shading is not null
                             ? NormalizeShadingColor(cellProps.Shading)
                             : styleFill,
@@ -1798,7 +1843,7 @@ namespace Writersword.Modules.TextEditor.Services
             foreach (var (cell, own, lastInRow) in pendingBorders)
             {
                 cell.Borders = ResolveCellBorders(
-                    own, tableBorders,
+                    own, cell.Row >= 0 && cell.Row < rowBorders.Length ? rowBorders[cell.Row] : tableBorders,
                     firstRow: cell.Row == 0,
                     lastRow: cell.Row + cell.RowSpan >= rows.Count,
                     firstColumn: cell.Column == 0,
@@ -1870,9 +1915,11 @@ namespace Writersword.Modules.TextEditor.Services
             var result = new List<TableBlock>();
             var rowAlignments = ReadRowAlignments(source);
 
+            // Таблица с обтеканием стоит в одной точке листа и на части не делится.
             if (rowAlignments.Length != block.RowCount
                 || rowAlignments.All(a => a is null)
-                || block.BidiVisual)
+                || block.BidiVisual
+                || block.FloatPosition is not null)
             {
                 result.Add(block);
                 return result;
@@ -1949,6 +1996,104 @@ namespace Writersword.Modules.TextEditor.Services
             return result;
         }
 
+        /// <summary>
+        /// Положение таблицы с обтеканием (w:tblpPr). Атрибуты читаются по именам: это
+        /// числа в двадцатых долях пункта и слова-опоры. Незаданная опора у Word — текст
+        /// по горизонтали и поле по вертикали. Сторона опоры (tblpXSpec, tblpYSpec)
+        /// главнее смещения: при ней смещение Word не учитывает.
+        /// </summary>
+        private static TableFloatPosition ReadTableFloatPosition(OpenXmlElement element)
+        {
+            var result = new TableFloatPosition
+            {
+                HorizontalAnchor = TableFloatAnchor.Text,
+                VerticalAnchor = TableFloatAnchor.Margin
+            };
+
+            foreach (var attribute in element.GetAttributes())
+            {
+                string value = attribute.Value ?? string.Empty;
+
+                switch (attribute.LocalName)
+                {
+                    case "horzAnchor":
+                        result.HorizontalAnchor = ReadTableFloatAnchor(value, result.HorizontalAnchor);
+                        break;
+
+                    case "vertAnchor":
+                        result.VerticalAnchor = ReadTableFloatAnchor(value, result.VerticalAnchor);
+                        break;
+
+                    case "tblpX":
+                        if (TryReadTwipsAsPoints(value, out double xPt)) result.XPt = xPt;
+                        break;
+
+                    case "tblpY":
+                        if (TryReadTwipsAsPoints(value, out double yPt)) result.YPt = yPt;
+                        break;
+
+                    case "tblpXSpec":
+                        result.HorizontalAlign = value switch
+                        {
+                            "left" or "inside" => TableFloatAlign.Start,
+                            "center" => TableFloatAlign.Center,
+                            "right" or "outside" => TableFloatAlign.End,
+                            _ => TableFloatAlign.Offset
+                        };
+                        break;
+
+                    case "tblpYSpec":
+                        result.VerticalAlign = value switch
+                        {
+                            "top" or "inside" => TableFloatAlign.Start,
+                            "center" => TableFloatAlign.Center,
+                            "bottom" or "outside" => TableFloatAlign.End,
+                            _ => TableFloatAlign.Offset
+                        };
+                        break;
+
+                    case "leftFromText":
+                        if (TryReadTwipsAsPoints(value, out double leftPt)) result.LeftFromTextPt = Math.Max(0, leftPt);
+                        break;
+
+                    case "rightFromText":
+                        if (TryReadTwipsAsPoints(value, out double rightPt)) result.RightFromTextPt = Math.Max(0, rightPt);
+                        break;
+
+                    case "topFromText":
+                        if (TryReadTwipsAsPoints(value, out double topPt)) result.TopFromTextPt = Math.Max(0, topPt);
+                        break;
+
+                    case "bottomFromText":
+                        if (TryReadTwipsAsPoints(value, out double bottomPt)) result.BottomFromTextPt = Math.Max(0, bottomPt);
+                        break;
+                }
+            }
+
+            return result;
+        }
+
+        private static TableFloatAnchor ReadTableFloatAnchor(string value, TableFloatAnchor fallback) => value switch
+        {
+            "text" => TableFloatAnchor.Text,
+            "margin" => TableFloatAnchor.Margin,
+            "page" => TableFloatAnchor.Page,
+            _ => fallback
+        };
+
+        /// <summary>Число в двадцатых долях пункта — в пункты.</summary>
+        private static bool TryReadTwipsAsPoints(string value, out double points)
+        {
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double twips))
+            {
+                points = twips / 20.0;
+                return true;
+            }
+
+            points = 0;
+            return false;
+        }
+
         /// <summary>Границы таблицы: внешние стороны и внутренние линии.</summary>
         private sealed class TableBorderSet
         {
@@ -1964,6 +2109,19 @@ namespace Writersword.Modules.TextEditor.Services
                 Right = (W.BorderType?)source.RightBorder ?? (W.BorderType?)source.EndBorder ?? Right;
                 InsideH = (W.BorderType?)source.InsideHorizontalBorder ?? InsideH;
                 InsideV = (W.BorderType?)source.InsideVerticalBorder ?? InsideV;
+            }
+
+            /// <summary>
+            /// Этот же набор с исключениями строки поверх. Без исключений возвращается сам
+            /// набор: копия нужна только строке, у которой границы свои.
+            /// </summary>
+            public TableBorderSet With(W.TableBorders? exceptions)
+            {
+                if (exceptions is null) return this;
+
+                var result = (TableBorderSet)MemberwiseClone();
+                result.Apply(exceptions);
+                return result;
             }
         }
 
@@ -2292,27 +2450,37 @@ namespace Writersword.Modules.TextEditor.Services
             if (borderVal == W.BorderValues.Double)
                 return BorderStyle.Double;
 
-            if (borderVal == W.BorderValues.Dashed || borderVal == W.BorderValues.DashDotStroked)
+            if (borderVal == W.BorderValues.Dashed)
                 return BorderStyle.Dashed;
 
             if (borderVal == W.BorderValues.Dotted)
                 return BorderStyle.Dotted;
 
-            if (borderVal == W.BorderValues.Thick
-                || borderVal == W.BorderValues.ThickThinSmallGap
-                || borderVal == W.BorderValues.ThinThickSmallGap)
+            if (borderVal == W.BorderValues.Thick)
                 return BorderStyle.Thick;
 
-            // Ближайшие начертания из тех, что умеет модель: тройная, волна, штрих.
             if (borderVal == W.BorderValues.Triple)
                 return BorderStyle.Triple;
 
-            if (borderVal == W.BorderValues.Wave || borderVal == W.BorderValues.DoubleWave)
-                return BorderStyle.Wave;
+            if (borderVal == W.BorderValues.Wave) return BorderStyle.Wave;
+            if (borderVal == W.BorderValues.DoubleWave) return BorderStyle.DoubleWave;
 
-            if (borderVal == W.BorderValues.DotDash || borderVal == W.BorderValues.DotDotDash
-                || borderVal == W.BorderValues.DashSmallGap)
-                return BorderStyle.Dashed;
+            // Штрихпунктирные линии — каждая своим видом, а не общим «штрихом».
+            if (borderVal == W.BorderValues.DotDash) return BorderStyle.DotDash;
+            if (borderVal == W.BorderValues.DotDotDash) return BorderStyle.DotDotDash;
+            if (borderVal == W.BorderValues.DashSmallGap) return BorderStyle.DashSmallGap;
+            if (borderVal == W.BorderValues.DashDotStroked) return BorderStyle.DashDotStroked;
+
+            // «Тонкая и толстая»: две или три черты разной толщины с просветом.
+            if (borderVal == W.BorderValues.ThinThickSmallGap) return BorderStyle.ThinThickSmallGap;
+            if (borderVal == W.BorderValues.ThickThinSmallGap) return BorderStyle.ThickThinSmallGap;
+            if (borderVal == W.BorderValues.ThinThickThinSmallGap) return BorderStyle.ThinThickThinSmallGap;
+            if (borderVal == W.BorderValues.ThinThickMediumGap) return BorderStyle.ThinThickMediumGap;
+            if (borderVal == W.BorderValues.ThickThinMediumGap) return BorderStyle.ThickThinMediumGap;
+            if (borderVal == W.BorderValues.ThinThickThinMediumGap) return BorderStyle.ThinThickThinMediumGap;
+            if (borderVal == W.BorderValues.ThinThickLargeGap) return BorderStyle.ThinThickLargeGap;
+            if (borderVal == W.BorderValues.ThickThinLargeGap) return BorderStyle.ThickThinLargeGap;
+            if (borderVal == W.BorderValues.ThinThickThinLargeGap) return BorderStyle.ThinThickThinLargeGap;
 
             // Объёмные рамки: светлая и тёмная половины.
             if (borderVal == W.BorderValues.ThreeDEmboss) return BorderStyle.ThreeDEmboss;

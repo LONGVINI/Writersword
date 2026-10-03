@@ -20,8 +20,16 @@ namespace Writersword.Modules.TextEditor.Document
         /// <param name="rowTo">Последняя строка слайса (не включительно). -1 = до конца.</param>
         /// <param name="firstRowOffset">Смещение контента первой строки (ByCell).</param>
         /// <param name="lastRowVisibleH">Видимая высота последней строки (ByCell). -1 = целая.</param>
+        /// <remarks>
+        /// Таблицы, вложенные в ячейки, добавляются сюда же: каждая встаёт в newTables
+        /// отдельной записью сразу за своей таблицей-хозяйкой, а абзацы её ячеек — в
+        /// newLayouts перед тем абзацем хозяйской ячейки, перед которым она стоит. Так
+        /// вложенная таблица рисуется, принимает каретку и выделение тем же кодом, что
+        /// обычная.
+        /// </remarks>
         private void AddCellParasToLayouts(
             List<ParaLayout> newLayouts,
+            List<TableEntry> newTables,
             TableBlock tableBlock,
             SKTableLayout tableLayout,
             int tableEntryIdx,
@@ -45,7 +53,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (firstRowOffset > 0f && rowFrom < tableLayout.Rows.Count)
             {
                 foreach (var cl in tableLayout.Rows[rowFrom].Cells)
-                    maxCellPadTop = Math.Max(maxCellPadTop, cl.PadTopPt + cl.Borders.Top.WidthPt);
+                    maxCellPadTop = Math.Max(maxCellPadTop, cl.PadTopPt + cl.TopInsetPt);
             }
 
             foreach (var rowLayout in tableLayout.Rows)
@@ -66,13 +74,12 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     if (cellLayout.Row != rowLayout.Row) continue;
 
-                    float cellBT = cellLayout.Borders.Top.WidthPt;
-                    float cellBB = cellLayout.Borders.Bottom.WidthPt;
+                    float cellBT = cellLayout.TopInsetPt;
+                    float cellBB = cellLayout.BottomInsetPt;
                     float cellPadTopTotal = cellBT + cellLayout.PadTopPt;
                     float cellPadBotTotal = cellBB + cellLayout.PadBottomPt;
 
-                    float cellContentX = tableXPt + cellLayout.Xpt
-                        + cellLayout.PadLeftPt + cellLayout.Borders.Left.WidthPt;
+                    float cellContentX = tableXPt + cellLayout.Xpt + cellLayout.ContentInsetLeftPt;
 
                     // cellBaseY — Y верха этой строки на текущей странице.
                     // Для строк после rowFrom: строка rowFrom имеет effectiveRowH увеличенный
@@ -82,9 +89,10 @@ namespace Writersword.Modules.TextEditor.Document
                         ? firstRowOffset - maxCellPadTop : 0f;
                     float cellBaseY = tableYPt + cellLayout.Ypt - rowOffsetY - extraOffset;
 
-                    float clipX = tableXPt + cellLayout.Xpt + cellLayout.Borders.Left.WidthPt;
+                    // Боковая рамка рисуется по краю ячейки: внутри ячейки лежит её половина.
+                    float clipX = tableXPt + cellLayout.Xpt + cellLayout.Borders.Left.SpanPt / 2f;
                     float clipW = cellLayout.WidthPt
-                        - cellLayout.Borders.Left.WidthPt - cellLayout.Borders.Right.WidthPt;
+                        - (cellLayout.Borders.Left.SpanPt + cellLayout.Borders.Right.SpanPt) / 2f;
 
                     // pageVisibleRow — высота строки, видимая на этой странице (в координатах строки).
                     float pageVisibleRow = isByCellSplit
@@ -149,22 +157,80 @@ namespace Writersword.Modules.TextEditor.Document
                     float cellBottom = clipY + clipH;
 
                     // Ищем последний параграф, хоть одна строка которого видна на этой странице.
+                    // Строки абзаца лежат под его интервалом «перед»: верх текста —
+                    // Ypt + SpaceBeforePt. Без интервала разрез страницы считался выше
+                    // настоящих строк, и на странице оставалась половина строки.
                     int lastVisiblePi = -1;
                     for (int pi = cellLayout.Paragraphs.Count - 1; pi >= 0; pi--)
                     {
                         var cp = cellLayout.Paragraphs[pi];
-                        float pcY = contentOffsetY + cp.Ypt;
+                        float pcY = contentOffsetY + cp.Ypt + cp.Layout.SpaceBeforePt;
                         if (cp.Layout.Lines.Count == 0)
                         {
                             if (pcY > P) { lastVisiblePi = pi; break; }
                             continue;
                         }
                         var ll = cp.Layout.Lines[^1];
-                        if (pcY + ll.Y + ll.Height > P) { lastVisiblePi = pi; break; }
+                        if (pcY + ll.Y + ll.Height > P + CellCutTolerancePt) { lastVisiblePi = pi; break; }
+                    }
+
+                    // Таблицы внутри ячейки, стоящие перед абзацем beforeParagraph (число,
+                    // равное количеству абзацев, — после последнего).
+                    //
+                    // Вложенная таблица между страницами не делится: она встаёт на ту
+                    // страницу, где помещается целиком. Место разреза строки-хозяйки
+                    // всегда лежит на границе строк текста, поэтому таблица оказывается
+                    // либо выше разреза, либо ниже.
+                    void AddNestedTables(int beforeParagraph)
+                    {
+                        if (cellLayout.NestedTables.Count == 0) return;
+                        if (modelCell?.NestedTables is not { Count: > 0 } modelNested) return;
+
+                        int paragraphCount = cellLayout.Paragraphs.Count;
+
+                        foreach (var nested in cellLayout.NestedTables)
+                        {
+                            bool standsHere = beforeParagraph >= paragraphCount
+                                ? nested.BeforeParagraphIndex >= paragraphCount
+                                : nested.BeforeParagraphIndex == beforeParagraph;
+                            if (!standsHere) continue;
+                            if (nested.SourceIndex < 0 || nested.SourceIndex >= modelNested.Count) continue;
+
+                            // Верх и низ таблицы в координатах содержимого ячейки.
+                            float nestedTop = contentOffsetY + nested.Ypt;
+                            float nestedBottom = nestedTop + nested.Layout.TotalHeightPt;
+
+                            // Уже показана на прошлой странице.
+                            if (nestedBottom <= P + CellCutTolerancePt) continue;
+
+                            // Не помещается до разреза — уходит на следующую страницу.
+                            if (contentCutY < float.MaxValue
+                                && nestedBottom > contentCutY + CellCutTolerancePt) continue;
+
+                            // Положение на листе — как у абзаца ячейки на этом же месте.
+                            float nestedYPt = cellContentY + nestedTop;
+                            if (effectiveOffset > 0f)
+                            {
+                                float consumedBefore = effectiveOffset - cellPadTopTotal;
+                                nestedYPt += effectiveOffset - Math.Min(nested.Ypt, consumedBefore);
+                            }
+
+                            float nestedXPt = cellContentX + nested.Xpt;
+                            var nestedBlock = modelNested[nested.SourceIndex].Table;
+
+                            int nestedEntryIdx = newTables.Count;
+                            newTables.Add(new TableEntry(
+                                nestedBlock, nested.Layout, nestedYPt, nestedXPt, pageIdx));
+                            AddCellParasToLayouts(
+                                newLayouts, newTables, nestedBlock, nested.Layout,
+                                nestedEntryIdx, nestedXPt, nestedYPt, pageIdx);
+                        }
                     }
 
                     for (int pi = 0; pi < cellLayout.Paragraphs.Count; pi++)
                     {
+                        AddNestedTables(pi);
+
                         var cellPara = cellLayout.Paragraphs[pi];
                         var paraBlock = pi < modelCell.Paragraphs.Count
                             ? modelCell.Paragraphs[pi] : null;
@@ -176,15 +242,21 @@ namespace Writersword.Modules.TextEditor.Document
                             _cellVmCache[paraBlock] = vm;
                         }
 
-                        float paraContentY = contentOffsetY + cellPara.Ypt;
+                        // Верх текста абзаца в координатах содержимого ячейки: под
+                        // интервалом «перед».
+                        float paraContentY = contentOffsetY + cellPara.Ypt + cellPara.Layout.SpaceBeforePt;
 
                         // Пропускаем параграфы целиком до или после видимой области.
+                        // Место разреза — низ строки, посчитанный в проходе раскладки
+                        // тем же сложением в другом порядке: сравнение идёт с допуском,
+                        // иначе строка на самом разрезе показалась бы на обеих страницах.
                         if (cellPara.Layout.Lines.Count > 0)
                         {
                             var fl = cellPara.Layout.Lines[0];
                             var ll = cellPara.Layout.Lines[^1];
-                            if (paraContentY + ll.Y + ll.Height <= P) continue;
-                            if (contentCutY < float.MaxValue && paraContentY + fl.Y >= contentCutY) continue;
+                            if (paraContentY + ll.Y + ll.Height <= P + CellCutTolerancePt) continue;
+                            if (contentCutY < float.MaxValue
+                                && paraContentY + fl.Y >= contentCutY - CellCutTolerancePt) continue;
                         }
 
                         // lineFrom: первая строка, заканчивающаяся после P (видимая на этой странице).
@@ -194,12 +266,12 @@ namespace Writersword.Modules.TextEditor.Document
                             for (int li = 0; li < cellPara.Layout.Lines.Count; li++)
                             {
                                 var ln = cellPara.Layout.Lines[li];
-                                if (paraContentY + ln.Y + ln.Height > P) { lineFrom = li; break; }
+                                if (paraContentY + ln.Y + ln.Height > P + CellCutTolerancePt) { lineFrom = li; break; }
                                 lineFrom = li + 1;
                             }
                         }
 
-                        // lineTo: последняя строка, начинающаяся до contentCutY.
+                        // lineTo: последняя строка, кончающаяся до contentCutY.
                         int lineTo = cellPara.Layout.Lines.Count;
                         if (contentCutY < float.MaxValue)
                         {
@@ -207,7 +279,7 @@ namespace Writersword.Modules.TextEditor.Document
                             for (int li = lineFrom; li < cellPara.Layout.Lines.Count; li++)
                             {
                                 var ln = cellPara.Layout.Lines[li];
-                                if (paraContentY + ln.Y + ln.Height <= contentCutY)
+                                if (paraContentY + ln.Y + ln.Height <= contentCutY + CellCutTolerancePt)
                                     lineTo = li + 1;
                                 else
                                     break;
@@ -271,6 +343,9 @@ namespace Writersword.Modules.TextEditor.Document
                             Cell: info,
                             Marker: cellMarker));
                     }
+
+                    // Таблицы после последнего абзаца ячейки.
+                    AddNestedTables(cellLayout.Paragraphs.Count);
                 }
             }
         }
@@ -291,12 +366,10 @@ namespace Writersword.Modules.TextEditor.Document
             float contentTopPt,
             float clipX, float clipY, float clipW, float clipH)
         {
-            float contentWidthPt = cellLayout.WidthPt
-                - cellLayout.PadLeftPt - cellLayout.PadRightPt
-                - cellLayout.Borders.Left.WidthPt - cellLayout.Borders.Right.WidthPt;
+            float contentWidthPt = cellLayout.ContentAreaWidthPt;
             float contentHeightPt = cellLayout.HeightPt
                 - cellLayout.PadTopPt - cellLayout.PadBottomPt
-                - cellLayout.Borders.Top.WidthPt - cellLayout.Borders.Bottom.WidthPt;
+                - cellLayout.TopInsetPt - cellLayout.BottomInsetPt;
 
             var rotation = SKTextRenderer.RotatedCellMatrix(
                 cellLayout.TextDirection, contentLeftPt, contentTopPt,
@@ -473,12 +546,14 @@ namespace Writersword.Modules.TextEditor.Document
             List<ParaLayout> current;
             List<ImageEntry> currentImages;
             List<ShapeEntry> currentShapes;
+            List<TableEntry> currentTables;
             List<PageRect> currentPages;
             lock (_renderLock)
             {
                 current = _layouts;
                 currentImages = _images;
                 currentShapes = _shapes;
+                currentTables = _tables;
                 currentPages = _pages;
             }
 
@@ -486,6 +561,10 @@ namespace Writersword.Modules.TextEditor.Document
             // видеть и их: иначе при наборе текст лез бы на фигуру до ближайшего
             // полного пересбора.
             var currentFloats = BuildFloatSource(currentImages, currentShapes);
+
+            // Таблицы с обтеканием — тоже: абзац рядом с такой таблицей при наборе
+            // должен обходить её так же, как в полном проходе.
+            AppendFloatingTablesBefore(currentFloats, currentTables, pvm.Model);
 
             // Верх и левый край абзаца берём из текущей записи раскладки: по ним
             // считаются зоны обтекания. Без них быстрый путь строил абзац без учёта
@@ -780,9 +859,13 @@ namespace Writersword.Modules.TextEditor.Document
             _wrapZoneShapesOverride = firstPassShapes;
             // Частичный проход при сдвиге поля — тоже жест: итог всё равно пересчитает
             // полный проход после отпускания.
+            // Линию таблицы тоже тянут жестом: каждое движение мыши пересобирает
+            // раскладку, и полная сходимость на каждом из них делала жест вязким.
+            // Итог пересчитывается полностью на отпускании кнопки (FinishTableDrag).
             int maxWrapIterations =
                 (_imageDragging || _imageResizing || _imageRotating
                  || _shapeDragging || _shapeResizing || _shapeRotating
+                 || _tableDragMode != TableDragMode.None
                  || _partialFromBlock >= 0) ? 1 : 4;
             const float ConvergedTolPt = 0.5f;
 
@@ -1158,10 +1241,78 @@ namespace Writersword.Modules.TextEditor.Document
                 if (block is TableBlock tableBlock)
                 {
                     var tableLayout = GetOrBuildTableLayout(tableBlock, textWidthPt);
+
+                    // Таблица с обтеканием текстом стоит в своей точке листа и строку в
+                    // потоке не занимает: текст следующих абзацев обходит её по зоне
+                    // обтекания, как плавающую картинку (DocumentCanvas.FloatingTables).
+                    if (tableBlock.FloatPosition is { } floatPosition)
+                    {
+                        float floatWPt = tableLayout.TotalWidthPt;
+                        float floatHPt = tableLayout.GetTotalHeightPt();
+
+                        // Таблица, привязанная к тексту, уходит на следующую страницу вместе
+                        // со своим абзацем, когда под ним ей не хватает места. Таблицу выше
+                        // листа переносить некуда — она остаётся где стоит.
+                        bool floatAtPageTop = contentYPt <= pageYPt + mt + 0.5f;
+                        if (floatPosition.VerticalAnchor == TableFloatAnchor.Text
+                            && !floatAtPageTop
+                            && contentYPt + (float)floatPosition.YPt + floatHPt > pageBottomPt
+                            && floatHPt <= pageBottomPt - (pageYPt + mt))
+                        {
+                            pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                            (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
+                            pageBottomPt = pageYPt + pageHeightPt - mb;
+                            contentYPt = pageYPt + mt;
+                            pageIdx++;
+                            newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                        }
+
+                        var (floatXPt, floatYPt) = FloatingTableOrigin(
+                            floatPosition, floatWPt, floatHPt,
+                            textXPt, textWidthPt, pageXPt, pageWidthPt,
+                            pageYPt, pageHeightPt, mt, mb, contentYPt);
+
+                        int floatEntryIdx = newTables.Count;
+                        newTables.Add(new TableEntry(tableBlock, tableLayout, floatYPt, floatXPt, pageIdx));
+                        AddCellParasToLayouts(newLayouts, newTables, tableBlock, tableLayout,
+                            floatEntryIdx, floatXPt, floatYPt, pageIdx,
+                            0, -1, 0f, -1f);
+
+                        // Высоту в потоке таблица не занимает: contentYPt остаётся на месте,
+                        // и абзац под таблицей начинается там же, где начался бы без неё.
+                        continue;
+                    }
+
                     float tableXPt = textXPt
                         + (float)tableBlock.ResolveLeftOffsetPt(textWidthPt, tableLayout.TotalWidthPt);
                     bool byCell = tableBlock.SplitMode == TableSplitMode.ByCell;
                     float fullPageH = pageHeightPt - mt - mb;
+
+                    // Строка-шапка повторяется над продолжением таблицы на каждой следующей
+                    // странице, как у Word. Место под неё отнимается у страницы до строк
+                    // куска, а рисуется она над куском (TableEntry.RepeatedHeaderHeightPt):
+                    // это копия для чтения, абзацев у неё в раскладке страницы нет, и
+                    // правится шапка в первой строке таблицы.
+                    //
+                    // Шапка не повторяется, когда она выше трети листа — под строки не
+                    // осталось бы места — и когда её ячейка объединена со строками ниже:
+                    // копия одной строки оборвала бы такую ячейку посередине.
+                    float repeatedHeaderH = 0f;
+                    if (tableBlock.RepeatHeader && tableLayout.Rows.Count > 1)
+                    {
+                        var headerRow = tableLayout.Rows[0];
+                        bool headerSpansDown = false;
+                        foreach (var headerCell in headerRow.Cells)
+                        {
+                            if (headerCell.RowSpan > 1) { headerSpansDown = true; break; }
+                        }
+
+                        if (!headerSpansDown && headerRow.HeightPt > 0f && headerRow.HeightPt <= fullPageH / 3f)
+                            repeatedHeaderH = headerRow.HeightPt;
+                    }
+
+                    // Высота шапки над текущим куском таблицы: у первого куска её нет.
+                    float sliceHeaderH = 0f;
 
                     // Картинка с обтеканием не должна ложиться на таблицу. Текст обходит
                     // её зону построчно, картинка в потоке встаёт сбоку, но таблица не
@@ -1190,14 +1341,19 @@ namespace Writersword.Modules.TextEditor.Document
                         float effectiveH = row.HeightPt - sliceFirstRowOffset;
 
                         float available = pageBottomPt - contentYPt;
-                        bool atPageTop = contentYPt <= pageYPt + mt + 0.5f;
 
-                        // Минимальный зазор снизу страницы: строка не прижимается вплотную к краю.
-                        // На верхней позиции страницы зазор не требуется — строка уже некуда двигать.
-                        const float MinRowEndGapPt = 8f;
-                        float fittingAvailable = atPageTop ? available : available - MinRowEndGapPt;
+                        // Под повторённой шапкой строка стоит так же «вверху страницы», как
+                        // и без неё: выше шапки ей подняться некуда.
+                        bool atPageTop = contentYPt <= pageYPt + mt + sliceHeaderH + 0.5f;
 
-                        if (effectiveH > fittingAvailable && (!atPageTop || sliceFirstRowOffset > 0f || effectiveH > fullPageH))
+                        // Строка встаёт на страницу, если помещается в оставшееся место, и может
+                        // стоять вплотную к нижнему полю — как у Word. Запас под строкой
+                        // (TableRowEndGapPt) задаётся в одном месте и сейчас нулевой: с запасом
+                        // на страницу входило на строку меньше, чем у Word, и длинная таблица
+                        // разбивалась по страницам иначе.
+                        float fittingAvailable = atPageTop ? available : available - TableRowEndGapPt;
+
+                        if (effectiveH > fittingAvailable && (!atPageTop || sliceFirstRowOffset > 0f || effectiveH > fullPageH - sliceHeaderH))
                         {
                             // ByRow: строка целиком переносится на следующую страницу.
                             //   Исключение: если строка выше целой страницы — разрывается постранично.
@@ -1205,7 +1361,7 @@ namespace Writersword.Modules.TextEditor.Document
                             // ri > 0: строки 1+ никогда не уходят на следующую страницу целиком —
                             // только режутся по ячейкам. Уйти может только строка 0 (в режиме ByRow).
                             // sliceFirstRowOffset > 0: продолжение ByCell, нельзя сбрасывать offset через ByRow.
-                            bool forceByCell = byCell || effectiveH > fullPageH || sliceFirstRowOffset > 0f || ri > 0;
+                            bool forceByCell = byCell || effectiveH > fullPageH - sliceHeaderH || sliceFirstRowOffset > 0f || ri > 0;
 
                             // Снап по строкам текста: ищем последнюю строку, целиком умещающуюся
                             // в fittingAvailable. Если ни одна строка не влезает — снап не найден (snapH=0).
@@ -1242,8 +1398,8 @@ namespace Writersword.Modules.TextEditor.Document
                                 }
                                 if (refCell != null)
                                 {
-                                    float cellPadTop = refCell.PadTopPt + refCell.Borders.Top.WidthPt;
-                                    float cellPadBottom = refCell.PadBottomPt + refCell.Borders.Bottom.WidthPt;
+                                    float cellPadTop = refCell.PadTopPt + refCell.TopInsetPt;
+                                    float cellPadBottom = refCell.PadBottomPt + refCell.BottomInsetPt;
                                     // На странице продолжения рендер добавляет cellPadTop сверху
                                     // (cellContentY += PadTop + Border_top в AddCellParasToLayouts).
                                     // Снап считает в координатах строки (без этого сдвига), поэтому
@@ -1252,19 +1408,68 @@ namespace Writersword.Modules.TextEditor.Document
                                     float snapAvailable = sliceFirstRowOffset > 0f
                                         ? fittingAvailable - cellPadTop
                                         : fittingAvailable;
-                                    bool snapDone = false;
                                     foreach (var para in refCell.Paragraphs)
                                     {
-                                        foreach (var line in para.Layout.Lines)
+                                        var paraLines = para.Layout.Lines;
+                                        if (paraLines.Count == 0) continue;
+
+                                        // Верх текста абзаца в координатах куска строки. Строки
+                                        // лежат под интервалом «перед» абзаца: без него низ строки
+                                        // считался выше настоящего, разрез проходил посреди
+                                        // следующей строки, и та оставалась на странице половиной.
+                                        float textTop = cellPadTop
+                                            + para.Ypt + para.Layout.SpaceBeforePt
+                                            - sliceFirstRowOffset;
+
+                                        // shownBefore — строки абзаца, оставшиеся на прошлых
+                                        // страницах; fitting — строки до низа этой страницы.
+                                        int shownBefore = 0;
+                                        int fitting = 0;
+                                        for (int li = 0; li < paraLines.Count; li++)
                                         {
-                                            float lineBottom = cellPadTop
-                                                + para.Ypt + line.Y + line.Height
-                                                - sliceFirstRowOffset;
-                                            if (lineBottom + cellPadBottom <= snapAvailable)
-                                                snapH = lineBottom;
-                                            else { snapDone = true; break; }
+                                            float lineBottom = textTop + paraLines[li].Y + paraLines[li].Height;
+
+                                            if (sliceFirstRowOffset > 0f && lineBottom <= CellCutTolerancePt)
+                                            {
+                                                shownBefore = li + 1;
+                                                fitting = li + 1;
+                                                continue;
+                                            }
+
+                                            if (lineBottom + cellPadBottom <= snapAvailable) fitting = li + 1;
+                                            else break;
                                         }
-                                        if (snapDone) break;
+
+                                        if (fitting >= paraLines.Count)
+                                        {
+                                            // Абзац помещается целиком: разрез не выше его низа.
+                                            if (fitting > shownBefore)
+                                                snapH = textTop + paraLines[^1].Y + paraLines[^1].Height;
+                                            continue;
+                                        }
+
+                                        // Абзац рвётся на этой странице. Запрет висячих строк —
+                                        // тот же, что у абзацев вне таблицы, и у Word он работает
+                                        // в ячейке так же: одна последняя строка не уезжает на
+                                        // следующую страницу, одна первая не остаётся внизу этой.
+                                        int linesHere = fitting - shownBefore;
+
+                                        if (paraLines.Count - fitting == 1 && linesHere >= 2)
+                                        {
+                                            fitting--;
+                                            linesHere--;
+                                        }
+
+                                        if (shownBefore == 0 && linesHere == 1)
+                                        {
+                                            fitting = 0;
+                                            linesHere = 0;
+                                        }
+
+                                        if (linesHere > 0)
+                                            snapH = textTop + paraLines[fitting - 1].Y + paraLines[fitting - 1].Height;
+
+                                        break;
                                     }
                                 }
                             }
@@ -1283,9 +1488,9 @@ namespace Writersword.Modules.TextEditor.Document
                                 if (row.Cells.Count > 0)
                                 {
                                     var sc = row.Cells[0];
-                                    splitCellPadBottom = sc.PadBottomPt + sc.Borders.Bottom.WidthPt;
+                                    splitCellPadBottom = sc.PadBottomPt + sc.BottomInsetPt;
                                     if (sliceFirstRowOffset > 0f)
-                                        splitCellPadTop = sc.PadTopPt + sc.Borders.Top.WidthPt;
+                                        splitCellPadTop = sc.PadTopPt + sc.TopInsetPt;
                                 }
                                 float visibleH = snapH + splitCellPadBottom + splitCellPadTop;
                                 float nextOffset = sliceFirstRowOffset + snapH;
@@ -1296,8 +1501,9 @@ namespace Writersword.Modules.TextEditor.Document
                                     RowFrom: rowFrom, RowTo: ri + 1,
                                     LastRowVisibleHeightPt: visibleH,
                                     FirstRowContentOffsetPt: sliceStartOffset,
-                                    IsContinuation: !isFirstSlice));
-                                AddCellParasToLayouts(newLayouts, tableBlock, tableLayout,
+                                    IsContinuation: !isFirstSlice,
+                                    RepeatedHeaderHeightPt: sliceHeaderH));
+                                AddCellParasToLayouts(newLayouts, newTables, tableBlock, tableLayout,
                                     teIdx, tableXPt, sliceStartY, pageIdx,
                                     rowFrom, ri + 1, sliceStartOffset, visibleH);
 
@@ -1316,6 +1522,10 @@ namespace Writersword.Modules.TextEditor.Document
                                     tableXPt, tableLayout.TotalWidthPt,
                                     RemainingTableHeightPt(tableLayout, ri, nextOffset),
                                     textXPt, textWidthPt, pageBottomPt, newPages);
+
+                                // Над продолжением — шапка: строки куска встают под ней.
+                                sliceHeaderH = ri > 0 ? repeatedHeaderH : 0f;
+                                contentYPt += sliceHeaderH;
 
                                 sliceStartY = contentYPt;
                                 sliceStartOffset = nextOffset;
@@ -1337,8 +1547,9 @@ namespace Writersword.Modules.TextEditor.Document
                                         RowFrom: rowFrom, RowTo: ri,
                                         LastRowVisibleHeightPt: -1f,
                                         FirstRowContentOffsetPt: sliceStartOffset,
-                                        IsContinuation: !isFirstSlice));
-                                    AddCellParasToLayouts(newLayouts, tableBlock, tableLayout,
+                                        IsContinuation: !isFirstSlice,
+                                        RepeatedHeaderHeightPt: sliceHeaderH));
+                                    AddCellParasToLayouts(newLayouts, newTables, tableBlock, tableLayout,
                                         teIdx, tableXPt, sliceStartY, pageIdx,
                                         rowFrom, ri, sliceStartOffset, -1f);
                                 }
@@ -1357,6 +1568,10 @@ namespace Writersword.Modules.TextEditor.Document
                                     tableXPt, tableLayout.TotalWidthPt,
                                     RemainingTableHeightPt(tableLayout, ri, 0f),
                                     textXPt, textWidthPt, pageBottomPt, newPages);
+
+                                // Кусок, начатый самой шапкой, копии шапки над собой не несёт.
+                                sliceHeaderH = ri > 0 ? repeatedHeaderH : 0f;
+                                contentYPt += sliceHeaderH;
 
                                 sliceStartY = contentYPt;
                                 sliceStartOffset = 0f;
@@ -1378,8 +1593,9 @@ namespace Writersword.Modules.TextEditor.Document
                                         RowFrom: rowFrom, RowTo: ri,
                                         LastRowVisibleHeightPt: -1f,
                                         FirstRowContentOffsetPt: sliceStartOffset,
-                                        IsContinuation: !isFirstSlice));
-                                    AddCellParasToLayouts(newLayouts, tableBlock, tableLayout,
+                                        IsContinuation: !isFirstSlice,
+                                        RepeatedHeaderHeightPt: sliceHeaderH));
+                                    AddCellParasToLayouts(newLayouts, newTables, tableBlock, tableLayout,
                                         teIdx, tableXPt, sliceStartY, pageIdx,
                                         rowFrom, ri, sliceStartOffset, -1f);
                                     // rowFrom обновляем до ri, иначе финальный слайс повторно
@@ -1403,6 +1619,10 @@ namespace Writersword.Modules.TextEditor.Document
                                     RemainingTableHeightPt(tableLayout, ri, sliceFirstRowOffset),
                                     textXPt, textWidthPt, pageBottomPt, newPages);
 
+                                // Над продолжением — шапка: строки куска встают под ней.
+                                sliceHeaderH = ri > 0 ? repeatedHeaderH : 0f;
+                                contentYPt += sliceHeaderH;
+
                                 sliceStartY = contentYPt;
                                 ri--;
                                 continue;
@@ -1424,8 +1644,8 @@ namespace Writersword.Modules.TextEditor.Document
                                 float maxCellH = 0f;
                                 foreach (var cell in row.Cells)
                                 {
-                                    float cPadTop = cell.PadTopPt + cell.Borders.Top.WidthPt;
-                                    float cPadBot = cell.PadBottomPt + cell.Borders.Bottom.WidthPt;
+                                    float cPadTop = cell.PadTopPt + cell.TopInsetPt;
+                                    float cPadBot = cell.PadBottomPt + cell.BottomInsetPt;
                                     float consumed = Math.Max(0f, sliceStartOffset - cPadTop);
                                     float cellRemaining = Math.Max(0f, cell.ContentHeightPt - consumed);
                                     if (cellRemaining > 0f)
@@ -1449,8 +1669,9 @@ namespace Writersword.Modules.TextEditor.Document
                             RowFrom: rowFrom, RowTo: -1,
                             LastRowVisibleHeightPt: -1f,
                             FirstRowContentOffsetPt: sliceStartOffset,
-                            IsContinuation: !isFirstSlice));
-                        AddCellParasToLayouts(newLayouts, tableBlock, tableLayout,
+                            IsContinuation: !isFirstSlice,
+                            RepeatedHeaderHeightPt: sliceHeaderH));
+                        AddCellParasToLayouts(newLayouts, newTables, tableBlock, tableLayout,
                             teIdx, tableXPt, sliceStartY, pageIdx,
                             rowFrom, -1, sliceStartOffset, -1f);
                     }
@@ -1564,8 +1785,19 @@ namespace Writersword.Modules.TextEditor.Document
                         }
                         else
                         {
+                            // У фигуры из Word точка отсчёта своя: лист, поля или верх её
+                            // абзаца — блок фигуры стоит в потоке прямо перед ним.
+                            (float XPt, float YPt)? shapeOrigin = null;
+                            if (shapeBlock.AnchorPosition is { } shapeAnchor)
+                            {
+                                shapeOrigin = shapeAnchor.ResolveOrigin(
+                                    shapeWpt, shapeHpt,
+                                    textXPt, textWidthPt, pageXPt, pageWidthPt,
+                                    pageYPt, pageHeightPt, mt, mb, contentYPt);
+                            }
+
                             var built = BuildShapeEntry(
-                                shapeBlock, pageXPt, pageYPt, ml, mt, newPages, pageIdx);
+                                shapeBlock, pageXPt, pageYPt, ml, mt, newPages, pageIdx, shapeOrigin);
 
                             var (avX, avY) = AvoidReadingOverlap(
                                 built.XPt, built.Ypt, built.WidthPt, built.HeightPt,
@@ -1685,8 +1917,21 @@ namespace Writersword.Modules.TextEditor.Document
                             // Смещение приводится к листу чтения тем же множителем, что
                             // и размер: поля ужаты, лист уже, и печатное смещение уводило
                             // картинку за обрез.
-                            float fx = pageXPt + ml + ReadingOffsetXPt(imageBlock.OffsetXPt);
-                            float fy = pageYPt + mt + ReadingOffsetYPt(imageBlock.OffsetYPt);
+                            // У картинки из Word точка отсчёта своя: лист, поля или верх её
+                            // абзаца — блок картинки стоит в потоке прямо перед ним, и поток
+                            // сейчас как раз у его верха. Смещения прибавляются к ней так же.
+                            float floatOriginXPt = pageXPt + ml;
+                            float floatOriginYPt = pageYPt + mt;
+                            if (imageBlock.AnchorPosition is { } imageAnchor)
+                            {
+                                (floatOriginXPt, floatOriginYPt) = imageAnchor.ResolveOrigin(
+                                    imgWpt, imgHpt,
+                                    textXPt, textWidthPt, pageXPt, pageWidthPt,
+                                    pageYPt, pageHeightPt, mt, mb, contentYPt);
+                            }
+
+                            float fx = floatOriginXPt + ReadingOffsetXPt(imageBlock.OffsetXPt);
+                            float fy = floatOriginYPt + ReadingOffsetYPt(imageBlock.OffsetYPt);
 
                             // Проходы сходимости обтекания обязаны видеть картинку ТАМ ЖЕ,
                             // где по ней построены зоны, то есть на позиции первого прохода.
@@ -1800,6 +2045,14 @@ namespace Writersword.Modules.TextEditor.Document
                 // а переезжает вместе с текстом, который он озаглавливает. Цепочка
                 // таких абзацев переезжает целиком. Если цепочка не помещается даже на
                 // пустой лист, правило не соблюсти — абзац остаётся где был, как в Word.
+                //
+                // Интервал перед абзацем на верху листа. Абзац, который на новый лист
+                // привела сама вёрстка (не поместился или ушёл за следующим), Word ставит
+                // вплотную к верхнему полю: интервал «до» у него не отсчитывается. Абзац,
+                // открывающий лист по своему свойству «с новой страницы» или после
+                // вставленного разрыва страницы, интервал сохраняет.
+                bool spaceBeforeDropped = false;
+
                 bool paraAtPageTop = contentYPt <= pageYPt + mt + 0.5f;
                 if (!paraAtPageTop)
                 {
@@ -1811,6 +2064,7 @@ namespace Writersword.Modules.TextEditor.Document
                             - collapseAppliedPt;
                         float pageTextPt = pageBottomPt - (pageYPt + mt);
                         breakBefore = chainPt > pageBottomPt - contentYPt && chainPt <= pageTextPt;
+                        spaceBeforeDropped = breakBefore;
                     }
 
                     if (breakBefore)
@@ -1831,6 +2085,9 @@ namespace Writersword.Modules.TextEditor.Document
                     _wrapZoneImagesOverride ?? newImages,
                     _wrapZoneShapesOverride ?? newShapes);
 
+                // Таблицы с обтеканием, уже встреченные в потоке: абзац обходит их так же.
+                AppendFloatingTables(zoneSource, newTables);
+
                 // Верх первой строки абзаца в координатах документа. Зоны обтекания
                 // должны считаться именно от него, а не от contentYPt:
                 //   contentYPt — позиция до разбивки на страницы и без SpaceBefore;
@@ -1840,7 +2097,8 @@ namespace Writersword.Modules.TextEditor.Document
                 // Разрыв предсказывается тем же условием, что и в цикле, по раскладке
                 // без зон: высота строки задаётся шрифтом и от ширины полосы не зависит.
                 var probeLayout = GetOrBuildLayout(pvm, textWidthPt);
-                float paraStartYPt = contentYPt + probeLayout.SpaceBeforePt;
+                float paraStartYPt = contentYPt + probeLayout.SpaceBeforePt
+                    - (spaceBeforeDropped ? CollapsibleSpaceBeforePt(probeLayout) : 0f);
                 float probeFirstLineHPt = probeLayout.Lines.Count > 0
                     ? probeLayout.Lines[0].Height
                     : FallbackLinePt;
@@ -1928,6 +2186,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // Таблица, скрытая свёрнутым заголовком, соседом не считается: её нет на листе.
                 bool isBeforeTableAnchor = string.IsNullOrEmpty(pvm.PlainText)
                     && bi + 1 < blocks.Count && blocks[bi + 1] is TableBlock
+                    && !IsFloatingTable(blocks[bi + 1])
                     && !IsCollapsedBlock(blocks[bi + 1])
                     && !(bi > 0 && blocks[bi - 1] is TableBlock && !IsCollapsedBlock(blocks[bi - 1]));
                 if (isBeforeTableAnchor)
@@ -1950,6 +2209,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // Якорь после таблицы: пустой параграф, предыдущий блок — таблица.
                 bool isAfterTableAnchor = string.IsNullOrEmpty(pvm.PlainText)
                     && bi > 0 && blocks[bi - 1] is TableBlock
+                    && !IsFloatingTable(blocks[bi - 1])
                     && !IsCollapsedBlock(blocks[bi - 1]);
                 if (isAfterTableAnchor)
                 {
@@ -1981,7 +2241,10 @@ namespace Writersword.Modules.TextEditor.Document
                     continue;
                 }
 
-                contentYPt += layout.SpaceBeforePt;
+                // Рамка абзаца своё место сверху занимает и на верху листа: снимается
+                // только сам интервал.
+                contentYPt += layout.SpaceBeforePt
+                    - (spaceBeforeDropped ? CollapsibleSpaceBeforePt(layout) : 0f);
                 int lineFrom = 0;
                 float lineGroupYPt = contentYPt;
 
@@ -2422,6 +2685,60 @@ namespace Writersword.Modules.TextEditor.Document
             if (_publishPassResults) PublishPassResults();
         }
 
+        // Зазор до нижнего поля, который раскладка таблицы оставляет под строкой, не
+        // стоящей вверху листа. Им пользуются и проход раскладки, и цепочка «не отрывать
+        // от следующего»: иначе цепочка сочла бы строку поместившейся, а проход увёл бы
+        // её на следующий лист. У Word такого зазора нет — строка встаёт вплотную к
+        // нижнему полю, поэтому он нулевой.
+        private const float TableRowEndGapPt = 0f;
+
+        /// <summary>
+        /// Допуск при сравнении строки ячейки с местом разреза страницы, pt. Место разреза
+        /// и низ строки получаются одним и тем же сложением в разном порядке и расходятся
+        /// на ошибку округления.
+        /// </summary>
+        private const float CellCutTolerancePt = 0.01f;
+
+        /// <summary>
+        /// Сколько места нужно началу строки таблицы, которую можно разрывать между
+        /// страницами: до низа первой строки текста в самой высокой её ячейке — по ней
+        /// же проход раскладки ищет место разреза. Строка без текста берётся целиком.
+        /// </summary>
+        private static float SplittableRowLeadHeightPt(SKTableRowLayout row)
+        {
+            SKTableCellLayout? tallest = null;
+            foreach (var cell in row.Cells)
+            {
+                if (cell.IsRotated) continue;
+                if (tallest is null || cell.ContentHeightPt > tallest.ContentHeightPt)
+                    tallest = cell;
+            }
+
+            if (tallest is null) return row.HeightPt;
+
+            foreach (var para in tallest.Paragraphs)
+            {
+                var lines = para.Layout.Lines;
+                if (lines.Count == 0) continue;
+
+                // Сколько строк первого абзаца должно встать на страницу, чтобы проход
+                // раскладки разрезал строку таблицы здесь же: запрет висячих строк не
+                // оставит внизу одну строку, а абзац в две или три строки не рвёт вовсе.
+                int leadLines = lines.Count <= 3 ? lines.Count : 2;
+                var lastLeadLine = lines[leadLines - 1];
+
+                float leadPt = tallest.PadTopPt + tallest.TopInsetPt
+                    + para.Ypt + para.Layout.SpaceBeforePt
+                    + lastLeadLine.Y + lastLeadLine.Height
+                    + tallest.PadBottomPt + tallest.BottomInsetPt
+                    + TableRowEndGapPt;
+
+                return leadPt;
+            }
+
+            return row.HeightPt;
+        }
+
         // Сколько абзацев подряд с «не отрывать от следующего» проверяется за раз.
         // Длиннее цепочки в живых документах не бывает, а потолок не даёт проверке
         // уйти по всему документу, где правило стоит у каждого абзаца.
@@ -2464,11 +2781,27 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (block is BreakBlock) return 0f;
 
+                // Плавающая картинка или фигура высоты в потоке не занимает: цепочка
+                // держится за абзац под ней.
+                if (block is IFloatingObject { WrapMode: not WrapMode.Inline }) continue;
+
                 if (block is TableBlock table)
                 {
+                    // Таблица с обтеканием высоты в потоке не занимает: цепочка держится
+                    // за абзац под ней.
+                    if (table.FloatPosition is not null) continue;
+
                     var tableLayout = GetOrBuildTableLayout(table, textWidthPt);
                     if (tableLayout.Rows.Count > 0)
-                        total += tableLayout.Rows[0].HeightPt;
+                    {
+                        // Строку, которую можно разрывать между страницами, держать целиком
+                        // незачем: абзацу хватает её начала — первой строки текста. Иначе
+                        // заголовок над таблицей из одной высокой строки уезжал на новый
+                        // лист вместе со всей таблицей, хотя у Word остаётся на своём.
+                        total += table.SplitMode == TableSplitMode.ByCell
+                            ? SplittableRowLeadHeightPt(tableLayout.Rows[0])
+                            : tableLayout.Rows[0].HeightPt;
+                    }
                     return total;
                 }
 
@@ -2534,6 +2867,11 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void PublishPassResults()
         {
+            // Сторона переплёта: проход раскладывает все листы одинаково, а на листах,
+            // где переплёт справа, содержимое уезжает влево уже здесь, перед показом.
+            var (publishLayouts, publishPages, publishTables, publishImages, publishShapes) =
+                WithGutterSides(_passLayouts, _passPages, _passTables, _passImages, _passShapes);
+
             lock (_renderLock)
             {
                 // Полосы и сдвиги ленты кладутся здесь же, под тем же замком: они
@@ -2547,11 +2885,11 @@ namespace Writersword.Modules.TextEditor.Document
                     ? BuildRibbonPageDeltas(_passPages, _passRibbonBandHeights)
                     : Array.Empty<float>();
 
-                _layouts = _passLayouts;
-                _pages = _passPages;
-                _tables = _passTables;
-                _images = _passImages;
-                _shapes = _passShapes;
+                _layouts = publishLayouts;
+                _pages = publishPages;
+                _tables = publishTables;
+                _images = publishImages;
+                _shapes = publishShapes;
                 _inlineTransferredImages = _passInlineTransferred;
                 _breakMarks = _passBreakMarks;
                 _canvasHeightPt = _passCanvasHeightPt;
@@ -2799,7 +3137,7 @@ namespace Writersword.Modules.TextEditor.Document
                         + (float)tableBlock.ResolveLeftOffsetPt(textWidthPt, tableLayout.TotalWidthPt);
                     int teIdx = newTables.Count;
                     newTables.Add(new TableEntry(tableBlock, tableLayout, yPt, tableXPt, 0));
-                    AddCellParasToLayouts(newLayouts, tableBlock, tableLayout,
+                    AddCellParasToLayouts(newLayouts, newTables, tableBlock, tableLayout,
                         teIdx, tableXPt, yPt, 0);
 
                     lastTableRightPt = tableXPt + tableLayout.TotalWidthPt;

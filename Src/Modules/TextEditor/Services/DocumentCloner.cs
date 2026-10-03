@@ -328,6 +328,7 @@ namespace Writersword.Modules.TextEditor.Services
                 LeftIndentPt = source.LeftIndentPt,
                 Alignment = source.Alignment,
                 BidiVisual = source.BidiVisual,
+                FloatPosition = source.FloatPosition?.Clone(),
                 RepeatHeader = source.RepeatHeader,
                 SplitMode = source.SplitMode,
                 BreakLabel = source.BreakLabel,
@@ -378,6 +379,21 @@ namespace Writersword.Modules.TextEditor.Services
             foreach (var paragraph in source.Paragraphs)
                 clone.Paragraphs.Add(CloneParagraph(paragraph));
 
+            // Вложенные таблицы — часть ячейки: без них копия для сохранения теряла бы их.
+            if (source.NestedTables is { Count: > 0 } nestedTables)
+            {
+                clone.NestedTables = new List<NestedTable>(nestedTables.Count);
+                foreach (var nested in nestedTables)
+                {
+                    clone.NestedTables.Add(new NestedTable
+                    {
+                        BeforeParagraphId = nested.BeforeParagraphId,
+                        BeforeParagraphIndex = nested.BeforeParagraphIndex,
+                        Table = CloneTable(nested.Table)
+                    });
+                }
+            }
+
             return clone;
         }
 
@@ -419,6 +435,7 @@ namespace Writersword.Modules.TextEditor.Services
                 WrapPadRightPt = source.WrapPadRightPt,
                 Alignment = source.Alignment,
                 Anchor = source.Anchor,
+                AnchorPosition = source.AnchorPosition?.Clone(),
                 OffsetXPt = source.OffsetXPt,
                 OffsetYPt = source.OffsetYPt,
                 ZOrder = source.ZOrder,
@@ -462,11 +479,21 @@ namespace Writersword.Modules.TextEditor.Services
                 WrapPadRightPt = source.WrapPadRightPt,
                 Alignment = source.Alignment,
                 Anchor = source.Anchor,
+                AnchorPosition = source.AnchorPosition?.Clone(),
                 PinnedPage = source.PinnedPage,
                 OffsetXPt = source.OffsetXPt,
                 OffsetYPt = source.OffsetYPt,
                 ZOrder = source.ZOrder,
                 InnerText = source.InnerText,
+                TextFontFamily = source.TextFontFamily,
+                TextSizePt = source.TextSizePt,
+                TextColor = source.TextColor,
+                TextBold = source.TextBold,
+                TextItalic = source.TextItalic,
+                TextAlign = source.TextAlign,
+                TextVerticalAlign = source.TextVerticalAlign,
+                TextInsetHorizontalPt = source.TextInsetHorizontalPt,
+                TextInsetVerticalPt = source.TextInsetVerticalPt,
                 IsGrouped = source.IsGrouped,
                 GroupId = source.GroupId,
                 AltText = source.AltText

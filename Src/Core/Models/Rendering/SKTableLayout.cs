@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace Writersword.Core.Models.Rendering
 {
@@ -7,7 +8,10 @@ namespace Writersword.Core.Models.Rendering
     /// </summary>
     public sealed class SKTableBorderLineLayout
     {
-        /// <summary>Толщина линии в pt. 0 — не рисовать.</summary>
+        /// <summary>
+        /// Толщина линии в pt — толщина её основной черты. 0 — не рисовать.
+        /// Составная линия шире своей черты, см. <see cref="SpanPt"/>.
+        /// </summary>
         public float WidthPt { get; init; } = 0.75f;
 
         /// <summary>Цвет линии в формате #RRGGBB.</summary>
@@ -16,9 +20,23 @@ namespace Writersword.Core.Models.Rendering
         /// <summary>
         /// Стиль линии: 0 — сплошная, 1 — штрих, 2 — двойная, 3 — нет, 4 — точки,
         /// 5 — тройная, 6 — волна, 7 — объёмная выпуклая, 8 — объёмная вдавленная,
-        /// 9 — выпуклая (outset), 10 — вдавленная (inset).
+        /// 9 — выпуклая (outset), 10 — вдавленная (inset); дальше — штрихпунктирные,
+        /// «тонкая и толстая» и двойная волна. Полный список — <see cref="SKBorderLineShape"/>.
         /// </summary>
         public int Style { get; init; }
+
+        /// <summary>
+        /// Сколько места линия занимает поперёк себя в pt: у двойной — три толщины,
+        /// у тройной — пять, у волны — её размах. По этому числу строка таблицы
+        /// отводит место под рамку, а текст отступает от края ячейки.
+        /// </summary>
+        public float SpanPt => SKBorderLineShape.SpanPt(Style, WidthPt);
+
+        /// <summary>
+        /// Сила линии: старшинство её вида на толщину. По ней решается стык двух линий
+        /// в узле сетки — более слабая упирается в более сильную и не пересекает её.
+        /// </summary>
+        public float Weight { get; init; }
     }
 
     /// <summary>
@@ -56,6 +74,34 @@ namespace Writersword.Core.Models.Rendering
 
         /// <summary>Индекс параграфа в Paragraphs ячейки (0-based).</summary>
         public int ParagraphIndex { get; init; }
+    }
+
+    /// <summary>
+    /// Вёрстка таблицы, вложенной в ячейку. Стоит в содержимом ячейки между абзацами
+    /// и занимает там свою высоту, как абзац.
+    /// </summary>
+    public sealed class SKNestedTableLayout
+    {
+        /// <summary>Вёрстка самой таблицы.</summary>
+        public SKTableLayout Layout { get; init; } = null!;
+
+        /// <summary>X левого края таблицы в pt от левого края области содержимого ячейки.</summary>
+        public float Xpt { get; init; }
+
+        /// <summary>
+        /// Y верха таблицы в pt от начала области содержимого ячейки — в тех же
+        /// координатах, что <see cref="SKTableParaLayout.Ypt"/>.
+        /// </summary>
+        public float Ypt { get; init; }
+
+        /// <summary>
+        /// Перед каким по счёту абзацем ячейки стоит таблица. Число, равное количеству
+        /// абзацев, — после последнего.
+        /// </summary>
+        public int BeforeParagraphIndex { get; init; }
+
+        /// <summary>Номер таблицы в списке вложенных таблиц ячейки модели.</summary>
+        public int SourceIndex { get; init; }
     }
 
     /// <summary>
@@ -123,8 +169,47 @@ namespace Writersword.Core.Models.Rendering
         /// <summary>Текст ячейки повёрнут.</summary>
         public bool IsRotated => TextDirection != 0;
 
-        /// <summary>Настройки границ ячейки для рендеринга.</summary>
+        /// <summary>
+        /// Границы ячейки для вёрстки: самая сильная линия на каждой из четырёх сторон
+        /// после спора с соседями. По ним текст отступает от края ячейки. Рисуются
+        /// границы не отсюда, а из общей сетки таблицы (SKTableLayout.HorizontalEdges,
+        /// VerticalEdges): вдоль стороны объединённой ячейки линии бывают разные.
+        /// </summary>
         public SKTableCellBorderLayout Borders { get; init; } = new();
+
+        /// <summary>
+        /// Отступ содержимого от левого края ячейки. Как у Word: поле ячейки отсчитывается
+        /// от самого края ячейки, а рамка рисуется по этому краю и лежит поверх поля —
+        /// ширину текста она не отнимает. Обычная рамка в полпункта при поле в полпункта
+        /// текста не сдвигает вовсе. Только рамка шире двух полей отодвигает текст:
+        /// внутри ячейки лежит её половина, и текст встаёт сразу за ней. Ширина рамки
+        /// здесь — всё место поперёк линии: у двойной это обе черты с просветом.
+        /// </summary>
+        public float ContentInsetLeftPt => Math.Max(PadLeftPt, Borders.Left.SpanPt / 2f);
+
+        /// <summary>
+        /// Место под рамку у верхнего края ячейки в pt: на столько содержимое отступает
+        /// от верха ячейки сверх своего поля. Рамка между двумя строками занимает место
+        /// один раз — в строке под ней, как у Word. Полоса под рамку общая на всю
+        /// строку: её высота — самая широкая из линий, лежащих по верхней границе
+        /// строки, — верхних у ячеек этой строки и нижних у ячеек строки над ней.
+        /// Поэтому текст всех ячеек строки начинается на одной высоте, какой бы ни была
+        /// рамка у каждой. Ставится вёрсткой таблицы.
+        /// </summary>
+        public float TopInsetPt { get; init; }
+
+        /// <summary>
+        /// Место под рамку у нижнего края ячейки в pt. Ноль у всех ячеек, кроме дошедших
+        /// до последней строки таблицы: рамке между строками место отдаёт строка под ней.
+        /// У последней строки полоса тоже общая — по самой широкой нижней линии.
+        /// </summary>
+        public float BottomInsetPt { get; init; }
+
+        /// <summary>Отступ содержимого от правого края ячейки — см. <see cref="ContentInsetLeftPt"/>.</summary>
+        public float ContentInsetRightPt => Math.Max(PadRightPt, Borders.Right.SpanPt / 2f);
+
+        /// <summary>Ширина области содержимого ячейки: ширина ячейки без отступов слева и справа.</summary>
+        public float ContentAreaWidthPt => WidthPt - ContentInsetLeftPt - ContentInsetRightPt;
 
         /// <summary>
         /// Суммарная высота содержимого ячейки в pt (без отступов).
@@ -134,6 +219,12 @@ namespace Writersword.Core.Models.Rendering
 
         /// <summary>Лейауты параграфов содержимого ячейки в порядке следования.</summary>
         public List<SKTableParaLayout> Paragraphs { get; } = new();
+
+        /// <summary>
+        /// Таблицы внутри ячейки в порядке следования. Их высота входит в
+        /// <see cref="ContentHeightPt"/>, абзацы под ними стоят ниже на эту высоту.
+        /// </summary>
+        public List<SKNestedTableLayout> NestedTables { get; } = new();
     }
 
     /// <summary>
@@ -187,6 +278,23 @@ namespace Writersword.Core.Models.Rendering
 
         /// <summary>Количество колонок.</summary>
         public int ColumnCount { get; init; }
+
+        /// <summary>
+        /// Горизонтальные границы по сетке таблицы: [граница строк, колонка]. Граница
+        /// строк 0 — верх таблицы, RowCount — её низ. У Word граница между двумя ячейками
+        /// одна: из линий, заданных ячейками по обе стороны, здесь оставлена сильнейшая.
+        /// Null — линии нет (в том числе внутри объединённой ячейки).
+        /// </summary>
+        public SKTableBorderLineLayout?[,]? HorizontalEdges { get; set; }
+
+        /// <summary>
+        /// Вертикальные границы по сетке таблицы: [строка, граница колонок]. Граница
+        /// колонок 0 — левый край таблицы, ColumnCount — правый.
+        /// </summary>
+        public SKTableBorderLineLayout?[,]? VerticalEdges { get; set; }
+
+        /// <summary>Занятые клетки сетки: [строка, колонка]. В пустой клетке ячейки нет.</summary>
+        public bool[,]? SlotFilled { get; set; }
 
         /// <summary>
         /// Находит лейаут ячейки по индексам строки и колонки.

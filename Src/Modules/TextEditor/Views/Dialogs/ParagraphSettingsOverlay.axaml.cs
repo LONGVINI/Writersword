@@ -54,6 +54,10 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
         private NumericUpDown _spaceAfterBox = null!;
         private CheckBox _contextualSpacingBox = null!;
         private CheckBox _rightToLeftBox = null!;
+        private CheckBox _keepWithNextBox = null!;
+        private CheckBox _keepTogetherBox = null!;
+        private CheckBox _pageBreakBeforeBox = null!;
+        private ComboBox _lineTextAlignCombo = null!;
         private ComboBox _lineSpacingCombo = null!;
         private NumericUpDown _lineSpacingValueBox = null!;
         private TextBlock _previewSample = null!;
@@ -87,6 +91,10 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _spaceAfterBox = this.FindControl<NumericUpDown>("SpaceAfterBox")!;
             _contextualSpacingBox = this.FindControl<CheckBox>("ContextualSpacingBox")!;
             _rightToLeftBox = this.FindControl<CheckBox>("RightToLeftBox")!;
+            _keepWithNextBox = this.FindControl<CheckBox>("KeepWithNextBox")!;
+            _keepTogetherBox = this.FindControl<CheckBox>("KeepTogetherBox")!;
+            _pageBreakBeforeBox = this.FindControl<CheckBox>("PageBreakBeforeBox")!;
+            _lineTextAlignCombo = this.FindControl<ComboBox>("LineTextAlignCombo")!;
             _lineSpacingCombo = this.FindControl<ComboBox>("LineSpacingCombo")!;
             _lineSpacingValueBox = this.FindControl<NumericUpDown>("LineSpacingValueBox")!;
             _previewSample = this.FindControl<TextBlock>("PreviewSample")!;
@@ -326,6 +334,14 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
             _contextualSpacingBox.IsChecked = p.ContextualSpacing == true;
             _rightToLeftBox.IsChecked = p.RightToLeft;
 
+            _keepWithNextBox.IsChecked = p.KeepWithNext;
+            _keepTogetherBox.IsChecked = p.KeepTogether;
+            _pageBreakBeforeBox.IsChecked = p.PageBreakBefore;
+
+            // Пункты списка идут в том же порядке, что значения LineTextAlignment.
+            int lineTextAlign = (int)p.LineTextAlignment;
+            _lineTextAlignCombo.SelectedIndex = lineTextAlign >= 0 && lineTextAlign <= 4 ? lineTextAlign : 0;
+
             var rule = p.LineSpacingRule ?? LineSpacingRule.Auto;
             double val = p.LineSpacingValue ?? 1.0;
             if (rule == LineSpacingRule.Exact)
@@ -378,6 +394,15 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
                 : contextual;
 
             p.RightToLeft = _rightToLeftBox.IsChecked == true;
+
+            p.KeepWithNext = _keepWithNextBox.IsChecked == true;
+            p.KeepTogether = _keepTogetherBox.IsChecked == true;
+            p.PageBreakBefore = _pageBreakBeforeBox.IsChecked == true;
+
+            int lineTextAlign = _lineTextAlignCombo.SelectedIndex;
+            p.LineTextAlignment = lineTextAlign >= 0 && lineTextAlign <= 4
+                ? (LineTextAlignment)lineTextAlign
+                : LineTextAlignment.Auto;
 
             double lsVal = (double)(_lineSpacingValueBox.Value ?? 0m);
             switch (_lineSpacingCombo.SelectedIndex)

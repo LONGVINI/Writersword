@@ -533,6 +533,20 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
 
         public void OpenAnketa(string anketaId) => OpenAnketaRequested?.Invoke(anketaId);
 
+        /// <summary>Новую анкету просят для шаблона: она встанет в него после первого сохранения.</summary>
+        public event Action<string>? NewAnketaRequested;
+
+        public void RequestNewAnketa(string templateId) => NewAnketaRequested?.Invoke(templateId);
+
+        private bool _pickerAsList;
+
+        /// <summary>Меню «+» списком с названиями; иначе — значками с подсказками.</summary>
+        public bool PickerAsList
+        {
+            get => _pickerAsList;
+            set => this.RaiseAndSetIfChanged(ref _pickerAsList, value);
+        }
+
         private string NextName(string baseName)
         {
             var names = new HashSet<string>(_anketaService.GetTemplates().Select(t => t.Name), StringComparer.CurrentCultureIgnoreCase);

@@ -167,6 +167,14 @@ namespace Writersword.Modules.TextEditor.Contracts
         // Какие стороны рамки видны у выделенных абзацев — для отметок в меню кнопки.
         ParagraphBorderSides GetSelectedParagraphBorderSides();
 
+        // ── Заливка абзаца ────────────────────────────────────────────────
+        // Заливка выделенных абзацев: цвет фона и узор поверх него (имя узора Word:
+        // pct25, diagStripe…) со своим цветом. null в любом поле снимает его; цвет
+        // узора null — «авто», цвет текста листа.
+        void SetParagraphShading(string? color, string? pattern, string? patternColor);
+        // Заливка абзаца под кареткой — для отметок в меню кнопки «Рамка».
+        (string? Color, string? Pattern, string? PatternColor) GetActiveParagraphShading();
+
         // ── Непечатаемые знаки ────────────────────────────────────────────
         // Включает и выключает показ знаков конца абзаца, пробелов, табуляций и разрывов.
         void ToggleFormattingMarks();
@@ -290,6 +298,14 @@ namespace Writersword.Modules.TextEditor.Contracts
         /// <summary>Растягивать картинку-заливку на весь габарит фигуры.</summary>
         void SetShapeFillImageStretch(bool stretch);
 
+        /// <summary>
+        /// Текст выделенной фигуры и его оформление, либо null — фигура не выделена.
+        /// </summary>
+        ShapeTextInfo? GetSelectedShapeText() => null;
+
+        /// <summary>Записывает текст выделенной фигуры и его оформление.</summary>
+        void SetShapeText(ShapeTextInfo text) { }
+
         /// <summary>Удаляет выделенную фигуру.</summary>
         void DeleteSelectedShape();
 
@@ -369,6 +385,17 @@ namespace Writersword.Modules.TextEditor.Contracts
         void SetPageSize(PaperSize size);
         void SetPageOrientation(PageOrientation orientation);
         void SetPageMargins(double top, double bottom, double left, double right);
+        /// <summary>
+        /// Поля страницы и переплёт в миллиметрах — для полей ввода на вкладке «Макет».
+        /// Левое поле — без переплёта: переплёт прибавляется к нему отдельно.
+        /// </summary>
+        (double TopMm, double BottomMm, double LeftMm, double RightMm, double GutterMm) GetPageMargins();
+        /// <summary>
+        /// Переплёт в миллиметрах: полоса под сшивку, которая прибавляется к полю у
+        /// корешка. Когда у чётных и нечётных страниц разные колонтитулы, сторона
+        /// переплёта чередуется: на нечётных листах слева, на чётных справа.
+        /// </summary>
+        void SetPageGutter(double gutterMm);
         void SetColumns(int count);
 
         // ── Вид ───────────────────────────────────────────────────────────
@@ -516,6 +543,47 @@ namespace Writersword.Modules.TextEditor.Contracts
         /// <summary>Переключить режим разбивки: ByRow / ByCell.</summary>
         void TableToggleSplitMode();
         bool TableGetSplitModeByCell();
+
+        // ── Положение и направление таблицы ───────────────────────────────
+        /// <summary>
+        /// Включить или выключить обтекание таблицы текстом. Включённая таблица стоит в
+        /// своей точке листа, и текст абзацев под ней обходит её с обеих сторон.
+        /// </summary>
+        void TableToggleFloating();
+        /// <summary>Положение таблицы с обтеканием (копия); null — таблица в потоке.</summary>
+        TableFloatPosition? TableGetFloatPosition();
+        /// <summary>Задать положение таблицы с обтеканием; null — вернуть таблицу в поток.</summary>
+        void TableSetFloatPosition(TableFloatPosition? position);
+        /// <summary>Переключить направление таблицы: первая колонка слева или справа.</summary>
+        void TableToggleDirection();
+        /// <summary>Таблица идёт справа налево: первая колонка стоит справа.</summary>
+        bool TableGetRightToLeft();
+        /// <summary>Выравнивание таблицы в полосе набора: слева, по центру или справа.</summary>
+        void TableSetAlignment(TableBlockAlignment alignment);
+        /// <summary>Выравнивание таблицы под кареткой; null — каретка не в таблице.</summary>
+        TableBlockAlignment? TableGetAlignment();
+
+        // ── Направление текста в ячейке и точная высота строки ────────────
+        /// <summary>Направление текста выделенных ячеек: обычное, снизу вверх или сверху вниз.</summary>
+        void TableSetCellTextDirection(CellTextDirection direction);
+        /// <summary>Направление текста ячейки под кареткой.</summary>
+        CellTextDirection TableGetCellTextDirection();
+        /// <summary>
+        /// Переключить точную высоту строки под кареткой: строка ровно заданной высоты,
+        /// лишний текст срезается. Выключено — заданная высота работает как «не менее».
+        /// </summary>
+        void TableToggleRowHeightExact();
+        /// <summary>У строки под кареткой точная высота.</summary>
+        bool TableGetRowHeightExact();
+
+        // ── Узор заливки ячейки ───────────────────────────────────────────
+        /// <summary>
+        /// Узор заливки выделенных ячеек (имя узора Word: pct25, diagStripe…) и его цвет.
+        /// null снимает узор, цвет фона ячейки остаётся.
+        /// </summary>
+        void TableSetCellShadingPattern(string? pattern, string? patternColor);
+        /// <summary>Узор заливки ячейки под кареткой и его цвет.</summary>
+        (string? Pattern, string? Color) TableGetCellShadingPattern();
 
         // ── Метки продолжения ─────────────────────────────────────────────
         void TableSetBreakLabel(string? text);

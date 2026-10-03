@@ -615,10 +615,37 @@ namespace Writersword.Modules.TextEditor.Document
             // Текст поглощённых ячеек переезжает в целевую. Пустые абзацы
             // отбрасываются: иначе объединение пустых ячеек оставляло бы в итоговой
             // столько пустых строк, сколько было ячеек.
+            // Вложенные таблицы поглощённых ячеек переезжают вместе с текстом и встают
+            // перед тем же абзацем, что и раньше. Таблица, за которой переехавшего
+            // абзаца не оказалось, получает пустой: за таблицей в ячейке обязан стоять абзац.
             foreach (var cell in absorbed)
-                foreach (var para in cell.Paragraphs)
-                    if (!string.IsNullOrEmpty(para.GetPlainText()))
-                        target.Paragraphs.Add(para);
+            {
+                var carried = new List<Models.Document.NestedTable>();
+
+                for (int i = 0; i <= cell.Paragraphs.Count; i++)
+                {
+                    if (cell.NestedTables is { Count: > 0 } nestedTables)
+                        foreach (var nested in nestedTables)
+                            if (cell.NestedTablePosition(nested) == i) carried.Add(nested);
+
+                    if (i >= cell.Paragraphs.Count) break;
+
+                    var para = cell.Paragraphs[i];
+                    if (string.IsNullOrEmpty(para.GetPlainText())) continue;
+
+                    target.Paragraphs.Add(para);
+                    foreach (var nested in carried)
+                        target.InsertNestedTable(nested.Table, target.Paragraphs.Count - 1, first: false);
+                    carried.Clear();
+                }
+
+                if (carried.Count > 0)
+                {
+                    target.Paragraphs.Add(new ParagraphBlock());
+                    foreach (var nested in carried)
+                        target.InsertNestedTable(nested.Table, target.Paragraphs.Count - 1, first: false);
+                }
+            }
 
             foreach (var cell in absorbed)
                 table.Cells.Remove(cell);
@@ -1044,14 +1071,98 @@ namespace Writersword.Modules.TextEditor.Document
             RestoreCaretAfterTableStructure();
         }
 
+        /// <summary>
+        /// Вставка таблицы, когда каретка стоит в ячейке: новая таблица встаёт в эту
+        /// ячейку вложенной, а не уходит в поток документа под таблицу-хозяина.
+        /// Место — как у Word: каретка в начале абзаца ставит таблицу перед ним, в конце —
+        /// после него, в середине — режет абзац, и таблица встаёт между половинами.
+        /// За таблицей в ячейке обязан стоять абзац, поэтому после последнего абзаца
+        /// добавляется пустой.
+        /// Возвращает false, если каретка не в ячейке, — вставку тогда ведёт вью-модель.
+        /// </summary>
+        private bool TryInsertNestedTable(TableBlock table)
+        {
+            if (DocVm is null || IsEditingBlocked) return false;
+            if (!IsInCell(_caretPara)) return false;
+
+            var info = GetCurrentCell()!;
+            var hostTable = info.Table;
+            var hostCell = info.Cell;
+            int paraIdx = info.CellParaIndex;
+            if (paraIdx < 0 || paraIdx >= hostCell.Paragraphs.Count) return false;
+
+            var para = hostCell.Paragraphs[paraIdx];
+            int length = para.GetPlainText().Length;
+            int cut = Clamp(_caretChar, 0, length);
+
+            // Снимок таблицы-хозяина: в него входят ячейки вместе с вложенными таблицами,
+            // так что отмена убирает и новую таблицу, и разрез абзаца.
+            BeginTableEdit(hostTable, "Insert table");
+
+            if (cut == 0)
+            {
+                hostCell.InsertNestedTable(table, paraIdx, first: false);
+            }
+            else
+            {
+                if (cut < length)
+                {
+                    // Хвост абзаца уезжает под таблицу с сохранением ранов и оформления.
+                    var tail = CloneParagraphBlock(para, 0, length);
+                    tail.SpliceText(0, cut, string.Empty);
+                    para.SpliceText(cut, length, string.Empty);
+                    hostCell.Paragraphs.Insert(paraIdx + 1, tail);
+                }
+                else if (paraIdx + 1 >= hostCell.Paragraphs.Count)
+                {
+                    hostCell.Paragraphs.Add(new ParagraphBlock { Properties = para.Properties.Clone() });
+                }
+
+                hostCell.InsertNestedTable(table, paraIdx + 1, first: true);
+            }
+
+            CommitTableEdit();
+
+            // Каретка встаёт в первую ячейку новой таблицы.
+            var firstCell = table.GetCell(0, 0);
+            ParagraphBlock? target = firstCell is { Paragraphs.Count: > 0 }
+                ? firstCell.Paragraphs[0]
+                : null;
+
+            _caretChar = 0;
+            RebuildAfterCellEdit(target);
+            UpdateCellContext(true, IsInCell(_caretPara));
+            InvalidateFull();
+
+            if (!IsFocused) Focus();
+            return true;
+        }
+
         private void ExecuteTableDelete()
         {
             if (_activeTableBlock is null || DocVm is null) return;
+            var removedTable = _activeTableBlock;
             BeginEdit("Delete table");
-            DocVm.Document.Sections[0].Blocks.Remove(_activeTableBlock);
+            var hostParagraph = DocVm.RemoveTableBlock(removedTable);
             CommitEdit();
             _cellVmCache.Clear();
             InvalidateCellLayoutCaches();
+
+            // Таблица стояла в ячейке другой таблицы: набор блоков раздела не изменился,
+            // и каретка возвращается в ячейку-хозяина — к абзацу, рядом с которым
+            // стояла удалённая таблица.
+            if (hostParagraph is not null)
+            {
+                _tableSelections.Remove(removedTable);
+                _caretChar = 0;
+                RebuildAfterCellEdit(hostParagraph);
+                UpdateCellContext(true, IsInCell(_caretPara));
+                InvalidateFull();
+
+                if (!IsFocused) Focus();
+                return;
+            }
+
             DocVm.RebuildParagraphViewModelsPublic();
             NotifyLeftCell();
             _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));

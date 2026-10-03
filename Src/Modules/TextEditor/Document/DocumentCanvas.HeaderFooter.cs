@@ -309,7 +309,8 @@ namespace Writersword.Modules.TextEditor.Document
                 page.WidthPt,
                 page.HeightPt,
                 page.MarginLeftPt,
-                marginRight,
+                // На листе с переплётом справа правое поле шире на переплёт.
+                marginRight - page.GutterShiftPt,
                 page.PadTopPt,
                 page.PadBottomPt,
                 MmToPt(ps?.HeaderDistanceMm ?? 12),

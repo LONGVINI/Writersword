@@ -103,18 +103,26 @@ namespace Writersword.Modules.TextEditor.Document
         /// центру габарита: перетащенная за край фигура принадлежит тому листу,
         /// на котором её видно, и по нему же обрезается.
         /// </summary>
+        /// <param name="anchorOrigin">
+        /// Точка отсчёта фигуры с опорой из Word (<see cref="ShapeBlock.AnchorPosition"/>):
+        /// её считает раскладка, которая знает и лист, и верх абзаца-опоры. Null — отсчёт
+        /// от начала текстовой области страницы.
+        /// </param>
         private ShapeEntry BuildShapeEntry(
             ShapeBlock shape,
             float pageXPt, float pageYPt,
             float marginLeftPt, float marginTopPt,
-            List<PageRect> pages, int flowPageIdx)
+            List<PageRect> pages, int flowPageIdx,
+            (float XPt, float YPt)? anchorOrigin = null)
         {
             // Габарит и смещение приводятся к листу чтения одним и тем же множителем
             // (в правке он равен единице): лист книги меньше печатного, и фигура,
             // посчитанная в печатных пунктах, вылезала за его край.
             var (wPt, hPt) = ReadingShapeSize(shape);
-            float xPt = pageXPt + marginLeftPt + ReadingOffsetXPt(shape.OffsetXPt);
-            float yPt = pageYPt + marginTopPt + ReadingOffsetYPt(shape.OffsetYPt);
+            float originXPt = anchorOrigin?.XPt ?? pageXPt + marginLeftPt;
+            float originYPt = anchorOrigin?.YPt ?? pageYPt + marginTopPt;
+            float xPt = originXPt + ReadingOffsetXPt(shape.OffsetXPt);
+            float yPt = originYPt + ReadingOffsetYPt(shape.OffsetYPt);
 
             int shapePageIdx = ResolveFloatingObjectPage(xPt, yPt, wPt, hPt, pages, flowPageIdx);
 
@@ -1172,6 +1180,12 @@ namespace Writersword.Modules.TextEditor.Document
                 // Уход из потока в плавающий режим: фигура должна остаться там, где
                 // её видно, а не прыгнуть в левый верхний угол. Позиция берётся из
                 // текущей записи раскладки и переводится в смещения от своей страницы.
+                // Переход в поток или из потока меняет отсчёт смещений: опора из Word
+                // с ними несовместима. Смена одного плавающего режима на другой её
+                // не трогает.
+                if (s.WrapMode == WrapMode.Inline || mode == WrapMode.Inline)
+                    s.AnchorPosition = null;
+
                 if (s.WrapMode == WrapMode.Inline && mode != WrapMode.Inline)
                 {
                     var entry = FindShapeEntry(s);
@@ -1226,6 +1240,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (entry.PageIndex >= pages.Count) return;
 
                 var pg = pages[entry.PageIndex];
+                s.AnchorPosition = null;
                 s.OffsetXPt = entry.XPt - pg.PadLeftPt - pg.MarginLeftPt;
                 s.OffsetYPt = entry.Ypt - pg.Ypt - pg.PadTopPt;
                 s.PinnedPage = entry.PageIndex + 1;
@@ -1287,6 +1302,83 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void SetSelectedShapeFillImageStretch(bool stretch)
             => EditSelectedShape("Растяжение заливки", s => s.FillImageStretch = stretch);
+
+        // ── Надпись: текст внутри фигуры ──────────────────────────────────
+
+        // Шаг отмены, в который складывается набор текста фигуры, и запись порядка
+        // отмены, под которой он лежит. Пока эта запись — последняя в порядке, каждое
+        // следующее изменение текста той же фигуры дописывается в тот же шаг: иначе
+        // фраза из тридцати букв заняла бы тридцать шагов и вытеснила историю правок.
+        private ShapePropertiesCommand? _shapeTextCommand;
+        private ShapeBlock? _shapeTextCommandShape;
+        private LinkedListNode<UndoSource>? _shapeTextOrderNode;
+
+        /// <summary>Текст выделенной фигуры и его оформление для ленты.</summary>
+        private ShapeTextInfo? GetSelectedShapeText()
+        {
+            var s = _selectedShape;
+            if (s is null) return null;
+
+            return new ShapeTextInfo(
+                s.InnerText ?? string.Empty, s.TextFontFamily, s.TextSizePt, s.TextColor,
+                s.TextBold, s.TextItalic, s.TextAlign, s.TextVerticalAlign);
+        }
+
+        /// <summary>
+        /// Записывает текст фигуры и его оформление. Раскладка не пересобирается:
+        /// текст живёт внутри габарита фигуры и ничего вокруг не сдвигает.
+        /// </summary>
+        private void SetSelectedShapeText(ShapeTextInfo text)
+        {
+            var shape = _selectedShape;
+            if (shape is null || IsEditingBlocked) return;
+            if (!shape.IsClosedShape) return;
+
+            bool continuesTyping = _shapeTextCommand is not null
+                && ReferenceEquals(_shapeTextCommandShape, shape)
+                && _shapeTextOrderNode is not null
+                && ReferenceEquals(_undoOrder.Last, _shapeTextOrderNode);
+
+            if (!continuesTyping) BeginShapeEdit("Текст фигуры");
+            var opened = _pendingShapeCommand;
+
+            shape.InnerText = string.IsNullOrEmpty(text.Text) ? null : text.Text;
+            shape.TextFontFamily = string.IsNullOrWhiteSpace(text.FontFamily) ? null : text.FontFamily;
+            shape.TextSizePt = Math.Clamp(text.SizePt, 1.0, 400.0);
+            shape.TextColor = string.IsNullOrWhiteSpace(text.Color) ? null : text.Color;
+            shape.TextBold = text.Bold;
+            shape.TextItalic = text.Italic;
+            shape.TextAlign = text.Align;
+            shape.TextVerticalAlign = text.VerticalAlign;
+
+            if (continuesTyping)
+            {
+                // Тот же шаг отмены: обновляется только его состояние «после».
+                _shapeTextCommand!.Commit();
+                DocVm?.RaiseContentModified();
+            }
+            else
+            {
+                CommitShapeEdit();
+
+                // Шаг лёг в стек — запоминаем его, чтобы дописывать следующий набор.
+                if (UndoStack is not null && opened is not null)
+                {
+                    _shapeTextCommand = opened;
+                    _shapeTextCommandShape = shape;
+                    _shapeTextOrderNode = _undoOrder.Last;
+                }
+                else
+                {
+                    _shapeTextCommand = null;
+                    _shapeTextCommandShape = null;
+                    _shapeTextOrderNode = null;
+                }
+            }
+
+            InvalidateFull();
+            ShapeSelectionChanged?.Invoke(true);
+        }
 
         // ── Undo ──────────────────────────────────────────────────────────
 

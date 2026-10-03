@@ -146,8 +146,7 @@
 												<DataTemplate x:DataType="vm:TemplateAnketaItemViewModel">
 													<Panel Classes="tpl-ic"
 													       Classes.drag-source="{Binding IsDragSource}"
-													       Width="32" Height="32"
-													       Margin="0,0,8,8"
+													       Width="42" Height="42"
 													       Background="Transparent"
 													       PointerPressed="OnIconPressed"
 													       PointerMoved="OnIconMoved"
@@ -156,11 +155,11 @@
 													       DoubleTapped="OnIconDoubleTapped"
 													       behaviours:TooltipBehavior.Tip="{Binding Name}"
 													       behaviours:TooltipBehavior.Description="{Binding Description}">
-														<controls:AnketaIconBadge Size="32" Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+														<controls:AnketaIconBadge Size="32" Icon="{Binding Icon}" IconColor="{Binding IconColor}"
+														                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
 														<!-- Кнопки — как у карточки персонажа: тёмная подложка, белый значок -->
 														<Button Classes="ic-mini"
 														        HorizontalAlignment="Left" VerticalAlignment="Top"
-														        Margin="-5,-5,0,0"
 														        Padding="3" MinWidth="0" MinHeight="0"
 														        Background="#88000000"
 														        BorderThickness="0" CornerRadius="4"
@@ -172,11 +171,10 @@
 																</Style>
 															</Button.Styles>
 															<PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-															          Width="9" Height="9" Foreground="White"/>
+															          Width="8" Height="8" Foreground="White"/>
 														</Button>
 														<Button Classes="ic-mini"
 														        HorizontalAlignment="Right" VerticalAlignment="Top"
-														        Margin="0,-5,-5,0"
 														        Padding="3" MinWidth="0" MinHeight="0"
 														        Background="#88000000"
 														        BorderThickness="0" CornerRadius="4"
@@ -189,7 +187,7 @@
 																</Style>
 															</Button.Styles>
 															<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-															          Width="9" Height="9" Foreground="White"/>
+															          Width="8" Height="8" Foreground="White"/>
 														</Button>
 													</Panel>
 												</DataTemplate>
@@ -200,31 +198,85 @@
 										        IsVisible="{Binding CanAddAnketas}"
 										        behaviours:TooltipBehavior.Tip="Добавить анкету"
 										        behaviours:TooltipBehavior.Description="Из анкет проекта и встроенных. У встроенного шаблона появится его копия">
-											<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" Width="12" Height="12"/>
+											<Panel Width="32" Height="32">
+												<Rectangle Classes="tpl-add-frame" RadiusX="6" RadiusY="6"/>
+												<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" Width="12" Height="12"
+												          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+											</Panel>
 											<Button.Flyout>
-												<Flyout Placement="BottomEdgeAlignedLeft" Opening="OnPickerOpening">
+												<Flyout Placement="BottomEdgeAlignedLeft" Opening="OnPickerOpening" Opened="OnPickerOpened">
 													<StackPanel Width="300" Spacing="6" Margin="2">
-														<TextBox Text="{Binding PickerQuery, Mode=TwoWay}"
+														<Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+															<Button Grid.Column="0" Classes="primary"
+															        Height="30" Padding="12,0"
+															        HorizontalAlignment="Stretch" VerticalAlignment="Center"
+															        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+															        Click="OnNewAnketaForTemplateClick"
+															        behaviours:TooltipBehavior.Tip="Новая анкета"
+															        behaviours:TooltipBehavior.Description="Откроется в редакторе анкет. После сохранения встанет в этот шаблон">
+																<StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+																	<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" Width="12" Height="12" Foreground="White"
+																	          VerticalAlignment="Center"/>
+																	<TextBlock Text="Новая анкета" Foreground="White" FontWeight="SemiBold"
+																	           VerticalAlignment="Center"/>
+																</StackPanel>
+															</Button>
+															<ToggleButton Grid.Column="1" Classes="RibbonToggle"
+															              Width="30" Height="30" VerticalAlignment="Center"
+															              IsChecked="{Binding $parent[UserControl].DataContext.PickerAsList, Mode=TwoWay}"
+															              behaviours:TooltipBehavior.Tip="Списком с названиями"
+															              behaviours:TooltipBehavior.Description="Повторный щелчок — снова значками">
+																<PathIcon Data="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
+																          Width="13" Height="13"/>
+															</ToggleButton>
+														</Grid>
+														<TextBox Classes="picker-search"
+														         Text="{Binding PickerQuery, Mode=TwoWay}"
 														         PlaceholderText="Поиск анкеты"/>
 														<ScrollViewer MaxHeight="340">
-															<ItemsControl ItemsSource="{Binding PickerItems}">
-																<ItemsControl.ItemTemplate>
-																	<DataTemplate x:DataType="vm:TemplatePickItemViewModel">
-																		<Button Classes="ghost pick-row" Click="OnPickAnketaClick"
-																		        behaviours:TooltipBehavior.Tip="{Binding Name}"
-																		        behaviours:TooltipBehavior.Description="{Binding Description}">
-																			<Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
-																				<controls:AnketaIconBadge Grid.Column="0" Size="22"
-																				                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
-																				<TextBlock Grid.Column="1" Text="{Binding Name}"
-																				           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-																				           Foreground="{DynamicResource TextPrimaryBrush}"/>
-																			</Grid>
-																		</Button>
-																	</DataTemplate>
-																</ItemsControl.ItemTemplate>
-															</ItemsControl>
+															<Panel>
+																<!-- Значками: название и описание — в подсказке -->
+																<ItemsControl ItemsSource="{Binding PickerItems}"
+																              IsVisible="{Binding !$parent[UserControl].DataContext.PickerAsList}">
+																	<ItemsControl.ItemsPanel>
+																		<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+																	</ItemsControl.ItemsPanel>
+																	<ItemsControl.ItemTemplate>
+																		<DataTemplate x:DataType="vm:TemplatePickItemViewModel">
+																			<Button Classes="ghost pick-tile" Click="OnPickAnketaClick"
+																			        behaviours:TooltipBehavior.Tip="{Binding Name}"
+																			        behaviours:TooltipBehavior.Description="{Binding Description}">
+																				<controls:AnketaIconBadge Size="32" Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+																			</Button>
+																		</DataTemplate>
+																	</ItemsControl.ItemTemplate>
+																</ItemsControl>
+
+																<!-- Списком -->
+																<ItemsControl ItemsSource="{Binding PickerItems}"
+																              IsVisible="{Binding $parent[UserControl].DataContext.PickerAsList}">
+																	<ItemsControl.ItemTemplate>
+																		<DataTemplate x:DataType="vm:TemplatePickItemViewModel">
+																			<Button Classes="ghost pick-row" Click="OnPickAnketaClick"
+																			        behaviours:TooltipBehavior.Tip="{Binding Name}"
+																			        behaviours:TooltipBehavior.Description="{Binding Description}">
+																				<Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
+																					<controls:AnketaIconBadge Grid.Column="0" Size="22"
+																					                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+																					<TextBlock Grid.Column="1" Text="{Binding Name}"
+																					           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+																					           Foreground="{DynamicResource TextPrimaryBrush}"/>
+																				</Grid>
+																			</Button>
+																		</DataTemplate>
+																	</ItemsControl.ItemTemplate>
+																</ItemsControl>
+															</Panel>
 														</ScrollViewer>
+														<TextBlock Text="Ничего не найдено"
+														           IsVisible="{Binding !HasPickerItems}"
+														           Margin="4,2"
+														           Foreground="{DynamicResource TextMutedBrush}"/>
 													</StackPanel>
 												</Flyout>
 											</Button.Flyout>
@@ -385,15 +437,36 @@
 		<Style Selector="Button.tpl-add">
 			<Setter Property="Width" Value="32"/>
 			<Setter Property="Height" Value="32"/>
+			<Setter Property="MinWidth" Value="0"/>
 			<Setter Property="MinHeight" Value="0"/>
 			<Setter Property="Padding" Value="0"/>
-			<Setter Property="Margin" Value="0,0,8,8"/>
+			<Setter Property="Margin" Value="5"/>
 			<Setter Property="CornerRadius" Value="6"/>
-			<Setter Property="HorizontalContentAlignment" Value="Center"/>
-			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+			<Setter Property="VerticalContentAlignment" Value="Stretch"/>
 		</Style>
 		<Style Selector="Button.tpl-add /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
 			<Setter Property="CornerRadius" Value="6"/>
+		</Style>
+		<Style Selector="Button.tpl-add:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.tpl-add:pointerover">
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<!-- Пунктирная рамка «+» — та же, что у пустой ячейки в редакторе анкет -->
+		<Style Selector="Rectangle.tpl-add-frame">
+			<Setter Property="Stroke" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="StrokeThickness" Value="1"/>
+			<Setter Property="StrokeDashArray" Value="4,3"/>
+		</Style>
+		<Style Selector="Button.tpl-add:pointerover Rectangle.tpl-add-frame">
+			<Setter Property="Stroke" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
 		<!-- Значок анкеты: карандаш и крестик появляются под курсором -->
@@ -413,6 +486,15 @@
 			<Setter Property="IsHitTestVisible" Value="True"/>
 		</Style>
 
+		<Style Selector="Button.pick-tile">
+			<Setter Property="Width" Value="42"/>
+			<Setter Property="Height" Value="42"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Margin" Value="0,0,2,2"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
 		<Style Selector="Button.pick-row">
 			<Setter Property="HorizontalAlignment" Value="Stretch"/>
 			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>

@@ -5,6 +5,8 @@
              xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
              xmlns:controls="using:Writersword.Styles.UserControls"
              xmlns:conv="using:Writersword.Infrastructure.Converters"
+             xmlns:tconv="using:Writersword.Modules.TextEditor.Converters"
+             xmlns:shared="using:Writersword.Modules.TextEditor.Views.Shared"
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonTableTab"
              x:DataType="vm:RibbonTableTabViewModel">
 
@@ -181,6 +183,18 @@
 		</Style>
 		<Style Selector="Button.LineItem:pointerover /template/ ContentPresenter">
 			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<!-- Выбранный пункт списка: узор, который стоит у ячейки под кареткой. -->
+		<Style Selector="Button.LineItem.Chosen /template/ ContentPresenter">
+			<Setter Property="Background"             Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Подпись поля в выпадающей панели положения таблицы. -->
+		<Style Selector="TextBlock.FlyLabel">
+			<Setter Property="FontSize"          Value="11"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
 		</Style>
 
 		<!-- Иконки границ рисуются двумя слоями: бледная сетка 2×2 даёт контекст,
@@ -624,6 +638,97 @@
 								</Button>
 							</Grid>
 
+							<!-- Узор заливки: точки, полосы или сетка поверх цвета фона ячейки —
+							     «узор» из окна заливки Word. Цвет фона выбирается раньше узора:
+							     новый цвет фона узор снимает. -->
+							<Button Classes="TBtn" VerticalAlignment="Center"
+									behaviours:TooltipBehavior.Tip="Узор заливки ячейки: точки, полосы или сетка поверх цвета фона">
+								<PathIcon Width="14" Height="14"
+										  Data="M2 2h2v2H2zM6 2h2v2H6zM10 2h2v2h-2zM14 2h2v2h-2zM4 6h2v2H4zM8 6h2v2H8zM12 6h2v2h-2zM2 10h2v2H2zM6 10h2v2H6zM10 10h2v2h-2zM14 10h2v2h-2zM4 14h2v2H4zM8 14h2v2H8zM12 14h2v2h-2z"/>
+								<Button.Flyout>
+									<Flyout Placement="Bottom" ShowMode="Standard">
+										<StackPanel Width="170" Spacing="1">
+												<Button Classes="LineItem"
+														Classes.Chosen="{Binding CellPatternKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=none}"
+														Command="{Binding CellPatternCommand}" CommandParameter="none"
+														behaviours:TooltipBehavior.Tip="Убрать узор, оставить цвет фона">
+													<TextBlock Text="Без узора" FontSize="11" VerticalAlignment="Center"/>
+												</Button>
+												<Button Classes="LineItem"
+														Classes.Chosen="{Binding CellPatternKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=pct10}"
+														Command="{Binding CellPatternCommand}" CommandParameter="pct10"
+														behaviours:TooltipBehavior.Tip="Редкие точки: десятая часть площади">
+													<TextBlock Text="Точки 10%" FontSize="11" VerticalAlignment="Center"/>
+												</Button>
+												<Button Classes="LineItem"
+														Classes.Chosen="{Binding CellPatternKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=pct25}"
+														Command="{Binding CellPatternCommand}" CommandParameter="pct25"
+														behaviours:TooltipBehavior.Tip="Точки: четверть площади">
+													<TextBlock Text="Точки 25%" FontSize="11" VerticalAlignment="Center"/>
+												</Button>
+												<Button Classes="LineItem"
+														Classes.Chosen="{Binding CellPatternKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=pct50}"
+														Command="{Binding CellPatternCommand}" CommandParameter="pct50"
+														behaviours:TooltipBehavior.Tip="Точки: половина площади">
+													<TextBlock Text="Точки 50%" FontSize="11" VerticalAlignment="Center"/>
+												</Button>
+												<Button Classes="LineItem"
+														Classes.Chosen="{Binding CellPatternKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=pct75}"
+														Command="{Binding CellPatternCommand}" CommandParameter="pct75"
+														behaviours:TooltipBehavior.Tip="Плотные точки: три четверти площади">
+													<TextBlock Text="Точки 75%" FontSize="11" VerticalAlignment="Center"/>
+												</Button>
+												<Button Classes="LineItem"
+														Classes.Chosen="{Binding CellPatternKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=horzStripe}"
+														Command="{Binding CellPatternCommand}" CommandParameter="horzStripe"
+														behaviours:TooltipBehavior.Tip="Горизонтальные полосы">
+													<TextBlock Text="Полосы горизонтальные" FontSize="11" VerticalAlignment="Center"/>
+												</Button>
+												<Button Classes="LineItem"
+														Classes.Chosen="{Binding CellPatternKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=vertStripe}"
+														Command="{Binding CellPatternCommand}" CommandParameter="vertStripe"
+														behaviours:TooltipBehavior.Tip="Вертикальные полосы">
+													<TextBlock Text="Полосы вертикальные" FontSize="11" VerticalAlignment="Center"/>
+												</Button>
+												<Button Classes="LineItem"
+														Classes.Chosen="{Binding CellPatternKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=diagStripe}"
+														Command="{Binding CellPatternCommand}" CommandParameter="diagStripe"
+														behaviours:TooltipBehavior.Tip="Наклонные полосы, снизу слева вверх направо">
+													<TextBlock Text="Полосы наклонные" FontSize="11" VerticalAlignment="Center"/>
+												</Button>
+												<Button Classes="LineItem"
+														Classes.Chosen="{Binding CellPatternKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=reverseDiagStripe}"
+														Command="{Binding CellPatternCommand}" CommandParameter="reverseDiagStripe"
+														behaviours:TooltipBehavior.Tip="Наклонные полосы, сверху слева вниз направо">
+													<TextBlock Text="Полосы обратные" FontSize="11" VerticalAlignment="Center"/>
+												</Button>
+												<Button Classes="LineItem"
+														Classes.Chosen="{Binding CellPatternKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=horzCross}"
+														Command="{Binding CellPatternCommand}" CommandParameter="horzCross"
+														behaviours:TooltipBehavior.Tip="Сетка из горизонтальных и вертикальных полос">
+													<TextBlock Text="Сетка" FontSize="11" VerticalAlignment="Center"/>
+												</Button>
+												<Button Classes="LineItem"
+														Classes.Chosen="{Binding CellPatternKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=diagCross}"
+														Command="{Binding CellPatternCommand}" CommandParameter="diagCross"
+														behaviours:TooltipBehavior.Tip="Сетка из наклонных полос">
+													<TextBlock Text="Сетка наклонная" FontSize="11" VerticalAlignment="Center"/>
+												</Button>
+
+											<Rectangle Height="1" Margin="4 3"
+													   Fill="{DynamicResource BorderDefaultBrush}"/>
+
+											<StackPanel Orientation="Horizontal" Spacing="6" Margin="8 2">
+												<controls:ColorPickerButton Width="20" Height="20" VerticalAlignment="Center"
+														HexColor="{Binding CellPatternColorPick, Mode=TwoWay}"
+														behaviours:TooltipBehavior.Tip="Цвет узора"/>
+												<TextBlock Classes="FlyLabel" Text="Цвет узора"/>
+											</StackPanel>
+										</StackPanel>
+									</Flyout>
+								</Button.Flyout>
+							</Button>
+
 						</StackPanel>
 					</DockPanel>
 				</Border>
@@ -658,32 +763,14 @@
 										<Button.Content>
 											<!-- Толщина образца берётся из настройки: при 0,5pt линия
 											     волосяная, как в таблице, а не жирный брусок. -->
-											<Grid Width="26" Height="16">
-												<Rectangle IsVisible="{Binding IsBorderSingle}"
-														   Height="{Binding BorderSampleThickness}"
-														   VerticalAlignment="Center"
-														   Fill="{DynamicResource TextPrimaryBrush}"/>
-												<StackPanel IsVisible="{Binding IsBorderDouble}"
-															VerticalAlignment="Center" Spacing="3">
-													<Rectangle Height="{Binding BorderSampleThickness}"
-															   Fill="{DynamicResource TextPrimaryBrush}"/>
-													<Rectangle Height="{Binding BorderSampleThickness}"
-															   Fill="{DynamicResource TextPrimaryBrush}"/>
-												</StackPanel>
-												<Line IsVisible="{Binding IsBorderDashed}"
-													  StartPoint="0,8" EndPoint="26,8"
-													  Stroke="{DynamicResource TextPrimaryBrush}"
-													  StrokeThickness="{Binding BorderSampleThickness}"
-													  StrokeDashArray="3,2"/>
-												<Line IsVisible="{Binding IsBorderDotted}"
-													  StartPoint="0,8" EndPoint="26,8"
-													  Stroke="{DynamicResource TextPrimaryBrush}"
-													  StrokeThickness="{Binding BorderSampleThickness}"
-													  StrokeDashArray="1,1.5"/>
-												<Rectangle IsVisible="{Binding IsBorderThick}"
-														   Height="5" VerticalAlignment="Center"
-														   Fill="{DynamicResource TextPrimaryBrush}"/>
-											</Grid>
+											<!-- Образец рисуется тем же рисунком линии, что и граница в
+											     документе (SKBorderLineShape): двойная, «тонкая и толстая»,
+											     волна и остальные виды выглядят на кнопке так же, как лягут
+											     в таблицу. -->
+											<shared:BorderLineSample Width="26" Height="16"
+																	 LineStyle="{Binding BorderLineStyle}"
+																	 LineWidth="{Binding BorderSampleThickness}"
+																	 Foreground="{DynamicResource TextPrimaryBrush}"/>
 										</Button.Content>
 										<Button.Flyout>
 											<!-- В меню сами линии, а не их названия: рисунок узора
@@ -697,46 +784,206 @@
 											     по краям. Здесь ширина ровно по образцу линии.
 											     Закрытие после выбора — в code-behind. -->
 											<Flyout Placement="Bottom" ShowMode="Standard">
-												<StackPanel Width="150" Spacing="1">
+												<StackPanel Width="170" Spacing="1">
 
-													<Button Classes="LineItem" Command="{Binding SetBorderStyleSingleCommand}"
-															Click="OnLineStyleChosen"
-															behaviours:TooltipBehavior.Tip="Сплошная">
-														<Rectangle Height="1.5" VerticalAlignment="Center"
-																   Fill="{DynamicResource TextPrimaryBrush}"/>
-													</Button>
-
-													<Button Classes="LineItem" Command="{Binding SetBorderStyleDoubleCommand}"
-															Click="OnLineStyleChosen"
-															behaviours:TooltipBehavior.Tip="Двойная">
-														<StackPanel VerticalAlignment="Center" Spacing="3">
-															<Rectangle Height="1.5" Fill="{DynamicResource TextPrimaryBrush}"/>
-															<Rectangle Height="1.5" Fill="{DynamicResource TextPrimaryBrush}"/>
-														</StackPanel>
-													</Button>
-
-													<Button Classes="LineItem" Command="{Binding SetBorderStyleDashedCommand}"
-															Click="OnLineStyleChosen"
-															behaviours:TooltipBehavior.Tip="Пунктир">
-														<Line StartPoint="0,7" EndPoint="130,7"
-															  Stroke="{DynamicResource TextPrimaryBrush}"
-															  StrokeThickness="1.5" StrokeDashArray="4,3"/>
-													</Button>
-
-													<Button Classes="LineItem" Command="{Binding SetBorderStyleDottedCommand}"
-															Click="OnLineStyleChosen"
-															behaviours:TooltipBehavior.Tip="Точки">
-														<Line StartPoint="0,7" EndPoint="130,7"
-															  Stroke="{DynamicResource TextPrimaryBrush}"
-															  StrokeThickness="1.5" StrokeDashArray="1,2"/>
-													</Button>
-
-													<Button Classes="LineItem" Command="{Binding SetBorderStyleThickCommand}"
-															Click="OnLineStyleChosen"
-															behaviours:TooltipBehavior.Tip="Жирная">
-														<Rectangle Height="4" VerticalAlignment="Center"
-																   Fill="{DynamicResource TextPrimaryBrush}"/>
-													</Button>
+													<!-- Все виды линий Word. Список длиннее окна ленты, поэтому
+													     прокручивается; отмечен вид, которым сейчас рисует перо. -->
+													<ScrollViewer MaxHeight="330" VerticalScrollBarVisibility="Auto">
+													<StackPanel Spacing="1">
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=Single}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="Single"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Сплошная">
+															<shared:BorderLineSample Height="14" LineStyle="Single" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=Double}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="Double"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Двойная">
+															<shared:BorderLineSample Height="14" LineStyle="Double" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=Triple}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="Triple"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Тройная">
+															<shared:BorderLineSample Height="14" LineStyle="Triple" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=Dotted}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="Dotted"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Точки">
+															<shared:BorderLineSample Height="14" LineStyle="Dotted" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=Dashed}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="Dashed"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Пунктир">
+															<shared:BorderLineSample Height="14" LineStyle="Dashed" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=DashSmallGap}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="DashSmallGap"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Штрихи с узким просветом">
+															<shared:BorderLineSample Height="14" LineStyle="DashSmallGap" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=DotDash}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="DotDash"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Штрих и точка">
+															<shared:BorderLineSample Height="14" LineStyle="DotDash" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=DotDotDash}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="DotDotDash"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Штрих и две точки">
+															<shared:BorderLineSample Height="14" LineStyle="DotDotDash" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=DashDotStroked}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="DashDotStroked"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Наклонные штрихи">
+															<shared:BorderLineSample Height="14" LineStyle="DashDotStroked" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=ThinThickSmallGap}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="ThinThickSmallGap"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Тонкая и толстая, малый просвет">
+															<shared:BorderLineSample Height="14" LineStyle="ThinThickSmallGap" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=ThickThinSmallGap}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="ThickThinSmallGap"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Толстая и тонкая, малый просвет">
+															<shared:BorderLineSample Height="14" LineStyle="ThickThinSmallGap" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=ThinThickThinSmallGap}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="ThinThickThinSmallGap"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Тонкая, толстая, тонкая, малый просвет">
+															<shared:BorderLineSample Height="14" LineStyle="ThinThickThinSmallGap" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=ThinThickMediumGap}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="ThinThickMediumGap"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Тонкая и толстая, средний просвет">
+															<shared:BorderLineSample Height="14" LineStyle="ThinThickMediumGap" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=ThickThinMediumGap}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="ThickThinMediumGap"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Толстая и тонкая, средний просвет">
+															<shared:BorderLineSample Height="14" LineStyle="ThickThinMediumGap" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=ThinThickThinMediumGap}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="ThinThickThinMediumGap"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Тонкая, толстая, тонкая, средний просвет">
+															<shared:BorderLineSample Height="14" LineStyle="ThinThickThinMediumGap" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=ThinThickLargeGap}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="ThinThickLargeGap"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Тонкая и толстая, большой просвет">
+															<shared:BorderLineSample Height="14" LineStyle="ThinThickLargeGap" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=ThickThinLargeGap}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="ThickThinLargeGap"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Толстая и тонкая, большой просвет">
+															<shared:BorderLineSample Height="14" LineStyle="ThickThinLargeGap" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=ThinThickThinLargeGap}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="ThinThickThinLargeGap"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Тонкая, толстая, тонкая, большой просвет">
+															<shared:BorderLineSample Height="14" LineStyle="ThinThickThinLargeGap" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=Wave}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="Wave"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Волна">
+															<shared:BorderLineSample Height="14" LineStyle="Wave" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=DoubleWave}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="DoubleWave"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Двойная волна">
+															<shared:BorderLineSample Height="14" LineStyle="DoubleWave" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=ThreeDEmboss}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="ThreeDEmboss"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Объёмная выпуклая">
+															<shared:BorderLineSample Height="14" LineStyle="ThreeDEmboss" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=ThreeDEngrave}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="ThreeDEngrave"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Объёмная вдавленная">
+															<shared:BorderLineSample Height="14" LineStyle="ThreeDEngrave" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=Outset}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="Outset"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Выпуклая">
+															<shared:BorderLineSample Height="14" LineStyle="Outset" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+														<Button Classes="LineItem"
+																Classes.Chosen="{Binding BorderStyleKey, Converter={x:Static tconv:EqualityConverter.Instance}, ConverterParameter=Inset}"
+																Command="{Binding BorderStyleKeyCommand}" CommandParameter="Inset"
+																Click="OnLineStyleChosen"
+																behaviours:TooltipBehavior.Tip="Вдавленная">
+															<shared:BorderLineSample Height="14" LineStyle="Inset" LineWidth="1.5"
+																					 Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</Button>
+													</StackPanel>
+													</ScrollViewer>
 
 													<Rectangle Height="1" Margin="4 3"
 															   Fill="{DynamicResource BorderDefaultBrush}"/>
@@ -942,6 +1189,181 @@
 								<PathIcon Width="14" Height="14" Data="M3 6h18v2H3V6zm0 7h12v-2H3v2zm0 5h6v-2H3v2z"/>
 							</Button>
 						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ── Группа: Положение ────────────────────────────────── -->
+				<!-- Направление таблицы и обтекание её текстом: то, что у Word лежит в
+				     свойствах таблицы («Направление таблицы», «Обтекание: вокруг»). -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Положение"/>
+						<Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,Auto"
+							  RowSpacing="4" VerticalAlignment="Center">
+
+							<Button Grid.Row="0" Grid.Column="0" Margin="1 0"
+									Command="{Binding ToggleTableDirectionCommand}"
+									Classes="TBtn" Classes.Active="{Binding IsTableRightToLeft}"
+									behaviours:TooltipBehavior.Tip="Таблица справа налево: первая колонка встаёт у правого края, колонки идут влево (иврит, арабский)">
+								<PathIcon Width="14" Height="14"
+										  Data="M2 3h20v18H2V3zm2 2v14h16V5H4zM17 11h-6.2l1.6-1.6L11 8l-4 4 4 4 1.4-1.4-1.6-1.6H17v-2z"/>
+							</Button>
+
+							<Button Grid.Row="0" Grid.Column="1" Margin="1 0"
+									Command="{Binding ToggleTableFloatingCommand}"
+									Classes="TBtn" Classes.Active="{Binding IsTableFloating}"
+									behaviours:TooltipBehavior.Tip="Обтекание текстом: таблица встаёт в свою точку листа, а текст абзацев под ней обходит её с обеих сторон">
+								<PathIcon Width="14" Height="14"
+										  Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM3 7h9v10H3V7zm11 0h7v2h-7V7zm0 4h7v2h-7v-2zm0 4h7v2h-7v-2z"/>
+							</Button>
+
+							<Button Grid.Row="1" Grid.Column="0" Margin="1 0"
+									Command="{Binding TableAlignCommand}" CommandParameter="Left"
+									Classes="TBtn" Classes.Active="{Binding IsTableAlignLeft}"
+									behaviours:TooltipBehavior.Tip="Таблица у левого поля">
+								<PathIcon Width="14" Height="14"
+										  Data="M2 3h20v2H2V3zm0 16h20v2H2v-2zM2 8h12v8H2V8z"/>
+							</Button>
+
+							<Button Grid.Row="1" Grid.Column="1" Margin="1 0"
+									Command="{Binding TableAlignCommand}" CommandParameter="Center"
+									Classes="TBtn" Classes.Active="{Binding IsTableAlignCenter}"
+									behaviours:TooltipBehavior.Tip="Таблица по центру полосы набора">
+								<PathIcon Width="14" Height="14"
+										  Data="M2 3h20v2H2V3zm0 16h20v2H2v-2zM6 8h12v8H6V8z"/>
+							</Button>
+
+							<Button Grid.Row="1" Grid.Column="2" Margin="1 0"
+									Command="{Binding TableAlignCommand}" CommandParameter="Right"
+									Classes="TBtn" Classes.Active="{Binding IsTableAlignRight}"
+									behaviours:TooltipBehavior.Tip="Таблица у правого поля">
+								<PathIcon Width="14" Height="14"
+										  Data="M2 3h20v2H2V3zm0 16h20v2H2v-2zM10 8h12v8H10V8z"/>
+							</Button>
+
+							<Button Grid.Row="0" Grid.Column="2" Margin="1 0"
+									Classes="TBtn"
+									IsEnabled="{Binding IsTableFloating}"
+									behaviours:TooltipBehavior.Tip="Положение таблицы с обтеканием: от чего отсчитывается, смещение и расстояние до текста">
+								<PathIcon Width="14" Height="14"
+										  Data="M12 2l3 3h-2v6h6V9l3 3-3 3v-2h-6v6h2l-3 3-3-3h2v-6H5v2l-3-3 3-3v2h6V5H9l3-3z"/>
+								<Button.Flyout>
+									<Flyout Placement="Bottom" ShowMode="Standard">
+										<Grid Margin="4" RowSpacing="6" ColumnSpacing="6"
+											  RowDefinitions="Auto,Auto,Auto,Auto"
+											  ColumnDefinitions="Auto,Auto,Auto,Auto">
+
+											<TextBlock Grid.Row="0" Grid.Column="1" Classes="FlyLabel" Text="Отсчёт от"/>
+											<TextBlock Grid.Row="0" Grid.Column="2" Classes="FlyLabel" Text="Положение"/>
+											<TextBlock Grid.Row="0" Grid.Column="3" Classes="FlyLabel" Text="Смещение, мм"/>
+
+											<TextBlock Grid.Row="1" Grid.Column="0" Classes="FlyLabel" Text="По горизонтали"/>
+											<ComboBox Grid.Row="1" Grid.Column="1" Width="96" FontSize="11"
+													  SelectedIndex="{Binding FloatHorizontalAnchor, Mode=TwoWay}">
+												<ComboBoxItem Content="Текст"/>
+												<ComboBoxItem Content="Поле"/>
+												<ComboBoxItem Content="Лист"/>
+											</ComboBox>
+											<ComboBox Grid.Row="1" Grid.Column="2" Width="110" FontSize="11"
+													  SelectedIndex="{Binding FloatHorizontalAlign, Mode=TwoWay}">
+												<ComboBoxItem Content="По смещению"/>
+												<ComboBoxItem Content="Слева"/>
+												<ComboBoxItem Content="По центру"/>
+												<ComboBoxItem Content="Справа"/>
+											</ComboBox>
+											<NumericUpDown Grid.Row="1" Grid.Column="3" Classes="Ribbon" Width="82"
+														   Minimum="-1000" Maximum="1000" Increment="1"
+														   FormatString="0.##" ClipValueToMinMax="True"
+														   IsEnabled="{Binding IsFloatXEnabled}"
+														   Value="{Binding FloatXMm, Mode=TwoWay}"
+														   behaviours:TooltipBehavior.Tip="Смещение левого края таблицы от начала отсчёта, миллиметры"/>
+
+											<TextBlock Grid.Row="2" Grid.Column="0" Classes="FlyLabel" Text="По вертикали"/>
+											<ComboBox Grid.Row="2" Grid.Column="1" Width="96" FontSize="11"
+													  SelectedIndex="{Binding FloatVerticalAnchor, Mode=TwoWay}">
+												<ComboBoxItem Content="Абзац"/>
+												<ComboBoxItem Content="Поле"/>
+												<ComboBoxItem Content="Лист"/>
+											</ComboBox>
+											<ComboBox Grid.Row="2" Grid.Column="2" Width="110" FontSize="11"
+													  IsEnabled="{Binding IsFloatVerticalAlignEnabled}"
+													  SelectedIndex="{Binding FloatVerticalAlign, Mode=TwoWay}">
+												<ComboBoxItem Content="По смещению"/>
+												<ComboBoxItem Content="Сверху"/>
+												<ComboBoxItem Content="По центру"/>
+												<ComboBoxItem Content="Снизу"/>
+											</ComboBox>
+											<NumericUpDown Grid.Row="2" Grid.Column="3" Classes="Ribbon" Width="82"
+														   Minimum="-1000" Maximum="1000" Increment="1"
+														   FormatString="0.##" ClipValueToMinMax="True"
+														   IsEnabled="{Binding IsFloatYEnabled}"
+														   Value="{Binding FloatYMm, Mode=TwoWay}"
+														   behaviours:TooltipBehavior.Tip="Смещение верха таблицы от начала отсчёта, миллиметры"/>
+
+											<TextBlock Grid.Row="3" Grid.Column="0" Classes="FlyLabel" Text="До текста, мм"/>
+											<NumericUpDown Grid.Row="3" Grid.Column="1" Classes="Ribbon" Width="82"
+														   HorizontalAlignment="Left"
+														   Minimum="0" Maximum="100" Increment="0.5"
+														   FormatString="0.##" ClipValueToMinMax="True"
+														   Value="{Binding FloatSideGapMm, Mode=TwoWay}"
+														   behaviours:TooltipBehavior.Tip="Расстояние от таблицы до текста слева и справа, миллиметры"/>
+											<NumericUpDown Grid.Row="3" Grid.Column="2" Classes="Ribbon" Width="82"
+														   HorizontalAlignment="Left"
+														   Minimum="0" Maximum="100" Increment="0.5"
+														   FormatString="0.##" ClipValueToMinMax="True"
+														   Value="{Binding FloatVerticalGapMm, Mode=TwoWay}"
+														   behaviours:TooltipBehavior.Tip="Расстояние от таблицы до текста сверху и снизу, миллиметры"/>
+										</Grid>
+									</Flyout>
+								</Button.Flyout>
+							</Button>
+
+						</Grid>
+					</DockPanel>
+				</Border>
+
+				<!-- ── Группа: Текст и строка ───────────────────────────── -->
+				<!-- Направление текста в ячейке и точная высота строки — то, что у Word
+				     лежит в «Направлении текста» и в свойствах строки («Точно»). -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Текст и строка"/>
+						<Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,Auto"
+							  RowSpacing="4" VerticalAlignment="Center">
+
+							<Button Grid.Row="0" Grid.Column="0" Margin="1 0"
+									Command="{Binding CellTextDirectionCommand}" CommandParameter="Horizontal"
+									Classes="TBtn" Classes.Active="{Binding IsCellTextHorizontal}"
+									behaviours:TooltipBehavior.Tip="Текст в ячейке горизонтально">
+								<PathIcon Width="14" Height="14"
+										  Data="M3 5h18v2H3V5zm0 6h18v2H3v-2zm0 6h12v2H3v-2z"/>
+							</Button>
+
+							<Button Grid.Row="0" Grid.Column="1" Margin="1 0"
+									Command="{Binding CellTextDirectionCommand}" CommandParameter="BottomToTop"
+									Classes="TBtn" Classes.Active="{Binding IsCellTextBottomToTop}"
+									behaviours:TooltipBehavior.Tip="Текст в ячейке снизу вверх">
+								<PathIcon Width="14" Height="14"
+										  Data="M5 21V3h2v18H5zm6 0V3h2v18h-2zm6 0V9h2v12h-2z"/>
+							</Button>
+
+							<Button Grid.Row="0" Grid.Column="2" Margin="1 0"
+									Command="{Binding CellTextDirectionCommand}" CommandParameter="TopToBottom"
+									Classes="TBtn" Classes.Active="{Binding IsCellTextTopToBottom}"
+									behaviours:TooltipBehavior.Tip="Текст в ячейке сверху вниз">
+								<PathIcon Width="14" Height="14"
+										  Data="M17 3v18h2V3h-2zm-6 0v18h2V3h-2zM5 3v12h2V3H5z"/>
+							</Button>
+
+							<Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Margin="1 0"
+									Command="{Binding ToggleRowHeightExactCommand}"
+									Classes="TBtn" Classes.Active="{Binding IsRowHeightExact}" Width="82"
+									behaviours:TooltipBehavior.Tip="Точная высота строки: строка ровно заданной высоты, а текст, который в неё не входит, срезается. Выключено — высота «не менее»: строка растёт по тексту">
+								<PathIcon Width="14" Height="14"
+										  Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM11 6l-3 3h2v6H8l3 3 3-3h-2V9h2l-3-3z"/>
+							</Button>
+
+						</Grid>
 					</DockPanel>
 				</Border>
 

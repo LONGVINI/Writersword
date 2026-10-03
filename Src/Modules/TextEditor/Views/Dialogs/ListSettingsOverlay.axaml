@@ -161,6 +161,12 @@
                             <ComboBoxItem>A, B, C …</ComboBoxItem>
                             <ComboBoxItem>i, ii, iii …</ComboBoxItem>
                             <ComboBoxItem>I, II, III …</ComboBoxItem>
+                            <ComboBoxItem>1-й, 2-й, 3-й …</ComboBoxItem>
+                            <ComboBoxItem>Один, Два, Три …</ComboBoxItem>
+                            <ComboBoxItem>Первый, Второй, Третий …</ComboBoxItem>
+                            <ComboBoxItem>а, б, в …</ComboBoxItem>
+                            <ComboBoxItem>А, Б, В …</ComboBoxItem>
+                            <ComboBoxItem>*, †, ‡, § …</ComboBoxItem>
                         </ComboBox>
                     </StackPanel>
 

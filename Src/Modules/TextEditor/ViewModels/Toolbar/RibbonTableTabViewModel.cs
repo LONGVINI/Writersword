@@ -89,6 +89,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             {
                 this.RaiseAndSetIfChanged(ref _borderLineStyle, value);
                 this.RaisePropertyChanged(nameof(BorderStyleName));
+                this.RaisePropertyChanged(nameof(BorderStyleKey));
                 this.RaisePropertyChanged(nameof(IsBorderSingle));
                 this.RaisePropertyChanged(nameof(IsBorderDouble));
                 this.RaisePropertyChanged(nameof(IsBorderDashed));
@@ -105,8 +106,33 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             BorderStyle.Dashed => "Пунктир",
             BorderStyle.Dotted => "Точки",
             BorderStyle.Thick => "Жирная",
+            BorderStyle.Triple => "Тройная",
+            BorderStyle.Wave => "Волна",
+            BorderStyle.DoubleWave => "Двойная волна",
+            BorderStyle.DotDash => "Штрих и точка",
+            BorderStyle.DotDotDash => "Штрих и две точки",
+            BorderStyle.DashSmallGap => "Штрихи с узким просветом",
+            BorderStyle.DashDotStroked => "Наклонные штрихи",
+            BorderStyle.ThinThickSmallGap => "Тонкая и толстая, малый просвет",
+            BorderStyle.ThickThinSmallGap => "Толстая и тонкая, малый просвет",
+            BorderStyle.ThinThickThinSmallGap => "Тонкая, толстая, тонкая, малый просвет",
+            BorderStyle.ThinThickMediumGap => "Тонкая и толстая, средний просвет",
+            BorderStyle.ThickThinMediumGap => "Толстая и тонкая, средний просвет",
+            BorderStyle.ThinThickThinMediumGap => "Тонкая, толстая, тонкая, средний просвет",
+            BorderStyle.ThinThickLargeGap => "Тонкая и толстая, большой просвет",
+            BorderStyle.ThickThinLargeGap => "Толстая и тонкая, большой просвет",
+            BorderStyle.ThinThickThinLargeGap => "Тонкая, толстая, тонкая, большой просвет",
+            BorderStyle.ThreeDEmboss => "Объёмная выпуклая",
+            BorderStyle.ThreeDEngrave => "Объёмная вдавленная",
+            BorderStyle.Outset => "Выпуклая",
+            BorderStyle.Inset => "Вдавленная",
             _ => "Сплошная"
         };
+
+        /// <summary>
+        /// Текущий вид линии словом — по нему список в ленте отмечает выбранный пункт.
+        /// </summary>
+        public string BorderStyleKey => _borderLineStyle.ToString();
 
         // Признаки текущего стиля. Кнопка в ленте показывает не обрезанное название,
         // а образец самой линии — по нему стиль читается без чтения текста.
@@ -320,6 +346,317 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             }
         }
 
+        // ── Узор заливки ячейки ───────────────────────────────────────────
+        // Узор (точки, полосы, сетка) ложится поверх цвета фона ячейки — как «узор»
+        // в окне заливки Word. Имя узора — то же, что в файле Word: pct25, diagStripe…
+
+        private string? _cellPattern;
+        private string _cellPatternColorPick = "#000000";
+
+        /// <summary>Узор ячейки под кареткой: имя узора или «none». По нему подсвечивается кнопка.</summary>
+        public string CellPatternKey => string.IsNullOrEmpty(_cellPattern) ? "none" : _cellPattern!;
+
+        /// <summary>Цвет узора в HEX. Смена цвета сразу перекрашивает узор выделенных ячеек.</summary>
+        public string CellPatternColorPick
+        {
+            get => _cellPatternColorPick;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value)) return;
+                if (string.Equals(_cellPatternColorPick, value, StringComparison.OrdinalIgnoreCase)) return;
+                this.RaiseAndSetIfChanged(ref _cellPatternColorPick, value);
+
+                if (!_syncingPattern && !string.IsNullOrEmpty(_cellPattern))
+                    _target.TableSetCellShadingPattern(_cellPattern, value);
+            }
+        }
+
+        // Подстановка состояния из ячейки не должна тут же писать его обратно.
+        private bool _syncingPattern;
+
+        /// <summary>Ставит узор выделенным ячейкам; параметр — имя узора или «none».</summary>
+        public ICommand CellPatternCommand { get; }
+
+        private void ApplyCellPattern(string? key)
+        {
+            string? pattern = string.IsNullOrWhiteSpace(key) || key == "none" ? null : key;
+            _target.TableSetCellShadingPattern(pattern, pattern is null ? null : _cellPatternColorPick);
+            RefreshPatternState();
+        }
+
+        private void RefreshPatternState()
+        {
+            var (pattern, color) = _target.TableGetCellShadingPattern();
+
+            _syncingPattern = true;
+            try
+            {
+                _cellPattern = string.IsNullOrWhiteSpace(pattern) ? null : pattern;
+                this.RaisePropertyChanged(nameof(CellPatternKey));
+
+                if (!string.IsNullOrWhiteSpace(color))
+                    CellPatternColorPick = color!.StartsWith("#", StringComparison.Ordinal) ? color : "#" + color;
+            }
+            finally
+            {
+                _syncingPattern = false;
+            }
+        }
+
+        // ── Положение и направление таблицы ───────────────────────────────
+
+        private bool _isTableRightToLeft;
+
+        /// <summary>Таблица идёт справа налево: первая колонка стоит справа.</summary>
+        public bool IsTableRightToLeft
+        {
+            get => _isTableRightToLeft;
+            private set => this.RaiseAndSetIfChanged(ref _isTableRightToLeft, value);
+        }
+
+        private bool _isTableFloating;
+
+        /// <summary>
+        /// Таблица обтекается текстом: стоит в своей точке листа, а не в потоке. Пока
+        /// выключено, поля положения недоступны.
+        /// </summary>
+        public bool IsTableFloating
+        {
+            get => _isTableFloating;
+            private set => this.RaiseAndSetIfChanged(ref _isTableFloating, value);
+        }
+
+        public ICommand ToggleTableDirectionCommand { get; }
+        public ICommand ToggleTableFloatingCommand { get; }
+
+        // Выравнивание таблицы в полосе набора: 0 — слева, 1 — по центру, 2 — справа;
+        // -1 — каретка не в таблице.
+        private int _tableAlignment = -1;
+
+        public bool IsTableAlignLeft => _tableAlignment == 0;
+        public bool IsTableAlignCenter => _tableAlignment == 1;
+        public bool IsTableAlignRight => _tableAlignment == 2;
+
+        /// <summary>Ставит таблицу слева, по центру или справа; параметр — имя стороны.</summary>
+        public ICommand TableAlignCommand { get; }
+
+        // Направление текста ячейки под кареткой: 0 — обычное, 1 — снизу вверх,
+        // 2 — сверху вниз.
+        private int _cellTextDirection;
+
+        public bool IsCellTextHorizontal => _cellTextDirection == 0;
+        public bool IsCellTextBottomToTop => _cellTextDirection == 1;
+        public bool IsCellTextTopToBottom => _cellTextDirection == 2;
+
+        /// <summary>Ставит направление текста выделенным ячейкам; параметр — имя направления.</summary>
+        public ICommand CellTextDirectionCommand { get; }
+
+        private bool _isRowHeightExact;
+
+        /// <summary>У строки под кареткой точная высота: лишний текст срезается.</summary>
+        public bool IsRowHeightExact
+        {
+            get => _isRowHeightExact;
+            private set => this.RaiseAndSetIfChanged(ref _isRowHeightExact, value);
+        }
+
+        public ICommand ToggleRowHeightExactCommand { get; }
+
+        // Положение таблицы с обтеканием. Поля показывают миллиметры, документ хранит
+        // пункты. Опора: 0 — текст, 1 — поле, 2 — лист. Сторона: 0 — по смещению,
+        // 1 — к началу (слева, сверху), 2 — по центру, 3 — к концу (справа, снизу).
+        private const double FloatPtPerMm = 72.0 / 25.4;
+
+        private decimal _floatXMm;
+        private decimal _floatYMm;
+        private decimal _floatSideGapMm;
+        private decimal _floatVerticalGapMm;
+        private int _floatHorizontalAnchor;
+        private int _floatVerticalAnchor;
+        private int _floatHorizontalAlign;
+        private int _floatVerticalAlign;
+
+        // Подстановка положения из таблицы не должна тут же писать его обратно.
+        private bool _syncingFloat;
+
+        /// <summary>Смещение таблицы по горизонтали от своей опоры, мм.</summary>
+        public decimal FloatXMm
+        {
+            get => _floatXMm;
+            set => SetFloatNumber(ref _floatXMm, value, -1000m, 1000m, nameof(FloatXMm));
+        }
+
+        /// <summary>Смещение таблицы по вертикали от своей опоры, мм.</summary>
+        public decimal FloatYMm
+        {
+            get => _floatYMm;
+            set => SetFloatNumber(ref _floatYMm, value, -1000m, 1000m, nameof(FloatYMm));
+        }
+
+        /// <summary>Расстояние от таблицы до текста слева и справа, мм.</summary>
+        public decimal FloatSideGapMm
+        {
+            get => _floatSideGapMm;
+            set => SetFloatNumber(ref _floatSideGapMm, value, 0m, 100m, nameof(FloatSideGapMm));
+        }
+
+        /// <summary>Расстояние от таблицы до текста сверху и снизу, мм.</summary>
+        public decimal FloatVerticalGapMm
+        {
+            get => _floatVerticalGapMm;
+            set => SetFloatNumber(ref _floatVerticalGapMm, value, 0m, 100m, nameof(FloatVerticalGapMm));
+        }
+
+        /// <summary>Опора по горизонтали: 0 — текст, 1 — поле, 2 — лист.</summary>
+        public int FloatHorizontalAnchor
+        {
+            get => _floatHorizontalAnchor;
+            set => SetFloatChoice(ref _floatHorizontalAnchor, value, 3, nameof(FloatHorizontalAnchor));
+        }
+
+        /// <summary>Опора по вертикали: 0 — абзац под таблицей, 1 — поле, 2 — лист.</summary>
+        public int FloatVerticalAnchor
+        {
+            get => _floatVerticalAnchor;
+            set
+            {
+                SetFloatChoice(ref _floatVerticalAnchor, value, 3, nameof(FloatVerticalAnchor));
+                this.RaisePropertyChanged(nameof(IsFloatVerticalAlignEnabled));
+            }
+        }
+
+        /// <summary>Положение по горизонтали: 0 — по смещению, 1 — слева, 2 — по центру, 3 — справа.</summary>
+        public int FloatHorizontalAlign
+        {
+            get => _floatHorizontalAlign;
+            set
+            {
+                SetFloatChoice(ref _floatHorizontalAlign, value, 4, nameof(FloatHorizontalAlign));
+                this.RaisePropertyChanged(nameof(IsFloatXEnabled));
+            }
+        }
+
+        /// <summary>Положение по вертикали: 0 — по смещению, 1 — сверху, 2 — по центру, 3 — снизу.</summary>
+        public int FloatVerticalAlign
+        {
+            get => _floatVerticalAlign;
+            set
+            {
+                SetFloatChoice(ref _floatVerticalAlign, value, 4, nameof(FloatVerticalAlign));
+                this.RaisePropertyChanged(nameof(IsFloatYEnabled));
+            }
+        }
+
+        /// <summary>Смещение по горизонтали действует, пока таблица не прижата к стороне опоры.</summary>
+        public bool IsFloatXEnabled => _floatHorizontalAlign == 0;
+
+        /// <summary>
+        /// Смещение по вертикали действует, пока таблица не прижата к стороне опоры. От
+        /// абзаца стороны нет — только смещение.
+        /// </summary>
+        public bool IsFloatYEnabled => _floatVerticalAnchor == 0 || _floatVerticalAlign == 0;
+
+        /// <summary>Сторона по вертикали есть у поля и у листа; от абзаца — только смещение.</summary>
+        public bool IsFloatVerticalAlignEnabled => _floatVerticalAnchor != 0;
+
+        // Уведомление идёт всегда: значение могло быть обрезано по диапазону, и поле
+        // иначе осталось бы с недопустимым числом.
+        private void SetFloatNumber(ref decimal field, decimal value, decimal min, decimal max, string name)
+        {
+            decimal clamped = Math.Clamp(value, min, max);
+            bool changed = field != clamped;
+            field = clamped;
+            this.RaisePropertyChanged(name);
+            if (changed) ApplyFloatPosition();
+        }
+
+        // Список при закрытии меню на миг отдаёт «ничего не выбрано» (-1) — такое
+        // значение не выбор, и в документ оно не идёт.
+        private void SetFloatChoice(ref int field, int value, int count, string name)
+        {
+            if (value < 0 || value >= count)
+            {
+                this.RaisePropertyChanged(name);
+                return;
+            }
+
+            bool changed = field != value;
+            field = value;
+            this.RaisePropertyChanged(name);
+            if (changed)
+            {
+                this.RaisePropertyChanged(nameof(IsFloatYEnabled));
+                ApplyFloatPosition();
+            }
+        }
+
+        /// <summary>Пишет положение из полей в таблицу под кареткой — одним шагом отмены.</summary>
+        private void ApplyFloatPosition()
+        {
+            if (_syncingFloat || !_isTableFloating) return;
+
+            var position = new TableFloatPosition
+            {
+                HorizontalAnchor = (TableFloatAnchor)_floatHorizontalAnchor,
+                HorizontalAlign = (TableFloatAlign)_floatHorizontalAlign,
+                XPt = (double)_floatXMm * FloatPtPerMm,
+                VerticalAnchor = (TableFloatAnchor)_floatVerticalAnchor,
+                VerticalAlign = _floatVerticalAnchor == 0
+                    ? TableFloatAlign.Offset
+                    : (TableFloatAlign)_floatVerticalAlign,
+                YPt = (double)_floatYMm * FloatPtPerMm,
+                LeftFromTextPt = (double)_floatSideGapMm * FloatPtPerMm,
+                RightFromTextPt = (double)_floatSideGapMm * FloatPtPerMm,
+                TopFromTextPt = (double)_floatVerticalGapMm * FloatPtPerMm,
+                BottomFromTextPt = (double)_floatVerticalGapMm * FloatPtPerMm
+            };
+
+            _target.TableSetFloatPosition(position);
+        }
+
+        /// <summary>Перечитывает направление и положение таблицы под кареткой.</summary>
+        private void RefreshPlacementState()
+        {
+            IsTableRightToLeft = _target.TableGetRightToLeft();
+
+            _tableAlignment = _target.TableGetAlignment() is { } alignment ? (int)alignment : -1;
+            this.RaisePropertyChanged(nameof(IsTableAlignLeft));
+            this.RaisePropertyChanged(nameof(IsTableAlignCenter));
+            this.RaisePropertyChanged(nameof(IsTableAlignRight));
+
+            _cellTextDirection = (int)_target.TableGetCellTextDirection();
+            this.RaisePropertyChanged(nameof(IsCellTextHorizontal));
+            this.RaisePropertyChanged(nameof(IsCellTextBottomToTop));
+            this.RaisePropertyChanged(nameof(IsCellTextTopToBottom));
+
+            IsRowHeightExact = _target.TableGetRowHeightExact();
+
+            var position = _target.TableGetFloatPosition();
+            IsTableFloating = position is not null;
+            if (position is null) return;
+
+            _syncingFloat = true;
+            try
+            {
+                FloatHorizontalAnchor = (int)position.HorizontalAnchor;
+                FloatHorizontalAlign = (int)position.HorizontalAlign;
+                FloatXMm = Math.Round((decimal)(position.XPt / FloatPtPerMm), 2);
+                FloatVerticalAnchor = (int)position.VerticalAnchor;
+                FloatVerticalAlign = (int)position.VerticalAlign;
+                FloatYMm = Math.Round((decimal)(position.YPt / FloatPtPerMm), 2);
+
+                // Поле одно на обе стороны: показывается большее из двух расстояний.
+                FloatSideGapMm = Math.Round(
+                    (decimal)(Math.Max(position.LeftFromTextPt, position.RightFromTextPt) / FloatPtPerMm), 2);
+                FloatVerticalGapMm = Math.Round(
+                    (decimal)(Math.Max(position.TopFromTextPt, position.BottomFromTextPt) / FloatPtPerMm), 2);
+            }
+            finally
+            {
+                _syncingFloat = false;
+            }
+        }
+
         // ── Размеры ячейки ────────────────────────────────────────────────
 
         private decimal _columnWidthMm = 40m;
@@ -496,6 +833,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand SetBorderStyleDottedCommand { get; }
         public ICommand SetBorderStyleThickCommand { get; }
 
+        /// <summary>
+        /// Выбор вида линии из списка в ленте: параметр — имя вида (BorderStyle). Так в
+        /// списке помещаются все линии Word, а не только пять с собственной командой.
+        /// </summary>
+        public ICommand BorderStyleKeyCommand { get; }
+
         /// <summary>Открывает ввод собственного узора линии.</summary>
         public ICommand EditCustomLinePatternCommand { get; }
 
@@ -591,6 +934,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             SetBorderStyleDashedCommand = ReactiveCommand.Create(() => BorderLineStyle = BorderStyle.Dashed);
             SetBorderStyleDottedCommand = ReactiveCommand.Create(() => BorderLineStyle = BorderStyle.Dotted);
             SetBorderStyleThickCommand = ReactiveCommand.Create(() => BorderLineStyle = BorderStyle.Thick);
+            BorderStyleKeyCommand = ReactiveCommand.Create<string>(key =>
+            {
+                if (Enum.TryParse<BorderStyle>(key, out var style) && style != BorderStyle.None)
+                    BorderLineStyle = style;
+            });
             EditCustomLinePatternCommand = ReactiveCommand.CreateFromTask(EditCustomLinePatternAsync);
 
             // Инструменты границ
@@ -613,6 +961,40 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             {
                 _target.TableToggleSplitMode();
                 IsByCell = _target.TableGetSplitModeByCell();
+            });
+
+            // Направление таблицы и обтекание текстом — тогглы с перечитыванием состояния.
+            ToggleTableDirectionCommand = ReactiveCommand.Create(() =>
+            {
+                _target.TableToggleDirection();
+                RefreshPlacementState();
+            });
+            ToggleTableFloatingCommand = ReactiveCommand.Create(() =>
+            {
+                _target.TableToggleFloating();
+                RefreshPlacementState();
+            });
+
+            // Узор заливки ячеек: параметр — имя узора Word или «none».
+            CellPatternCommand = ReactiveCommand.Create<string>(key => ApplyCellPattern(key));
+
+            // Выравнивание таблицы, направление текста в ячейке и точная высота строки.
+            TableAlignCommand = ReactiveCommand.Create<string>(param =>
+            {
+                if (Enum.TryParse<TableBlockAlignment>(param, out var alignment))
+                    _target.TableSetAlignment(alignment);
+                RefreshPlacementState();
+            });
+            CellTextDirectionCommand = ReactiveCommand.Create<string>(param =>
+            {
+                if (Enum.TryParse<CellTextDirection>(param, out var direction))
+                    _target.TableSetCellTextDirection(direction);
+                RefreshPlacementState();
+            });
+            ToggleRowHeightExactCommand = ReactiveCommand.Create(() =>
+            {
+                _target.TableToggleRowHeightExact();
+                RefreshPlacementState();
             });
 
             // Метки разрыва и продолжения с диалогом ввода
@@ -639,6 +1021,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             RefreshAlignState();
             RefreshPaddingState();
+            RefreshPatternState();
+            RefreshPlacementState();
         }
 
         /// <summary>

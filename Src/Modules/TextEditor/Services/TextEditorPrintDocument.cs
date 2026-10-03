@@ -141,15 +141,48 @@ namespace Writersword.Modules.TextEditor.Services
             // текстом ему нельзя. Возврат — в Dispose области, что бы ни случилось.
             using var neutral = NeutralRenderScope.Begin();
 
+            // Сторона переплёта: на листе с чётным номером он справа, и содержимое
+            // листа стоит левее на его ширину — как на полотне.
+            float gutterShiftPt = GutterShiftPt(pageIndex);
+
             try
             {
+                if (gutterShiftPt != 0f)
+                {
+                    canvas.Save();
+                    canvas.Translate(gutterShiftPt, 0f);
+                }
+
                 SKTextRenderer.RenderPage(canvas, page, SKColors.Transparent);
-                RenderHeaderFooter(canvas, pageIndex, page);
+
+                if (gutterShiftPt != 0f) canvas.Restore();
+
+                RenderHeaderFooter(canvas, pageIndex, page, gutterShiftPt);
             }
             finally
             {
                 SKTextRenderer.PrintImageResolver = null;
             }
+        }
+
+        /// <summary>
+        /// Сдвиг содержимого листа из-за стороны переплёта, в пунктах. Раскладка печати
+        /// кладёт переплёт слева на каждом листе; когда у чётных и нечётных страниц
+        /// разные колонтитулы, Word считает документ двусторонним, и на листе с чётным
+        /// печатаемым номером переплёт справа: текст стоит левее на его ширину
+        /// (отрицательное значение). Ноль — переплёта нет или он на этом листе слева.
+        /// </summary>
+        private float GutterShiftPt(int pageIndex)
+        {
+            if (_pageSettings.MarginGutterMm <= 0) return 0f;
+            if (_document.HeaderFooter?.DifferentOddEven != true) return 0f;
+
+            int number = pageIndex >= 0 && pageIndex < _decorations.Length
+                ? _decorations[pageIndex].Number
+                : pageIndex + 1;
+            if (number % 2 != 0) return 0f;
+
+            return -(float)(_pageSettings.MarginGutterMm * 72.0 / 25.4);
         }
 
         /// <summary>
@@ -189,17 +222,23 @@ namespace Writersword.Modules.TextEditor.Services
         }
 
         /// <summary>Колонтитулы листа печати — тем же художником, что на полотне.</summary>
-        private void RenderHeaderFooter(SKCanvas canvas, int pageIndex, Core.Models.Rendering.SKPageContent page)
+        /// <param name="gutterShiftPt">
+        /// Сдвиг содержимого листа из-за стороны переплёта: колонтитулы стоят над той же
+        /// полосой набора, что и текст, и уходят вместе с ней.
+        /// </param>
+        private void RenderHeaderFooter(
+            SKCanvas canvas, int pageIndex, Core.Models.Rendering.SKPageContent page, float gutterShiftPt)
         {
             var settings = _document.HeaderFooter;
             if (settings is null || pageIndex >= _decorations.Length) return;
 
-            float marginRight = Math.Max(page.PageWidthPt - page.MarginLeftPt - page.TextWidthPt, 0f);
+            float marginLeft = Math.Max(page.MarginLeftPt + gutterShiftPt, 0f);
+            float marginRight = Math.Max(page.PageWidthPt - marginLeft - page.TextWidthPt, 0f);
             float marginBottom = Math.Max(page.PageHeightPt - page.MarginTopPt - page.TextHeightPt, 0f);
 
             var box = new HeaderFooterPageBox(
                 0f, 0f, page.PageWidthPt, page.PageHeightPt,
-                page.MarginLeftPt, marginRight, page.MarginTopPt, marginBottom,
+                marginLeft, marginRight, page.MarginTopPt, marginBottom,
                 (float)(_document.PageSettings.HeaderDistanceMm * 72.0 / 25.4),
                 (float)(_document.PageSettings.FooterDistanceMm * 72.0 / 25.4));
 

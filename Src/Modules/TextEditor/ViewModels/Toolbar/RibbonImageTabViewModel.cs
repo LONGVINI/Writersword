@@ -55,6 +55,16 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private bool _hasFillImage;
         private bool _fillImageStretch = true;
 
+        // Надпись: текст внутри фигуры и его оформление.
+        private string _shapeText = string.Empty;
+        private string? _shapeTextFontFamily;
+        private decimal _shapeTextSize = (decimal)ShapeBlock.DefaultTextSizePt;
+        private string _shapeTextHexColor = "#FF000000";
+        private bool _shapeTextBold;
+        private bool _shapeTextItalic;
+        private TextAlignment _shapeTextAlign = TextAlignment.Center;
+        private VerticalAlignment _shapeTextVerticalAlign = VerticalAlignment.Middle;
+
         // Отступы обтекания по сторонам (в текущих единицах отступов — см или px).
         private decimal _padTop;
         private decimal _padBottom;
@@ -448,6 +458,133 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             }
         }
 
+        // ── Надпись: текст внутри фигуры ──────────────────────────────────
+
+        /// <summary>
+        /// Текст внутри фигуры. Абзацы разделяются переводом строки, по ширине фигуры
+        /// строки переносятся сами. Каждое изменение сразу уходит в фигуру — текст
+        /// виден на листе по мере набора.
+        /// </summary>
+        public string ShapeText
+        {
+            get => _shapeText;
+            set
+            {
+                string text = value ?? string.Empty;
+                if (_shapeText == text) return;
+                _shapeText = text;
+                this.RaisePropertyChanged(nameof(ShapeText));
+                PushShapeText();
+            }
+        }
+
+        /// <summary>Кегль текста фигуры, пт.</summary>
+        public decimal ShapeTextSize
+        {
+            get => _shapeTextSize;
+            set
+            {
+                if (_shapeTextSize == value) return;
+                _shapeTextSize = value;
+                this.RaisePropertyChanged(nameof(ShapeTextSize));
+                PushShapeText();
+            }
+        }
+
+        /// <summary>Цвет текста фигуры в hex.</summary>
+        public string ShapeTextHexColor
+        {
+            get => _shapeTextHexColor;
+            set
+            {
+                string color = string.IsNullOrWhiteSpace(value) ? "#FF000000" : value;
+                if (_shapeTextHexColor == color) return;
+                _shapeTextHexColor = color;
+                this.RaisePropertyChanged(nameof(ShapeTextHexColor));
+                PushShapeText();
+            }
+        }
+
+        /// <summary>Полужирный текст фигуры.</summary>
+        public bool ShapeTextBold
+        {
+            get => _shapeTextBold;
+            set
+            {
+                if (_shapeTextBold == value) return;
+                _shapeTextBold = value;
+                this.RaisePropertyChanged(nameof(ShapeTextBold));
+                PushShapeText();
+            }
+        }
+
+        /// <summary>Курсивный текст фигуры.</summary>
+        public bool ShapeTextItalic
+        {
+            get => _shapeTextItalic;
+            set
+            {
+                if (_shapeTextItalic == value) return;
+                _shapeTextItalic = value;
+                this.RaisePropertyChanged(nameof(ShapeTextItalic));
+                PushShapeText();
+            }
+        }
+
+        /// <summary>Выравнивание текста по ширине фигуры (для подсветки кнопок).</summary>
+        public TextAlignment ShapeTextAlign
+        {
+            get => _shapeTextAlign;
+            private set
+            {
+                // Всегда raise — см. CurrentAlignment: переключатели взаимоисключающие.
+                _shapeTextAlign = value;
+                this.RaisePropertyChanged(nameof(ShapeTextAlign));
+            }
+        }
+
+        /// <summary>Положение текста по высоте фигуры (для подсветки кнопок).</summary>
+        public VerticalAlignment ShapeTextVerticalAlign
+        {
+            get => _shapeTextVerticalAlign;
+            private set
+            {
+                _shapeTextVerticalAlign = value;
+                this.RaisePropertyChanged(nameof(ShapeTextVerticalAlign));
+            }
+        }
+
+        /// <summary>
+        /// Записывает надпись в выделенную фигуру. Во время чтения состояния из
+        /// фигуры (_syncing) запись не идёт: иначе чтение само порождало бы правку.
+        /// </summary>
+        private void PushShapeText()
+        {
+            if (_syncing || !_hasShape || _isLineLike) return;
+
+            _target.SetShapeText(new ShapeTextInfo(
+                _shapeText,
+                _shapeTextFontFamily,
+                (double)_shapeTextSize,
+                _shapeTextHexColor,
+                _shapeTextBold,
+                _shapeTextItalic,
+                _shapeTextAlign,
+                _shapeTextVerticalAlign));
+        }
+
+        private void SetShapeTextAlign(TextAlignment align)
+        {
+            ShapeTextAlign = align;
+            PushShapeText();
+        }
+
+        private void SetShapeTextVerticalAlign(VerticalAlignment align)
+        {
+            ShapeTextVerticalAlign = align;
+            PushShapeText();
+        }
+
         /// <summary>Залита ли фигура картинкой — по этому признаку доступен сброс.</summary>
         public bool HasFillImage
         {
@@ -709,6 +846,14 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand PickFillImageCommand { get; }
         public ICommand ClearFillImageCommand { get; }
 
+        // ── Надпись: выравнивание текста фигуры ───────────────────────────
+        public ICommand ShapeTextAlignLeftCommand { get; }
+        public ICommand ShapeTextAlignCenterCommand { get; }
+        public ICommand ShapeTextAlignRightCommand { get; }
+        public ICommand ShapeTextAlignTopCommand { get; }
+        public ICommand ShapeTextAlignMiddleCommand { get; }
+        public ICommand ShapeTextAlignBottomCommand { get; }
+
         // ── Порядок наложения ─────────────────────────────────────────────
         public ICommand BringToFrontCommand { get; }
         public ICommand SendToBackCommand { get; }
@@ -866,6 +1011,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             ClearFillImageCommand = ReactiveCommand.Create(() =>
                 { _target.SetShapeFillImage(null); SyncFromTarget(); });
+
+            ShapeTextAlignLeftCommand = ReactiveCommand.Create(() => SetShapeTextAlign(TextAlignment.Left));
+            ShapeTextAlignCenterCommand = ReactiveCommand.Create(() => SetShapeTextAlign(TextAlignment.Center));
+            ShapeTextAlignRightCommand = ReactiveCommand.Create(() => SetShapeTextAlign(TextAlignment.Right));
+            ShapeTextAlignTopCommand = ReactiveCommand.Create(() => SetShapeTextVerticalAlign(VerticalAlignment.Top));
+            ShapeTextAlignMiddleCommand = ReactiveCommand.Create(() => SetShapeTextVerticalAlign(VerticalAlignment.Middle));
+            ShapeTextAlignBottomCommand = ReactiveCommand.Create(() => SetShapeTextVerticalAlign(VerticalAlignment.Bottom));
 
             BringToFrontCommand = ReactiveCommand.Create(() =>
                 { _target.SetShapeZOrder(toFront: true); SyncFromTarget(); });
@@ -1036,6 +1188,49 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             {
                 _fillHexColor = fill;
                 this.RaisePropertyChanged(nameof(FillHexColor));
+            }
+
+            // Надпись фигуры. Поля меняются напрямую, мимо сеттеров: чтение не должно
+            // записывать текст обратно в фигуру.
+            var text = _target.GetSelectedShapeText();
+            if (text is not null)
+            {
+                _shapeTextFontFamily = text.FontFamily;
+
+                if (_shapeText != text.Text)
+                {
+                    _shapeText = text.Text;
+                    this.RaisePropertyChanged(nameof(ShapeText));
+                }
+
+                decimal size = (decimal)System.Math.Round(text.SizePt, 1);
+                if (_shapeTextSize != size)
+                {
+                    _shapeTextSize = size;
+                    this.RaisePropertyChanged(nameof(ShapeTextSize));
+                }
+
+                string textColor = string.IsNullOrWhiteSpace(text.Color) ? "#FF000000" : text.Color!;
+                if (_shapeTextHexColor != textColor)
+                {
+                    _shapeTextHexColor = textColor;
+                    this.RaisePropertyChanged(nameof(ShapeTextHexColor));
+                }
+
+                if (_shapeTextBold != text.Bold)
+                {
+                    _shapeTextBold = text.Bold;
+                    this.RaisePropertyChanged(nameof(ShapeTextBold));
+                }
+
+                if (_shapeTextItalic != text.Italic)
+                {
+                    _shapeTextItalic = text.Italic;
+                    this.RaisePropertyChanged(nameof(ShapeTextItalic));
+                }
+
+                ShapeTextAlign = text.Align;
+                ShapeTextVerticalAlign = text.VerticalAlign;
             }
         }
     }

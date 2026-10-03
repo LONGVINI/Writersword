@@ -148,6 +148,13 @@ namespace Writersword.Modules.TextEditor.Rendering
             // Первую строку занял номер, текст ушёл на вторую (см. ниже условие предела).
             bool markerOwnsFirstLine = false;
 
+            // Шрифт текста, которым набран номер, и метрики шрифта самого номера:
+            // по ним номер рисуется и первая строка получает свою высоту.
+            string? markerFamily = null;
+            float markerSizePt = 0f;
+            float markerLineTopPt = 0f;
+            float markerLineDescentPt = 0f;
+
             var listProps = para.ListProperties;
             if (listProps is not null && listProps.MarkerType != ListMarkerType.None)
             {
@@ -174,25 +181,26 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 if (markerText.Length > 0)
                 {
-                    SKFont mfont;
-                    string measuredText = markerText;
-                    if (wordLevel is not null)
-                    {
-                        mfont = ResolveListMarkerFont(
-                            markerText,
-                            ResolveReadingFamily(styles.ResolveFontFamily(styleName)),
-                            ScaleReadingFont(styles.ResolveFontSize(styleName)),
-                            wordLevel.FontFamily,
-                            out measuredText);
-                    }
-                    else
-                    {
-                        var mtf = GetOrCreateTypeface(
-                            ResolveReadingFamily(styles.ResolveFontFamily(styleName)), false, false);
-                        mfont = GetOrCreateFont(mtf, ScaleReadingFont(styles.ResolveFontSize(styleName)));
-                    }
+                    // Номер набирается шрифтом текста пункта, а не шрифтом стиля абзаца.
+                    // У пункта с собственным кеглем ширина номера, посчитанная по стилю,
+                    // расходилась с нарисованной: номер в 12 пунктов мерялся как номер в
+                    // 14, казался шире выступа, и текст уходил к следующей отметке шага
+                    // табуляции вместо отступа пункта.
+                    var markerTextFont = ResolveMarkerTextFont(para, styleName, styles);
+                    markerFamily = markerTextFont.Family;
+                    markerSizePt = markerTextFont.SizePt;
+
+                    // Один и тот же шрифт и для ширины, и для отрисовки (DrawListMarker):
+                    // шрифт уровня Word, а для знака, которого в шрифте нет, — подстановка.
+                    SKFont mfont = ResolveMarkerDrawFont(
+                        markerText, markerFamily, markerSizePt, wordLevel?.FontFamily,
+                        out string measuredText);
 
                     float markerW = mfont.MeasureText(measuredText);
+
+                    mfont.GetFontMetrics(out var markerMetrics);
+                    markerLineTopPt = Math.Abs(markerMetrics.Ascent) + Math.Abs(markerMetrics.Leading);
+                    markerLineDescentPt = Math.Abs(markerMetrics.Descent);
 
                     double offset;
                     if (wordSpacing)
@@ -336,6 +344,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                 MarkerOwnsFirstLine = markerOwnsFirstLine,
                 MarkerAlignment = (int)(listProps?.WordLevelAt(listProps.Level)?.Alignment ?? ListMarkerAlignment.Left),
                 MarkerFontFamily = listProps?.WordLevelAt(listProps.Level)?.FontFamily,
+                MarkerTextFontFamily = markerFamily,
+                MarkerTextFontSizePt = markerSizePt,
+                MarkerLineTopPt = markerLineTopPt,
+                MarkerLineDescentPt = markerLineDescentPt,
                 Alignment = alignment,
                 Borders = borders,
                 ShadingColor = string.IsNullOrWhiteSpace(para.Properties.ShadingColor)
@@ -436,6 +448,11 @@ namespace Writersword.Modules.TextEditor.Rendering
             tableLayout.ColumnWidthsPt.AddRange(colWidthsPt);
             tableLayout.ColumnOffsetsPt.AddRange(colOffsetsPt);
 
+            // Границы по сетке таблицы: общая граница двух ячеек — одна линия,
+            // сильнейшая из двух (см. BuildTableEdges). От неё же отсчитывается отступ
+            // текста в ячейке, поэтому сетка нужна до обмера ячеек.
+            BuildTableEdges(table, rowCount, colCount, tableLayout);
+
             // Раскладка таблицы идёт в два прохода.
             //
             // Первый обмеряет ячейки: считает ширины, поля и раскладки абзацев и
@@ -446,6 +463,54 @@ namespace Writersword.Modules.TextEditor.Rendering
             // вертикали ячейка может растянуть свои строки под своё содержимое.
             var measured = new List<CellMeasure>();
             var rowHeightsPt = new float[rowCount];
+
+            // Полосы под горизонтальные рамки. Рамка между двумя строками занимает
+            // место один раз — в строке под ней, как у Word, и полоса эта общая на
+            // всю строку: её высота — самая широкая из линий, лежащих по верхней
+            // границе строки, то есть верхних у ячеек этой строки и нижних у ячеек
+            // строки над ней. Текст всех ячеек строки начинается под полосой, на
+            // одной высоте. Ширина линии — всё место поперёк неё: двойная занимает
+            // три своих толщины, тройная — пять (BorderLineCodes.SpanPt).
+            //
+            // Низ ячейки под рамку места не отдаёт, кроме последней строки таблицы:
+            // под ней границы с другой строкой нет, и полоса лежит у её низа.
+            //
+            // Когда место отдавали и верхняя, и нижняя ячейки, каждая строка выходила
+            // выше вордовской на толщину линии; когда полоса мерилась толщиной одной
+            // черты, строки под двойной и тройной рамкой выходили ниже вордовских.
+            var rowTopBandPt = new float[rowCount];
+            float tableBottomBandPt = 0f;
+
+            for (int row = 0; row < rowCount; row++)
+            {
+                for (int col = 0; col < colCount; col++)
+                {
+                    var bandCell = table.GetCell(row, col);
+                    if (bandCell is null) continue;
+
+                    if (bandCell.Row == row)
+                    {
+                        float topSpanPt = BorderLineCodes.SpanPt(
+                            bandCell.Borders.Top, bandCell.Borders.EffectiveTopThicknessPt());
+                        if (topSpanPt > rowTopBandPt[row]) rowTopBandPt[row] = topSpanPt;
+                    }
+
+                    if (Math.Min(bandCell.Row + bandCell.RowSpan, rowCount) - 1 == row)
+                    {
+                        float bottomSpanPt = BorderLineCodes.SpanPt(
+                            bandCell.Borders.Bottom, bandCell.Borders.EffectiveBottomThicknessPt());
+
+                        if (row + 1 < rowCount)
+                        {
+                            if (bottomSpanPt > rowTopBandPt[row + 1]) rowTopBandPt[row + 1] = bottomSpanPt;
+                        }
+                        else if (bottomSpanPt > tableBottomBandPt)
+                        {
+                            tableBottomBandPt = bottomSpanPt;
+                        }
+                    }
+                }
+            }
 
             for (int row = 0; row < rowCount; row++)
             {
@@ -473,11 +538,29 @@ namespace Writersword.Modules.TextEditor.Rendering
                     float padLeftPt = (float)cell.PaddingLeftPt * contentScale;
                     float padRightPt = (float)cell.PaddingRightPt * contentScale;
 
-                    float leftBorderW = cell.Borders.Left != BorderStyle.None ? (float)cell.Borders.EffectiveLeftThicknessPt() : 0f;
-                    float rightBorderW = cell.Borders.Right != BorderStyle.None ? (float)cell.Borders.EffectiveRightThicknessPt() : 0f;
+                    // Границы ячейки после спора с соседями: самая сильная линия на
+                    // каждой стороне. От неё отсчитывается отступ текста, иначе текст
+                    // ячейки с тонкой рамкой лёг бы под широкую линию соседа.
+                    var cellBorders = ResolveCellBorderLayout(tableLayout, cell, row, col, rowCount, colCount);
+
+                    float leftBorderW = cellBorders.Left.SpanPt;
+                    float rightBorderW = cellBorders.Right.SpanPt;
+                    // Поле ячейки отсчитывается от её края, рамка лежит поверх поля и ширину
+                    // текста не отнимает — как у Word (см. SKTableCellLayout.ContentInsetLeftPt).
+                    // Вычитание рамок целиком делало каждую ячейку на пункт уже вордовской,
+                    // и слово, которое у Word помещается в строку, уходило на следующую.
                     float contentWidthPt = Math.Max(
-                        cellWidthPt - padLeftPt - padRightPt - leftBorderW - rightBorderW,
+                        cellWidthPt
+                            - Math.Max(padLeftPt, leftBorderW / 2f)
+                            - Math.Max(padRightPt, rightBorderW / 2f),
                         1f);
+
+                    // Место под рамку сверху — полоса строки, снизу — полоса под
+                    // последней строкой таблицы (см. rowTopBandPt выше).
+                    float topEdgePt = rowTopBandPt[row];
+
+                    bool reachesTableBottom = row + cell.RowSpan >= rowCount;
+                    float bottomEdgePt = reachesTableBottom ? tableBottomBandPt : 0f;
 
                     var measure = new CellMeasure(cell, row, col)
                     {
@@ -488,8 +571,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                         PadBottomPt = padBottomPt,
                         PadLeftPt = padLeftPt,
                         PadRightPt = padRightPt,
-                        TopBorderPt = cell.Borders.Top != BorderStyle.None ? (float)cell.Borders.EffectiveTopThicknessPt() : 0f,
-                        BottomBorderPt = cell.Borders.Bottom != BorderStyle.None ? (float)cell.Borders.EffectiveBottomThicknessPt() : 0f
+                        TopBorderPt = topEdgePt,
+                        BottomBorderPt = bottomEdgePt,
+                        Borders = cellBorders
                     };
 
                     // Повёрнутая ячейка: строки идут вдоль её высоты, поэтому длина строки —
@@ -507,10 +591,19 @@ namespace Writersword.Modules.TextEditor.Rendering
                             : RotatedCellMeasureLengthPt;
                     }
 
+                    // Привязка вложенных таблиц к абзацам освежается до вёрстки: абзац,
+                    // перед которым стояла таблица, могли удалить.
+                    cell.AnchorNestedTables();
+
                     // Верстаем параграфы ячейки с isCell = true — подавляем дефолтный SpaceAfter.
+                    // Таблица, вложенная в ячейку, встаёт перед своим абзацем и занимает
+                    // в содержимом свою высоту.
                     float cellContentY = 0f;
                     for (int pi = 0; pi < cell.Paragraphs.Count; pi++)
                     {
+                        cellContentY = LayoutNestedTables(
+                            measure, cell, pi, cellContentY, contentWidthPt, styles, cellFontPreview);
+
                         var para = cell.Paragraphs[pi];
                         // Превью шрифта в ячейке: если для абзаца задан preview-абзац (построен
                         // канвасом по выделенному диапазону), строим раскладку из него. Модель
@@ -534,6 +627,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                                       + paraLayout.TotalHeightPt
                                       + paraLayout.SpaceAfterPt;
                     }
+
+                    // Таблицы, стоящие после последнего абзаца.
+                    cellContentY = LayoutNestedTables(
+                        measure, cell, cell.Paragraphs.Count, cellContentY, contentWidthPt, styles, cellFontPreview);
 
                     measure.ContentHeightPt = cellContentY;
                     if (measure.IsRotated)
@@ -642,12 +739,14 @@ namespace Writersword.Modules.TextEditor.Rendering
                     PadBottomPt = measure.PadBottomPt,
                     PadLeftPt = measure.PadLeftPt,
                     PadRightPt = measure.PadRightPt,
+                    TopInsetPt = measure.TopBorderPt,
+                    BottomInsetPt = measure.BottomBorderPt,
                     BackgroundColor = measure.Cell.BackgroundColor,
                     ShadingPattern = measure.Cell.ShadingPattern,
                     ShadingPatternColor = measure.Cell.ShadingPatternColor,
                     VerticalAlignment = (int)measure.Cell.VerticalAlignment,
                     TextDirection = (int)measure.Cell.TextDirection,
-                    Borders = BuildCellBorderLayout(measure.Cell.Borders)
+                    Borders = measure.Borders
                 };
 
                 cellLayout.ContentHeightPt = measure.ContentHeightPt;
@@ -656,11 +755,55 @@ namespace Writersword.Modules.TextEditor.Rendering
                 foreach (var paraLayout in measure.Paragraphs)
                     cellLayout.Paragraphs.Add(paraLayout);
 
+                foreach (var nestedLayout in measure.NestedTables)
+                    cellLayout.NestedTables.Add(nestedLayout);
+
                 tableLayout.Rows[measure.Row].Cells.Add(cellLayout);
             }
 
             tableLayout.TotalHeightPt = tableY;
             return tableLayout;
+        }
+
+        /// <summary>
+        /// Верстает таблицы, стоящие в ячейке перед абзацем beforeParagraph (число, равное
+        /// количеству абзацев, — после последнего), и возвращает высоту содержимого
+        /// вместе с ними.
+        ///
+        /// Вложенная таблица верстается на ширину области содержимого ячейки тем же
+        /// кодом, что обычная: от этой ширины считаются её ширина в процентах, отступ и
+        /// выравнивание. В повёрнутой ячейке таблица не верстается: строки там идут
+        /// вдоль высоты ячейки, и места поперёк под таблицу нет.
+        /// </summary>
+        private float LayoutNestedTables(
+            CellMeasure measure, TableCell cell, int beforeParagraph, float contentY,
+            float contentWidthPt, StyleResolver styles,
+            IReadOnlyDictionary<ParagraphBlock, ParagraphBlock>? cellFontPreview)
+        {
+            if (measure.IsRotated) return contentY;
+            if (cell.NestedTables is not { Count: > 0 } nestedTables) return contentY;
+
+            for (int ni = 0; ni < nestedTables.Count; ni++)
+            {
+                var nested = nestedTables[ni];
+                if (cell.NestedTablePosition(nested) != beforeParagraph) continue;
+
+                var nestedLayout = BuildTableLayout(nested.Table, contentWidthPt, styles, cellFontPreview);
+                float nestedX = (float)nested.Table.ResolveLeftOffsetPt(contentWidthPt, nestedLayout.TotalWidthPt);
+
+                measure.NestedTables.Add(new SKNestedTableLayout
+                {
+                    Layout = nestedLayout,
+                    Xpt = nestedX,
+                    Ypt = contentY,
+                    BeforeParagraphIndex = beforeParagraph,
+                    SourceIndex = ni
+                });
+
+                contentY += nestedLayout.TotalHeightPt;
+            }
+
+            return contentY;
         }
 
         /// <summary>
@@ -692,8 +835,14 @@ namespace Writersword.Modules.TextEditor.Rendering
             public float PadBottomPt { get; init; }
             public float PadLeftPt { get; init; }
             public float PadRightPt { get; init; }
+            /// <summary>Место под рамку у верхнего края ячейки (SKTableCellLayout.TopInsetPt).</summary>
             public float TopBorderPt { get; init; }
+
+            /// <summary>Место под рамку у нижнего края ячейки (SKTableCellLayout.BottomInsetPt).</summary>
             public float BottomBorderPt { get; init; }
+
+            /// <summary>Границы ячейки после спора с соседями: сильнейшая линия на каждой стороне.</summary>
+            public SKTableCellBorderLayout Borders { get; init; } = new();
 
             /// <summary>Текст ячейки повёрнут: строки идут вдоль её высоты.</summary>
             public bool IsRotated { get; init; }
@@ -710,6 +859,9 @@ namespace Writersword.Modules.TextEditor.Rendering
             public float VerticalInsetPt => PadTopPt + PadBottomPt + TopBorderPt + BottomBorderPt;
 
             public List<SKTableParaLayout> Paragraphs { get; } = new();
+
+            /// <summary>Таблицы внутри ячейки (SKTableCellLayout.NestedTables).</summary>
+            public List<SKNestedTableLayout> NestedTables { get; } = new();
 
             /// <summary>
             /// Высота, которой ячейке хватает на собственное содержимое. У повёрнутой
@@ -891,6 +1043,11 @@ namespace Writersword.Modules.TextEditor.Rendering
             var m = canvas.TotalMatrix;
             float actualScale = MathF.Sqrt(m.ScaleX * m.ScaleX + m.SkewY * m.SkewY);
             if (actualScale > 0.01f) canvasScale = actualScale;
+
+            // Сначала фон всех ячеек, потом рамки и текст. Нижняя линия ячейки лежит в
+            // полосе под рамку у верха строки под ней — на месте ячейки снизу. Если бы
+            // фон рисовался вперемежку с рамками, заливка нижней ячейки закрывала бы
+            // линию верхней.
             foreach (var row in tableLayout.Rows)
             {
                 foreach (var cell in row.Cells)
@@ -906,70 +1063,114 @@ namespace Writersword.Modules.TextEditor.Rendering
                         canvas.DrawRect(cellX, cellY, cell.WidthPt, cell.HeightPt, bgPaint);
                     }
                     RenderCellShadingPattern(canvas, cell, cellX, cellY, cell.WidthPt, cell.HeightPt);
-
-                    // Границы ячейки.
-                    RenderCellBorders(canvas, cell, cellX, cellY, cell.HeightPt, canvasScale);
-
-                    // Содержимое — параграфы.
-                    float contentX = cellX + cell.PadLeftPt + cell.Borders.Left.WidthPt;
-                    float contentAreaH = cell.HeightPt - cell.PadTopPt - cell.PadBottomPt
-                                       - cell.Borders.Top.WidthPt - cell.Borders.Bottom.WidthPt;
-
-                    // Вертикальное выравнивание содержимого.
-                    float contentOffsetY = cell.VerticalAlignment switch
-                    {
-                        1 => (contentAreaH - cell.ContentHeightPt) / 2f, // Middle
-                        2 => contentAreaH - cell.ContentHeightPt,         // Bottom
-                        _ => 0f                                            // Top
-                    };
-                    contentOffsetY = Math.Max(0f, contentOffsetY);
-
-                    float contentY = cellY + cell.PadTopPt
-                                   + cell.Borders.Top.WidthPt
-                                   + contentOffsetY;
-
-                    // Обрезаем рендеринг по границам ячейки — без этого длинный текст
-                    // вылезает за границы ячейки и перекрывает соседние.
-                    float clipX = cellX + cell.Borders.Left.WidthPt;
-                    float clipY = cellY + cell.Borders.Top.WidthPt;
-                    float clipW = cell.WidthPt - cell.Borders.Left.WidthPt - cell.Borders.Right.WidthPt;
-                    float clipH = cell.HeightPt - cell.Borders.Top.WidthPt - cell.Borders.Bottom.WidthPt;
-
-                    canvas.Save();
-                    canvas.ClipRect(new SKRect(clipX, clipY, clipX + clipW, clipY + clipH));
-
-                    if (cell.IsRotated)
-                    {
-                        float rotatedWidth = cell.WidthPt - cell.PadLeftPt - cell.PadRightPt
-                                           - cell.Borders.Left.WidthPt - cell.Borders.Right.WidthPt;
-                        RenderRotatedCellParagraphs(canvas, cell,
-                            contentX, cellY + cell.PadTopPt + cell.Borders.Top.WidthPt,
-                            rotatedWidth, contentAreaH);
-                        canvas.Restore();
-                        continue;
-                    }
-
-                    for (int cpi = 0; cpi < cell.Paragraphs.Count; cpi++)
-                    {
-                        var paraLayout = cell.Paragraphs[cpi];
-                        float paraY = contentY + paraLayout.Ypt
-                                    + paraLayout.Layout.SpaceBeforePt;
-
-                        RenderCellParagraphBorders(canvas, cell.Paragraphs, cpi,
-                            contentX + paraLayout.Layout.LeftIndentPt, paraY);
-
-                        RenderParagraphLines(
-                            canvas,
-                            paraLayout.Layout,
-                            contentX + paraLayout.Layout.LeftIndentPt,
-                            paraY,
-                            0,
-                            paraLayout.Layout.Lines.Count);
-                    }
-
-                    canvas.Restore();
                 }
             }
+
+            foreach (var row in tableLayout.Rows)
+            {
+                foreach (var cell in row.Cells)
+                {
+                    float cellX = tableX + cell.Xpt;
+                    float cellY = tableY + cell.Ypt;
+
+                    // Границы ячейки.
+                    RenderCellBorders(canvas, tableLayout, cell, cellX, cellY, cell.HeightPt, canvasScale);
+
+                    // Содержимое — параграфы.
+                    RenderCellContent(canvas, cell, cellX, cellY);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Текст одной строки таблицы — без фона и рамок. Нужен полотну для шапки,
+        /// повторяемой над продолжением таблицы на следующей странице: рамки и фон оно
+        /// рисует своим проходом, а абзацев у копии шапки в раскладке страницы нет.
+        /// </summary>
+        /// <param name="rowIndex">Строка раскладки таблицы.</param>
+        /// <param name="tableX">Левый край таблицы в pt.</param>
+        /// <param name="rowY">Верх строки на листе в pt.</param>
+        public static void RenderTableRowContent(
+            SKCanvas canvas, SKTableLayout tableLayout, int rowIndex, float tableX, float rowY)
+        {
+            if (rowIndex < 0 || rowIndex >= tableLayout.Rows.Count) return;
+
+            var row = tableLayout.Rows[rowIndex];
+            foreach (var cell in row.Cells)
+            {
+                if (cell.Row != rowIndex) continue;
+                RenderCellContent(canvas, cell, tableX + cell.Xpt, rowY);
+            }
+        }
+
+        /// <summary>
+        /// Абзацы ячейки в её области содержимого: с вертикальным выравниванием, обрезкой
+        /// по границам ячейки и поворотом текста. cellX/cellY — левый верхний угол ячейки.
+        /// </summary>
+        private static void RenderCellContent(
+            SKCanvas canvas, SKTableCellLayout cell, float cellX, float cellY)
+        {
+            float contentX = cellX + cell.ContentInsetLeftPt;
+            float contentAreaH = cell.HeightPt - cell.PadTopPt - cell.PadBottomPt
+                               - cell.TopInsetPt - cell.BottomInsetPt;
+
+            // Вертикальное выравнивание содержимого.
+            float contentOffsetY = cell.VerticalAlignment switch
+            {
+                1 => (contentAreaH - cell.ContentHeightPt) / 2f, // Middle
+                2 => contentAreaH - cell.ContentHeightPt,         // Bottom
+                _ => 0f                                            // Top
+            };
+            contentOffsetY = Math.Max(0f, contentOffsetY);
+
+            float contentY = cellY + cell.PadTopPt
+                           + cell.TopInsetPt
+                           + contentOffsetY;
+
+            // Обрезаем рендеринг по границам ячейки — без этого длинный текст
+            // вылезает за границы ячейки и перекрывает соседние.
+            // Боковая рамка рисуется по краю ячейки: внутри ячейки лежит её половина.
+            float clipX = cellX + cell.Borders.Left.SpanPt / 2f;
+            float clipY = cellY + cell.TopInsetPt;
+            float clipW = cell.WidthPt - (cell.Borders.Left.SpanPt + cell.Borders.Right.SpanPt) / 2f;
+            float clipH = cell.HeightPt - cell.TopInsetPt - cell.BottomInsetPt;
+
+            canvas.Save();
+            canvas.ClipRect(new SKRect(clipX, clipY, clipX + clipW, clipY + clipH));
+
+            if (cell.IsRotated)
+            {
+                float rotatedWidth = cell.ContentAreaWidthPt;
+                RenderRotatedCellParagraphs(canvas, cell,
+                    contentX, cellY + cell.PadTopPt + cell.TopInsetPt,
+                    rotatedWidth, contentAreaH);
+                canvas.Restore();
+                return;
+            }
+
+            // Таблицы внутри ячейки: целиком, со своими рамками, заливками и текстом.
+            foreach (var nested in cell.NestedTables)
+                RenderTable(canvas, nested.Layout, contentX + nested.Xpt, contentY + nested.Ypt);
+
+            for (int cpi = 0; cpi < cell.Paragraphs.Count; cpi++)
+            {
+                var paraLayout = cell.Paragraphs[cpi];
+                float paraY = contentY + paraLayout.Ypt
+                            + paraLayout.Layout.SpaceBeforePt;
+
+                RenderCellParagraphBorders(canvas, cell.Paragraphs, cpi,
+                    contentX + paraLayout.Layout.LeftIndentPt, paraY);
+
+                RenderParagraphLines(
+                    canvas,
+                    paraLayout.Layout,
+                    contentX + paraLayout.Layout.LeftIndentPt,
+                    paraY,
+                    0,
+                    paraLayout.Layout.Lines.Count);
+            }
+
+            canvas.Restore();
         }
 
         /// <summary>
@@ -1177,9 +1378,29 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // печать повторяет экран, а не пересчитывает его заново.
                     if (block is ImageBlock floatImage)
                     {
+                        float floatOffsetXPt = (float)floatImage.OffsetXPt;
+                        float floatOffsetYPt = (float)floatImage.OffsetYPt;
+
+                        // У картинки из Word точка отсчёта своя: лист, поля или верх её
+                        // абзаца — место блока в потоке. Она переводится в смещение от
+                        // начала текстовой области, от которого считает AddPageFloat.
+                        if (floatImage.WrapMode != WrapMode.Inline
+                            && floatImage.AnchorPosition is { } floatAnchor)
+                        {
+                            var (originXPt, originYPt) = floatAnchor.ResolveOrigin(
+                                (float)floatImage.WidthPt, (float)floatImage.HeightPt,
+                                marginLeftPt, textWidthPt, 0f, pageWidthPt,
+                                0f, pageHeightPt, marginTopPt,
+                                Math.Max(0f, pageHeightPt - marginTopPt - textHeightPt),
+                                marginTopPt + currentY);
+
+                            floatOffsetXPt += originXPt - marginLeftPt;
+                            floatOffsetYPt += originYPt - marginTopPt;
+                        }
+
                         AddPageFloat(currentPage, floatImage,
                             floatImage.WrapMode, floatImage.ZOrder,
-                            (float)floatImage.OffsetXPt, (float)floatImage.OffsetYPt,
+                            floatOffsetXPt, floatOffsetYPt,
                             (float)floatImage.WidthPt, (float)floatImage.HeightPt,
                             marginLeftPt, marginTopPt);
                         paraIndex++;
@@ -1188,9 +1409,27 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                     if (block is ShapeBlock floatShape)
                     {
+                        float shapeOffsetXPt = (float)floatShape.OffsetXPt;
+                        float shapeOffsetYPt = (float)floatShape.OffsetYPt;
+
+                        // Опора из Word — та же, что у картинки выше.
+                        if (floatShape.WrapMode != WrapMode.Inline
+                            && floatShape.AnchorPosition is { } shapeAnchor)
+                        {
+                            var (shapeOriginXPt, shapeOriginYPt) = shapeAnchor.ResolveOrigin(
+                                (float)floatShape.WidthPt, (float)floatShape.HeightPt,
+                                marginLeftPt, textWidthPt, 0f, pageWidthPt,
+                                0f, pageHeightPt, marginTopPt,
+                                Math.Max(0f, pageHeightPt - marginTopPt - textHeightPt),
+                                marginTopPt + currentY);
+
+                            shapeOffsetXPt += shapeOriginXPt - marginLeftPt;
+                            shapeOffsetYPt += shapeOriginYPt - marginTopPt;
+                        }
+
                         AddPageFloat(currentPage, floatShape,
                             floatShape.WrapMode, floatShape.ZOrder,
-                            (float)floatShape.OffsetXPt, (float)floatShape.OffsetYPt,
+                            shapeOffsetXPt, shapeOffsetYPt,
                             (float)floatShape.WidthPt, (float)floatShape.HeightPt,
                             marginLeftPt, marginTopPt);
                         paraIndex++;
@@ -1488,19 +1727,18 @@ namespace Writersword.Modules.TextEditor.Rendering
                             && SKColor.TryParse(cell.BackgroundColor, out var bg2))
                         { using var bp = new SKPaint { Color = bg2 }; canvas.DrawRect(cellX, cellY, cell.WidthPt, cell.HeightPt, bp); }
                         RenderCellShadingPattern(canvas, cell, cellX, cellY, cell.WidthPt, cell.HeightPt);
-                        RenderCellBorders(canvas, cell, cellX, cellY, cell.HeightPt, canvasScale);
-                        float cx2 = cellX + cell.PadLeftPt + cell.Borders.Left.WidthPt;
-                        float cy2 = cellY + cell.PadTopPt + cell.Borders.Top.WidthPt;
+                        RenderCellBorders(canvas, layout, cell, cellX, cellY, cell.HeightPt, canvasScale);
+                        float cx2 = cellX + cell.ContentInsetLeftPt;
+                        float cy2 = cellY + cell.PadTopPt + cell.TopInsetPt;
                         canvas.Save();
-                        canvas.ClipRect(new SKRect(cellX + cell.Borders.Left.WidthPt, cellY + cell.Borders.Top.WidthPt,
-                            cellX + cell.WidthPt - cell.Borders.Right.WidthPt, cellY + cell.HeightPt - cell.Borders.Bottom.WidthPt));
+                        canvas.ClipRect(new SKRect(cellX + cell.Borders.Left.SpanPt / 2f, cellY + cell.TopInsetPt,
+                            cellX + cell.WidthPt - cell.Borders.Right.SpanPt / 2f, cellY + cell.HeightPt - cell.BottomInsetPt));
                         if (cell.IsRotated)
                         {
                             RenderRotatedCellParagraphs(canvas, cell, cx2, cy2,
-                                cell.WidthPt - cell.PadLeftPt - cell.PadRightPt
-                                    - cell.Borders.Left.WidthPt - cell.Borders.Right.WidthPt,
+                                cell.ContentAreaWidthPt,
                                 cell.HeightPt - cell.PadTopPt - cell.PadBottomPt
-                                    - cell.Borders.Top.WidthPt - cell.Borders.Bottom.WidthPt);
+                                    - cell.TopInsetPt - cell.BottomInsetPt);
                             canvas.Restore();
                             continue;
                         }
@@ -1519,6 +1757,40 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 bool hasLastRowClip = pageTable.LastRowVisibleHeightPt >= 0f;
                 bool hasFirstRowOffset = pageTable.IsContinuation && pageTable.FirstRowContentOffsetPt > 0f;
+
+                // Фон всех ячеек куска — до рамок и текста: нижняя линия ячейки лежит на
+                // месте ячейки под ней, и заливка той закрыла бы линию, рисуйся они
+                // вперемежку.
+                foreach (var row in layout.Rows)
+                {
+                    if (row.Row < rowFrom || row.Row >= rowTo) continue;
+
+                    float fillRowH = row.HeightPt;
+                    float fillRowShift = 0f;
+
+                    if (row.Row == rowFrom && hasFirstRowOffset)
+                    {
+                        fillRowShift = pageTable.FirstRowContentOffsetPt;
+                        fillRowH = row.HeightPt - fillRowShift;
+                    }
+
+                    if (row.Row == rowTo - 1 && hasLastRowClip)
+                        fillRowH = pageTable.LastRowVisibleHeightPt;
+
+                    foreach (var cell in row.Cells)
+                    {
+                        float fillX = tableX + cell.Xpt;
+                        float fillY = tableBaseY + headerOffset + cell.Ypt - rowOffsetY;
+
+                        if (!string.IsNullOrEmpty(cell.BackgroundColor)
+                            && SKColor.TryParse(cell.BackgroundColor, out var bgColor))
+                        {
+                            using var bgPaint = new SKPaint { Color = bgColor };
+                            canvas.DrawRect(fillX, fillY, cell.WidthPt, fillRowH, bgPaint);
+                        }
+                        RenderCellShadingPattern(canvas, cell, fillX, fillY, cell.WidthPt, fillRowH);
+                    }
+                }
 
                 foreach (var row in layout.Rows)
                 {
@@ -1544,40 +1816,41 @@ namespace Writersword.Modules.TextEditor.Rendering
                         float cellX = tableX + cell.Xpt;
                         float cellY = tableBaseY + headerOffset + cell.Ypt - rowOffsetY - firstRowShift;
 
-                        if (!string.IsNullOrEmpty(cell.BackgroundColor)
-                            && SKColor.TryParse(cell.BackgroundColor, out var bgColor))
-                        {
-                            using var bgPaint = new SKPaint { Color = bgColor };
-                            canvas.DrawRect(cellX, cellY + firstRowShift, cell.WidthPt, visibleRowH, bgPaint);
-                        }
-                        RenderCellShadingPattern(canvas, cell, cellX, cellY + firstRowShift, cell.WidthPt, visibleRowH);
-
                         bool suppressBottom = isLastRow && hasLastRowClip;
                         float visibleCellY = cellY + firstRowShift;
-                        RenderCellBorders(canvas, cell, cellX, visibleCellY, visibleRowH, canvasScale, false, suppressBottom);
 
-                        float contentX = cellX + cell.PadLeftPt + cell.Borders.Left.WidthPt;
-                        float contentY = cellY + cell.PadTopPt + cell.Borders.Top.WidthPt;
+                        // Кусок таблицы кончается этой ячейкой, а таблица идёт дальше:
+                        // линию между строками рисует ячейка снизу, на этой странице её
+                        // нет, и кусок замыкается линией под ячейкой.
+                        bool closesSlice = cell.Row + Math.Max(cell.RowSpan, 1) >= rowTo;
+                        RenderCellBorders(canvas, layout, cell, cellX, visibleCellY, visibleRowH, canvasScale,
+                            false, suppressBottom, closesSlice);
 
-                        float clipTop = cellY + firstRowShift + cell.Borders.Top.WidthPt;
-                        float clipBottom = cellY + firstRowShift + visibleRowH - cell.Borders.Bottom.WidthPt;
+                        float contentX = cellX + cell.ContentInsetLeftPt;
+                        float contentY = cellY + cell.PadTopPt + cell.TopInsetPt;
+
+                        float clipTop = cellY + firstRowShift + cell.TopInsetPt;
+                        float clipBottom = cellY + firstRowShift + visibleRowH - cell.BottomInsetPt;
 
                         canvas.Save();
                         canvas.ClipRect(new SKRect(
-                            cellX + cell.Borders.Left.WidthPt,
+                            cellX + cell.Borders.Left.SpanPt / 2f,
                             clipTop,
-                            cellX + cell.WidthPt - cell.Borders.Right.WidthPt,
+                            cellX + cell.WidthPt - cell.Borders.Right.SpanPt / 2f,
                             clipBottom));
                         if (cell.IsRotated)
                         {
                             RenderRotatedCellParagraphs(canvas, cell, contentX, contentY,
-                                cell.WidthPt - cell.PadLeftPt - cell.PadRightPt
-                                    - cell.Borders.Left.WidthPt - cell.Borders.Right.WidthPt,
+                                cell.ContentAreaWidthPt,
                                 cell.HeightPt - cell.PadTopPt - cell.PadBottomPt
-                                    - cell.Borders.Top.WidthPt - cell.Borders.Bottom.WidthPt);
+                                    - cell.TopInsetPt - cell.BottomInsetPt);
                             canvas.Restore();
                             continue;
                         }
+                        // Таблицы внутри ячейки.
+                        foreach (var nested in cell.NestedTables)
+                            RenderTable(canvas, nested.Layout, contentX + nested.Xpt, contentY + nested.Ypt);
+
                         for (int cpi = 0; cpi < cell.Paragraphs.Count; cpi++)
                         {
                             var paraLayout = cell.Paragraphs[cpi];
@@ -4437,6 +4710,18 @@ namespace Writersword.Modules.TextEditor.Rendering
                 maxTop = maxAscent + Math.Abs(emptyMetrics.Leading);
             }
 
+            // Номер списка стоит в первой строке абзаца и раздвигает её, когда его шрифт
+            // выше строки: знак из Symbol или из шрифта подстановки («★») выше Times New
+            // Roman того же кегля, и Word отдаёт такой строке высоту шрифта номера. Шрифт
+            // ниже строки её не меняет, хотя спуск у него бывает глубже (Courier New):
+            // сравнивается высота шрифта целиком, а не подъём и спуск порознь.
+            if (layout.Lines.Count == 0
+                && layout.MarkerLineTopPt + layout.MarkerLineDescentPt > maxTop + maxDescent + 0.01f)
+            {
+                if (layout.MarkerLineTopPt > maxTop) maxTop = layout.MarkerLineTopPt;
+                if (layout.MarkerLineDescentPt > maxDescent) maxDescent = layout.MarkerLineDescentPt;
+            }
+
             // Зазор уже сидит в верхе строки (maxTop), поэтому отдельно не передаётся.
             // Базовая линия — под зазором, как у Word: прибавка от множителя интервала
             // делится поровну сверху и снизу, как и прежде.
@@ -6565,15 +6850,18 @@ namespace Writersword.Modules.TextEditor.Rendering
         }
 
         /// <summary>
-        /// Публичная обёртка RenderCellBorders для DocumentCanvas.
+        /// Публичная обёртка RenderCellBorders для DocumentCanvas. Полотно рисует на
+        /// экран, поэтому линии строятся из целых пикселей.
         /// </summary>
         public static void RenderCellBordersPublic(
-            SKCanvas canvas, SKTableCellLayout cell,
+            SKCanvas canvas, SKTableLayout table, SKTableCellLayout cell,
             float cellX, float cellY,
             float visibleH,
             float canvasScale = 1f,
-            bool suppressTop = false, bool suppressBottom = false)
-            => RenderCellBorders(canvas, cell, cellX, cellY, visibleH, canvasScale, suppressTop, suppressBottom);
+            bool suppressTop = false, bool suppressBottom = false,
+            bool sliceEnd = false)
+            => RenderCellBorders(canvas, table, cell, cellX, cellY, visibleH, canvasScale,
+                suppressTop, suppressBottom, sliceEnd, snapToPixels: true);
 
         /// <summary>
         /// Узор заливки ячейки (pct25, diagStripe…) поверх её цвета фона — тем же узором,
@@ -6589,39 +6877,29 @@ namespace Writersword.Modules.TextEditor.Rendering
             canvas.DrawRect(x, y, width, height, paint);
         }
 
-        // Стороны ячейки для объёмных рамок: у них светлая и тёмная половины зависят от стороны.
-        private const int BorderSideTop = 1;
-        private const int BorderSideBottom = 2;
-        private const int BorderSideLeft = 3;
-        private const int BorderSideRight = 4;
-
+        /// <summary>
+        /// Границы ячейки. Рисует их TableBorderPainter по сетке границ таблицы: общая
+        /// граница двух ячеек — одна линия, линии стыкуются в узлах сетки, на экране
+        /// строятся из целых пикселей.
+        ///
+        /// sliceEnd — ячейка последняя в куске таблицы на странице. snapToPixels —
+        /// рисуем на экран; на печати размеры линий точные.
+        /// </summary>
         private static void RenderCellBorders(
             SKCanvas canvas,
+            SKTableLayout? table,
             SKTableCellLayout cell,
             float cellX,
             float cellY,
             float visibleH,
             float canvasScale = 1f,
             bool suppressTop = false,
-            bool suppressBottom = false)
+            bool suppressBottom = false,
+            bool sliceEnd = false,
+            bool snapToPixels = false)
         {
-            if (!suppressTop)
-                DrawBorderLine(canvas, cell.Borders.Top,
-                    cellX, cellY,
-                    cellX + cell.WidthPt, cellY, canvasScale, BorderSideTop);
-
-            if (!suppressBottom)
-                DrawBorderLine(canvas, cell.Borders.Bottom,
-                    cellX, cellY + visibleH,
-                    cellX + cell.WidthPt, cellY + visibleH, canvasScale, BorderSideBottom);
-
-            DrawBorderLine(canvas, cell.Borders.Left,
-                cellX, cellY,
-                cellX, cellY + visibleH, canvasScale, BorderSideLeft);
-
-            DrawBorderLine(canvas, cell.Borders.Right,
-                cellX + cell.WidthPt, cellY,
-                cellX + cell.WidthPt, cellY + visibleH, canvasScale, BorderSideRight);
+            TableBorderPainter.DrawCell(canvas, table, cell, cellX, cellY, visibleH, canvasScale,
+                suppressTop, suppressBottom, sliceEnd, snapToPixels, ResolveParagraphBorderColor);
         }
 
         /// <summary>
@@ -6636,141 +6914,154 @@ namespace Writersword.Modules.TextEditor.Rendering
             return max - min <= 12 && max <= 140;
         }
 
-        private static void DrawBorderLine(
-            SKCanvas canvas,
-            SKTableBorderLineLayout border,
-            float x1, float y1, float x2, float y2,
-            float canvasScale = 1f,
-            int side = 0)
+        private static (BorderStyle Style, double ThicknessPt, string? Color) TopLineOf(TableCell cell)
+            => cell.Borders.Top == BorderStyle.None
+                ? (BorderStyle.None, 0.0, null)
+                : (cell.Borders.Top, cell.Borders.EffectiveTopThicknessPt(), cell.Borders.EffectiveTopColor());
+
+        private static (BorderStyle Style, double ThicknessPt, string? Color) BottomLineOf(TableCell cell)
+            => cell.Borders.Bottom == BorderStyle.None
+                ? (BorderStyle.None, 0.0, null)
+                : (cell.Borders.Bottom, cell.Borders.EffectiveBottomThicknessPt(), cell.Borders.EffectiveBottomColor());
+
+        private static (BorderStyle Style, double ThicknessPt, string? Color) LeftLineOf(TableCell cell)
+            => cell.Borders.Left == BorderStyle.None
+                ? (BorderStyle.None, 0.0, null)
+                : (cell.Borders.Left, cell.Borders.EffectiveLeftThicknessPt(), cell.Borders.EffectiveLeftColor());
+
+        private static (BorderStyle Style, double ThicknessPt, string? Color) RightLineOf(TableCell cell)
+            => cell.Borders.Right == BorderStyle.None
+                ? (BorderStyle.None, 0.0, null)
+                : (cell.Borders.Right, cell.Borders.EffectiveRightThicknessPt(), cell.Borders.EffectiveRightColor());
+
+        /// <summary>
+        /// Границы таблицы по её сетке.
+        ///
+        /// У Word граница между двумя ячейками одна: если ячейки по обе стороны задали
+        /// разные линии, остаётся сильнейшая (BorderLineCodes.Stronger), вторая не
+        /// рисуется вовсе. Когда каждая ячейка рисовала свою линию, на общей границе
+        /// лежали обе: тонкая штриховая выходила вдвое толще, а разные линии соседей
+        /// накладывались одна на другую.
+        ///
+        /// Сетка хранит линию на каждый отрезок между узлами: вдоль стороны
+        /// объединённой ячейки соседи разные, и с каждым спор свой. По сетке же
+        /// отрисовка видит, какие линии сходятся в узле, и стыкует их (TableBorderPainter).
+        /// </summary>
+        private static void BuildTableEdges(TableBlock table, int rowCount, int colCount, SKTableLayout layout)
         {
-            if (border.Style == 3) return; // None
+            if (rowCount <= 0 || colCount <= 0) return;
 
-            if (border.Style is >= 7 and <= 10)
+            // Какая ячейка занимает клетку. Порядок — как у TableBlock.GetCell: первая
+            // подходящая ячейка списка.
+            var owner = new TableCell?[rowCount, colCount];
+            foreach (var cell in table.Cells)
             {
-                Draw3DBorderLine(canvas, border, x1, y1, x2, y2, canvasScale, side);
-                return;
+                int lastRow = Math.Min(cell.Row + Math.Max(cell.RowSpan, 1), rowCount) - 1;
+                int lastCol = Math.Min(cell.Column + Math.Max(cell.ColSpan, 1), colCount) - 1;
+
+                for (int r = Math.Max(cell.Row, 0); r <= lastRow; r++)
+                    for (int c = Math.Max(cell.Column, 0); c <= lastCol; c++)
+                        owner[r, c] ??= cell;
             }
 
-            // Двойная, тройная, точки и волна рисуются так же, как рамка абзаца: у Word
-            // это одни и те же линии, и толщина у них значит одно и то же — толщину черты.
-            int strandStyle = border.Style switch
+            var filled = new bool[rowCount, colCount];
+            for (int r = 0; r < rowCount; r++)
+                for (int c = 0; c < colCount; c++)
+                    filled[r, c] = owner[r, c] is not null;
+
+            (BorderStyle Style, double ThicknessPt, string? Color) none = (BorderStyle.None, 0.0, null);
+
+            var horizontal = new SKTableBorderLineLayout?[rowCount + 1, colCount];
+            for (int r = 0; r <= rowCount; r++)
             {
-                2 => SKParagraphBorderLine.StyleDouble,
-                4 => SKParagraphBorderLine.StyleDotted,
-                5 => SKParagraphBorderLine.StyleTriple,
-                6 => SKParagraphBorderLine.StyleWave,
-                _ => SKParagraphBorderLine.StyleNone
-            };
-            if (strandStyle != SKParagraphBorderLine.StyleNone)
-            {
-                var line = new SKParagraphBorderLine
+                for (int c = 0; c < colCount; c++)
                 {
-                    Style = strandStyle,
-                    Color = border.Color,
-                    WidthPt = border.WidthPt
-                };
-                DrawParagraphBorderLine(canvas, line, x1, y1, x2, y2, canvasScale);
-                return;
+                    var upper = r > 0 ? owner[r - 1, c] : null;
+                    var lower = r < rowCount ? owner[r, c] : null;
+
+                    // Обе клетки — одна объединённая ячейка: границы между ними нет.
+                    if (upper is not null && ReferenceEquals(upper, lower)) continue;
+
+                    var line = BorderLineCodes.Stronger(
+                        upper is not null ? BottomLineOf(upper) : none,
+                        lower is not null ? TopLineOf(lower) : none);
+
+                    if (line.Style != BorderStyle.None && line.ThicknessPt > 0)
+                        horizontal[r, c] = BorderLineToLayout(line.Style, line.ThicknessPt, line.Color);
+                }
             }
 
-            if (!SKColor.TryParse(border.Color, out var color))
-                color = ReadingBorderColorOverride ?? SKColors.Black;
-            else if (ReadingBorderColorOverride is { } readingBorder && IsNeutralInk(color))
-                color = readingBorder;
-
-            float minWidthPt = canvasScale > 0f ? 1f / canvasScale : 0.75f;
-            float strokeWidth = Math.Max(minWidthPt, border.WidthPt > 0f ? border.WidthPt : minWidthPt);
-
-            if (Math.Abs(x1 - x2) < 0.01f) // вертикальная
+            var vertical = new SKTableBorderLineLayout?[rowCount, colCount + 1];
+            for (int r = 0; r < rowCount; r++)
             {
-                float xPx = (float)Math.Round(x1 * canvasScale - 0.5f) + 0.5f;
-                x1 = x2 = xPx / canvasScale;
+                for (int c = 0; c <= colCount; c++)
+                {
+                    var before = c > 0 ? owner[r, c - 1] : null;
+                    var after = c < colCount ? owner[r, c] : null;
+
+                    if (before is not null && ReferenceEquals(before, after)) continue;
+
+                    var line = BorderLineCodes.Stronger(
+                        before is not null ? RightLineOf(before) : none,
+                        after is not null ? LeftLineOf(after) : none);
+
+                    if (line.Style != BorderStyle.None && line.ThicknessPt > 0)
+                        vertical[r, c] = BorderLineToLayout(line.Style, line.ThicknessPt, line.Color);
+                }
             }
-            else // горизонтальная
-            {
-                float yPx = (float)Math.Round(y1 * canvasScale - 0.5f) + 0.5f;
-                y1 = y2 = yPx / canvasScale;
-            }
 
-            using var paint = new SKPaint
-            {
-                Color = color,
-                StrokeWidth = strokeWidth,
-                IsStroke = true,
-                IsAntialias = false
-            };
-
-            if (border.Style == 1) // Dashed
-                paint.PathEffect = SKPathEffect.CreateDash(
-                    new[] { strokeWidth * 4f, strokeWidth * 2f }, 0);
-
-            canvas.DrawLine(x1, y1, x2, y2, paint);
+            layout.HorizontalEdges = horizontal;
+            layout.VerticalEdges = vertical;
+            layout.SlotFilled = filled;
         }
 
         /// <summary>
-        /// Объёмная рамка, как у Word: линия из светлой и тёмной половин. Выпуклая (outset)
-        /// светлая сверху и слева, тёмная снизу и справа; вдавленная (inset) — наоборот.
-        /// Объёмные выпуклая и вдавленная (threeDEmboss, threeDEngrave) — две черты по
-        /// половине толщины: снаружи светлая и внутри тёмная, на противоположных сторонах
-        /// наоборот.
+        /// Границы ячейки для вёрстки: самая сильная из линий сетки на каждой её стороне.
+        /// row и col — первая строка и первая колонка ячейки.
         /// </summary>
-        private static void Draw3DBorderLine(
-            SKCanvas canvas, SKTableBorderLineLayout border,
-            float x1, float y1, float x2, float y2, float canvasScale, int side)
+        private static SKTableCellBorderLayout ResolveCellBorderLayout(
+            SKTableLayout layout, TableCell cell, int row, int col, int rowCount, int colCount)
         {
-            SKColor color = ResolveParagraphBorderColor(border.Color);
-            SKColor light = BlendColor(color, SKColors.White, 0.55f);
-            SKColor dark = BlendColor(color, SKColors.Black, 0.35f);
+            var horizontal = layout.HorizontalEdges;
+            var vertical = layout.VerticalEdges;
 
-            float minWidthPt = canvasScale > 0f ? 1f / canvasScale : 0.75f;
-            float width = Math.Max(minWidthPt, border.WidthPt);
-            bool vertical = Math.Abs(x1 - x2) < 0.01f;
+            var noLine = new SKTableBorderLineLayout { WidthPt = 0f, Style = SKBorderLineShape.None };
+            if (horizontal is null || vertical is null)
+                return new SKTableCellBorderLayout { Top = noLine, Bottom = noLine, Left = noLine, Right = noLine };
 
-            // Сторона сверху или слева — «освещённая» у выпуклой рамки.
-            bool litSide = side is BorderSideTop or BorderSideLeft || side == 0;
+            int lastRow = Math.Max(row, Math.Min(row + cell.RowSpan, rowCount) - 1);
+            int lastCol = Math.Max(col, Math.Min(col + cell.ColSpan, colCount) - 1);
 
-            // Наружу от ячейки: вверх или влево — минус, вниз или вправо — плюс.
-            float outward = side is BorderSideBottom or BorderSideRight ? 1f : -1f;
-
-            using var paint = new SKPaint { IsStroke = true, IsAntialias = true };
-
-            if (border.Style is 9 or 10)
+            SKTableBorderLineLayout? top = null;
+            SKTableBorderLineLayout? bottom = null;
+            for (int c = col; c <= lastCol; c++)
             {
-                bool outset = border.Style == 9;
-                paint.Color = (outset == litSide) ? light : dark;
-                paint.StrokeWidth = width;
-                canvas.DrawLine(x1, y1, x2, y2, paint);
-                return;
+                top = StrongerEdge(top, horizontal[row, c]);
+                bottom = StrongerEdge(bottom, horizontal[lastRow + 1, c]);
             }
 
-            // Две черты по половине толщины: наружная и внутренняя.
-            bool emboss = border.Style == 7;
-            float half = Math.Max(minWidthPt, width / 2f);
-            float offset = width / 4f;
-            SKColor outer = (emboss == litSide) ? light : dark;
-            SKColor inner = (emboss == litSide) ? dark : light;
+            SKTableBorderLineLayout? left = null;
+            SKTableBorderLineLayout? right = null;
+            for (int r = row; r <= lastRow; r++)
+            {
+                left = StrongerEdge(left, vertical[r, col]);
+                right = StrongerEdge(right, vertical[r, lastCol + 1]);
+            }
 
-            paint.StrokeWidth = half;
-
-            paint.Color = outer;
-            if (vertical) canvas.DrawLine(x1 + outward * offset, y1, x2 + outward * offset, y2, paint);
-            else canvas.DrawLine(x1, y1 + outward * offset, x2, y2 + outward * offset, paint);
-
-            paint.Color = inner;
-            if (vertical) canvas.DrawLine(x1 - outward * offset, y1, x2 - outward * offset, y2, paint);
-            else canvas.DrawLine(x1, y1 - outward * offset, x2, y2 - outward * offset, paint);
-        }
-
-        private static SKTableCellBorderLayout BuildCellBorderLayout(CellBorders borders)
-        {
-            // У каждой стороны свои цвет и толщина, если они заданы (таблицы из Word).
             return new SKTableCellBorderLayout
             {
-                Top = BorderLineToLayout(borders.Top, borders.EffectiveTopThicknessPt(), borders.EffectiveTopColor()),
-                Bottom = BorderLineToLayout(borders.Bottom, borders.EffectiveBottomThicknessPt(), borders.EffectiveBottomColor()),
-                Left = BorderLineToLayout(borders.Left, borders.EffectiveLeftThicknessPt(), borders.EffectiveLeftColor()),
-                Right = BorderLineToLayout(borders.Right, borders.EffectiveRightThicknessPt(), borders.EffectiveRightColor())
+                Top = top ?? noLine,
+                Bottom = bottom ?? noLine,
+                Left = left ?? noLine,
+                Right = right ?? noLine
             };
+        }
+
+        private static SKTableBorderLineLayout? StrongerEdge(SKTableBorderLineLayout? current, SKTableBorderLineLayout? candidate)
+        {
+            if (candidate is null) return current;
+            if (current is null) return candidate;
+            return candidate.Weight > current.Weight ? candidate : current;
         }
 
         /// <summary>
@@ -6812,20 +7103,8 @@ namespace Writersword.Modules.TextEditor.Rendering
             {
                 WidthPt = style == BorderStyle.None ? 0f : (float)thicknessPt,
                 Color = color ?? "#000000",
-                Style = style switch
-                {
-                    BorderStyle.None => 3,
-                    BorderStyle.Dashed => 1,
-                    BorderStyle.Double => 2,
-                    BorderStyle.Dotted => 4,
-                    BorderStyle.Triple => 5,
-                    BorderStyle.Wave => 6,
-                    BorderStyle.ThreeDEmboss => 7,
-                    BorderStyle.ThreeDEngrave => 8,
-                    BorderStyle.Outset => 9,
-                    BorderStyle.Inset => 10,
-                    _ => 0
-                }
+                Style = BorderLineCodes.Of(style),
+                Weight = BorderLineCodes.Weight(style, thicknessPt)
             };
         }
 
@@ -7541,9 +7820,17 @@ namespace Writersword.Modules.TextEditor.Rendering
             List<Models.Styles.TabStop>? tabStops, double defaultTabStopPt, float indentScale)
         {
             const double Epsilon = 0.01;
+
+            // Допуск на округление ширины знаков: номер шириной ровно в выступ считается
+            // дошедшим до отступа текста, а не перешедшим его.
+            const double HangingReachTolerancePt = 0.05;
+
             double? best = null;
 
-            if (hanging && leftIndentPt > markerEnd + Epsilon)
+            // Номер, кончающийся ровно на отступе текста, текст с отступа не сдвигает:
+            // «8.1.» шириной в выступ оставляет текст на отступе пункта, как у Word,
+            // а не уводит его к следующей отметке шага табуляции.
+            if (hanging && leftIndentPt >= markerEnd - HangingReachTolerancePt)
                 best = leftIndentPt;
 
             if (tabStops is not null)
@@ -7611,6 +7898,98 @@ namespace Writersword.Modules.TextEditor.Rendering
             return GetOrCreateFont(textFace, sizePt);
         }
 
+        /// <summary>
+        /// Шрифт текста, которым набирается номер списка: гарнитура и кегль первого
+        /// фрагмента пункта с текстом — без уменьшения под индекс, без жирности и курсива.
+        /// У пустого пункта — шрифт пустой строки абзаца.
+        /// </summary>
+        private static (string Family, float SizePt) ResolveMarkerTextFont(
+            ParagraphBlock para, string? styleName, StyleResolver styles)
+        {
+            foreach (var chunk in para.Chunks)
+            {
+                foreach (var run in chunk.Runs)
+                {
+                    if (string.IsNullOrEmpty(run.Text) || run.InlineImageId is not null) continue;
+
+                    var p = run.Properties;
+
+                    string family = styles.ResolveFontFamily(styleName);
+                    float size = styles.ResolveFontSize(styleName);
+
+                    // Тот же порядок силы, что у текста (CollectTokens): стиль абзаца,
+                    // поверх него символьный стиль, поверх обоих — свойства фрагмента.
+                    if (!string.IsNullOrEmpty(p?.StyleName))
+                    {
+                        family = styles.FindFontFamily(p!.StyleName) ?? family;
+                        size = styles.FindFontSize(p.StyleName) ?? size;
+                    }
+
+                    if (!string.IsNullOrEmpty(p?.FontFamily)) family = p!.FontFamily!;
+                    if (p?.FontSize.HasValue == true) size = (float)p.FontSize.Value;
+
+                    return (ResolveReadingFamily(family), ScaleReadingFont(size));
+                }
+            }
+
+            var empty = BuildEmptyLineFormat(para, styleName, styles);
+            return (empty.FontFamily, empty.FontSizePt);
+        }
+
+        /// <summary>
+        /// Шрифт, которым номер списка и меряется при вёрстке, и рисуется. Расчёт один
+        /// на оба места: иначе ширина номера в раскладке расходится с нарисованной.
+        /// </summary>
+        /// <param name="textFamily">Гарнитура текста пункта.</param>
+        /// <param name="levelFamily">Шрифт уровня Word; null — номер набран шрифтом текста.</param>
+        /// <param name="drawText">Текст, которым номер рисуется выбранным шрифтом.</param>
+        private static SKFont ResolveMarkerDrawFont(
+            string markerText, string textFamily, float sizePt, string? levelFamily, out string drawText)
+        {
+            drawText = markerText;
+
+            var typeface = GetOrCreateTypeface(textFamily, false, false);
+            var font = GetOrCreateFont(typeface, sizePt);
+
+            // Маркер уровня Word со своим шрифтом (Symbol, Wingdings, Courier New) рисуется
+            // этим шрифтом, как у Word; нет шрифта — юникодным двойником знака.
+            if (levelFamily is not null)
+            {
+                font = ResolveListMarkerFont(markerText, textFamily, sizePt, levelFamily, out drawText);
+                typeface = font.Typeface;
+            }
+
+            // Некоторые символы маркеров (например ➤) могут отсутствовать в основном шрифте —
+            // подставляем системный фолбэк, иначе вместо маркера рисуется .notdef-квадрат.
+            int mcp = drawText.Length > 0 ? drawText[0] : 0;
+            if (mcp >= 0x0080 && typeface.GetGlyph(mcp) == 0)
+            {
+                if (!_fallbackFamilyCache.TryGetValue(mcp, out var fb))
+                {
+                    // Декоративные гарнитуры отсеиваются здесь же. Раньше фильтр
+                    // доставался этому месту даром — через общий кеш с
+                    // FindFallbackFamily, — а тот больше системный шрифт не ищет.
+                    using var fm = SKFontManager.Default.MatchCharacter(mcp);
+                    fb = fm != null && !IsDecorationFont(fm.FamilyName) ? fm.FamilyName : null;
+                    _fallbackFamilyCache[mcp] = fb;
+                }
+                if (!string.IsNullOrEmpty(fb))
+                {
+                    typeface = GetOrCreateTypeface(fb!, false, false);
+                    font = GetOrCreateFont(typeface, sizePt);
+                }
+                else if (FindSymbolFallback(mcp, textFamily, false, false) is { } symbolFallback)
+                {
+                    // Система отдала знак декоративному шрифту («★» — Segoe UI Symbol), и он
+                    // отсеян. Знак ищется так же, как для текста: в юникодных шрифтах знаков.
+                    typeface = GetOrCreateTypeface(symbolFallback.Family, symbolFallback.Bold, symbolFallback.Italic);
+                    font = GetOrCreateFont(typeface, sizePt);
+                }
+            }
+
+            return font;
+        }
+
         /// <summary>В шрифте есть все знаки текста (пробелы не проверяются).</summary>
         private static bool HasAllGlyphs(SKTypeface typeface, string text)
         {
@@ -7642,8 +8021,9 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// Рисует маркер списка слева от текста первой строки абзаца.
         /// paraX — левый край текста (margin + отступ текста списка).
         /// markerHangingPt — выступ маркера: маркер рисуется на markerHangingPt левее текста.
-        /// Гарнитура и кегль маркера берутся из первого сегмента строки (совпадают с текстом),
-        /// для пустого элемента — фолбэк-шрифт.
+        /// Гарнитура и кегль маркера — те, что выбрала вёрстка (шрифт текста пункта); у
+        /// раскладки без этих данных — из первого сегмента строки, для пустого элемента —
+        /// фолбэк-шрифт.
         /// </summary>
         private static void DrawListMarker(
             SKCanvas canvas, SKTextLayout layout,
@@ -7668,44 +8048,16 @@ namespace Writersword.Modules.TextEditor.Rendering
             string family = fontSource?.FontFamily ?? StyleResolver.FallbackFontFamily;
             float sizePt = fontSource?.FontSizePt ?? StyleResolver.FallbackFontSizePt;
 
-            var typeface = GetOrCreateTypeface(family, false, false);
-            var font = GetOrCreateFont(typeface, sizePt);
-
-            // Маркер уровня Word со своим шрифтом (Symbol, Wingdings, Courier New) рисуется
-            // этим шрифтом, как у Word; нет шрифта — юникодным двойником знака.
-            if (layout.MarkerFontFamily is not null)
+            // Вёрстка уже выбрала шрифт текста для номера и по нему посчитала его ширину:
+            // рисуется номер тем же шрифтом. Первый сегмент строки для этого не годится —
+            // он бывает уменьшен под индекс или набран шрифтом подстановки.
+            if (layout.MarkerTextFontSizePt > 0f && !string.IsNullOrEmpty(layout.MarkerTextFontFamily))
             {
-                font = ResolveListMarkerFont(markerText, family, sizePt, layout.MarkerFontFamily, out markerText);
-                typeface = font.Typeface;
+                family = layout.MarkerTextFontFamily!;
+                sizePt = layout.MarkerTextFontSizePt;
             }
 
-            // Некоторые символы маркеров (например ➤) могут отсутствовать в основном шрифте —
-            // подставляем системный фолбэк, иначе вместо маркера рисуется .notdef-квадрат.
-            int mcp = markerText.Length > 0 ? markerText[0] : 0;
-            if (mcp >= 0x0080 && typeface.GetGlyph(mcp) == 0)
-            {
-                if (!_fallbackFamilyCache.TryGetValue(mcp, out var fb))
-                {
-                    // Декоративные гарнитуры отсеиваются здесь же. Раньше фильтр
-                    // доставался этому месту даром — через общий кеш с
-                    // FindFallbackFamily, — а тот больше системный шрифт не ищет.
-                    using var fm = SKFontManager.Default.MatchCharacter(mcp);
-                    fb = fm != null && !IsDecorationFont(fm.FamilyName) ? fm.FamilyName : null;
-                    _fallbackFamilyCache[mcp] = fb;
-                }
-                if (!string.IsNullOrEmpty(fb))
-                {
-                    typeface = GetOrCreateTypeface(fb!, false, false);
-                    font = GetOrCreateFont(typeface, sizePt);
-                }
-                else if (FindSymbolFallback(mcp, family, false, false) is { } symbolFallback)
-                {
-                    // Система отдала знак декоративному шрифту («★» — Segoe UI Symbol), и он
-                    // отсеян. Знак ищется так же, как для текста: в юникодных шрифтах знаков.
-                    typeface = GetOrCreateTypeface(symbolFallback.Family, symbolFallback.Bold, symbolFallback.Italic);
-                    font = GetOrCreateFont(typeface, sizePt);
-                }
-            }
+            var font = ResolveMarkerDrawFont(markerText, family, sizePt, layout.MarkerFontFamily, out markerText);
 
             float lineY = paraY + (line.Y - yBase);
             float baseY = lineY + line.Baseline;

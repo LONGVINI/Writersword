@@ -45,7 +45,49 @@ namespace Writersword.Modules.TextEditor.Models.Document
         Outset = 10,
 
         /// <summary>Вдавленная рамка (w:val="inset"): тёмная сверху и слева, светлая снизу и справа.</summary>
-        Inset = 11
+        Inset = 11,
+
+        /// <summary>Штрих и точка по очереди (w:val="dotDash").</summary>
+        DotDash = 12,
+
+        /// <summary>Штрих и две точки по очереди (w:val="dotDotDash").</summary>
+        DotDotDash = 13,
+
+        /// <summary>Штрихи с узким просветом (w:val="dashSmallGap").</summary>
+        DashSmallGap = 14,
+
+        /// <summary>Полоса из наклонных штрихов, толстого и тонкого по очереди (w:val="dashDotStroked").</summary>
+        DashDotStroked = 15,
+
+        /// <summary>Тонкая черта снаружи, толстая внутри, малый просвет (w:val="thinThickSmallGap").</summary>
+        ThinThickSmallGap = 16,
+
+        /// <summary>Толстая черта снаружи, тонкая внутри, малый просвет (w:val="thickThinSmallGap").</summary>
+        ThickThinSmallGap = 17,
+
+        /// <summary>Тонкая, толстая и тонкая черты, малые просветы (w:val="thinThickThinSmallGap").</summary>
+        ThinThickThinSmallGap = 18,
+
+        /// <summary>Тонкая черта снаружи, толстая внутри, средний просвет (w:val="thinThickMediumGap").</summary>
+        ThinThickMediumGap = 19,
+
+        /// <summary>Толстая черта снаружи, тонкая внутри, средний просвет (w:val="thickThinMediumGap").</summary>
+        ThickThinMediumGap = 20,
+
+        /// <summary>Тонкая, толстая и тонкая черты, средние просветы (w:val="thinThickThinMediumGap").</summary>
+        ThinThickThinMediumGap = 21,
+
+        /// <summary>Тонкая черта снаружи, толстая внутри, большой просвет (w:val="thinThickLargeGap").</summary>
+        ThinThickLargeGap = 22,
+
+        /// <summary>Толстая черта снаружи, тонкая внутри, большой просвет (w:val="thickThinLargeGap").</summary>
+        ThickThinLargeGap = 23,
+
+        /// <summary>Тонкая, толстая и тонкая черты, большие просветы (w:val="thinThickThinLargeGap").</summary>
+        ThinThickThinLargeGap = 24,
+
+        /// <summary>Две волнистые линии (w:val="doubleWave").</summary>
+        DoubleWave = 25
     }
 
     /// <summary>
@@ -71,6 +113,127 @@ namespace Writersword.Modules.TextEditor.Models.Document
 
         /// <summary>Сверху вниз (tbRl): строка повёрнута на 90° по часовой стрелке.</summary>
         TopToBottom = 2
+    }
+
+    /// <summary>От чего отсчитывается положение таблицы с обтеканием текстом.</summary>
+    public enum TableFloatAnchor
+    {
+        /// <summary>От текста: по горизонтали — от полосы набора, по вертикали — от абзаца под таблицей.</summary>
+        Text = 0,
+
+        /// <summary>От полей листа: от левого поля и от верхнего поля.</summary>
+        Margin = 1,
+
+        /// <summary>От краёв листа.</summary>
+        Page = 2
+    }
+
+    /// <summary>Положение таблицы с обтеканием относительно своей опоры по одной оси.</summary>
+    public enum TableFloatAlign
+    {
+        /// <summary>По смещению в пунктах.</summary>
+        Offset = 0,
+
+        /// <summary>К началу опоры: слева или сверху.</summary>
+        Start = 1,
+
+        /// <summary>По середине опоры.</summary>
+        Center = 2,
+
+        /// <summary>К концу опоры: справа или снизу.</summary>
+        End = 3
+    }
+
+    /// <summary>
+    /// Положение таблицы с обтеканием текстом (w:tblpPr у Word, «Обтекание: вокруг» в
+    /// свойствах таблицы). Такая таблица не занимает строку в потоке: она стоит в своей
+    /// точке листа, а текст абзацев обходит её с обеих сторон.
+    /// </summary>
+    public sealed class TableFloatPosition
+    {
+        /// <summary>От чего отсчитывается положение по горизонтали.</summary>
+        public TableFloatAnchor HorizontalAnchor { get; set; } = TableFloatAnchor.Text;
+
+        /// <summary>Положение по горизонтали: смещение или сторона опоры.</summary>
+        public TableFloatAlign HorizontalAlign { get; set; } = TableFloatAlign.Offset;
+
+        /// <summary>Смещение левого края таблицы от начала опоры, пт. Действует при положении «по смещению».</summary>
+        public double XPt { get; set; }
+
+        /// <summary>От чего отсчитывается положение по вертикали.</summary>
+        public TableFloatAnchor VerticalAnchor { get; set; } = TableFloatAnchor.Text;
+
+        /// <summary>Положение по вертикали: смещение или сторона опоры. От текста — только смещение.</summary>
+        public TableFloatAlign VerticalAlign { get; set; } = TableFloatAlign.Offset;
+
+        /// <summary>Смещение верха таблицы от начала опоры, пт. Действует при положении «по смещению».</summary>
+        public double YPt { get; set; }
+
+        /// <summary>Расстояние от таблицы до текста слева, пт.</summary>
+        public double LeftFromTextPt { get; set; }
+
+        /// <summary>Расстояние от таблицы до текста справа, пт.</summary>
+        public double RightFromTextPt { get; set; }
+
+        /// <summary>Расстояние от таблицы до текста сверху, пт.</summary>
+        public double TopFromTextPt { get; set; }
+
+        /// <summary>Расстояние от таблицы до текста снизу, пт.</summary>
+        public double BottomFromTextPt { get; set; }
+
+        public TableFloatPosition Clone() => (TableFloatPosition)MemberwiseClone();
+
+        /// <summary>
+        /// Левый верхний угол объекта на листе по этому положению. Тот же счёт, что у
+        /// таблицы с обтеканием; нужен плавающей картинке, пришедшей из Word, — её
+        /// положение описано теми же опорами.
+        /// </summary>
+        /// <param name="anchorYPt">Верх абзаца-опоры: место в потоке, где встречен объект.</param>
+        public (float XPt, float YPt) ResolveOrigin(
+            float objectWidthPt, float objectHeightPt,
+            float textXPt, float textWidthPt, float pageXPt, float pageWidthPt,
+            float pageYPt, float pageHeightPt, float marginTopPt, float marginBottomPt,
+            float anchorYPt)
+        {
+            // Опора по горизонтали: лист целиком или полоса набора.
+            bool fromPageX = HorizontalAnchor == TableFloatAnchor.Page;
+            float baseXPt = fromPageX ? pageXPt : textXPt;
+            float spanXPt = fromPageX ? pageWidthPt : textWidthPt;
+
+            float xPt = HorizontalAlign switch
+            {
+                TableFloatAlign.Start => baseXPt,
+                TableFloatAlign.Center => baseXPt + (spanXPt - objectWidthPt) / 2f,
+                TableFloatAlign.End => baseXPt + spanXPt - objectWidthPt,
+                _ => baseXPt + (float)XPt
+            };
+
+            // Опора по вертикали. От текста отсчёт идёт от верха абзаца, и стороны у
+            // такой опоры нет — только смещение.
+            float yPt;
+            if (VerticalAnchor == TableFloatAnchor.Text)
+            {
+                yPt = anchorYPt + (float)YPt;
+            }
+            else
+            {
+                bool fromPageY = VerticalAnchor == TableFloatAnchor.Page;
+                float baseYPt = fromPageY ? pageYPt : pageYPt + marginTopPt;
+                float spanYPt = fromPageY
+                    ? pageHeightPt
+                    : pageHeightPt - marginTopPt - marginBottomPt;
+
+                yPt = VerticalAlign switch
+                {
+                    TableFloatAlign.Start => baseYPt,
+                    TableFloatAlign.Center => baseYPt + (spanYPt - objectHeightPt) / 2f,
+                    TableFloatAlign.End => baseYPt + spanYPt - objectHeightPt,
+                    _ => baseYPt + (float)YPt
+                };
+            }
+
+            return (xPt, yPt);
+        }
     }
 
     /// <summary>
@@ -178,8 +341,33 @@ namespace Writersword.Modules.TextEditor.Models.Document
     }
 
     /// <summary>
+    /// Таблица внутри ячейки другой таблицы.
+    ///
+    /// Стоит в содержимом ячейки перед абзацем <see cref="BeforeParagraphId"/> — так же
+    /// устроена ячейка у Word: после вложенной таблицы в ней всегда идёт абзац. Привязка
+    /// к абзацу, а не к номеру в списке, переживает правку текста над таблицей: абзац
+    /// над ней можно разбить или удалить, и таблица останется на своём месте.
+    /// </summary>
+    public sealed class NestedTable
+    {
+        /// <summary>Абзац ячейки, перед которым стоит таблица.</summary>
+        public Guid BeforeParagraphId { get; set; }
+
+        /// <summary>
+        /// Номер этого абзаца в ячейке на момент последней вёрстки. Запасная привязка:
+        /// работает, когда абзаца с таким идентификатором в ячейке уже нет. Число, равное
+        /// количеству абзацев, ставит таблицу после последнего.
+        /// </summary>
+        public int BeforeParagraphIndex { get; set; }
+
+        /// <summary>Сама таблица.</summary>
+        public TableBlock Table { get; set; } = new();
+    }
+
+    /// <summary>
     /// Одна ячейка таблицы.
-    /// Содержит список параграфов (как и обычный поток документа).
+    /// Содержит список параграфов (как и обычный поток документа) и, между ними,
+    /// вложенные таблицы.
     /// </summary>
     public sealed class TableCell
     {
@@ -187,6 +375,142 @@ namespace Writersword.Modules.TextEditor.Models.Document
 
         /// <summary>Содержимое ячейки — список параграфов.</summary>
         public List<ParagraphBlock> Paragraphs { get; set; } = new() { new ParagraphBlock() };
+
+        /// <summary>
+        /// Таблицы внутри ячейки. Null — вложенных таблиц нет. Каждая стоит перед своим
+        /// абзацем (см. <see cref="NestedTable"/>); порядок в списке — порядок таблиц,
+        /// стоящих перед одним и тем же абзацем.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<NestedTable>? NestedTables { get; set; }
+
+        /// <summary>
+        /// Перед каким по счёту абзацем ячейки стоит вложенная таблица. Число, равное
+        /// количеству абзацев, — после последнего.
+        /// </summary>
+        public int NestedTablePosition(NestedTable nested)
+        {
+            for (int i = 0; i < Paragraphs.Count; i++)
+                if (Paragraphs[i].Id == nested.BeforeParagraphId) return i;
+
+            return Math.Clamp(nested.BeforeParagraphIndex, 0, Paragraphs.Count);
+        }
+
+        /// <summary>
+        /// Освежает привязку вложенных таблиц: запоминает номер абзаца, перед которым
+        /// стоит каждая, а таблицу, чей абзац исчез, привязывает к абзацу на его месте.
+        /// Вызывается вёрсткой — после неё привязка по идентификатору и по номеру совпадают.
+        /// </summary>
+        public void AnchorNestedTables()
+        {
+            if (NestedTables is not { Count: > 0 } nestedTables) return;
+
+            foreach (var nested in nestedTables)
+            {
+                int position = NestedTablePosition(nested);
+                nested.BeforeParagraphIndex = position;
+                if (position < Paragraphs.Count)
+                    nested.BeforeParagraphId = Paragraphs[position].Id;
+            }
+        }
+
+        /// <summary>Стоит ли вложенная таблица прямо перед абзацем с этим номером.</summary>
+        public bool HasNestedTableBefore(int paragraphIndex)
+        {
+            if (NestedTables is not { Count: > 0 } nestedTables) return false;
+
+            foreach (var nested in nestedTables)
+                if (NestedTablePosition(nested) == paragraphIndex) return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Ставит таблицу в ячейку перед абзацем с заданным номером. Перед одним абзацем
+        /// может стоять несколько таблиц: новая встаёт первой из них или последней.
+        /// </summary>
+        public NestedTable InsertNestedTable(TableBlock table, int beforeParagraphIndex, bool first)
+        {
+            int position = Math.Clamp(beforeParagraphIndex, 0, Paragraphs.Count);
+            var nested = new NestedTable
+            {
+                Table = table,
+                BeforeParagraphIndex = position,
+                BeforeParagraphId = position < Paragraphs.Count ? Paragraphs[position].Id : Guid.Empty
+            };
+
+            NestedTables ??= new List<NestedTable>();
+
+            int listIndex = NestedTables.Count;
+            if (first)
+            {
+                for (int i = 0; i < NestedTables.Count; i++)
+                {
+                    if (NestedTablePosition(NestedTables[i]) != position) continue;
+                    listIndex = i;
+                    break;
+                }
+            }
+
+            NestedTables.Insert(listIndex, nested);
+            return nested;
+        }
+
+        /// <summary>Убирает таблицу из ячейки. False — такой записи в ячейке нет.</summary>
+        public bool RemoveNestedTable(NestedTable nested)
+        {
+            if (NestedTables is null || !NestedTables.Remove(nested)) return false;
+            if (NestedTables.Count == 0) NestedTables = null;
+            return true;
+        }
+
+        /// <summary>
+        /// Убирает таблицы, стоящие перед абзацами с номерами от firstPosition до
+        /// lastPosition включительно. Нужна удалению выделения: абзацы этого промежутка
+        /// исчезают, и таблицы между ними уходят вместе с ними.
+        /// </summary>
+        public void RemoveNestedTablesBetween(int firstPosition, int lastPosition)
+        {
+            if (NestedTables is not { Count: > 0 } nestedTables) return;
+
+            for (int i = nestedTables.Count - 1; i >= 0; i--)
+            {
+                int position = NestedTablePosition(nestedTables[i]);
+                if (position >= firstPosition && position <= lastPosition)
+                    nestedTables.RemoveAt(i);
+            }
+
+            if (nestedTables.Count == 0) NestedTables = null;
+        }
+
+        /// <summary>
+        /// Абзацы ячейки вместе с абзацами вложенных таблиц на всю глубину, в порядке
+        /// чтения: таблица — перед своим абзацем.
+        /// </summary>
+        public IEnumerable<ParagraphBlock> ParagraphsDeep()
+        {
+            if (NestedTables is not { Count: > 0 } nestedTables)
+            {
+                foreach (var paragraph in Paragraphs)
+                    yield return paragraph;
+                yield break;
+            }
+
+            for (int i = 0; i <= Paragraphs.Count; i++)
+            {
+                foreach (var nested in nestedTables)
+                {
+                    if (NestedTablePosition(nested) != i) continue;
+
+                    foreach (var nestedCell in nested.Table.Cells)
+                        foreach (var paragraph in nestedCell.ParagraphsDeep())
+                            yield return paragraph;
+                }
+
+                if (i < Paragraphs.Count)
+                    yield return Paragraphs[i];
+            }
+        }
 
         /// <summary>
         /// Индекс строки (0-based). Для объединённых ячеек — строка начала.
@@ -349,6 +673,75 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// </summary>
         public List<TableCell> Cells { get; set; } = new();
 
+        /// <summary>Таблицы, вложенные в ячейки этой таблицы, на всю глубину.</summary>
+        public IEnumerable<TableBlock> NestedTablesDeep()
+        {
+            foreach (var cell in Cells)
+            {
+                if (cell.NestedTables is not { Count: > 0 } nestedTables) continue;
+
+                foreach (var nested in nestedTables)
+                {
+                    yield return nested.Table;
+                    foreach (var deeper in nested.Table.NestedTablesDeep())
+                        yield return deeper;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Выдаёт новые идентификаторы таблице, её ячейкам, абзацам и всем вложенным
+        /// таблицам. Нужна копии: копия, вставленная рядом с оригиналом, не должна
+        /// делить с ним идентификаторы — по ним блоки ищут отмена и сохранение.
+        /// Привязка вложенных таблиц к абзацам при этом сохраняется.
+        /// </summary>
+        public void RenewIds()
+        {
+            Id = Guid.NewGuid();
+
+            foreach (var cell in Cells)
+            {
+                cell.AnchorNestedTables();
+                cell.Id = Guid.NewGuid();
+
+                foreach (var paragraph in cell.Paragraphs)
+                    paragraph.Id = Guid.NewGuid();
+
+                if (cell.NestedTables is not { Count: > 0 } nestedTables) continue;
+
+                foreach (var nested in nestedTables)
+                {
+                    nested.BeforeParagraphId = nested.BeforeParagraphIndex < cell.Paragraphs.Count
+                        ? cell.Paragraphs[nested.BeforeParagraphIndex].Id
+                        : Guid.Empty;
+                    nested.Table.RenewIds();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Ячейка, в которой стоит вложенная таблица, и запись о ней. Ищет на всю глубину.
+        /// Null — таблица в эту не вложена.
+        /// </summary>
+        public (TableCell Cell, NestedTable Nested)? FindNestedOwner(TableBlock table)
+        {
+            foreach (var cell in Cells)
+            {
+                if (cell.NestedTables is not { Count: > 0 } nestedTables) continue;
+
+                foreach (var nested in nestedTables)
+                {
+                    if (ReferenceEquals(nested.Table, table) || nested.Table.Id == table.Id)
+                        return (cell, nested);
+
+                    var deeper = nested.Table.FindNestedOwner(table);
+                    if (deeper is not null) return deeper;
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>Имя готового стиля таблицы. Null — кастомное оформление.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? StyleName { get; set; }
@@ -420,6 +813,13 @@ namespace Writersword.Modules.TextEditor.Models.Document
                 _ => LeftIndentPt
             };
         }
+
+        /// <summary>
+        /// Положение таблицы с обтеканием текстом. null — обычная таблица в потоке:
+        /// занимает свою строку, текст идёт над ней и под ней.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public TableFloatPosition? FloatPosition { get; set; }
 
         /// <summary>
         /// Повторять первую строку как заголовок на каждой странице.

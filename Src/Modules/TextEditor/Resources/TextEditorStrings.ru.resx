@@ -1223,4 +1223,10 @@
   <data name="Toc_Style_Reset_Tip" xml:space="preserve">
     <value>Вернуть стилям оглавления встроенный вид</value>
   </data>
+  <data name="Undo_Import_Title" xml:space="preserve">
+    <value>Отменить импорт?</value>
+  </data>
+  <data name="Undo_Import_Message" xml:space="preserve">
+    <value>Этот шаг отменяет импорт: импортированный документ исчезнет, и вернётся тот, что был до него. Отменить импорт?</value>
+  </data>
 </root>

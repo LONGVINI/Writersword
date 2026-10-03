@@ -1591,4 +1591,12 @@ Refresh only the page numbers?</value>
     <value>Return the table of contents styles to their built-in look</value>
     <comment>Ribbon tooltip</comment>
   </data>
+  <data name="Undo_Import_Title" xml:space="preserve">
+    <value>Undo the import?</value>
+    <comment>Undo confirmation dialog</comment>
+  </data>
+  <data name="Undo_Import_Message" xml:space="preserve">
+    <value>This step undoes the import: the imported document disappears and the document that was here before it comes back. Undo the import?</value>
+    <comment>Undo confirmation dialog</comment>
+  </data>
 </root>

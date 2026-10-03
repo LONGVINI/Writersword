@@ -54,6 +54,11 @@ namespace Writersword.Modules.TextEditor.Rendering
                     case BreakBlock:
                         break;
 
+                    // Плавающая картинка или фигура строки в потоке не занимает: абзацы
+                    // над ней и под ней остаются соседями.
+                    case IFloatingObject { WrapMode: not WrapMode.Inline }:
+                        break;
+
                     case TableBlock table:
                         flow.Add(null);
                         (tables ??= new List<TableBlock>()).Add(table);
@@ -70,17 +75,38 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (tables is not null)
             {
                 foreach (var table in tables)
+                    changed |= ApplyTable(table, contextualOf);
+            }
+
+            return changed;
+        }
+
+        /// <summary>
+        /// Абзацы ячеек таблицы: каждая ячейка — свой поток. Таблица, вложенная в ячейку,
+        /// рвёт соседство абзацев над ней и под ней так же, как таблица в потоке
+        /// документа, а её собственные ячейки обходятся тем же правилом.
+        /// </summary>
+        private static bool ApplyTable(TableBlock table, Func<ParagraphBlock, bool> contextualOf)
+        {
+            bool changed = false;
+
+            foreach (var cell in table.Cells)
+            {
+                if (cell?.Paragraphs is not { Count: > 0 } paragraphs) continue;
+
+                var cellFlow = new List<ParagraphBlock?>(paragraphs.Count);
+                for (int i = 0; i < paragraphs.Count; i++)
                 {
-                    foreach (var cell in table.Cells)
-                    {
-                        if (cell?.Paragraphs is not { Count: > 0 } paragraphs) continue;
-
-                        var cellFlow = new List<ParagraphBlock?>(paragraphs.Count);
-                        foreach (var paragraph in paragraphs) cellFlow.Add(paragraph);
-
-                        changed |= ApplyFlow(cellFlow, contextualOf);
-                    }
+                    if (cell.HasNestedTableBefore(i)) cellFlow.Add(null);
+                    cellFlow.Add(paragraphs[i]);
                 }
+
+                changed |= ApplyFlow(cellFlow, contextualOf);
+
+                if (cell.NestedTables is not { Count: > 0 } nestedTables) continue;
+
+                foreach (var nested in nestedTables)
+                    changed |= ApplyTable(nested.Table, contextualOf);
             }
 
             return changed;

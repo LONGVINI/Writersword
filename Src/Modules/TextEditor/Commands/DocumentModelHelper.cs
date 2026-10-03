@@ -41,8 +41,9 @@ namespace Writersword.Modules.TextEditor.Commands
                 {
                     foreach (var cell in table.Cells)
                     {
-                        var found = FindInBlocks(cell.Paragraphs.Cast<BlockModel>(), id);
-                        if (found != null) return found;
+                        // Вместе с абзацами таблиц, вложенных в ячейку.
+                        foreach (var cellParagraph in cell.ParagraphsDeep())
+                            if (cellParagraph.Id == id) return cellParagraph;
                     }
                 }
             }

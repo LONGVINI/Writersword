@@ -24,6 +24,7 @@ namespace Writersword.Modules.TextEditor.Commands
                 WrapMode = i.WrapMode;
                 Alignment = i.Alignment;
                 Anchor = i.Anchor;
+                AnchorPosition = i.AnchorPosition?.Clone();
                 ZOrder = i.ZOrder;
                 AltText = i.AltText;
                 LockAspectRatio = i.LockAspectRatio;
@@ -54,6 +55,7 @@ namespace Writersword.Modules.TextEditor.Commands
             public WrapMode WrapMode { get; }
             public Models.Styles.TextAlignment Alignment { get; }
             public FloatAnchor Anchor { get; }
+            public TableFloatPosition? AnchorPosition { get; }
             public int ZOrder { get; }
             public string? AltText { get; }
             public bool LockAspectRatio { get; }
@@ -85,6 +87,7 @@ namespace Writersword.Modules.TextEditor.Commands
                 i.WrapMode = WrapMode;
                 i.Alignment = Alignment;
                 i.Anchor = Anchor;
+                i.AnchorPosition = AnchorPosition?.Clone();
                 i.ZOrder = ZOrder;
                 i.AltText = AltText;
                 i.LockAspectRatio = LockAspectRatio;

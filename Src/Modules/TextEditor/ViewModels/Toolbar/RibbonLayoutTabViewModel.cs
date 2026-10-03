@@ -1,4 +1,5 @@
-﻿using System.Windows.Input;
+﻿using System;
+using System.Windows.Input;
 using ReactiveUI;
 using Writersword.Modules.TextEditor.Contracts;
 
@@ -36,6 +37,104 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             get => _currentColumnCount;
             set => this.RaiseAndSetIfChanged(ref _currentColumnCount, value);
+        }
+
+        // ── Поля страницы и переплёт ──────────────────────────────────────
+        // Поля меню «Поля»: значения в миллиметрах, как их хранит документ. Правка поля
+        // сразу ложится на документ; при открытии меню поля перечитываются.
+
+        private decimal _marginTopMm;
+        private decimal _marginBottomMm;
+        private decimal _marginLeftMm;
+        private decimal _marginRightMm;
+        private decimal _gutterMm;
+
+        // Подстановка значений из документа не должна тут же писать их обратно.
+        private bool _syncingMargins;
+
+        /// <summary>Верхнее поле страницы, мм.</summary>
+        public decimal MarginTopMm
+        {
+            get => _marginTopMm;
+            set => SetMargin(ref _marginTopMm, value, nameof(MarginTopMm));
+        }
+
+        /// <summary>Нижнее поле страницы, мм.</summary>
+        public decimal MarginBottomMm
+        {
+            get => _marginBottomMm;
+            set => SetMargin(ref _marginBottomMm, value, nameof(MarginBottomMm));
+        }
+
+        /// <summary>Левое поле страницы без переплёта, мм.</summary>
+        public decimal MarginLeftMm
+        {
+            get => _marginLeftMm;
+            set => SetMargin(ref _marginLeftMm, value, nameof(MarginLeftMm));
+        }
+
+        /// <summary>Правое поле страницы, мм.</summary>
+        public decimal MarginRightMm
+        {
+            get => _marginRightMm;
+            set => SetMargin(ref _marginRightMm, value, nameof(MarginRightMm));
+        }
+
+        /// <summary>
+        /// Переплёт, мм: полоса под сшивку у корешка, прибавляется к полю. При разных
+        /// колонтитулах чётных и нечётных страниц сторона переплёта чередуется.
+        /// </summary>
+        public decimal GutterMm
+        {
+            get => _gutterMm;
+            set
+            {
+                decimal clamped = Math.Clamp(value, 0m, 100m);
+                bool changed = _gutterMm != clamped;
+                _gutterMm = clamped;
+                this.RaisePropertyChanged(nameof(GutterMm));
+
+                if (changed && !_syncingMargins)
+                    _target.SetPageGutter((double)_gutterMm);
+            }
+        }
+
+        // Уведомление идёт всегда: значение могло быть обрезано по диапазону, и поле
+        // ввода иначе осталось бы с недопустимым числом.
+        private void SetMargin(ref decimal field, decimal value, string name)
+        {
+            decimal clamped = Math.Clamp(value, 0m, 200m);
+            bool changed = field != clamped;
+            field = clamped;
+            this.RaisePropertyChanged(name);
+
+            if (changed && !_syncingMargins)
+                _target.SetPageMargins(
+                    (double)_marginTopMm, (double)_marginBottomMm,
+                    (double)_marginLeftMm, (double)_marginRightMm);
+        }
+
+        /// <summary>
+        /// Перечитывает поля и переплёт из документа. Зовётся при открытии меню «Поля»:
+        /// поля могли поменять линейкой или импортом, пока меню было закрыто.
+        /// </summary>
+        public void RefreshPageMargins()
+        {
+            var (top, bottom, left, right, gutter) = _target.GetPageMargins();
+
+            _syncingMargins = true;
+            try
+            {
+                MarginTopMm = Math.Round((decimal)top, 2);
+                MarginBottomMm = Math.Round((decimal)bottom, 2);
+                MarginLeftMm = Math.Round((decimal)left, 2);
+                MarginRightMm = Math.Round((decimal)right, 2);
+                GutterMm = Math.Round((decimal)gutter, 2);
+            }
+            finally
+            {
+                _syncingMargins = false;
+            }
         }
 
         public ICommand SetSizeA4Command { get; }
