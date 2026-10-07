@@ -221,7 +221,9 @@ namespace Writersword.Modules.TextEditor.Document
             // Картинка встроена в строку текста: рисует её рендер текста, а запись нужна
             // для выделения, маркеров размера, поворота и обрезки — они работают по
             // единому списку картинок.
-            bool InLine = false);
+            bool InLine = false,
+            // Картинка в строке стоит в ячейке таблицы: её рисует ячейка со своим клипом.
+            bool InCell = false);
 
         // ── Плавающий объект глазами раскладки ────────────────────────────
         // Картинка и фигура попадают в обтекание одинаково, поэтому зоны, вытеснение
@@ -1284,7 +1286,9 @@ namespace Writersword.Modules.TextEditor.Document
                 _breakOnHyphen,
                 (float)DocVm.Document.DefaultTabStopPt,
                 DocVm.Document.JustifyWithShrinking,
-                ShowHiddenTextInLayout);
+                ShowHiddenTextInLayout,
+                DocVm.Document.RevisionView,
+                Services.RevisionService.Authors(DocVm.Document));
 
         /// <summary>
         /// Скрытый текст (w:vanish) виден, пока показаны непечатаемые знаки, — как в Word.
@@ -1323,6 +1327,10 @@ namespace Writersword.Modules.TextEditor.Document
         private void PushTextCommand(Writersword.Modules.TextEditor.Commands.ITextCommand cmd)
         {
             if (TextUndoStack is null) return;
+
+            // Внутри действия рецензирования шаг всему действию — его снимок
+            // (DocumentCanvas.TrackChanges): шаги обычной правки внутри него не нужны.
+            if (_trackedSnapshotDepth > 0) return;
             if (TextUndoStack.Push(cmd))
             {
                 _undoOrder.AddLast(UndoSource.Text);
@@ -1873,6 +1881,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.BlocksChangedWithoutParagraphs -= OnBlocksChangedWithoutParagraphs;
                 _docVm.ZoomAnimationRequested -= OnZoomAnimationRequested;
                 _docVm.HeadingCollapseChanged -= OnHeadingCollapseChanged;
+                _docVm.RevisionViewChanged -= OnRevisionViewChanged;
+                _docVm.ReviewCommandDelegate = null;
                 _docVm.StylesChanged -= OnStylesChanged;
                 _docVm.TocPageNumbersStale -= OnTocPageNumbersStale;
                 _docVm.BeginFontPreviewDelegate = null;
@@ -2293,6 +2303,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.BlocksChangedWithoutParagraphs -= OnBlocksChangedWithoutParagraphs;
                 _docVm.ZoomAnimationRequested -= OnZoomAnimationRequested;
                 _docVm.HeadingCollapseChanged -= OnHeadingCollapseChanged;
+                _docVm.RevisionViewChanged -= OnRevisionViewChanged;
+                _docVm.ReviewCommandDelegate = null;
                 _docVm.StylesChanged -= OnStylesChanged;
                 _docVm.TocPageNumbersStale -= OnTocPageNumbersStale;
                 _docVm.BeginFontPreviewDelegate = null;
@@ -2322,6 +2334,9 @@ namespace Writersword.Modules.TextEditor.Document
 
             _docVm = DataContext as DocumentViewModel;
             _layoutCache.Clear();
+
+            // Экранные копии картинок прежнего документа больше не понадобятся.
+            ScreenImageCache.Clear();
             _pvmFocusHandlers.Clear();
             _cellVmCache.Clear();
             InvalidateCellLayoutCaches();
@@ -2392,6 +2407,9 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.BlocksChangedWithoutParagraphs += OnBlocksChangedWithoutParagraphs;
             DocVm.ZoomAnimationRequested += OnZoomAnimationRequested;
             DocVm.HeadingCollapseChanged += OnHeadingCollapseChanged;
+            DocVm.RevisionViewChanged -= OnRevisionViewChanged;
+            DocVm.RevisionViewChanged += OnRevisionViewChanged;
+            DocVm.ReviewCommandDelegate = ExecuteReviewCommand;
             DocVm.BeginFontPreviewDelegate = BeginFontPreviewSession;
             DocVm.PreviewFontFamilyDelegate = PreviewFontFamilySession;
             DocVm.EndFontPreviewDelegate = EndFontPreviewSession;
@@ -3717,7 +3735,7 @@ namespace Writersword.Modules.TextEditor.Document
                         // Быстрый путь для редактирования: обновляем только один параграф.
                         QuickUpdateParagraphLayout(dirtyPvm);
                     }
-                    else if (sliceCount == 0 && DocVm.HasCollapsedHeadings != true)
+                    else if (sliceCount == 0 && DocVm.HasCollapsedHeadings != true && _collapsedBlocks is null)
                     {
                         // Новый параграф (Enter): вставляем в _layouts с оценочной высотой
                         // чтобы ScrollToCaret мог найти его позицию немедленно.
@@ -4620,6 +4638,15 @@ namespace Writersword.Modules.TextEditor.Document
 
                 float boxW = rectWpt * absCos + rectHpt * absSin;
                 float boxH = rectWpt * absSin + rectHpt * absCos;
+
+                // Объект из Word обтекается по своей рамке с полями обрамления, как у
+                // Word: повёрнутый без полей занимает неповёрнутый размер.
+                if (ie.Block.WordDrawing is { } wordDrawing && wordDrawing.EffectExtentValidFor(ie.Block))
+                {
+                    var (wordBoxW, wordBoxH) = FloatingObjectBox.Of(ie.Block, ie.WidthPt, ie.HeightPt);
+                    boxW = wordBoxW + outsetPt * 2f;
+                    boxH = wordBoxH + outsetPt * 2f;
+                }
                 float cx = ie.XPt + ie.WidthPt / 2f;
                 float cy = ie.Ypt + ie.HeightPt / 2f;
 
@@ -4687,22 +4714,120 @@ namespace Writersword.Modules.TextEditor.Document
                 // Зона вне текстовой колонки по горизонтали — не влияет.
                 if (right <= 0f || left >= textWidthPt) continue;
 
+                var zoneSide = ie.Block.WrapSide switch
+                {
+                    Models.Document.WrapSide.BothSides => SKWrapSide.BothSides,
+                    Models.Document.WrapSide.LeftOnly => SKWrapSide.LeftOnly,
+                    Models.Document.WrapSide.RightOnly => SKWrapSide.RightOnly,
+                    _ => SKWrapSide.LargestOnly
+                };
+
+                // Обтекание по контуру с контуром из Word: текст подходит к самому
+                // контуру, а не к рамке объекта. Контур режется на узкие полосы, и
+                // каждая полоса — своя зона шириной в контур на этой высоте.
+                if (wm == WrapMode.Tight
+                    && ie.Block.WordDrawing is { WrapPolygon: { Count: >= 3 } wrapPolygon }
+                    && Math.Abs(ie.Block.RotationDeg % 360.0) < 0.01
+                    && ie.WidthPt > 0f && ie.HeightPt > 0f)
+                {
+                    zones ??= new List<SKWrapZone>();
+                    AddWrapPolygonZones(
+                        zones, wrapPolygon, ie, top, bottom, paraTopPt, textXPt, textWidthPt, zoneSide);
+                    continue;
+                }
+
                 left = Math.Max(left, 0f);
                 right = Math.Min(right, textWidthPt);
 
                 zones ??= new List<SKWrapZone>();
-                zones.Add(new SKWrapZone(
-                    top - paraTopPt, bottom - paraTopPt, left, right,
-                    ie.Block.WrapSide switch
-                    {
-                        Models.Document.WrapSide.BothSides => SKWrapSide.BothSides,
-                        Models.Document.WrapSide.LeftOnly => SKWrapSide.LeftOnly,
-                        Models.Document.WrapSide.RightOnly => SKWrapSide.RightOnly,
-                        _ => SKWrapSide.LargestOnly
-                    }));
+                zones.Add(new SKWrapZone(top - paraTopPt, bottom - paraTopPt, left, right, zoneSide));
             }
 
             return zones;
+        }
+
+        /// <summary>Высота полосы, на которые режется контур обтекания, пт.</summary>
+        private const float WrapPolygonBandPt = 2f;
+
+        /// <summary>
+        /// Зоны обтекания по контуру Word (wp:wrapPolygon). Контур задан в долях рамки
+        /// объекта (21600 — вся сторона); на каждой полосе высотой WrapPolygonBandPt
+        /// зона занимает ширину контура на этой высоте плюс расстояние до текста
+        /// слева и справа. Расстояния сверху и снизу у обтекания по контуру Word не
+        /// применяет — их задаёт сам контур.
+        /// </summary>
+        private static void AddWrapPolygonZones(
+            List<SKWrapZone> zones, List<WordWrapPoint> polygon, FloatEntry entry,
+            float limitTopPt, float limitBottomPt, float paraTopPt,
+            float textXPt, float textWidthPt, SKWrapSide side)
+        {
+            const float Whole = 21600f;
+
+            float objectLeftPt = entry.XPt - textXPt;
+            float padLeftPt = (float)entry.Block.WrapPadLeftPt;
+            float padRightPt = (float)entry.Block.WrapPadRightPt;
+
+            float polygonTopPt = float.MaxValue;
+            float polygonBottomPt = float.MinValue;
+            foreach (var point in polygon)
+            {
+                float y = entry.Ypt + point.Y / Whole * entry.HeightPt;
+                if (y < polygonTopPt) polygonTopPt = y;
+                if (y > polygonBottomPt) polygonBottomPt = y;
+            }
+
+            float fromPt = Math.Max(limitTopPt, polygonTopPt);
+            float toPt = Math.Min(limitBottomPt, polygonBottomPt);
+
+            for (float bandTopPt = fromPt; bandTopPt < toPt; bandTopPt += WrapPolygonBandPt)
+            {
+                float bandBottomPt = Math.Min(bandTopPt + WrapPolygonBandPt, toPt);
+
+                // Полоса в единицах контура.
+                float unitTop = (bandTopPt - entry.Ypt) / entry.HeightPt * Whole;
+                float unitBottom = (bandBottomPt - entry.Ypt) / entry.HeightPt * Whole;
+
+                float minX = float.MaxValue;
+                float maxX = float.MinValue;
+
+                for (int i = 0; i < polygon.Count; i++)
+                {
+                    var a = polygon[i];
+                    var b = polygon[(i + 1) % polygon.Count];
+
+                    float ay = a.Y, by = b.Y, ax = a.X, bx = b.X;
+
+                    // Вершина внутри полосы.
+                    if (ay >= unitTop && ay <= unitBottom)
+                    {
+                        if (ax < minX) minX = ax;
+                        if (ax > maxX) maxX = ax;
+                    }
+
+                    // Пересечение стороны с краями полосы.
+                    float lowY = Math.Min(ay, by);
+                    float highY = Math.Max(ay, by);
+                    if (highY - lowY < 0.0001f) continue;
+
+                    foreach (float edgeY in new[] { unitTop, unitBottom })
+                    {
+                        if (edgeY < lowY || edgeY > highY) continue;
+                        float x = ax + (bx - ax) * (edgeY - ay) / (by - ay);
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                    }
+                }
+
+                if (minX > maxX) continue;
+
+                float leftPt = objectLeftPt + minX / Whole * entry.WidthPt - padLeftPt;
+                float rightPt = objectLeftPt + maxX / Whole * entry.WidthPt + padRightPt;
+                if (rightPt <= 0f || leftPt >= textWidthPt) continue;
+
+                zones.Add(new SKWrapZone(
+                    bandTopPt - paraTopPt, bandBottomPt - paraTopPt,
+                    Math.Max(leftPt, 0f), Math.Min(rightPt, textWidthPt), side));
+            }
         }
 
         /// <summary>
@@ -4720,6 +4845,27 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     if (block is ImageBlock image && image.Id == id)
                         return image;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Фигура, встроенная в строку текста, по её Id. Живёт там же, где картинки
+        /// строки, — в InlineObjects раздела; run абзаца хранит только ссылку.
+        /// </summary>
+        private ShapeBlock? FindInlineShape(Guid id)
+        {
+            var document = DocVm?.Document;
+            if (document is null) return null;
+
+            foreach (var section in document.Sections)
+            {
+                foreach (var block in section.InlineObjects)
+                {
+                    if (block is ShapeBlock shape && shape.Id == id)
+                        return shape;
                 }
             }
 
@@ -4949,20 +5095,25 @@ namespace Writersword.Modules.TextEditor.Document
 
         /// <summary>
         /// Габарит встроенной картинки для вёрстки строки, в пунктах.
-        /// Повёрнутая картинка занимает в строке свой AABB — как и в потоке блоков.
+        /// Картинка из Word занимает в строке свою рамку с полями обрамления, как у
+        /// Word; иначе повёрнутая картинка занимает свой AABB — как и в потоке блоков
+        /// (<see cref="FloatingObjectBox"/>).
         /// </summary>
         private (float WidthPt, float HeightPt)? GetInlineImageSize(Guid id)
         {
             var image = FindInlineImage(id);
-            if (image is null) return null;
+            if (image is not null)
+            {
+                var (w, h) = ReadingImageSize(image);
+                return FloatingObjectBox.Of(image, w, h);
+            }
 
-            double rad = image.RotationDeg * Math.PI / 180.0;
-            float absCos = (float)Math.Abs(Math.Cos(rad));
-            float absSin = (float)Math.Abs(Math.Sin(rad));
+            // Фигура в строке — такой же объект строки, как картинка.
+            var shape = FindInlineShape(id);
+            if (shape is null) return null;
 
-            var (w, h) = ReadingImageSize(image);
-
-            return (w * absCos + h * absSin, w * absSin + h * absCos);
+            var (shapeW, shapeH) = ReadingShapeSize(shape);
+            return FloatingObjectBox.Of(shape, shapeW, shapeH);
         }
 
         /// <summary>

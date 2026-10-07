@@ -219,6 +219,21 @@
 				</Panel>
 			</TabItem>
 
+			<!-- ── Рецензирование ───────────────────────────────────────── -->
+			<!-- Запись исправлений, вид их показа, принятие и отклонение.    -->
+			<!-- Место — перед «Видом», как у Word. Контекстные вкладки идут  -->
+			<!-- после, их номера в TextEditorViewModel сдвинуты на один.      -->
+			<TabItem>
+				<TabItem.Header>
+					<TextBlock Text="Рецензирование"/>
+				</TabItem.Header>
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonReviewTab DataContext="{Binding Review}"/>
+				</Panel>
+			</TabItem>
+
 			<!-- ── Вид ──────────────────────────────────────────────────── -->
 			<!-- Чем залит лист при правке, каким светом, что делать с картинками -->
 			<!-- и что остаётся на экране в фокусе. Режимы показа и масштаб сюда  -->

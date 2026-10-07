@@ -242,6 +242,46 @@ namespace Writersword.Modules.TextEditor.Services
         }
 
         /// <summary>
+        /// Нормализует чанки всех абзацев документа — тех же, что обходит
+        /// BuildDeltaPayload, и в том же порядке, — без пересчёта хешей.
+        /// Для снимка, который снимается без сверки: документ уходит в сохранение
+        /// в том же виде, что и после сверки.
+        /// </summary>
+        public void NormalizeAllChunks(DocumentModel document)
+        {
+            foreach (var section in document.Sections)
+            {
+                NormalizeBlocks(section.Blocks);
+                NormalizeBlocks(section.FloatingObjects);
+                NormalizeBlocks(section.InlineObjects);
+            }
+        }
+
+        private void NormalizeBlocks(System.Collections.Generic.List<BlockModel> blocks)
+        {
+            foreach (var block in blocks)
+            {
+                switch (block)
+                {
+                    case ParagraphBlock paragraph:
+                        _chunkManager.NormalizeChunks(paragraph);
+                        break;
+
+                    case TableBlock table:
+                        foreach (var cell in table.Cells)
+                            foreach (var cellPara in cell.ParagraphsDeep())
+                                _chunkManager.NormalizeChunks(cellPara);
+                        break;
+
+                    case FloatingTextBlock floatingText:
+                        foreach (var para in floatingText.Paragraphs)
+                            _chunkManager.NormalizeChunks(para);
+                        break;
+                }
+            }
+        }
+
+        /// <summary>
         /// Хеш свойств с защитой от исключений. Сбой хеширования не имеет права
         /// ронять снимок документа: выше по стеку это означало бы возврат null из
         /// TakeStateSnapshot, то есть отсутствие и кеша, и сохранения. При ошибке

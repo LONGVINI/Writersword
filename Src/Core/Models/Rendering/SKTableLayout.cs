@@ -225,6 +225,37 @@ namespace Writersword.Core.Models.Rendering
         /// <see cref="ContentHeightPt"/>, абзацы под ними стоят ниже на эту высоту.
         /// </summary>
         public List<SKNestedTableLayout> NestedTables { get; } = new();
+
+        /// <summary>
+        /// Плавающие объекты ячейки (картинки и фигуры с обтеканием) с их местом в
+        /// области содержимого ячейки. Текст абзацев ячейки их уже обтекает.
+        /// </summary>
+        public List<SKCellFloatLayout> Floats { get; } = new();
+    }
+
+    /// <summary>
+    /// Плавающий объект ячейки таблицы на своём месте: прямоугольник объекта до
+    /// поворота, в pt от левого верхнего угла области содержимого ячейки.
+    /// </summary>
+    public sealed class SKCellFloatLayout
+    {
+        /// <summary>Сам объект модели: картинка или фигура.</summary>
+        public object Block { get; init; } = null!;
+
+        /// <summary>X левого края объекта от левого края области содержимого ячейки.</summary>
+        public float XPt { get; init; }
+
+        /// <summary>Y верхнего края объекта от верха области содержимого ячейки.</summary>
+        public float YPt { get; init; }
+
+        /// <summary>Ширина объекта.</summary>
+        public float WidthPt { get; init; }
+
+        /// <summary>Высота объекта.</summary>
+        public float HeightPt { get; init; }
+
+        /// <summary>Номер абзаца ячейки, к которому привязан объект.</summary>
+        public int ParagraphIndex { get; init; }
     }
 
     /// <summary>

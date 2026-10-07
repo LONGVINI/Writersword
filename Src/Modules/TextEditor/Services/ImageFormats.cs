@@ -11,7 +11,8 @@ namespace Writersword.Modules.TextEditor.Services
     /// определяется однозначно.
     ///
     /// Здесь же — приведение картинки к виду, который лист умеет показать: растры,
-    /// которые читает сам лист, идут как есть, а TIFF, EMF и WMF переводятся в PNG.
+    /// которые читает сам лист, идут как есть, TIFF, EMF и WMF переводятся в PNG, а
+    /// JPEG в CMYK — в JPEG в sRGB через цветовой профиль печати (<see cref="CmykJpeg"/>).
     /// </summary>
     internal static class ImageFormats
     {
@@ -100,6 +101,20 @@ namespace Writersword.Modules.TextEditor.Services
 
             normalizedExtension = extension;
             if (extension.Length == 0) return false;
+
+            // JPEG в CMYK лист читает сам, но цвета у него выходят кислотными:
+            // краска переводится в цвет без профиля печати. Копия в sRGB — тот же
+            // цвет, что показывает Word.
+            if (extension is ".jpg" or ".jpeg")
+            {
+                var rgb = CmykJpeg.TryConvertToRgb(data);
+                if (rgb is not null)
+                {
+                    normalizedData = rgb;
+                    normalizedExtension = ".jpg";
+                }
+                return true;
+            }
 
             if (!NeedsTranscoding(extension)) return true;
 

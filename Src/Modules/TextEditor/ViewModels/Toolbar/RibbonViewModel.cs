@@ -94,6 +94,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public RibbonReferencesTabViewModel References { get; }
 
         /// <summary>
+        /// Вкладка «Рецензирование»: запись исправлений, вид их показа, принятие и
+        /// отклонение правок. Получает свой договор: ей нужно не только отдавать
+        /// команды, но и знать состояние записи и правок документа.
+        /// </summary>
+        public RibbonReviewTabViewModel Review { get; }
+
+        /// <summary>
         /// Вкладка «Вид»: чем залит лист при правке, каким светом, что с картинками
         /// и что остаётся на экране в режиме фокуса.
         ///
@@ -117,12 +124,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         public RibbonViewModel(
             ITextEditorCommandTarget target, IEditorViewHost viewHost, ITocHost tocHost,
-            IHeaderFooterHost headerFooterHost)
+            IHeaderFooterHost headerFooterHost, IReviewHost reviewHost)
         {
             Home = new RibbonHomeTabViewModel(target);
             Insert = new RibbonInsertTabViewModel(target);
             Layout = new RibbonLayoutTabViewModel(target);
             References = new RibbonReferencesTabViewModel(target);
+            Review = new RibbonReviewTabViewModel(reviewHost);
             Appearance = new RibbonAppearanceTabViewModel(viewHost);
             Table = new RibbonTableTabViewModel(target);
             Image = new RibbonImageTabViewModel(target);

@@ -552,6 +552,13 @@ namespace Writersword.Modules.TextEditor.Models.Document
                 }
             }
 
+            // Новый текст не входит в чужую правку рецензирования: набранное рядом с
+            // удалённым текстом не становится удалённым, рядом со вставкой — не
+            // становится чужой вставкой. Запись исправлений ставит свою отметку сама
+            // (DocumentCanvas.TrackChanges).
+            if (insertProps?.HasRevision == true)
+                insertProps = insertProps.WithoutRevisions();
+
             // Вставляем новые символы.
             for (int i = 0; i < insert.Length; i++)
                 cells.Insert(from + i, new CharCell(insert[i], insertProps));
@@ -572,6 +579,10 @@ namespace Writersword.Modules.TextEditor.Models.Document
             var inherited = props;
             if (inherited is null && at > 0) inherited = cells[at - 1].Props;
             if (inherited is null && at < cells.Count) inherited = cells[at].Props;
+
+            // Объект не входит в чужую правку рецензирования (см. SpliceText).
+            if (props is null && inherited?.HasRevision == true)
+                inherited = inherited.WithoutRevisions();
 
             cells.Insert(at, new CharCell(
                 Inline.RunModel.ObjectPlaceholder, inherited, inlineImageId));
@@ -625,8 +636,15 @@ namespace Writersword.Modules.TextEditor.Models.Document
         }
 
         /// <summary>
-        /// Сравнивает два RunProperties по значению всех полей.
-        /// Null == Null и Null == default (все поля false/null).
+        /// Сравнивает два RunProperties по значению всех полей, включая отметки правок
+        /// рецензирования. Null == Null и Null == default (все поля false/null).
+        ///
+        /// Сравнение полное: соседние символы сливаются в один ран только при равенстве
+        /// всего, что в ране хранится. Прежде сравнивалась часть полей, и символы,
+        /// различавшиеся, например, скрытостью, эффектами или рамкой, сливались в один
+        /// ран с оформлением первого — оформление второго терялось. Отметки правок
+        /// теряться так не могут: вставка, слитая с соседним обычным текстом, сделала
+        /// бы вставкой и его.
         /// </summary>
         private static bool RunPropertiesEqual(
             Models.Inline.RunProperties? a,
@@ -634,27 +652,8 @@ namespace Writersword.Modules.TextEditor.Models.Document
         {
             if (ReferenceEquals(a, b)) return true;
 
-            bool aDefault = a is null || a.IsDefault();
-            bool bDefault = b is null || b.IsDefault();
-            if (aDefault && bDefault) return true;
-            if (aDefault || bDefault) return false;
-
-            return a!.FontFamily == b!.FontFamily
-                && a.FontSize == b.FontSize
-                && a.IsBold == b.IsBold
-                && a.IsItalic == b.IsItalic
-                && a.IsUnderline == b.IsUnderline
-                && a.UnderlineStyle == b.UnderlineStyle
-                && a.UnderlineColor == b.UnderlineColor
-                && a.IsStrikethrough == b.IsStrikethrough
-                && a.IsSuperscript == b.IsSuperscript
-                && a.IsSubscript == b.IsSubscript
-                && a.IsAllCaps == b.IsAllCaps
-                && a.IsSmallCaps == b.IsSmallCaps
-                && a.CharacterSpacing == b.CharacterSpacing
-                && a.TextColor == b.TextColor
-                && a.HighlightColor == b.HighlightColor
-                && a.Language == b.Language;
+            return Models.Inline.RunProperties.SameFormatting(a, b)
+                && Models.Inline.RunProperties.SameRevisions(a, b);
         }
 
         /// <summary>

@@ -99,6 +99,11 @@ namespace Writersword.Modules.TextEditor.Commands
             var targetRun = chunk.Runs[runIdx];
             var insertProps = explicitProperties ?? targetRun.Properties?.Clone();
 
+            // Унаследованное оформление — без отметок правок рецензирования: новый
+            // текст не входит в чужую правку (как и в ParagraphBlock.SpliceText).
+            if (explicitProperties is null && insertProps?.HasRevision == true)
+                insertProps = insertProps.WithoutRevisions();
+
             if (offsetInRun == 0)
             {
                 // Вставляем перед targetRun.
@@ -466,7 +471,8 @@ namespace Writersword.Modules.TextEditor.Commands
                 && Equals(a.Effects, b.Effects)
                 && a.TextColor == b.TextColor
                 && a.HighlightColor == b.HighlightColor
-                && a.Language == b.Language;
+                && a.Language == b.Language
+                && RunProperties.SameRevisions(a, b);
         }
     }
 }

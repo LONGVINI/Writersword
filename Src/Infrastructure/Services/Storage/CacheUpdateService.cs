@@ -35,6 +35,11 @@ namespace Writersword.Infrastructure.Services.Storage
         private Func<IEnumerable<IModule>>? _getActiveModules;
         private bool _disposed;
 
+        // Отметка состояния модулей (см. BuildMixedSignature) на момент последней
+        // записи кеша — по пути проекта. Доступ только из операции кеширования,
+        // которые не идут внахлёст (_semaphore).
+        private readonly Dictionary<string, string> _lastMixedSignatures = new(StringComparer.OrdinalIgnoreCase);
+
         public event EventHandler? CacheSaved;
 
         public CacheUpdateService(
@@ -220,6 +225,7 @@ namespace Writersword.Infrastructure.Services.Storage
                 // набор модулей воркмода не совпадает с набором в файле, и общее сравнение
                 // видело «изменилось» без единой правки.
                 bool untrackedEvaluated = false;
+                string? mixedSignature = null;
                 if (tab != null)
                 {
                     var modulesList = activeModules.ToList();
@@ -230,7 +236,12 @@ namespace Writersword.Infrastructure.Services.Storage
                     Writersword.Infrastructure.Diagnostics.SwitchProfiler.SetStage(
                         "тик кеша: сбор данных (без отслеживания) " + System.IO.Path.GetFileName(projectPath));
                     var (untrackedCustom, _) = _stateCollector.CollectAllData(untrackedModules);
-                    var savedForUntracked = _cacheService.ReadProjectDataWithoutLock(projectPath);
+
+                    // Из файла читаются только данные модулей без отслеживания правок:
+                    // сравниваются только они. Прежде на каждом тике читались данные
+                    // всех модулей, включая весь текст рукописи.
+                    var savedForUntracked = _cacheService.ReadProjectDataWithoutLock(
+                        projectPath, untrackedModules.Select(m => m.moduleType));
 
                     if (savedForUntracked != null)
                     {
@@ -241,6 +252,21 @@ namespace Writersword.Infrastructure.Services.Storage
                         if (!untrackedDirty && !tab.HasTrackedChanges(modulesList))
                         {
                             _logger.LogDebug("Cache tick skipped: no changes in {Path}", projectPath);
+                            return;
+                        }
+
+                        // Правки есть, но с прошлой записи кеша ничего не менялось: ни
+                        // ревизии модулей с отслеживанием, ни данные остальных. Кеш уже
+                        // содержит это состояние — переписывать его каждые несколько
+                        // секунд (у документа это весь текст) незачем. Пропавший кеш
+                        // (сохранение, смена воркмода) пишется заново.
+                        mixedSignature = BuildMixedSignature(modulesList, untrackedCustom);
+
+                        if (_lastMixedSignatures.TryGetValue(projectPath, out var previousSignature)
+                            && previousSignature == mixedSignature
+                            && _cacheService.HasCache(projectPath))
+                        {
+                            _logger.LogDebug("Cache tick skipped: nothing changed since the last cache write in {Path}", projectPath);
                             return;
                         }
                     }
@@ -287,7 +313,14 @@ namespace Writersword.Infrastructure.Services.Storage
                     return;
                 }
 
-                var savedProjectData = _cacheService.ReadProjectDataWithoutLock(projectPath);
+                // Сравнение с файлом нужно, только если правки ещё не установлены
+                // выше. Если модули без отслеживания уже сравнены, а модули с
+                // отслеживанием сообщили о правках сами, ответ известен — и чтение
+                // всех данных проекта со сравнением всего документа на каждом тике
+                // ничего бы не добавило.
+                var savedProjectData = untrackedEvaluated
+                    ? null
+                    : _cacheService.ReadProjectDataWithoutLock(projectPath);
 
                 if (savedProjectData != null)
                 {
@@ -381,6 +414,11 @@ namespace Writersword.Infrastructure.Services.Storage
 
                 await _cacheService.SaveCacheAsync(projectPath, project.Id, customData, sessionData);
 
+                // Отметка снята до сбора данных: правка, пришедшая во время записи,
+                // её сдвинет, и следующий тик запишет кеш снова.
+                if (mixedSignature != null)
+                    _lastMixedSignatures[projectPath] = mixedSignature;
+
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     CacheSaved?.Invoke(this, EventArgs.Empty);
@@ -393,6 +431,34 @@ namespace Writersword.Infrastructure.Services.Storage
             {
                 _logger.LogError(ex, "Cache update failed");
             }
+        }
+
+        /// <summary>
+        /// Отметка состояния модулей вкладки со смешанным составом: ревизии модулей,
+        /// которые сами сообщают о правках, и хеши данных остальных. Совпадение
+        /// отметок значит, что с прошлой записи кеша не менялось ничего.
+        /// </summary>
+        private static string BuildMixedSignature(
+            IEnumerable<IModule> modules, IReadOnlyDictionary<string, object?> untrackedData)
+        {
+            var hashService = App.Services.GetRequiredService<Writersword.Core.Interfaces.Services.IHashService>();
+            var signature = new System.Text.StringBuilder();
+
+            foreach (var module in modules.OrderBy(m => m.moduleType, StringComparer.Ordinal))
+            {
+                signature.Append(module.moduleType).Append('=');
+
+                if (module is IChangeTrackingModule { TracksChanges: true } tracking)
+                    signature.Append('r').Append(tracking.Revision);
+                else if (untrackedData.TryGetValue(module.moduleType, out var data))
+                    signature.Append('h').Append(data is null ? "null" : hashService.ComputeHash(data));
+                else
+                    signature.Append('-');
+
+                signature.Append(';');
+            }
+
+            return signature.ToString();
         }
 
         /// <summary>

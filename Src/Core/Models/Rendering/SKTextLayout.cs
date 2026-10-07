@@ -161,6 +161,22 @@ namespace Writersword.Core.Models.Rendering
         /// </summary>
         public bool HasBidiText { get; set; }
 
+        /// <summary>
+        /// Цвет черты исправлений на поле у строк с правками рецензирования. Null —
+        /// черта не рисуется: правок нет или вид их не показывает.
+        /// </summary>
+        public SKColor? ChangeBarColor { get; set; }
+
+        /// <summary>
+        /// Сменилось оформление всего абзаца: черта стоит у всех его строк.
+        /// </summary>
+        public bool ChangeBarAllLines { get; set; }
+
+        /// <summary>
+        /// Правка у знака абзаца (вставлен или удалён): черта стоит у последней строки.
+        /// </summary>
+        public bool ChangeBarLastLine { get; set; }
+
         /// <summary>У абзаца есть заливка: цвет, узор или то и другое.</summary>
         public bool HasShading =>
             !string.IsNullOrWhiteSpace(ShadingColor) || !string.IsNullOrWhiteSpace(ShadingPattern);

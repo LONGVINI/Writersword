@@ -68,6 +68,13 @@ namespace Writersword.Core.Models.Rendering
         /// </summary>
         public bool IsHiddenMarked { get; init; }
 
+        /// <summary>
+        /// Сегмент несёт правку рецензирования (вставку, удаление или смену
+        /// оформления) — у его строки на поле рисуется черта исправлений, даже если сам
+        /// он при этом виде спрятан.
+        /// </summary>
+        public bool IsRevision { get; init; }
+
         /// <summary>Контур: буквы полые, нарисован только их обвод (w:outline).</summary>
         public bool IsOutline { get; init; }
 

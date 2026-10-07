@@ -23,7 +23,7 @@ using TextEffectPreset = Writersword.Modules.TextEditor.Models.Inline.TextEffect
 
 namespace Writersword.Modules.TextEditor.ViewModels
 {
-    public sealed class TextEditorViewModel
+    public sealed partial class TextEditorViewModel
         : ReactiveObject, ITextEditorCommandTarget, IReadingHost, IEditorViewHost, ITocHost,
           IHeaderFooterHost, ITextEffectPresetHost, IDisposable
     {
@@ -1516,7 +1516,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _spellCheck = new SpellCheckService();
             _exportService = new ExportService();
 
-            Ribbon = new RibbonViewModel(this, this, this, this);
+            Ribbon = new RibbonViewModel(this, this, this, this, this);
 
             // «Мои эффекты» живут в общих настройках — лента видит их через редактор.
             Ribbon.Home.AttachPresetHost(this);
@@ -1696,6 +1696,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // настройки после каждой их правки.
             docVm.HeaderFooterModeChanged += OnHeaderFooterModeChanged;
             docVm.HeaderFooterChanged += OnHeaderFooterChangedForRibbon;
+
+            // Рецензирование: имя рецензента из настроек, вкладка следит за правками.
+            AttachReview(docVm);
 
             // Новый документ открывается вне режима колонтитулов. Вкладку прежнего
             // сначала покидаем, потом прячем: скрытая выбранная роняет TabControl.
@@ -2027,11 +2030,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // «Формат» и «Расположение» — две половины одного инструмента для
         // плавающего объекта: показываются и гаснут вместе, по одному флагу
         // IsImageTabVisible.
-        private const int TableTabIndex = 5;
-        private const int ImageTabIndex = 6;
-        private const int ImagePlacementTabIndex = 7;
-        private const int TocTabIndex = 8;
-        private const int HeaderFooterTabIndex = 9;
+        private const int TableTabIndex = 6;
+        private const int ImageTabIndex = 7;
+        private const int ImagePlacementTabIndex = 8;
+        private const int TocTabIndex = 9;
+        private const int HeaderFooterTabIndex = 10;
 
         // Вкладка, активная до автопереключения на «Формат» — восстанавливается
         // при снятии выделения картинки.

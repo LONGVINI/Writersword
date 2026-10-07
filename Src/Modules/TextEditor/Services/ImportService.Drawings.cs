@@ -37,11 +37,24 @@ namespace Writersword.Modules.TextEditor.Services
         private readonly List<BlockModel> _pendingFloats = new();
 
         /// <summary>
+        /// Плавающие объекты абзаца ячейки таблицы, который сейчас разбирается. Не null —
+        /// идёт разбор абзаца ячейки: плавающая картинка или фигура встаёт в ячейку
+        /// плавающим объектом с обтеканием (<see cref="CellFloat"/>), как у Word.
+        /// </summary>
+        private List<BlockModel>? _cellFloatCollector;
+
+        /// <summary>
         /// Файл картинки по части пакета: одна и та же часть, на которую документ
         /// ссылается много раз, кладётся в проект один раз. Пустое имя — часть уже
         /// разбиралась и показать её нечем.
         /// </summary>
         private readonly Dictionary<string, string> _imageFileByPart = new();
+
+        /// <summary>
+        /// Исходный файл перекодированной картинки по части пакета: TIFF, EMF или WMF в
+        /// том виде, в каком он пришёл. Его и пишет экспорт в .docx.
+        /// </summary>
+        private readonly Dictionary<string, string> _sourceImageFileByPart = new();
 
         /// <summary>Предупреждение о картинке, оставшейся в строке, выдаётся один раз.</summary>
         private bool _floatKeptInlineWarned;
@@ -83,24 +96,38 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 // Не картинка. Фигура Word (wps:wsp) переносится фигурой; диаграмма и
                 // объект OLE пропускаются молча — текста документа в них нет.
-                ImportWordShape(drawing, chunk, section, runProps, resolver, warnings);
+                ImportWordShape(drawing, chunk, section, runProps, resolver, mainPart, extractedImages, warnings);
                 return;
             }
 
-            string? fileName = ExtractImagePart(mainPart, relId!, extractedImages, warnings);
+            string? fileName = ExtractImagePart(
+                mainPart, relId!, extractedImages, warnings, out string? sourceFileName);
             if (fileName is null) return;
+
+            OpenXmlElement? container = (OpenXmlElement?)inline ?? anchor;
+
+            // Габарит рисунка. Нулевой у Word — рисунок без места на листе: его не
+            // видно, но он остаётся в документе и уходит обратно в .docx таким же.
+            // Запасной размер ставится, только когда габарит не записан вовсе.
+            var extentElement = ChildByName(container, "extent");
+            bool extentWritten = AttributeOf(extentElement, "cx") is not null
+                && AttributeOf(extentElement, "cy") is not null;
 
             var image = new ImageBlock
             {
                 ImageFileName = fileName,
-                WidthPt = extentCx > 0 ? extentCx / EmuPerPoint : 100,
-                HeightPt = extentCy > 0 ? extentCy / EmuPerPoint : 100,
+                SourceImageFileName = sourceFileName,
+                WidthPt = extentWritten ? Math.Max(0L, extentCx) / EmuPerPoint : 100,
+                HeightPt = extentWritten ? Math.Max(0L, extentCy) / EmuPerPoint : 100,
                 WrapMode = WrapMode.Inline
             };
 
             ApplyPictureGeometry(image, graphic!);
+            ApplyPictureLook(image, graphic!);
 
-            OpenXmlElement? container = (OpenXmlElement?)inline ?? anchor;
+            if (container is not null)
+                image.WordDrawing = ReadWordDrawing(container, image, graphic!);
+
             string? description = container is null ? null : AttributeOf(ChildByName(container, "docPr"), "descr");
             if (!string.IsNullOrWhiteSpace(description))
                 image.AltText = description;
@@ -111,6 +138,22 @@ namespace Writersword.Modules.TextEditor.Services
                 {
                     image.AnchorPosition = ApplyAnchorPlacement(image, anchor);
                     _pendingFloats.Add(image);
+                    return;
+                }
+
+                // Абзац ячейки таблицы: картинка остаётся плавающей внутри ячейки.
+                // «Сверху и снизу» в ячейке — своя строка ячейки: в строку абзаца.
+                if (_cellFloatCollector is not null)
+                {
+                    var cellPosition = ApplyAnchorPlacement(image, anchor);
+                    if (cellPosition is not null)
+                    {
+                        image.AnchorPosition = cellPosition;
+                        _cellFloatCollector.Add(image);
+                        return;
+                    }
+
+                    AppendInlineImage(image, chunk, section, runProps);
                     return;
                 }
 
@@ -156,7 +199,8 @@ namespace Writersword.Modules.TextEditor.Services
             }
             if (string.IsNullOrEmpty(relId)) return;
 
-            string? fileName = ExtractImagePart(mainPart, relId!, extractedImages, warnings);
+            string? fileName = ExtractImagePart(
+                mainPart, relId!, extractedImages, warnings, out string? sourceFileName);
             if (fileName is null) return;
 
             // Размер — в стиле фигуры, внутри которой лежит картинка.
@@ -174,6 +218,7 @@ namespace Writersword.Modules.TextEditor.Services
             var image = new ImageBlock
             {
                 ImageFileName = fileName,
+                SourceImageFileName = sourceFileName,
                 WidthPt = widthPt > 0 ? widthPt : 100,
                 HeightPt = heightPt > 0 ? heightPt : 100,
                 WrapMode = WrapMode.Inline
@@ -209,14 +254,23 @@ namespace Writersword.Modules.TextEditor.Services
         /// Кладёт файл картинки в набор импорта и возвращает его имя. Формат берётся по
         /// сигнатуре файла, а не по типу из пакета: пересохранённый Word кладёт PNG с
         /// расширением .bin и типом image/unknown. TIFF, EMF и WMF переводятся в PNG —
-        /// сам лист их не читает. Null — показать картинку нечем.
+        /// сам лист их не читает. Null — картинки в пакете нет или формат не опознан.
+        ///
+        /// Исходный файл перекодированной картинки тоже кладётся в набор импорта и
+        /// возвращается в sourceFileName: в .docx уходит именно он — тот же вектор и тот
+        /// же формат, что был у Word. Если перекодировать картинку на этой системе нечем,
+        /// в документ встаёт сам исходник: лист его не покажет, но и из документа он не
+        /// пропадёт и уйдёт обратно в .docx.
         /// </summary>
         private string? ExtractImagePart(
             MainDocumentPart mainPart,
             string relId,
             Dictionary<string, byte[]> extractedImages,
-            List<string> warnings)
+            List<string> warnings,
+            out string? sourceFileName)
         {
+            sourceFileName = null;
+
             ImagePart? imagePart = null;
             foreach (var pair in mainPart.Parts)
             {
@@ -228,7 +282,10 @@ namespace Writersword.Modules.TextEditor.Services
 
             string partKey = imagePart.Uri.ToString();
             if (_imageFileByPart.TryGetValue(partKey, out var known))
+            {
+                _sourceImageFileByPart.TryGetValue(partKey, out sourceFileName);
                 return known.Length == 0 ? null : known;
+            }
 
             byte[] data;
             using (var stream = imagePart.GetStream(FileMode.Open, FileAccess.Read))
@@ -251,16 +308,42 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (!ImageFormats.TryNormalize(data, declaredExtension, out var normalizedData, out var extension))
             {
-                warnings.Add(extension.Length == 0
-                    ? "Изображение неизвестного формата пропущено."
-                    : $"Изображение формата {extension.TrimStart('.').ToUpperInvariant()} пропущено: перевести его в PNG на этой системе нечем.");
-                _imageFileByPart[partKey] = string.Empty;
-                return null;
+                if (extension.Length == 0)
+                {
+                    warnings.Add("Изображение неизвестного формата пропущено.");
+                    _imageFileByPart[partKey] = string.Empty;
+                    return null;
+                }
+
+                warnings.Add($"Изображение формата {extension.TrimStart('.').ToUpperInvariant()} не показано: перевести его в PNG на этой системе нечем. В документе оно сохранено и уйдёт в .docx без изменений.");
+
+                string keptName = $"img_{Guid.NewGuid():N}{extension}";
+                extractedImages[keptName] = data;
+                _imageFileByPart[partKey] = keptName;
+                return keptName;
             }
 
             string fileName = $"img_{Guid.NewGuid():N}{extension}";
             extractedImages[fileName] = normalizedData;
             _imageFileByPart[partKey] = fileName;
+
+            // Перекодированная картинка: исходник лежит рядом под тем же именем со
+            // своим расширением и уходит в .docx вместо копии в PNG.
+            if (!ReferenceEquals(normalizedData, data))
+            {
+                string originalExtension = ImageFormats.SniffExtension(data);
+                if (originalExtension.Length == 0) originalExtension = declaredExtension;
+                if (originalExtension.Length > 0)
+                {
+                    if (!originalExtension.StartsWith(".", StringComparison.Ordinal))
+                        originalExtension = "." + originalExtension;
+
+                    sourceFileName = Path.GetFileNameWithoutExtension(fileName) + "_src" + originalExtension;
+                    extractedImages[sourceFileName] = data;
+                    _sourceImageFileByPart[partKey] = sourceFileName;
+                }
+            }
+
             return fileName;
         }
 
@@ -328,9 +411,16 @@ namespace Writersword.Modules.TextEditor.Services
         /// Переносит на объект обтекание и порядок наложения плавающего объекта Word и
         /// возвращает его положение относительно опоры. Null — объект встаёт в поток
         /// отдельной полосой («сверху и снизу»), и опора ему не нужна.
+        ///
+        /// Всё, что раскладка не различает, но Word хранит — «сквозное» обтекание,
+        /// контур обтекания, закрепление якоря, запрет наложения, порядок наложения как
+        /// он записан, точное имя опоры, — кладётся в <see cref="WordDrawingInfo"/> и
+        /// уходит обратно в .docx без изменений.
         /// </summary>
         private static TableFloatPosition? ApplyAnchorPlacement(IFloatingObject image, OpenXmlElement anchor)
         {
+            var word = image.WordDrawing ??= new WordDrawingInfo();
+
             OpenXmlElement? wrap = null;
             foreach (var child in anchor.ChildElements)
             {
@@ -343,8 +433,35 @@ namespace Writersword.Modules.TextEditor.Services
             var vertical = ChildByName(anchor, "positionV");
             string wrapKind = wrap?.LocalName ?? "wrapNone";
 
+            // Флаги якоря. Значения по умолчанию — те, что Word пишет сам.
+            word.LayoutInCell = AttributeOf(anchor, "layoutInCell") is not { } inCell || IsTrueValue(inCell);
+            word.AllowOverlap = AttributeOf(anchor, "allowOverlap") is not { } overlap || IsTrueValue(overlap);
+            word.Locked = IsTrueValue(AttributeOf(anchor, "locked"));
+            word.HorizontalRelativeFrom = AttributeOf(horizontal, "relativeFrom");
+            word.VerticalRelativeFrom = AttributeOf(vertical, "relativeFrom");
+
+            // Расстояние до текста: у Word оно задано самой картинке.
+            image.WrapPadTopPt = EmuAttributePt(anchor, "distT");
+            image.WrapPadBottomPt = EmuAttributePt(anchor, "distB");
+            image.WrapPadLeftPt = EmuAttributePt(anchor, "distL");
+            image.WrapPadRightPt = EmuAttributePt(anchor, "distR");
+
+            // Порядок наложения: больше — выше. Запись Word сохраняется как есть, чтобы
+            // вернуть её в .docx, пока порядок объекта в редакторе не меняли.
+            if (long.TryParse(AttributeOf(anchor, "relativeHeight"),
+                    NumberStyles.Integer, CultureInfo.InvariantCulture, out long relativeHeight))
+            {
+                image.ZOrder = (int)Math.Clamp(relativeHeight, 0L, int.MaxValue);
+                word.RelativeHeight = relativeHeight;
+                word.RelativeHeightForZOrder = image.ZOrder;
+            }
+
+            var position = ReadAnchorPosition(horizontal, vertical);
+
             // «Сверху и снизу»: текст по бокам не идёт вовсе. Это картинка в потоке на
             // собственной полосе — она встаёт над своим абзацем и сдвигает его вниз.
+            // Положение Word сохраняется для обратного переноса: в .docx объект уходит
+            // тем же якорем, а не картинкой в строке.
             if (wrapKind == "wrapTopAndBottom")
             {
                 image.WrapMode = WrapMode.Inline;
@@ -354,6 +471,8 @@ namespace Writersword.Modules.TextEditor.Services
                     "right" or "outside" => TextAlignment.Right,
                     _ => TextAlignment.Left
                 };
+                word.WrapTopAndBottom = true;
+                word.TopAndBottomPosition = position;
                 return null;
             }
 
@@ -366,6 +485,12 @@ namespace Writersword.Modules.TextEditor.Services
                 _ => behindText ? WrapMode.Behind : WrapMode.InFront
             };
 
+            word.WrapThrough = wrapKind == "wrapThrough";
+
+            // Флаг «за текстом» бывает и у обтекаемого объекта: он задаёт только слой
+            // рисования. Раскладке он не нужен, а в .docx уходит обратно.
+            word.BehindDoc = behindText;
+
             image.WrapSide = AttributeOf(wrap, "wrapText") switch
             {
                 "bothSides" => WrapSide.BothSides,
@@ -374,24 +499,76 @@ namespace Writersword.Modules.TextEditor.Services
                 _ => WrapSide.LargestOnly
             };
 
-            // Расстояние до текста: у Word оно задано самой картинке.
-            image.WrapPadTopPt = EmuAttributePt(anchor, "distT");
-            image.WrapPadBottomPt = EmuAttributePt(anchor, "distB");
-            image.WrapPadLeftPt = EmuAttributePt(anchor, "distL");
-            image.WrapPadRightPt = EmuAttributePt(anchor, "distR");
+            // Контур обтекания: точки в долях габарита (21600 — вся сторона).
+            var polygon = ChildByName(wrap, "wrapPolygon");
+            if (polygon is not null)
+            {
+                word.WrapPolygonEdited = IsTrueValue(AttributeOf(polygon, "edited"));
+                var points = new List<WordWrapPoint>();
+                foreach (var point in polygon.ChildElements)
+                {
+                    if (point.LocalName is not ("start" or "lineTo")) continue;
+                    long.TryParse(AttributeOf(point, "x"), NumberStyles.Integer, CultureInfo.InvariantCulture, out long x);
+                    long.TryParse(AttributeOf(point, "y"), NumberStyles.Integer, CultureInfo.InvariantCulture, out long y);
+                    points.Add(new WordWrapPoint { X = x, Y = y });
+                }
 
-            // Порядок наложения: больше — выше.
-            if (long.TryParse(AttributeOf(anchor, "relativeHeight"),
-                    NumberStyles.Integer, CultureInfo.InvariantCulture, out long relativeHeight))
-                image.ZOrder = (int)Math.Clamp(relativeHeight, 0L, int.MaxValue);
+                if (points.Count > 0 && !IsFrameWrapPolygon(points))
+                    word.WrapPolygon = points;
+            }
 
-            var position = new TableFloatPosition();
+            // У «по контуру» и «сквозного» расстояние слева и справа Word берёт из
+            // самого элемента обтекания, если оно там записано.
+            if (wrap is not null)
+            {
+                if (AttributeOf(wrap, "distL") is not null) image.WrapPadLeftPt = EmuAttributePt(wrap, "distL");
+                if (AttributeOf(wrap, "distR") is not null) image.WrapPadRightPt = EmuAttributePt(wrap, "distR");
+                if (AttributeOf(wrap, "distT") is not null) image.WrapPadTopPt = EmuAttributePt(wrap, "distT");
+                if (AttributeOf(wrap, "distB") is not null) image.WrapPadBottomPt = EmuAttributePt(wrap, "distB");
+            }
 
-            // По горизонтали: от листа или от полосы набора. Колонка, поле и знак —
-            // одна и та же полоса: колонок в разделе нет.
-            position.HorizontalAnchor = AttributeOf(horizontal, "relativeFrom") == "page"
-                ? TableFloatAnchor.Page
-                : TableFloatAnchor.Text;
+            return position;
+        }
+
+        /// <summary>
+        /// Контур обтекания, совпадающий с рамкой объекта: такой Word пишет сам, и
+        /// хранить его отдельно незачем — экспорт построит ровно его же.
+        /// </summary>
+        private static bool IsFrameWrapPolygon(List<WordWrapPoint> points)
+        {
+            if (points.Count != 5) return false;
+
+            long[,] frame = { { 0, 0 }, { 0, 21600 }, { 21600, 21600 }, { 21600, 0 }, { 0, 0 } };
+            for (int i = 0; i < 5; i++)
+            {
+                if (points[i].X != frame[i, 0] || points[i].Y != frame[i, 1]) return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Положение объекта относительно опоры (wp:positionH и wp:positionV).
+        ///
+        /// По горизонтали: лист, полоса набора (колонка, поле, знак — одна и та же
+        /// полоса: колонок в разделе нет) или одно из боковых полей листа. По
+        /// вертикали: лист, поля, верхнее или нижнее поле листа, или свой абзац —
+        /// строка абзаца у якоря та же, первая.
+        /// </summary>
+        private static TableFloatPosition ReadAnchorPosition(OpenXmlElement? horizontal, OpenXmlElement? vertical)
+        {
+            var position = new TableFloatPosition
+            {
+                HorizontalAnchor = AttributeOf(horizontal, "relativeFrom") switch
+                {
+                    "page" => TableFloatAnchor.Page,
+                    "leftMargin" => TableFloatAnchor.LeftMargin,
+                    "rightMargin" => TableFloatAnchor.RightMargin,
+                    "insideMargin" => TableFloatAnchor.InsideMargin,
+                    "outsideMargin" => TableFloatAnchor.OutsideMargin,
+                    _ => TableFloatAnchor.Text
+                }
+            };
 
             switch (ChildByName(horizontal, "align")?.InnerText.Trim())
             {
@@ -412,13 +589,14 @@ namespace Writersword.Modules.TextEditor.Services
                     break;
             }
 
-            // По вертикали: от листа, от полей или от своего абзаца (строка абзаца —
-            // тот же отсчёт, от его верха).
             position.VerticalAnchor = AttributeOf(vertical, "relativeFrom") switch
             {
                 "page" => TableFloatAnchor.Page,
-                "margin" or "topMargin" or "bottomMargin" or "insideMargin" or "outsideMargin"
-                    => TableFloatAnchor.Margin,
+                "margin" => TableFloatAnchor.Margin,
+                "topMargin" => TableFloatAnchor.TopMargin,
+                "bottomMargin" => TableFloatAnchor.BottomMargin,
+                "insideMargin" => TableFloatAnchor.InsideMargin,
+                "outsideMargin" => TableFloatAnchor.OutsideMargin,
                 _ => TableFloatAnchor.Text
             };
 
@@ -439,6 +617,182 @@ namespace Writersword.Modules.TextEditor.Services
             }
 
             return position;
+        }
+
+        /// <summary>
+        /// Свойства рисунка Word, общие для рисунка в строке и плавающего: поля
+        /// обрамления, имя, заголовок и скрытость, запрет менять пропорции, размер
+        /// самой картинки, когда он отличается от габарита рисунка.
+        /// </summary>
+        private static WordDrawingInfo ReadWordDrawing(
+            OpenXmlElement container, IFloatingObject obj, OpenXmlElement? graphic)
+        {
+            // Контур картинки мог уже лечь сюда из её свойств (ApplyPictureLook).
+            var word = obj.WordDrawing ?? new WordDrawingInfo();
+            word.EffectForWidthPt = obj.WidthPt;
+            word.EffectForHeightPt = obj.HeightPt;
+            word.EffectForRotationDeg = obj.RotationDeg;
+
+            var effect = ChildByName(container, "effectExtent");
+            if (effect is not null)
+            {
+                word.HasEffectExtent = true;
+                word.EffectLeftPt = EmuAttributePtSigned(effect, "l");
+                word.EffectTopPt = EmuAttributePtSigned(effect, "t");
+                word.EffectRightPt = EmuAttributePtSigned(effect, "r");
+                word.EffectBottomPt = EmuAttributePtSigned(effect, "b");
+            }
+
+            var docPr = ChildByName(container, "docPr");
+            if (docPr is not null)
+            {
+                word.Name = AttributeOf(docPr, "name");
+                word.Title = AttributeOf(docPr, "title");
+                word.Hidden = IsTrueValue(AttributeOf(docPr, "hidden"));
+            }
+
+            // Запрет менять пропорции (a:graphicFrameLocks noChangeAspect).
+            var frameProperties = ChildByName(container, "cNvGraphicFramePr");
+            var locks = ChildByName(frameProperties, "graphicFrameLocks");
+            obj.LockAspectRatio = locks is not null && IsTrueValue(AttributeOf(locks, "noChangeAspect"));
+
+            // Размер самой картинки, когда он отличается от габарита рисунка.
+            if (graphic is not null)
+            {
+                foreach (var element in graphic.Descendants())
+                {
+                    if (element.LocalName != "xfrm") continue;
+
+                    var extents = ChildByName(element, "ext");
+                    if (extents is not null)
+                    {
+                        double pictureW = EmuAttributePt(extents, "cx");
+                        double pictureH = EmuAttributePt(extents, "cy");
+                        if (Math.Abs(pictureW - obj.WidthPt) > 0.01 || Math.Abs(pictureH - obj.HeightPt) > 0.01)
+                        {
+                            word.PictureWidthPt = pictureW;
+                            word.PictureHeightPt = pictureH;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            return word;
+        }
+
+        /// <summary>
+        /// Оформление картинки из её свойств (pic:spPr) и заливки (a:blip): контур, по
+        /// которому она обрезана (a:prstGeom), рамка (a:ln) и непрозрачность
+        /// (a:alphaModFix). Контур, который модель различает грубее, сохраняется в
+        /// <see cref="WordDrawingInfo.PresetGeometryXml"/> и уходит обратно без потерь.
+        /// </summary>
+        private static void ApplyPictureLook(ImageBlock image, OpenXmlElement graphic)
+        {
+            OpenXmlElement? pictureProps = null;
+            OpenXmlElement? blip = null;
+            foreach (var element in graphic.Descendants())
+            {
+                if (pictureProps is null && element.LocalName == "spPr" && element.Parent?.LocalName == "pic")
+                    pictureProps = element;
+                else if (blip is null && element.LocalName == "blip")
+                    blip = element;
+
+                if (pictureProps is not null && blip is not null) break;
+            }
+
+            // Непрозрачность: доля в стотысячных.
+            var alpha = ChildByName(blip, "alphaModFix");
+            if (alpha is not null
+                && double.TryParse(AttributeOf(alpha, "amt"), NumberStyles.Integer, CultureInfo.InvariantCulture, out double amount))
+            {
+                image.Opacity = Math.Clamp(amount / 100000.0, 0.0, 1.0);
+            }
+
+            if (pictureProps is null) return;
+
+            var preset = ChildByName(pictureProps, "prstGeom");
+            string? presetName = AttributeOf(preset, "prst");
+            switch (presetName)
+            {
+                case null:
+                case "rect":
+                    break;
+
+                case "ellipse":
+                    image.ShapeType = ShapeType.Ellipse;
+                    break;
+
+                case "roundRect":
+                    image.ShapeType = ShapeType.Rectangle;
+                    image.CornerRadiusPt = Math.Min(image.WidthPt, image.HeightPt) * RoundRectAdjust(preset);
+                    break;
+
+                case "wedgeRectCallout":
+                case "wedgeRoundRectCallout":
+                case "wedgeEllipseCallout":
+                case "cloudCallout":
+                    image.ShapeType = ShapeType.Callout;
+                    break;
+
+                default:
+                    // Заготовка Word, которой у редактора нет: картинка остаётся
+                    // прямоугольной на листе, а контур уходит в .docx как был.
+                    break;
+            }
+
+            if (preset is not null && presetName is not null and not "rect")
+            {
+                var word = image.WordDrawing ??= new WordDrawingInfo();
+                word.PresetGeometryXml = preset.OuterXml;
+                word.PresetGeometryShapeType = image.ShapeType;
+                word.PresetGeometryCornerPt = image.CornerRadiusPt;
+            }
+
+            var line = ChildByName(pictureProps, "ln");
+            if (line is null || ChildByName(line, "noFill") is not null) return;
+
+            string? color = ExplicitColor(ChildByName(line, "solidFill"));
+            if (color is null) return;
+
+            image.BorderColor = color;
+            double thicknessPt = EmuAttributePt(line, "w");
+            image.BorderThicknessPt = thicknessPt > 0 ? thicknessPt : 0.75;
+            image.BorderDashStyle = AttributeOf(ChildByName(line, "prstDash"), "val") switch
+            {
+                "dash" or "sysDash" or "lgDash" => ShapeDashStyle.Dash,
+                "dot" or "sysDot" => ShapeDashStyle.Dot,
+                "dashDot" or "lgDashDot" or "sysDashDot" => ShapeDashStyle.DashDot,
+                _ => ShapeDashStyle.Solid
+            };
+            image.BorderAlign = AttributeOf(line, "algn") == "in"
+                ? ImageBorderAlign.Inside
+                : ImageBorderAlign.Center;
+        }
+
+        /// <summary>
+        /// Скругление roundRect в долях меньшей стороны: значение adj из a:avLst
+        /// (в стотысячных, по умолчанию 16667 — шестая часть).
+        /// </summary>
+        private static double RoundRectAdjust(OpenXmlElement? preset)
+        {
+            var list = ChildByName(preset, "avLst");
+            if (list is not null)
+            {
+                foreach (var guide in list.ChildElements)
+                {
+                    if (guide.LocalName != "gd" || AttributeOf(guide, "name") != "adj") continue;
+
+                    string formula = AttributeOf(guide, "fmla") ?? string.Empty;
+                    if (formula.StartsWith("val ", StringComparison.Ordinal)
+                        && double.TryParse(formula.Substring(4), NumberStyles.Integer, CultureInfo.InvariantCulture, out double adj))
+                    {
+                        return Math.Clamp(adj / 100000.0, 0.0, 0.5);
+                    }
+                }
+            }
+
+            return 16667.0 / 100000.0;
         }
 
         /// <summary>
@@ -478,7 +832,7 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (drawing is not null)
             {
-                ImportWordShape(drawing, chunk, section, runProps, resolver, warnings);
+                ImportWordShape(drawing, chunk, section, runProps, resolver, mainPart, extractedImages, warnings);
                 return;
             }
 
@@ -497,11 +851,11 @@ namespace Writersword.Modules.TextEditor.Services
         /// Фигура Word (wps:wsp) — прямоугольник, эллипс, выноска, надпись. Переносится
         /// фигурой Writersword с заливкой, обводкой и текстом внутри.
         ///
-        /// Фигура в строке (wp:inline) встаёт отдельной полосой над своим абзацем: в
-        /// строку текста фигуры в Writersword не ставятся. Плавающая (wp:anchor) несёт
-        /// обтекание и положение относительно опоры, как плавающая картинка. В ячейке
-        /// таблицы и колонтитуле потока блоков нет — там в строку переносится текст
-        /// фигуры, чтобы он не потерялся.
+        /// Фигура в строке (wp:inline) встаёт в строку текста своего абзаца — среди
+        /// букв, на базовой линии, как у Word; так и в ячейке таблицы, и в колонтитуле.
+        /// Плавающая (wp:anchor) несёт обтекание и положение относительно опоры, как
+        /// плавающая картинка. В ячейке таблицы и колонтитуле потока блоков нет — там у
+        /// плавающей фигуры в строку переносится её текст, чтобы он не потерялся.
         /// </summary>
         private void ImportWordShape(
             OpenXmlElement drawing,
@@ -509,6 +863,8 @@ namespace Writersword.Modules.TextEditor.Services
             SectionModel section,
             RunProperties runProps,
             DocxFormatResolver resolver,
+            MainDocumentPart mainPart,
+            Dictionary<string, byte[]> extractedImages,
             List<string> warnings)
         {
             var container = ChildByName(drawing, "inline") ?? ChildByName(drawing, "anchor");
@@ -540,11 +896,51 @@ namespace Writersword.Modules.TextEditor.Services
 
             ApplyShapeGeometry(shape, shapeProps);
             ApplyShapeFillAndLine(shape, shapeProps);
+            ApplyShapeFillImage(shape, shapeProps, mainPart, extractedImages, warnings);
             ApplyShapeText(shape, shapeElement, resolver);
+            shape.WordDrawing = ReadWordDrawing(container, shape, null);
 
             string? description = AttributeOf(ChildByName(container, "docPr"), "descr");
             if (!string.IsNullOrWhiteSpace(description))
                 shape.AltText = description;
+
+            // Фигура в строке — объект строки, как картинка в строке: она живёт в
+            // InlineObjects раздела, а run абзаца хранит только ссылку на неё.
+            if (container.LocalName == "inline")
+            {
+                shape.WrapMode = WrapMode.Inline;
+                section.InlineObjects.Add(shape);
+                chunk.Runs.Add(new RunModel
+                {
+                    Text = RunModel.ObjectPlaceholder.ToString(),
+                    Properties = runProps,
+                    InlineImageId = shape.Id
+                });
+                return;
+            }
+
+            // Абзац ячейки таблицы: плавающая фигура остаётся плавающей внутри ячейки.
+            if (_cellFloatCollector is not null)
+            {
+                var cellPosition = ApplyAnchorPlacement(shape, container);
+                if (cellPosition is not null)
+                {
+                    shape.AnchorPosition = cellPosition;
+                    _cellFloatCollector.Add(shape);
+                    return;
+                }
+
+                // «Сверху и снизу» в ячейке — фигура в строке абзаца.
+                shape.WrapMode = WrapMode.Inline;
+                section.InlineObjects.Add(shape);
+                chunk.Runs.Add(new RunModel
+                {
+                    Text = RunModel.ObjectPlaceholder.ToString(),
+                    Properties = runProps,
+                    InlineImageId = shape.Id
+                });
+                return;
+            }
 
             if (!_floatingAllowed)
             {
@@ -592,14 +988,27 @@ namespace Writersword.Modules.TextEditor.Services
                     break;
 
                 case "roundRect":
-                    // Скругление по умолчанию у Word — шестая часть меньшей стороны.
+                    // Скругление — доля меньшей стороны из a:avLst; по умолчанию у Word
+                    // это шестая часть.
                     shape.ShapeType = ShapeType.Rectangle;
-                    shape.CornerRadiusPt = Math.Min(shape.WidthPt, shape.HeightPt) / 6.0;
+                    shape.CornerRadiusPt = Math.Min(shape.WidthPt, shape.HeightPt)
+                        * RoundRectAdjust(ChildByName(shapeProps, "prstGeom"));
                     break;
 
                 default:
                     shape.ShapeType = ShapeType.Rectangle;
                     break;
+            }
+
+            // Контур Word сохраняется как записан: заготовок у Word много больше, чем
+            // видов фигуры у редактора, и в .docx фигура уходит со своим контуром.
+            var presetElement = ChildByName(shapeProps, "prstGeom");
+            if (presetElement is not null && preset is not null and not "rect")
+            {
+                var word = shape.WordDrawing ??= new WordDrawingInfo();
+                word.PresetGeometryXml = presetElement.OuterXml;
+                word.PresetGeometryShapeType = shape.ShapeType;
+                word.PresetGeometryCornerPt = shape.CornerRadiusPt;
             }
 
             var transform = ChildByName(shapeProps, "xfrm");
@@ -624,7 +1033,16 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         private static void ApplyShapeFillAndLine(ShapeBlock shape, OpenXmlElement? shapeProps)
         {
-            shape.FillColor = ExplicitColor(ChildByName(shapeProps, "solidFill"));
+            var solidFill = ChildByName(shapeProps, "solidFill");
+            shape.FillColor = ExplicitColor(solidFill);
+
+            // Прозрачность заливки (a:alpha в стотысячных) — непрозрачность фигуры.
+            var fillAlpha = ChildByName(ChildByName(solidFill, "srgbClr"), "alpha");
+            if (fillAlpha is not null
+                && double.TryParse(AttributeOf(fillAlpha, "val"), NumberStyles.Integer, CultureInfo.InvariantCulture, out double alphaValue))
+            {
+                shape.Opacity = Math.Clamp(alphaValue / 100000.0, 0.0, 1.0);
+            }
 
             var line = ChildByName(shapeProps, "ln");
             if (line is null)
@@ -641,6 +1059,9 @@ namespace Writersword.Modules.TextEditor.Services
             double thicknessPt = EmuAttributePt(line, "w");
             shape.StrokeThicknessPt = thicknessPt > 0 ? thicknessPt : 0.75;
 
+            if (AttributeOf(line, "algn") == "in")
+                shape.StrokeAlign = ImageBorderAlign.Inside;
+
             shape.DashStyle = AttributeOf(ChildByName(line, "prstDash"), "val") switch
             {
                 "dash" or "sysDash" or "lgDash" => ShapeDashStyle.Dash,
@@ -648,6 +1069,50 @@ namespace Writersword.Modules.TextEditor.Services
                 "dashDot" or "lgDashDot" or "sysDashDot" => ShapeDashStyle.DashDot,
                 _ => ShapeDashStyle.Solid
             };
+        }
+
+        /// <summary>
+        /// Картинка-заливка фигуры (a:blipFill в её свойствах): файл, обрезка и
+        /// непрозрачность. Растянутая на всю фигуру — как у Word по умолчанию.
+        /// </summary>
+        private void ApplyShapeFillImage(
+            ShapeBlock shape, OpenXmlElement? shapeProps,
+            MainDocumentPart mainPart, Dictionary<string, byte[]> extractedImages, List<string> warnings)
+        {
+            var blipFill = ChildByName(shapeProps, "blipFill");
+            var blip = ChildByName(blipFill, "blip");
+            if (blip is null) return;
+
+            string? relId = null;
+            foreach (var attribute in blip.GetAttributes())
+            {
+                if (attribute.LocalName != "embed" || attribute.NamespaceUri != RelationshipsNamespace) continue;
+                relId = attribute.Value;
+                break;
+            }
+            if (string.IsNullOrEmpty(relId)) return;
+
+            string? fileName = ExtractImagePart(mainPart, relId!, extractedImages, warnings, out _);
+            if (fileName is null) return;
+
+            shape.FillImageFileName = fileName;
+            shape.FillImageStretch = true;
+
+            var sourceRect = ChildByName(blipFill, "srcRect");
+            if (sourceRect is not null)
+            {
+                shape.CropLeftFrac = CropFraction(AttributeOf(sourceRect, "l"));
+                shape.CropTopFrac = CropFraction(AttributeOf(sourceRect, "t"));
+                shape.CropRightFrac = CropFraction(AttributeOf(sourceRect, "r"));
+                shape.CropBottomFrac = CropFraction(AttributeOf(sourceRect, "b"));
+            }
+
+            var alpha = ChildByName(blip, "alphaModFix");
+            if (alpha is not null
+                && double.TryParse(AttributeOf(alpha, "amt"), NumberStyles.Integer, CultureInfo.InvariantCulture, out double amount))
+            {
+                shape.Opacity = Math.Clamp(amount / 100000.0, 0.0, 1.0);
+            }
         }
 
         /// <summary>Цвет из a:solidFill, заданный явно, в виде «#RRGGBB». Иначе — null.</summary>
@@ -789,6 +1254,15 @@ namespace Writersword.Modules.TextEditor.Services
             return double.TryParse(AttributeOf(element, localName),
                     NumberStyles.Integer, CultureInfo.InvariantCulture, out double emu)
                 ? Math.Max(0.0, emu / EmuPerPoint)
+                : 0.0;
+        }
+
+        /// <summary>Длина в EMU из атрибута, в пунктах, со знаком: поля обрамления бывают отрицательными.</summary>
+        private static double EmuAttributePtSigned(OpenXmlElement element, string localName)
+        {
+            return double.TryParse(AttributeOf(element, localName),
+                    NumberStyles.Integer, CultureInfo.InvariantCulture, out double emu)
+                ? emu / EmuPerPoint
                 : 0.0;
         }
 

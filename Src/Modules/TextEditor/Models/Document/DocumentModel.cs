@@ -121,6 +121,25 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// </summary>
         public bool JustifyWithShrinking { get; set; }
 
+        // --- Рецензирование ---
+
+        /// <summary>
+        /// Запись исправлений включена (w:trackRevisions у Word): набор, удаление и
+        /// смена оформления не меняют текст сразу, а ложатся правками, которые потом
+        /// принимают или отклоняют. Свойство документа, как у Word: документ,
+        /// сохранённый с включённой записью, и открывается с ней.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool TrackRevisions { get; set; }
+
+        /// <summary>
+        /// Как показаны исправления на листе. Состояние окна, а не документа: в файл
+        /// не пишется, и смена вида не делает документ изменённым. Живёт на документе,
+        /// чтобы лист, печать и PDF показывали правки одинаково.
+        /// </summary>
+        [JsonIgnore]
+        public Inline.RevisionView RevisionView { get; set; } = Inline.RevisionView.AllMarkup;
+
         // --- Стили ---
 
         /// <summary>

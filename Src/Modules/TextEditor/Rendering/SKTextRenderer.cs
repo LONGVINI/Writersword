@@ -109,6 +109,15 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public Func<Guid, (float WidthPt, float HeightPt)?>? InlineImageSize { get; set; }
 
+        /// <summary>Цвет перемещённого текста при «Всех исправлениях» — зелёный, как у Word.</summary>
+        private static readonly SKColor MovedTextColor = new(0x00, 0x80, 0x00);
+
+        /// <summary>Черта исправлений при «Всех исправлениях» — тёмно-серая, как у Word.</summary>
+        private static readonly SKColor ChangeBarAllMarkupColor = new(0x40, 0x40, 0x40);
+
+        /// <summary>Черта исправлений при простой разметке — красная, как у Word.</summary>
+        private static readonly SKColor ChangeBarSimpleMarkupColor = new(0xD0, 0x00, 0x00);
+
         public SKTextLayout BuildLayout(
             ParagraphBlock para,
             float availableWidthPt,
@@ -118,6 +127,9 @@ namespace Writersword.Modules.TextEditor.Rendering
             bool wrapPreferPushDown = false,
             WrapPageContext? wrapPages = null)
         {
+            // В исходном документе абзац, сменивший оформление, верстается с прежним.
+            para = RevisionDisplay.DisplayParagraph(para, styles.RevisionView);
+
             string? styleName = para.Properties.StyleName;
 
             // Отступы абзаца ужимаются вместе с листом чтения — тем же множителем, что
@@ -400,7 +412,45 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (IsDarkFill(para.Properties.ShadingColor))
                 ApplyAutoColorOnDark(layout);
 
+            ApplyChangeBars(para, layout, styles.RevisionView);
+
             return layout;
+        }
+
+        /// <summary>
+        /// Черта исправлений у абзаца с правками: какие строки её получают и каким
+        /// цветом. Сегменты с правкой отмечены при сборе токенов; здесь добавляются
+        /// правки самого абзаца — оформление (все строки) и знак абзаца (последняя).
+        /// </summary>
+        private static void ApplyChangeBars(ParagraphBlock para, SKTextLayout layout, Models.Inline.RevisionView view)
+        {
+            if (!RevisionDisplay.ShowsChangeBars(view)) return;
+
+            layout.ChangeBarAllLines = para.Properties.FormatChange is not null;
+            layout.ChangeBarLastLine = para.Properties.MarkInserted is not null
+                || para.Properties.MarkDeleted is not null;
+
+            bool any = layout.ChangeBarAllLines || layout.ChangeBarLastLine;
+            if (!any)
+            {
+                foreach (var line in layout.Lines)
+                {
+                    foreach (var seg in line.Segments)
+                    {
+                        if (!seg.IsRevision) continue;
+                        any = true;
+                        break;
+                    }
+
+                    if (any) break;
+                }
+            }
+
+            if (!any) return;
+
+            layout.ChangeBarColor = view == Models.Inline.RevisionView.SimpleMarkup
+                ? ChangeBarSimpleMarkupColor
+                : ChangeBarAllMarkupColor;
         }
 
         /// <summary>
@@ -592,8 +642,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                     }
 
                     // Привязка вложенных таблиц к абзацам освежается до вёрстки: абзац,
-                    // перед которым стояла таблица, могли удалить.
+                    // перед которым стояла таблица, могли удалить. То же — у плавающих
+                    // объектов ячейки.
                     cell.AnchorNestedTables();
+                    cell.AnchorFloats();
 
                     // Верстаем параграфы ячейки с isCell = true — подавляем дефолтный SpaceAfter.
                     // Таблица, вложенная в ячейку, встаёт перед своим абзацем и занимает
@@ -610,7 +662,28 @@ namespace Writersword.Modules.TextEditor.Rendering
                         // оригинала не трогается. Ширина та же — contentWidthPt.
                         var paraSrc = (cellFontPreview != null
                             && cellFontPreview.TryGetValue(para, out var pv)) ? pv : para;
-                        var paraLayout = BuildLayout(paraSrc, layoutWidthPt, styles, isCell: true);
+
+                        // Плавающие объекты этого абзаца встают от его верха; текст
+                        // абзаца и всех следующих обтекает уже поставленные объекты.
+                        if (!measure.IsRotated)
+                            PlaceCellFloats(measure, cell, pi, cellContentY, contentWidthPt);
+
+                        SKTextLayout paraLayout;
+                        if (!measure.IsRotated && measure.Floats.Count > 0)
+                        {
+                            // Зоны считаются от верха первой строки абзаца, а он ниже
+                            // верха абзаца на интервал перед ним.
+                            var probe = BuildLayout(paraSrc, layoutWidthPt, styles, isCell: true);
+                            var cellZones = CellWrapZones(
+                                measure, cellContentY + probe.SpaceBeforePt, contentWidthPt);
+                            paraLayout = cellZones is null
+                                ? probe
+                                : BuildLayout(paraSrc, layoutWidthPt, styles, isCell: true, wrapZones: cellZones);
+                        }
+                        else
+                        {
+                            paraLayout = BuildLayout(paraSrc, layoutWidthPt, styles, isCell: true);
+                        }
 
                         // Текст цвета «авто» на тёмной заливке ячейки Word пишет белым.
                         if (IsDarkFill(cell.BackgroundColor))
@@ -631,6 +704,18 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // Таблицы, стоящие после последнего абзаца.
                     cellContentY = LayoutNestedTables(
                         measure, cell, cell.Paragraphs.Count, cellContentY, contentWidthPt, styles, cellFontPreview);
+
+                    // Обтекаемый объект ячейки целиком внутри неё: строка таблицы
+                    // растёт до его низа, как у Word.
+                    foreach (var placed in measure.Floats)
+                    {
+                        if (placed.Block is not IFloatingObject { WrapMode: WrapMode.Square or WrapMode.Tight } wrapping)
+                            continue;
+
+                        var (boxW, boxH) = FloatingObjectBox.Of(wrapping, placed.WidthPt, placed.HeightPt);
+                        float bottomPt = placed.YPt + placed.HeightPt / 2f + boxH / 2f;
+                        if (bottomPt > cellContentY) cellContentY = bottomPt;
+                    }
 
                     measure.ContentHeightPt = cellContentY;
                     if (measure.IsRotated)
@@ -758,6 +843,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                 foreach (var nestedLayout in measure.NestedTables)
                     cellLayout.NestedTables.Add(nestedLayout);
 
+                foreach (var floatLayout in measure.Floats)
+                    cellLayout.Floats.Add(floatLayout);
+
                 tableLayout.Rows[measure.Row].Cells.Add(cellLayout);
             }
 
@@ -807,6 +895,116 @@ namespace Writersword.Modules.TextEditor.Rendering
         }
 
         /// <summary>
+        /// Ставит плавающие объекты ячейки, привязанные к абзацу paragraphIndex, на их
+        /// место в области содержимого ячейки. Опора — сама ячейка: по горизонтали её
+        /// область содержимого (у объекта с привязкой к ячейке Word отсчитывает от неё
+        /// и колонку, и поле, и лист), по вертикали — верх абзаца или верх ячейки.
+        /// </summary>
+        private void PlaceCellFloats(
+            CellMeasure measure, TableCell cell, int paragraphIndex, float paragraphTopPt, float contentWidthPt)
+        {
+            if (cell.Floats is not { Count: > 0 } floats) return;
+
+            float scale = ReadingContentScale;
+
+            foreach (var cellFloat in floats)
+            {
+                if (cell.FloatParagraphIndex(cellFloat) != paragraphIndex) continue;
+                if (cellFloat.Object is not IFloatingObject floating) continue;
+
+                float widthPt = (float)floating.WidthPt * scale;
+                float heightPt = (float)floating.HeightPt * scale;
+                if (widthPt <= 0f || heightPt <= 0f) continue;
+
+                TableFloatPosition? position = cellFloat.Object switch
+                {
+                    ImageBlock image => image.AnchorPosition,
+                    ShapeBlock shape => shape.AnchorPosition,
+                    _ => null
+                };
+
+                float xPt = (float)floating.OffsetXPt * scale;
+                float yPt = paragraphTopPt + (float)floating.OffsetYPt * scale;
+
+                if (position is not null)
+                {
+                    var cellPosition = position.Clone();
+                    if (cellPosition.HorizontalAnchor != TableFloatAnchor.Text)
+                        cellPosition.HorizontalAnchor = TableFloatAnchor.Text;
+                    if (cellPosition.VerticalAnchor != TableFloatAnchor.Text)
+                        cellPosition.VerticalAnchor = TableFloatAnchor.Margin;
+                    cellPosition.XPt *= scale;
+                    cellPosition.YPt *= scale;
+
+                    // Область содержимого ячейки играет роль и полосы набора, и листа:
+                    // её высота ещё не известна, поэтому «по центру» и «снизу» по
+                    // вертикали отсчитываются от её верха.
+                    var (originX, originY) = cellPosition.ResolveOrigin(
+                        widthPt, heightPt,
+                        0f, contentWidthPt, 0f, contentWidthPt,
+                        0f, heightPt, 0f, 0f,
+                        paragraphTopPt);
+
+                    xPt = originX + (float)floating.OffsetXPt * scale;
+                    yPt = originY + (float)floating.OffsetYPt * scale;
+                }
+
+                measure.Floats.Add(new SKCellFloatLayout
+                {
+                    Block = cellFloat.Object,
+                    XPt = xPt,
+                    YPt = yPt,
+                    WidthPt = widthPt,
+                    HeightPt = heightPt,
+                    ParagraphIndex = paragraphIndex
+                });
+            }
+        }
+
+        /// <summary>
+        /// Зоны обтекания для абзаца ячейки, первая строка которого стоит на firstLineTopPt
+        /// (от верха области содержимого): габариты поставленных обтекаемых объектов
+        /// ячейки с их расстояниями до текста. Null — обтекать нечего.
+        /// </summary>
+        private static List<SKWrapZone>? CellWrapZones(
+            CellMeasure measure, float firstLineTopPt, float contentWidthPt)
+        {
+            List<SKWrapZone>? zones = null;
+
+            foreach (var placed in measure.Floats)
+            {
+                if (placed.Block is not IFloatingObject floating) continue;
+                if (floating.WrapMode is not (WrapMode.Square or WrapMode.Tight)) continue;
+
+                var (boxW, boxH) = FloatingObjectBox.Of(floating, placed.WidthPt, placed.HeightPt);
+                float outsetPt = (float)floating.WrapOutsetPt;
+                float cx = placed.XPt + placed.WidthPt / 2f;
+                float cy = placed.YPt + placed.HeightPt / 2f;
+
+                float top = cy - boxH / 2f - outsetPt - (float)floating.WrapPadTopPt;
+                float bottom = cy + boxH / 2f + outsetPt + (float)floating.WrapPadBottomPt;
+                float left = cx - boxW / 2f - outsetPt - (float)floating.WrapPadLeftPt;
+                float right = cx + boxW / 2f + outsetPt + (float)floating.WrapPadRightPt;
+
+                if (right <= 0f || left >= contentWidthPt) continue;
+
+                zones ??= new List<SKWrapZone>();
+                zones.Add(new SKWrapZone(
+                    top - firstLineTopPt, bottom - firstLineTopPt,
+                    Math.Max(left, 0f), Math.Min(right, contentWidthPt),
+                    floating.WrapSide switch
+                    {
+                        WrapSide.BothSides => SKWrapSide.BothSides,
+                        WrapSide.LeftOnly => SKWrapSide.LeftOnly,
+                        WrapSide.RightOnly => SKWrapSide.RightOnly,
+                        _ => SKWrapSide.LargestOnly
+                    }));
+            }
+
+            return zones;
+        }
+
+        /// <summary>
         /// Обмеры ячейки между двумя проходами вёрстки таблицы: всё, что нужно для
         /// её раскладки, кроме вертикальной позиции.
         ///
@@ -846,6 +1044,9 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             /// <summary>Текст ячейки повёрнут: строки идут вдоль её высоты.</summary>
             public bool IsRotated { get; init; }
+
+            /// <summary>Плавающие объекты ячейки на своих местах (в порядке привязки).</summary>
+            public List<SKCellFloatLayout> Floats { get; } = new();
 
             public float ContentHeightPt { get; set; }
 
@@ -1171,6 +1372,43 @@ namespace Writersword.Modules.TextEditor.Rendering
             }
 
             canvas.Restore();
+
+            // Плавающие картинки и фигуры ячейки — поверх её текста, без обрезки ячейкой.
+            RenderCellFloats(canvas, cell, contentX, contentY);
+        }
+
+        /// <summary>
+        /// Плавающие объекты ячейки таблицы на местах, которые им дала вёрстка ячейки:
+        /// картинки и фигуры тем же рендером, что и плавающие объекты листа.
+        /// </summary>
+        private static void RenderCellFloats(SKCanvas canvas, SKTableCellLayout cell, float contentX, float contentY)
+        {
+            foreach (var placed in cell.Floats)
+            {
+                var rect = new SKRect(
+                    contentX + placed.XPt, contentY + placed.YPt,
+                    contentX + placed.XPt + placed.WidthPt, contentY + placed.YPt + placed.HeightPt);
+
+                switch (placed.Block)
+                {
+                    case ShapeBlock shape:
+                    {
+                        var fill = string.IsNullOrEmpty(shape.FillImageFileName)
+                            ? null
+                            : PrintImageResolver?.Invoke(shape.FillImageFileName!);
+                        FloatingObjectRenderer.DrawShape(canvas, shape, rect, fill);
+                        break;
+                    }
+
+                    case ImageBlock image:
+                    {
+                        var bitmap = PrintImageResolver?.Invoke(image.ImageFileName);
+                        if (bitmap is not null)
+                            FloatingObjectRenderer.DrawImage(canvas, image, rect, bitmap);
+                        break;
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -1186,7 +1424,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             SKPageContent page, object block,
             WrapMode wrapMode, int zOrder,
             float offsetXPt, float offsetYPt, float widthPt, float heightPt,
-            float marginLeftPt, float marginTopPt)
+            float marginLeftPt, float marginTopPt, float gutterFollow = 1f)
         {
             if (widthPt <= 0f || heightPt <= 0f) return;
 
@@ -1200,7 +1438,8 @@ namespace Writersword.Modules.TextEditor.Rendering
                 // За текстом и в потоке — до текста, остальное поверх: порядок тот же,
                 // что в экранном проходе канваса.
                 BeforeText = wrapMode is WrapMode.Behind or WrapMode.Inline,
-                ZOrder = zOrder
+                ZOrder = zOrder,
+                GutterFollow = gutterFollow
             });
         }
 
@@ -1229,6 +1468,16 @@ namespace Writersword.Modules.TextEditor.Rendering
                 for (int bi = 0; bi < blocks.Count; bi++)
                 {
                     var block = blocks[bi];
+
+                    // Абзац, целиком спрятанный правкой при этом виде, на лист не идёт;
+                    // его номер в потоке сохраняется.
+                    if (block is ParagraphBlock revisionHidden
+                        && RevisionDisplay.IsParagraphHidden(revisionHidden, styles.RevisionView))
+                    {
+                        paraIndex++;
+                        continue;
+                    }
+
                     if (block is BreakBlock bb && bb.BreakType == BreakType.Page)
                     {
                         pageLayout.Pages.Add(currentPage);
@@ -1402,7 +1651,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                             floatImage.WrapMode, floatImage.ZOrder,
                             floatOffsetXPt, floatOffsetYPt,
                             (float)floatImage.WidthPt, (float)floatImage.HeightPt,
-                            marginLeftPt, marginTopPt);
+                            marginLeftPt, marginTopPt,
+                            floatImage.WrapMode != WrapMode.Inline && floatImage.AnchorPosition is { } imageFollowAnchor
+                                ? imageFollowAnchor.HorizontalTextFollow()
+                                : 1f);
                         paraIndex++;
                         continue;
                     }
@@ -1431,7 +1683,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                             floatShape.WrapMode, floatShape.ZOrder,
                             shapeOffsetXPt, shapeOffsetYPt,
                             (float)floatShape.WidthPt, (float)floatShape.HeightPt,
-                            marginLeftPt, marginTopPt);
+                            marginLeftPt, marginTopPt,
+                            floatShape.WrapMode != WrapMode.Inline && floatShape.AnchorPosition is { } shapeFollowAnchor
+                                ? shapeFollowAnchor.HorizontalTextFollow()
+                                : 1f);
                         paraIndex++;
                         continue;
                     }
@@ -1663,6 +1918,11 @@ namespace Writersword.Modules.TextEditor.Rendering
                     item.XPt, item.YPt,
                     item.XPt + item.WidthPt, item.YPt + item.HeightPt);
 
+                // Лист печатается со сдвигом переплёта целиком; объект, который за
+                // полосой набора уходит не полностью, возвращается на свою долю.
+                if (PrintGutterShiftPt != 0f && item.GutterFollow != 1f)
+                    rect.Offset(PrintGutterShiftPt * (item.GutterFollow - 1f), 0f);
+
                 switch (item.Block)
                 {
                     case ShapeBlock shape:
@@ -1691,6 +1951,14 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// подмены статического рендера.
         /// </summary>
         public static Func<string, SKImage?>? PrintImageResolver { get; set; }
+
+        /// <summary>
+        /// Сдвиг переплёта у печатаемого листа, в пунктах: отрицательный, когда переплёт
+        /// справа и содержимое листа стоит левее. Ставится на время печати листа тем,
+        /// кто сдвигает холст; по нему плавающие объекты от края листа и от боковых
+        /// полей возвращаются на место (SKPageFloat.GutterFollow).
+        /// </summary>
+        public static float PrintGutterShiftPt { get; set; }
 
         /// <summary>Таблицы страницы (каждая может быть слайсом строк).</summary>
         private static void RenderPageTables(SKCanvas canvas, SKPageContent page)
@@ -1860,6 +2128,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                                 contentY + paraLayout.Ypt, 0, paraLayout.Layout.Lines.Count);
                         }
                         canvas.Restore();
+
+                        // Плавающие картинки и фигуры ячейки — поверх её текста.
+                        RenderCellFloats(canvas, cell, contentX, contentY);
                     }
                 }
 
@@ -1912,6 +2183,9 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 // Табуляции-черты — под текстом строки.
                 DrawBarTabs(canvas, layout, paraX, lineY, line.Height);
+
+                // Черта исправлений — на поле слева от колонки.
+                DrawChangeBar(canvas, layout, i, paraX - ChangeBarGapPt, lineY, line.Height);
 
                 // Прямоугольник строки — для градиента текста в режиме «построчно».
                 float lineStartX = paraX + offsetX + (line.Segments.Count > 0 ? line.Segments[0].X : 0f);
@@ -2861,6 +3135,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                     {
                         var size = inlineImageSize?.Invoke(inlineId);
 
+                        // Объект, спрятанный правкой (вставленный — в исходном документе,
+                        // удалённый — без исправлений), не рисуется и места не занимает.
+                        bool objectHidden = RevisionDisplay.IsRunHidden(run.Properties, styles.RevisionView);
+
                         var objectFormat = new SKRunSegment
                         {
                             FontFamily = ResolveReadingFamily(styleFontFamily),
@@ -2868,8 +3146,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                             Color = ParseColor(run.Properties?.TextColor),
                             GlobalCharOffset = globalIndex,
                             InlineImageId = inlineId,
-                            ObjectWidthPt = size?.WidthPt ?? 0f,
-                            ObjectHeightPt = size?.HeightPt ?? 0f
+                            ObjectWidthPt = objectHidden ? 0f : size?.WidthPt ?? 0f,
+                            ObjectHeightPt = objectHidden ? 0f : size?.HeightPt ?? 0f,
+                            IsHidden = objectHidden,
+                            IsRevision = run.Properties?.HasRevision == true
                         };
 
                         tokens.Add((RunModel.ObjectPlaceholder.ToString(), objectFormat, globalIndex));
@@ -2877,7 +3157,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                         continue;
                     }
 
-                    var p = run.Properties;
+                    // Правки рецензирования: спрятан ли фрагмент видом, и каким
+                    // оформлением его показывать (в исходном документе — прежним).
+                    var revisionProps = run.Properties;
+                    bool revisionHidden = RevisionDisplay.IsRunHidden(revisionProps, styles.RevisionView);
+                    bool isRevision = revisionProps?.HasRevision == true;
+
+                    var p = RevisionDisplay.DisplayProperties(run.Properties, styles.RevisionView);
 
                     // Символьный стиль — слой между стилем абзаца и собственным
                     // форматированием фрагмента. Порядок силы такой: абзац даёт основу,
@@ -2968,8 +3254,46 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // рисуется и не занимает места, при включённых — виден с точечным
                     // подчёркиванием. Знаки в любом случае остаются в раскладке: по ним
                     // считаются позиции каретки.
-                    bool hiddenCollapsed = p?.IsHidden == true && !styles.ShowHiddenText;
-                    bool hiddenMarked = p?.IsHidden == true && styles.ShowHiddenText;
+                    //
+                    // Спрятанное правкой ведёт себя как скрытый текст при выключенных
+                    // знаках: места не занимает, каретка его перешагивает.
+                    bool hiddenCollapsed = (p?.IsHidden == true && !styles.ShowHiddenText) || revisionHidden;
+                    bool hiddenMarked = p?.IsHidden == true && styles.ShowHiddenText && !revisionHidden;
+
+                    // Линии и цвет фрагмента. При «Всех исправлениях» правка рисуется
+                    // цветом автора: вставленное подчёркнуто, удалённое зачёркнуто,
+                    // перемещённое — двойной линией, как у Word.
+                    bool segUnderline = p?.IsUnderline ?? false;
+                    int segUnderlineStyle = (int)(p?.UnderlineStyle ?? default);
+                    string? segUnderlineColor = p?.UnderlineColor;
+                    bool segStrike = p?.IsStrikethrough ?? false;
+                    bool segDoubleStrike = p?.IsDoubleStrikethrough ?? false;
+                    string? segColorCode = p?.TextColor ?? baseColor;
+
+                    if (RevisionDisplay.ShowsMarkup(styles.RevisionView)
+                        && (revisionProps?.Inserted is not null || revisionProps?.Deleted is not null))
+                    {
+                        var inserted = revisionProps!.Inserted;
+                        var deleted = revisionProps.Deleted;
+                        var author = deleted ?? inserted!;
+
+                        string markColor = (author.IsMove ? MovedTextColor : styles.AuthorColor(author.Author))
+                            .ToString();
+                        segColorCode = markColor;
+
+                        if (inserted is not null)
+                        {
+                            segUnderline = true;
+                            segUnderlineStyle = (int)(inserted.IsMove ? UnderlineStyle.Double : UnderlineStyle.Single);
+                            segUnderlineColor = markColor;
+                        }
+
+                        if (deleted is not null)
+                        {
+                            segStrike = !deleted.IsMove;
+                            segDoubleStrike = deleted.IsMove;
+                        }
+                    }
 
                     // Настраиваемые эффекты букв (контур, тень, свечение, отражение) —
                     // один раз на ран: сегменты рана делят одну запись.
@@ -2984,13 +3308,14 @@ namespace Writersword.Modules.TextEditor.Rendering
                         HorizontalScale = horizontalScale,
                         IsBold = resolvedBold,
                         IsItalic = resolvedItalic,
-                        IsUnderline = p?.IsUnderline ?? false,
-                        UnderlineStyle = (int)(p?.UnderlineStyle ?? default),
-                        UnderlineColor = p?.UnderlineColor,
-                        IsStrikethrough = p?.IsStrikethrough ?? false,
-                        IsDoubleStrikethrough = p?.IsDoubleStrikethrough ?? false,
+                        IsUnderline = segUnderline,
+                        UnderlineStyle = segUnderlineStyle,
+                        UnderlineColor = segUnderlineColor,
+                        IsStrikethrough = segStrike,
+                        IsDoubleStrikethrough = segDoubleStrike,
                         IsHidden = hiddenCollapsed,
                         IsHiddenMarked = hiddenMarked,
+                        IsRevision = isRevision,
                         IsOutline = p?.IsOutline ?? false,
                         IsShadow = p?.IsShadow ?? false,
                         IsEmboss = p?.IsEmboss ?? false,
@@ -3000,9 +3325,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                         CharBorderWidthPt = (float)(p?.CharBorderWidthPt ?? 0),
                         CharBorderStyle = (int)(p?.CharBorderStyle ?? default),
                         Effects = effects,
-                        Color = ParseColor(p?.TextColor ?? baseColor),
+                        Color = ParseColor(segColorCode),
                         HighlightColor = ParseHighlight(p?.HighlightColor),
-                        ColorCode = p?.TextColor ?? baseColor,
+                        ColorCode = segColorCode,
                         HighlightCode = p?.HighlightColor,
                         GlobalCharOffset = globalIndex
                     };
@@ -3029,13 +3354,14 @@ namespace Writersword.Modules.TextEditor.Rendering
                             HorizontalScale = horizontalScale,
                             IsBold = resolvedBold,
                             IsItalic = resolvedItalic,
-                            IsUnderline = p?.IsUnderline ?? false,
-                            UnderlineStyle = (int)(p?.UnderlineStyle ?? default),
-                            UnderlineColor = p?.UnderlineColor,
-                            IsStrikethrough = p?.IsStrikethrough ?? false,
-                            IsDoubleStrikethrough = p?.IsDoubleStrikethrough ?? false,
+                            IsUnderline = segUnderline,
+                            UnderlineStyle = segUnderlineStyle,
+                            UnderlineColor = segUnderlineColor,
+                            IsStrikethrough = segStrike,
+                            IsDoubleStrikethrough = segDoubleStrike,
                             IsHidden = hiddenCollapsed,
                             IsHiddenMarked = hiddenMarked,
+                            IsRevision = isRevision,
                             IsOutline = p?.IsOutline ?? false,
                             IsShadow = p?.IsShadow ?? false,
                             IsEmboss = p?.IsEmboss ?? false,
@@ -3045,9 +3371,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                             CharBorderWidthPt = (float)(p?.CharBorderWidthPt ?? 0),
                             CharBorderStyle = (int)(p?.CharBorderStyle ?? default),
                             Effects = effects,
-                            Color = ParseColor(p?.TextColor ?? baseColor),
+                            Color = ParseColor(segColorCode),
                             HighlightColor = ParseHighlight(p?.HighlightColor),
-                            ColorCode = p?.TextColor ?? baseColor,
+                            ColorCode = segColorCode,
                             HighlightCode = p?.HighlightColor,
                             GlobalCharOffset = globalIndex
                         }
@@ -3129,13 +3455,14 @@ namespace Writersword.Modules.TextEditor.Rendering
                                         HorizontalScale = horizontalScale,
                                         IsBold = fallbackBold,
                                         IsItalic = fallbackItalic,
-                                        IsUnderline = p?.IsUnderline ?? false,
-                                        UnderlineStyle = (int)(p?.UnderlineStyle ?? default),
-                                        UnderlineColor = p?.UnderlineColor,
-                                        IsStrikethrough = p?.IsStrikethrough ?? false,
-                                        IsDoubleStrikethrough = p?.IsDoubleStrikethrough ?? false,
+                                        IsUnderline = segUnderline,
+                                        UnderlineStyle = segUnderlineStyle,
+                                        UnderlineColor = segUnderlineColor,
+                                        IsStrikethrough = segStrike,
+                                        IsDoubleStrikethrough = segDoubleStrike,
                                         IsHidden = hiddenCollapsed,
                                         IsHiddenMarked = hiddenMarked,
+                                        IsRevision = isRevision,
                                         IsOutline = p?.IsOutline ?? false,
                                         IsShadow = p?.IsShadow ?? false,
                                         IsEmboss = p?.IsEmboss ?? false,
@@ -3145,9 +3472,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                                         CharBorderWidthPt = (float)(p?.CharBorderWidthPt ?? 0),
                                         CharBorderStyle = (int)(p?.CharBorderStyle ?? default),
                                         Effects = effects,
-                                        Color = ParseColor(p?.TextColor ?? baseColor),
+                                        Color = ParseColor(segColorCode),
                                         HighlightColor = ParseHighlight(p?.HighlightColor),
-                                        ColorCode = p?.TextColor ?? baseColor,
+                                        ColorCode = segColorCode,
                                         HighlightCode = p?.HighlightColor,
                                         GlobalCharOffset = globalIndex
                                     };
@@ -3475,7 +3802,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                         // Объект с чужого листа для этой строки не существует.
                         if (z.BottomPt <= sheetTopRelPt || z.TopPt >= sheetBottomRelPt) continue;
 
-                        if (z.BottomPt <= y + 0.5f || z.TopPt >= y + lineHPt) continue;
+                        // Допуск в полпункта — с обеих сторон строки. Объект, начинающийся
+                        // ровно под последней строкой абзаца (картинка следующего абзаца
+                        // с нулевым смещением), касается её низа, а не заходит на неё;
+                        // без допуска сверху погрешность сложения высот строк делала из
+                        // касания наложение, и последняя строка абзаца обходила объект,
+                        // которого рядом с ней нет.
+                        if (z.BottomPt <= y + 0.5f || z.TopPt >= y + lineHPt - 0.5f) continue;
 
                         // Зоны приходят в координатах колонки, полосы считаются внутри
                         // области абзаца — приводим к одной системе и обрезаем по колонке.
@@ -4528,6 +4861,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     IsDoubleStrikethrough = format.IsDoubleStrikethrough,
                     IsHidden = format.IsHidden,
                     IsHiddenMarked = format.IsHiddenMarked,
+                    IsRevision = format.IsRevision,
                     IsOutline = format.IsOutline,
                     IsShadow = format.IsShadow,
                     IsEmboss = format.IsEmboss,
@@ -4558,6 +4892,16 @@ namespace Writersword.Modules.TextEditor.Rendering
             line.LastCharIndex = globalIdx;
             currentW += charWidth;
             line.TextWidth = currentW;
+        }
+
+        /// <summary>
+        /// Несёт ли сегмент видимые знаки: не объект, не табуляция, не разрыв строки и
+        /// не одни пробелы.
+        /// </summary>
+        private static bool HasGlyphs(SKRunSegment seg)
+        {
+            if (seg.IsInlineObject || seg.IsTabJump || seg.IsLineBreak) return false;
+            return !string.IsNullOrWhiteSpace(seg.Text);
         }
 
         /// <param name="emptyLineMetrics">
@@ -4601,6 +4945,65 @@ namespace Writersword.Modules.TextEditor.Rendering
                 if (!candidate.IsHidden) { anyVisible = true; break; }
             }
 
+            // Строка с объектом у Word: своего шрифта у объекта нет, он даёт только
+            // свой габарит над базовой линией. Шрифт в высоту такой строки идёт лишь от
+            // знаков текста; пробелы между картинками и знак абзаца её не меняют.
+            // Сверено с Word: картинка 68 пт с подписью кеглем 9 в абзаце кегля 12 —
+            // строка 68 + спуск девятого кегля, а не двенадцатого; ряд картинок через
+            // пробелы и картинка одна в абзаце — строка ровно в высоту картинки.
+            // Прежде строка с картинкой была выше вордовской на спуск шрифта абзаца,
+            // и на листе с несколькими такими строками последняя уезжала на следующий.
+            //
+            // Объект ниже шрифта строки (значок в кегль текста) строку по шрифту не
+            // отменяет: строка без знаков тогда остаётся высотой в свой шрифт.
+            bool lineHasObject = false;
+            bool lineHasGlyphs = false;
+            float maxObjectHeightPt = 0f;
+            foreach (var candidate in line.Segments)
+            {
+                if (candidate.IsHidden && anyVisible) continue;
+
+                if (candidate.IsInlineObject)
+                {
+                    lineHasObject = true;
+                    if (candidate.ObjectHeightPt > maxObjectHeightPt)
+                        maxObjectHeightPt = candidate.ObjectHeightPt;
+                    continue;
+                }
+
+                if (HasGlyphs(candidate)) lineHasGlyphs = true;
+            }
+
+            // Строка из объектов и пробелов: шрифт не участвует, если объект его выше.
+            bool objectsOnlyHeight = false;
+            if (lineHasObject && !lineHasGlyphs)
+            {
+                float fontTopPt = 0f;
+                foreach (var candidate in line.Segments)
+                {
+                    if (candidate.IsHidden && anyVisible) continue;
+
+                    var candidateFont = GetOrCreateFont(
+                        GetOrCreateTypeface(candidate.FontFamily, candidate.IsBold, candidate.IsItalic),
+                        candidate.FontSizePt);
+                    candidateFont.GetFontMetrics(out var candidateMetrics);
+
+                    float candidateTop = Math.Abs(candidateMetrics.Ascent) + Math.Abs(candidateMetrics.Leading);
+                    if (candidateTop > fontTopPt) fontTopPt = candidateTop;
+                }
+
+                objectsOnlyHeight = maxObjectHeightPt >= fontTopPt;
+            }
+
+            // Даёт ли шрифт этого сегмента высоту строке.
+            bool FontCounts(SKRunSegment seg)
+            {
+                if (!lineHasObject) return true;
+                if (objectsOnlyHeight) return false;
+                if (!lineHasGlyphs) return true;
+                return !seg.IsInlineObject && HasGlyphs(seg);
+            }
+
             foreach (var seg in line.Segments)
             {
                 var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
@@ -4630,6 +5033,16 @@ namespace Writersword.Modules.TextEditor.Rendering
                 if (emAscent > maxEmAscent) maxEmAscent = emAscent;
                 if (emDescent > maxEmDescent) maxEmDescent = emDescent;
 
+                // Высоту строки по шрифту этот сегмент не задаёт (см. FontCounts):
+                // каретка и выравнивание знаков по-прежнему знают его кегль, строка — нет.
+                bool fontCounts = FontCounts(seg);
+                if (!fontCounts)
+                {
+                    ascent = 0f;
+                    descent = 0f;
+                    top = 0f;
+                }
+
                 // Картинка в строке стоит на базовой линии и поднимает высоту строки
                 // под себя — как крупный глиф. Иначе строка осталась бы высотой в
                 // шрифт, а картинка налезла бы на соседние строки.
@@ -4640,7 +5053,7 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 // Знаки ударения стоят над подъёмом шрифта (точка снизу — под спуском) и
                 // раздвигают строку, как у Word: иначе они налезали бы на соседнюю строку.
-                if (seg.EmphasisMark != 0 && !seg.IsInlineObject)
+                if (seg.EmphasisMark != 0 && !seg.IsInlineObject && fontCounts)
                 {
                     if (seg.EmphasisMark == (int)Models.Inline.EmphasisMark.UnderDot)
                         descent += seg.FontSizePt * EmphasisUnderReachEm;
@@ -4651,7 +5064,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 // Текст, поднятый или опущенный от базовой линии (индексы, w:position),
                 // раздвигает строку, как у Word: поднятый — вверх, опущенный — вниз.
                 // Иначе он налезал бы на соседние строки.
-                if (!seg.IsInlineObject && seg.BaselineShiftPt != 0f)
+                if (!seg.IsInlineObject && fontCounts && seg.BaselineShiftPt != 0f)
                 {
                     top += seg.BaselineShiftPt;
                     descent -= seg.BaselineShiftPt;
@@ -5332,6 +5745,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 IsDoubleStrikethrough = seg.IsDoubleStrikethrough,
                 IsHidden = seg.IsHidden,
                 IsHiddenMarked = seg.IsHiddenMarked,
+                IsRevision = seg.IsRevision,
                 IsOutline = seg.IsOutline,
                 IsShadow = seg.IsShadow,
                 IsEmboss = seg.IsEmboss,
@@ -5441,12 +5855,19 @@ namespace Writersword.Modules.TextEditor.Rendering
             // встаёт к началу, то есть вправо. Строка с переставленными кусками растянута
             // при вёрстке и тоже прижимается к началу: висящие пробелы её конца уходят
             // за левый край, как у Word.
+            // Строка шире своей области (картинка в строке шире полосы набора) у Word
+            // начинается от начала строки и уходит за конец, при любом выравнивании:
+            // по центру и к концу её не сдвигают назад за начало. Иначе широкая
+            // картинка в абзаце по центру вылезала за левое поле на половину лишней
+            // ширины, а у Word она стоит от левого поля и уходит за правое.
             if (layout.IsRightToLeft)
             {
                 float toStart = area - firstExtra - line.TextWidth;
+                bool overflowsRtl = toStart < 0f;
 
                 return line.WrapLeftPt + layout.Alignment switch
                 {
+                    _ when overflowsRtl => toStart,
                     RenderAlignment.Center => (area - firstExtra - line.TextWidth) / 2f,
                     RenderAlignment.Left => 0f,
                     RenderAlignment.Justify or RenderAlignment.Distribute =>
@@ -5457,8 +5878,8 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             return line.WrapLeftPt + layout.Alignment switch
             {
-                RenderAlignment.Center => firstExtra + (area - firstExtra - line.TextWidth) / 2f,
-                RenderAlignment.Right => area - line.TextWidth,
+                RenderAlignment.Center => firstExtra + Math.Max(0f, (area - firstExtra - line.TextWidth) / 2f),
+                RenderAlignment.Right => Math.Max(firstExtra, area - line.TextWidth),
                 _ => firstExtra
             };
         }
@@ -6671,6 +7092,48 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// рамки «авто». Линия ставится на целый пиксель, иначе на экране расплывается.
         /// </summary>
         /// <param name="textLeftX">Левый край текстовой области абзаца — от него отсчитаны отметки.</param>
+        /// <summary>Зазор между левым краем колонки и чертой исправлений, pt.</summary>
+        public const float ChangeBarGapPt = 8f;
+
+        /// <summary>Толщина черты исправлений, pt.</summary>
+        private const float ChangeBarWidthPt = 1f;
+
+        /// <summary>
+        /// Черта исправлений у строки с правкой рецензирования — вертикальная линия
+        /// во всю высоту строки на поле, как у Word. У строк подряд черты сливаются.
+        /// </summary>
+        private static void DrawChangeBar(
+            SKCanvas canvas, SKTextLayout layout, int lineIndex, float barX, float lineTopY, float lineHeight)
+        {
+            if (layout.ChangeBarColor is not SKColor color) return;
+            if (!LineHasRevision(layout, lineIndex)) return;
+
+            using var paint = new SKPaint
+            {
+                Color = color,
+                IsAntialias = false,
+                Style = SKPaintStyle.Fill
+            };
+            canvas.DrawRect(barX - ChangeBarWidthPt, lineTopY, ChangeBarWidthPt, lineHeight, paint);
+        }
+
+        /// <summary>
+        /// У строки есть правка: в ней сегмент с правкой (в том числе спрятанный
+        /// видом), у абзаца сменилось оформление или это последняя строка абзаца
+        /// с правкой знака абзаца.
+        /// </summary>
+        public static bool LineHasRevision(SKTextLayout layout, int lineIndex)
+        {
+            if (layout.ChangeBarAllLines) return true;
+            if (layout.ChangeBarLastLine && lineIndex == layout.Lines.Count - 1) return true;
+            if (lineIndex < 0 || lineIndex >= layout.Lines.Count) return false;
+
+            foreach (var seg in layout.Lines[lineIndex].Segments)
+                if (seg.IsRevision) return true;
+
+            return false;
+        }
+
         private static void DrawBarTabs(SKCanvas canvas, SKTextLayout layout, float textLeftX, float lineTopY, float lineHeight)
         {
             var bars = layout.BarTabPositionsPt;
@@ -7146,6 +7609,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             && a.IsDoubleStrikethrough == b.IsDoubleStrikethrough
             && a.IsHidden == b.IsHidden
             && a.IsHiddenMarked == b.IsHiddenMarked
+            && a.IsRevision == b.IsRevision
             && a.IsOutline == b.IsOutline
             && a.IsShadow == b.IsShadow
             && a.IsEmboss == b.IsEmboss
@@ -7607,7 +8071,8 @@ namespace Writersword.Modules.TextEditor.Rendering
             string? markerText = null,
             float markerHangingPt = 0f,
             SKColor markerColor = default,
-            float markerMinGapPt = 0f)
+            float markerMinGapPt = 0f,
+            float? changeBarXPt = null)
         {
             if (layout.Lines.Count == 0)
             {
@@ -7636,6 +8101,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                 paraX + layout.LeftIndentPt + layout.TextAreaWidthPt,
                 blockTop + layout.TotalHeightPt);
 
+            // Черта исправлений — на поле слева от колонки: левее отступа абзаца.
+            float barX = changeBarXPt ?? paraX - layout.LeftIndentPt - ChangeBarGapPt;
+
             for (int i = clampedFrom; i < clampedTo; i++)
             {
                 var line = layout.Lines[i];
@@ -7644,6 +8112,8 @@ namespace Writersword.Modules.TextEditor.Rendering
                 // Табуляции-черты — под текстом строки: черта во всю высоту строки, и у
                 // строк подряд она сливается в одну линию через абзац.
                 DrawBarTabs(canvas, layout, paraX, lineY, line.Height);
+
+                DrawChangeBar(canvas, layout, i, barX, lineY, line.Height);
 
                 // Единый сдвиг строки по выравниванию (центр/право + абзацный отступ первой
                 // строки по вордовской модели). Тот же расчёт у каретки/хит-теста/выделения.

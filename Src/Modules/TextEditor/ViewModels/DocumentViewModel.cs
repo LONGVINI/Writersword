@@ -2479,13 +2479,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             BeginEditDelegate?.Invoke("Format text");
 
+            // Запись исправлений: прежний шрифт запоминается (DocumentViewModel.Review).
+            var setFont = TrackRunFormatting(p => p.FontFamily = font);
+
             foreach (var (block, start, end) in targets)
             {
                 if (block is null) continue;
                 if (end > start)
-                    ApplyCharPropertyToRange(block, start, end, p => p.FontFamily = font, false);
+                    ApplyCharPropertyToRange(block, start, end, setFont, false);
                 else
-                    ApplyCharPropertyToBlock(block, 0, 0, p => p.FontFamily = font, false);
+                    ApplyCharPropertyToBlock(block, 0, 0, setFont, false);
             }
 
             CommitEditDelegate?.Invoke();
@@ -4141,7 +4144,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 var source = FindInlineImageById(sourceId);
                 if (source is null)
                 {
-                    cells.RemoveAt(i);
+                    // Объект строки может быть и фигурой Word: копия ей нужна та же.
+                    var sourceShape = FindInlineShapeById(sourceId);
+                    if (sourceShape is null)
+                    {
+                        cells.RemoveAt(i);
+                        changed = true;
+                        continue;
+                    }
+
+                    var shapeCopy = (ShapeBlock)DocumentCloner.CloneBlock(sourceShape);
+                    shapeCopy.Id = Guid.NewGuid();
+                    _document.Sections[0].InlineObjects.Add(shapeCopy);
+                    cells[i] = new ParagraphBlock.CharCell(cells[i].Ch, cells[i].Props, shapeCopy.Id);
                     changed = true;
                     continue;
                 }
@@ -4210,6 +4225,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
             return null;
         }
 
+        /// <summary>Фигура, стоящая в строке текста, по Id.</summary>
+        private ShapeBlock? FindInlineShapeById(Guid id)
+        {
+            foreach (var section in _document.Sections)
+                foreach (var block in section.InlineObjects)
+                    if (block is ShapeBlock shape && shape.Id == id)
+                        return shape;
+            return null;
+        }
+
         /// <summary>Копия картинки со всеми свойствами и новым Id. Файл переиспользуется.</summary>
         private static ImageBlock CloneImageBlock(ImageBlock src) => new()
         {
@@ -4221,6 +4246,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Opacity = src.Opacity,
             BorderColor = src.BorderColor,
             BorderThicknessPt = src.BorderThicknessPt,
+            BorderDashStyle = src.BorderDashStyle,
+            BorderAlign = src.BorderAlign,
+            ShapeType = src.ShapeType,
+            CornerRadiusPt = src.CornerRadiusPt,
             FlipHorizontal = src.FlipHorizontal,
             FlipVertical = src.FlipVertical,
             CropLeftFrac = src.CropLeftFrac,
@@ -4237,8 +4266,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             WrapPadBottomPt = src.WrapPadBottomPt,
             WrapPadLeftPt = src.WrapPadLeftPt,
             WrapPadRightPt = src.WrapPadRightPt,
+            OffsetXPt = src.OffsetXPt,
+            OffsetYPt = src.OffsetYPt,
             ZOrder = src.ZOrder,
-            AltText = src.AltText
+            AltText = src.AltText,
+            SourceImageFileName = src.SourceImageFileName,
+            WordDrawing = src.WordDrawing?.Clone()
         };
 
         // Оформление и положение только что вставленной фигуры.
@@ -6834,22 +6867,34 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 foreach (var block in section.InlineObjects
                     .Concat(section.FloatingObjects)
-                    .Concat(section.Blocks))
+                    .Concat(section.Blocks)
+                    .Concat(CellFloatObjects(section.Blocks)))
                 {
-                    if (block is not ImageBlock image) continue;
-                    if (string.IsNullOrWhiteSpace(image.ImageFileName)) continue;
-                    if (result.ContainsKey(image.ImageFileName)) continue;
+                    // Файлы объекта: сама картинка, её исходник из .docx (TIFF, EMF, WMF —
+                    // в .docx уходит он) и картинка-заливка фигуры.
+                    string?[] fileNames = block switch
+                    {
+                        ImageBlock image => new[] { image.ImageFileName, image.SourceImageFileName },
+                        ShapeBlock shape => new[] { shape.FillImageFileName },
+                        _ => Array.Empty<string?>()
+                    };
 
-                    try
+                    foreach (var fileName in fileNames)
                     {
-                        // Картинка недавнего импорта может ещё писаться в проект.
-                        var data = PendingProjectImages.Read(ctx, $"TextEditor/Images/{image.ImageFileName}");
-                        if (data is { Length: > 0 })
-                            result[image.ImageFileName] = data;
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Warning(ex, "[EXPORT] Не удалось прочитать картинку {File}", image.ImageFileName);
+                        if (string.IsNullOrWhiteSpace(fileName)) continue;
+                        if (result.ContainsKey(fileName)) continue;
+
+                        try
+                        {
+                            // Картинка недавнего импорта может ещё писаться в проект.
+                            var data = PendingProjectImages.Read(ctx, $"TextEditor/Images/{fileName}");
+                            if (data is { Length: > 0 })
+                                result[fileName] = data;
+                        }
+                        catch (Exception ex)
+                        {
+                            _log.Warning(ex, "[EXPORT] Не удалось прочитать картинку {File}", fileName);
+                        }
                     }
                 }
             }
@@ -6857,11 +6902,44 @@ namespace Writersword.Modules.TextEditor.ViewModels
             return result;
         }
 
+        /// <summary>
+        /// Плавающие объекты ячеек таблиц потока, включая вложенные таблицы: их
+        /// картинки тоже уходят в экспорт.
+        /// </summary>
+        private static IEnumerable<BlockModel> CellFloatObjects(IEnumerable<BlockModel> blocks)
+        {
+            foreach (var block in blocks)
+            {
+                if (block is not TableBlock table) continue;
+
+                foreach (var cell in table.Cells)
+                {
+                    if (cell.Floats is { Count: > 0 } floats)
+                        foreach (var cellFloat in floats)
+                            yield return cellFloat.Object;
+
+                    if (cell.NestedTables is { Count: > 0 } nested)
+                        foreach (var inner in CellFloatObjects(nested.Select(n => (BlockModel)n.Table)))
+                            yield return inner;
+                }
+            }
+        }
+
         // ── Внутренние методы ─────────────────────────────────────────────
 
         private void ApplyCharProperty(Action<RunProperties> mutate, bool clearAll = false)
         {
             if (IsReadOnly) return;
+
+            // Запись исправлений: очистка формата идёт обычной правкой оформления, чтобы
+            // прежнее оформление запомнилось (DocumentViewModel.Review).
+            if (clearAll && _document.TrackRevisions)
+            {
+                mutate = p => p.ResetFormatting();
+                clearAll = false;
+            }
+
+            mutate = TrackRunFormatting(mutate);
             _log.Information("[FONT] ApplyCharProperty: tableCell={TC} clearAll={CA} granularDelegate={GD} active={AP} selStart={SS} selEnd={SE}",
                 TableActiveCellParagraph is not null, clearAll,
                 CommitRunPropertyGranularDelegate is not null, _activeParagraph is not null,
@@ -7013,7 +7091,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 foreach (var run in chunk.Runs)
                 {
-                    if (clearAll) run.Properties = null;
+                    // Очистка формата снимает оформление, но не правки рецензирования.
+                    if (clearAll) run.Properties = RunProperties.ClearedKeepingRevisions(run.Properties);
                     else
                     {
                         run.Properties ??= new RunProperties();
@@ -7037,6 +7116,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private void ApplyParaPropertyIndexed(Action<ParagraphProperties, int, int> mutate)
         {
             if (IsReadOnly) return;
+
+            // Запись исправлений: прежнее оформление абзаца запоминается.
+            mutate = TrackParagraphFormatting(mutate);
 
             // Выделен диапазон ячеек: правка идёт по всем их абзацам. Ветка ниже
             // работает с единственным абзацем активной ячейки, и при выделении
@@ -7521,7 +7603,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 var cell = cells[i];
                 if (clearAll)
                 {
-                    cells[i] = new ParagraphBlock.CharCell(cell.Ch, null, cell.InlineImageId);
+                    // Очистка формата снимает оформление, но не правки рецензирования.
+                    cells[i] = new ParagraphBlock.CharCell(
+                        cell.Ch, RunProperties.ClearedKeepingRevisions(cell.Props), cell.InlineImageId);
                 }
                 else
                 {
@@ -7569,7 +7653,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 && Equals(a.Effects, b.Effects)
                 && a.TextColor == b.TextColor
                 && a.HighlightColor == b.HighlightColor
-                && a.Language == b.Language;
+                && a.Language == b.Language
+                && RunProperties.SameRevisions(a, b);
         }
 
         /// <summary>

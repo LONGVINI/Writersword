@@ -189,14 +189,160 @@ namespace Writersword.Modules.TextEditor.Models.Inline
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Language { get; set; }
 
-        /// <summary>Создаёт копию свойств.</summary>
-        public RunProperties Clone() => (RunProperties)MemberwiseClone();
+        /// <summary>
+        /// Фрагмент вставлен под рецензированием (w:ins, w:moveTo): кто и когда его
+        /// вставил. Null — не вставка.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public RevisionInfo? Inserted { get; set; }
+
+        /// <summary>
+        /// Фрагмент удалён под рецензированием (w:del, w:moveFrom): кто и когда его
+        /// удалил. Удалённый текст остаётся в абзаце, пока правку не примут: его
+        /// показывают зачёркнутым либо прячут — смотря по виду показа исправлений.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public RevisionInfo? Deleted { get; set; }
+
+        /// <summary>
+        /// Оформление фрагмента сменено под рецензированием (w:rPrChange): прежнее
+        /// оформление и кто его сменил.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public RunFormatChange? FormatChange { get; set; }
+
+        /// <summary>У фрагмента есть хоть одна правка рецензирования.</summary>
+        [JsonIgnore]
+        public bool HasRevision => Inserted is not null || Deleted is not null || FormatChange is not null;
+
+        /// <summary>
+        /// Создаёт копию свойств. Отметки правок копируются своими: общая запись у
+        /// копии и оригинала менялась бы сразу у обоих.
+        /// </summary>
+        public RunProperties Clone()
+        {
+            var copy = (RunProperties)MemberwiseClone();
+            copy.Inserted = Inserted?.Clone();
+            copy.Deleted = Deleted?.Clone();
+            copy.FormatChange = FormatChange?.Clone();
+            return copy;
+        }
+
+        /// <summary>Копия одного оформления — без отметок правок рецензирования.</summary>
+        public RunProperties WithoutRevisions()
+        {
+            var copy = (RunProperties)MemberwiseClone();
+            copy.Inserted = null;
+            copy.Deleted = null;
+            copy.FormatChange = null;
+            return copy;
+        }
+
+        /// <summary>
+        /// Одинаковое оформление: все поля, кроме отметок правок. Null равен
+        /// оформлению по умолчанию.
+        /// </summary>
+        public static bool SameFormatting(RunProperties? a, RunProperties? b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+
+            bool aDefault = a is null || a.IsDefaultFormatting();
+            bool bDefault = b is null || b.IsDefaultFormatting();
+            if (aDefault || bDefault) return aDefault && bDefault;
+
+            return a!.StyleName == b!.StyleName
+                && a.FontFamily == b.FontFamily
+                && a.FontSize == b.FontSize
+                && a.IsBold == b.IsBold
+                && a.IsItalic == b.IsItalic
+                && a.UnderlineStyle == b.UnderlineStyle
+                && a.UnderlineColor == b.UnderlineColor
+                && a.IsStrikethrough == b.IsStrikethrough
+                && a.IsDoubleStrikethrough == b.IsDoubleStrikethrough
+                && a.IsSuperscript == b.IsSuperscript
+                && a.IsSubscript == b.IsSubscript
+                && a.IsAllCaps == b.IsAllCaps
+                && a.IsSmallCaps == b.IsSmallCaps
+                && a.CharacterSpacing == b.CharacterSpacing
+                && a.CharacterScale == b.CharacterScale
+                && a.BaselineOffset == b.BaselineOffset
+                && a.IsHidden == b.IsHidden
+                && a.IsOutline == b.IsOutline
+                && a.IsShadow == b.IsShadow
+                && a.IsEmboss == b.IsEmboss
+                && a.IsImprint == b.IsImprint
+                && a.EmphasisMark == b.EmphasisMark
+                && a.CharBorderColor == b.CharBorderColor
+                && a.CharBorderWidthPt == b.CharBorderWidthPt
+                && a.CharBorderStyle == b.CharBorderStyle
+                && Equals(a.Effects, b.Effects)
+                && a.TextColor == b.TextColor
+                && a.HighlightColor == b.HighlightColor
+                && a.Language == b.Language;
+        }
+
+        /// <summary>
+        /// Свойства после «очистки формата»: оформление снято, отметки правок
+        /// рецензирования остаются — иначе очистка формата незаметно приняла бы или
+        /// потеряла правки. Null — отметок не было, и свойств не остаётся.
+        /// </summary>
+        public static RunProperties? ClearedKeepingRevisions(RunProperties? props)
+        {
+            if (props is null || !props.HasRevision) return null;
+
+            return new RunProperties
+            {
+                Inserted = props.Inserted?.Clone(),
+                Deleted = props.Deleted?.Clone(),
+                FormatChange = props.FormatChange?.Clone()
+            };
+        }
+
+        /// <summary>
+        /// Снимает с этих свойств всё оформление, оставляя отметки правок. Поля
+        /// обходятся все, какие есть, — новое поле оформления сбросится и без правки
+        /// этого метода.
+        /// </summary>
+        public void ResetFormatting()
+        {
+            var blank = new RunProperties();
+
+            foreach (var property in typeof(RunProperties).GetProperties(
+                         System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public))
+            {
+                if (!property.CanRead || !property.CanWrite) continue;
+                if (property.GetIndexParameters().Length > 0) continue;
+                if (property.Name is nameof(Inserted) or nameof(Deleted) or nameof(FormatChange)) continue;
+
+                property.SetValue(this, property.GetValue(blank));
+            }
+        }
+
+        /// <summary>Одинаковые отметки правок рецензирования.</summary>
+        public static bool SameRevisions(RunProperties? a, RunProperties? b)
+        {
+            return RevisionInfo.Same(a?.Inserted, b?.Inserted)
+                && RevisionInfo.Same(a?.Deleted, b?.Deleted)
+                && RunFormatChange.Same(a?.FormatChange, b?.FormatChange);
+        }
 
         /// <summary>
         /// Возвращает true если все поля имеют значения по умолчанию
         /// (нет явного форматирования).
         /// </summary>
         public bool IsDefault()
+        {
+            return IsDefaultFormatting()
+                && Inserted is null
+                && Deleted is null
+                && FormatChange is null;
+        }
+
+        /// <summary>
+        /// Все поля оформления — по умолчанию; отметки правок рецензирования не
+        /// учитываются.
+        /// </summary>
+        public bool IsDefaultFormatting()
         {
             return StyleName is null
                 && FontFamily is null

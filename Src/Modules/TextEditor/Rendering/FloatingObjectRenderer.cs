@@ -323,11 +323,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     var fillRect = FillImageRect(
                         srcRect.Width, srcRect.Height, rect, shape.FillImageStretch);
 
-                    canvas.DrawImage(
-                        fillImage!,
-                        srcRect,
-                        fillRect,
-                        SamplingFor(canvas, srcRect, fillRect), imagePaint);
+                    ScreenImageCache.DrawImage(canvas, fillImage!, srcRect, fillRect, imagePaint);
                     canvas.Restore();
                 }
 
@@ -643,7 +639,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     canvas.ClipPath(clip, SKClipOperation.Intersect, antialias: true);
                 }
 
-                canvas.DrawImage(image, srcRect, rect, SamplingFor(canvas, srcRect, rect), paint);
+                ScreenImageCache.DrawImage(canvas, image, srcRect, rect, paint);
 
                 if (clip is not null) canvas.Restore();
 

@@ -74,6 +74,7 @@ namespace Writersword.Modules.TextEditor.Document
             public double OffsetXPt { get; set; }
             public double OffsetYPt { get; set; }
             public int ZOrder { get; set; }
+            public WordDrawingInfo? WordDrawing { get; set; }
         }
 
         // ── Команды ленты: обтекание, направление таблицы, узор заливки ячеек ─────

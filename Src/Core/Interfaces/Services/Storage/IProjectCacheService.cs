@@ -30,6 +30,27 @@ namespace Writersword.Core.Interfaces.Services
         Dictionary<string, object?>? LoadCache(string projectPath, string? expectedProjectId = null);
 
         /// <summary>
+        /// Загрузить CustomData из кеша, кроме перечисленных модулей.
+        /// <para>
+        /// Для сохранения активной вкладки: данные открытых модулей берутся живыми,
+        /// и их копия в кеше всё равно была бы затёрта. Читать её незачем — у
+        /// документа это весь текст рукописи, разобранный из JSON заново на каждом
+        /// сохранении.
+        /// </para>
+        /// Реализация по умолчанию читает весь кеш и убирает лишнее.
+        /// </summary>
+        Dictionary<string, object?>? LoadCacheExcept(string projectPath, IEnumerable<string> skipModules)
+        {
+            var all = LoadCache(projectPath);
+            if (all is null) return null;
+
+            foreach (var moduleType in skipModules)
+                all.Remove(moduleType);
+
+            return all;
+        }
+
+        /// <summary>
         /// Загрузить CustomData И SessionData из кеша одним обращением к базе.
         /// Возвращает два словаря: moduleType → CustomData, moduleType → SessionData.
         /// SessionData может отсутствовать для модулей, у которых нет сессионных данных.
@@ -78,5 +99,29 @@ namespace Writersword.Core.Interfaces.Services
         /// Используется для сравнения при принятии решения о записи кеша.
         /// </summary>
         Dictionary<string, object?>? ReadProjectDataWithoutLock(string projectPath);
+
+        /// <summary>
+        /// Прочитать из файла проекта данные только перечисленных модулей.
+        /// <para>
+        /// Для сравнения модулей, которые сами о правках не сообщают: остальные
+        /// модули отвечают за себя сами, и читать их данные — у документа это весь
+        /// текст рукописи — ради такого сравнения незачем.
+        /// </para>
+        /// Реализация по умолчанию читает все данные и убирает лишнее.
+        /// </summary>
+        Dictionary<string, object?>? ReadProjectDataWithoutLock(string projectPath, IEnumerable<string> onlyModules)
+        {
+            var all = ReadProjectDataWithoutLock(projectPath);
+            if (all is null) return null;
+
+            var keep = new HashSet<string>(onlyModules, StringComparer.Ordinal);
+            foreach (var moduleType in new List<string>(all.Keys))
+            {
+                if (!keep.Contains(moduleType))
+                    all.Remove(moduleType);
+            }
+
+            return all;
+        }
     }
 }

@@ -749,8 +749,11 @@ namespace Writersword.Modules.TextEditor.Document
 
         // Источник зон обтекания для текущего прохода пагинации. null — зоны берутся
         // из картинок, накопленных по ходу прохода (только блоки, встреченные раньше
-        // абзаца). Второй проход подставляет сюда ПОЛНЫЙ список картинок первого
-        // прохода — обтекание работает и для абзацев, стоящих в документе до блока.
+        // абзаца). Каждый следующий проход подставляет сюда ПОЛНЫЙ список картинок
+        // прошлого прохода — обтекание работает и для абзацев, стоящих в документе до
+        // блока. Замороженные записи переходят из прохода в проход как есть, поэтому
+        // у них это положение первого прохода; картинка, идущая за своим абзацем
+        // (FollowsAnchorParagraph), приходит сюда с места, где абзац стоял в прошлом.
         private List<ImageEntry>? _wrapZoneImagesOverride;
 
         // То же для фигур: их смещения отсчитываются от страницы блока в потоке, а
@@ -889,8 +892,95 @@ namespace Writersword.Modules.TextEditor.Document
                     }
                 }
 
+                // Обтекаемые объекты, идущие за своим абзацем, тоже обязаны встать на
+                // место: зоны этого прохода построены по их положению в прошлом.
+                if (converged && !FlowFloatsSettled(
+                        _wrapZoneImagesOverride!, _passImages,
+                        _wrapZoneShapesOverride!, _passShapes, ConvergedTolPt))
+                {
+                    converged = false;
+                }
+
+                // Следующий проход строит зоны по местам, где объекты стоят сейчас.
+                // Замороженные записи переходят из прохода в проход без изменений,
+                // поэтому для них это всё то же положение первого прохода.
+                _wrapZoneImagesOverride = _passImages;
+                _wrapZoneShapesOverride = _passShapes;
+
                 if (converged) break;
             }
+        }
+
+        /// <summary>
+        /// Идёт ли плавающий объект из Word за своим абзацем от прохода к проходу.
+        ///
+        /// Объект, отсчитанный по вертикали от абзаца (relativeFrom="paragraph" или
+        /// "line"), обязан стоять там, где абзац оказался в итоге, а не там, где он был
+        /// в первом проходе: обтекание выше по документу раздвигает текст, и абзац
+        /// уезжает вниз вместе со всем, что к нему привязано.
+        ///
+        /// Заморозка остаётся только у обтекаемого объекта, поднятого над своим абзацем
+        /// (отрицательное смещение): он способен вытеснить текст ВЫШЕ своего абзаца, тот
+        /// сдвигает абзац, абзац — объект, и раскладка перестаёт сходиться. Объект на
+        /// уровне абзаца или ниже на текст до абзаца не влияет, и обратной связи нет.
+        /// Объект без обтекания текст не двигает вовсе.
+        /// </summary>
+        private static bool FollowsAnchorParagraph(IFloatingObject floating, TableFloatPosition? anchor)
+        {
+            if (anchor is not { VerticalAnchor: TableFloatAnchor.Text }) return false;
+            if (floating.WrapMode is not (WrapMode.Square or WrapMode.Tight)) return true;
+            return anchor.YPt >= 0.0;
+        }
+
+        /// <summary>
+        /// Стоят ли обтекаемые объекты, идущие за абзацем, там же, где в прошлом
+        /// проходе. Объект без обтекания зон не строит и на сходимость не влияет.
+        /// </summary>
+        private static bool FlowFloatsSettled(
+            List<ImageEntry> previousImages, List<ImageEntry> images,
+            List<ShapeEntry> previousShapes, List<ShapeEntry> shapes,
+            float tolerancePt)
+        {
+            foreach (var entry in images)
+            {
+                if (entry.InLine) continue;
+                if (entry.Block.WrapMode is not (WrapMode.Square or WrapMode.Tight)) continue;
+                if (!FollowsAnchorParagraph(entry.Block, entry.Block.AnchorPosition)) continue;
+
+                bool found = false;
+                foreach (var previous in previousImages)
+                {
+                    if (!ReferenceEquals(previous.Block, entry.Block)) continue;
+                    found = true;
+                    if (previous.PageIndex != entry.PageIndex
+                        || Math.Abs(previous.Ypt - entry.Ypt) > tolerancePt
+                        || Math.Abs(previous.XPt - entry.XPt) > tolerancePt)
+                        return false;
+                    break;
+                }
+                if (!found) return false;
+            }
+
+            foreach (var entry in shapes)
+            {
+                if (entry.Block.WrapMode is not (WrapMode.Square or WrapMode.Tight)) continue;
+                if (!FollowsAnchorParagraph(entry.Block, entry.Block.AnchorPosition)) continue;
+
+                bool found = false;
+                foreach (var previous in previousShapes)
+                {
+                    if (!ReferenceEquals(previous.Block, entry.Block)) continue;
+                    found = true;
+                    if (previous.PageIndex != entry.PageIndex
+                        || Math.Abs(previous.Ypt - entry.Ypt) > tolerancePt
+                        || Math.Abs(previous.XPt - entry.XPt) > tolerancePt)
+                        return false;
+                    break;
+                }
+                if (!found) return false;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -1697,12 +1787,9 @@ namespace Writersword.Modules.TextEditor.Document
                     if (shapeBlock.WrapMode == WrapMode.Inline)
                     {
                         // Фигура-блок занимает собственную строку и сдвигает текст ниже —
-                        // ровно как картинка «в тексте». Повёрнутая занимает свой AABB.
-                        double shapeRad = shapeBlock.RotationDeg * Math.PI / 180.0;
-                        float shapeCos = (float)Math.Abs(Math.Cos(shapeRad));
-                        float shapeSin = (float)Math.Abs(Math.Sin(shapeRad));
-                        float shapeBoxW = shapeWpt * shapeCos + shapeHpt * shapeSin;
-                        float shapeBoxH = shapeWpt * shapeSin + shapeHpt * shapeCos;
+                        // ровно как картинка «в тексте». Повёрнутая занимает свой AABB,
+                        // фигура из Word — свою рамку с полями обрамления (FloatingObjectBox).
+                        var (shapeBoxW, shapeBoxH) = FloatingObjectBox.Of(shapeBlock, shapeWpt, shapeHpt);
 
                         var shapeZoneSource = BuildFloatSource(
                             _wrapZoneImagesOverride ?? newImages,
@@ -1762,13 +1849,37 @@ namespace Writersword.Modules.TextEditor.Document
                     }
                     else
                     {
+                        // Фигура из Word, обтекаемая и отсчитанная от абзаца, не
+                        // помещается под ним до низа листа — абзац с ней уходит на
+                        // следующий (см. AnchoredFloatsNeedPt).
+                        if (contentYPt > pageYPt + mt + 0.5f)
+                        {
+                            float shapeFloatsNeedPt = AnchoredFloatsNeedPt(blocks, bi);
+                            if (shapeFloatsNeedPt > 0f
+                                && contentYPt + shapeFloatsNeedPt > pageBottomPt
+                                && shapeFloatsNeedPt <= pageBottomPt - (pageYPt + mt))
+                            {
+                                pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
+                                pageBottomPt = pageYPt + pageHeightPt - mb;
+                                contentYPt = pageYPt + mt;
+                                pageIdx++;
+                                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                            }
+                        }
+
                         // Плавающая. Как и у картинки, проходы сходимости обязаны видеть
                         // фигуру ТАМ ЖЕ, где по ней построены зоны: иначе обтекание
                         // вытесняет текст, поток над фигурой становится выше, фигура на
                         // следующем проходе встаёт относительно другой страницы — и
                         // раскладка перестаёт сходиться.
+                        //
+                        // Фигура из Word, отсчитанная от своего абзаца, не замораживается:
+                        // она обязана идти за абзацем, когда текст выше него раздвигается
+                        // на следующих проходах (см. FollowsAnchorParagraph).
                         ShapeEntry? frozenShape = null;
-                        if (_wrapZoneShapesOverride is { } frozenShapes)
+                        if (_wrapZoneShapesOverride is { } frozenShapes
+                            && !FollowsAnchorParagraph(shapeBlock, shapeBlock.AnchorPosition))
                         {
                             foreach (var fs in frozenShapes)
                             {
@@ -1799,6 +1910,12 @@ namespace Writersword.Modules.TextEditor.Document
                             var built = BuildShapeEntry(
                                 shapeBlock, pageXPt, pageYPt, ml, mt, newPages, pageIdx, shapeOrigin);
 
+                            // Поправка на сторону переплёта — как у картинки.
+                            float shapeGutterPt = LayoutGutterCompensationPt(
+                                shapeBlock.AnchorPosition, built.PageIndex);
+                            if (shapeGutterPt != 0f)
+                                built = built with { XPt = built.XPt + shapeGutterPt };
+
                             var (avX, avY) = AvoidReadingOverlap(
                                 built.XPt, built.Ypt, built.WidthPt, built.HeightPt,
                                 shapeBlock.RotationDeg, built.PageIndex,
@@ -1822,12 +1939,9 @@ namespace Writersword.Modules.TextEditor.Document
                             // Блок: занимает собственную строку, сдвигает текст ниже.
                             // Повёрнутая картинка занимает в потоке свой AABB — габарит
                             // повёрнутого прямоугольника, поэтому текст ниже сдвигается
-                            // на реальную высоту с учётом угла.
-                            double rotRad = imageBlock.RotationDeg * Math.PI / 180.0;
-                            float absCos = (float)Math.Abs(Math.Cos(rotRad));
-                            float absSin = (float)Math.Abs(Math.Sin(rotRad));
-                            float boxWpt = imgWpt * absCos + imgHpt * absSin;
-                            float boxHpt = imgWpt * absSin + imgHpt * absCos;
+                            // на реальную высоту с учётом угла. Картинка из Word занимает
+                            // свою рамку с полями обрамления, как у Word (FloatingObjectBox).
+                            var (boxWpt, boxHpt) = FloatingObjectBox.Of(imageBlock, imgWpt, imgHpt);
 
                             // Обтекание: картинка в потоке обходит соседнюю обтекаемую
                             // картинку так же, как текст. Полоса может сузиться (встанем
@@ -1913,6 +2027,27 @@ namespace Writersword.Modules.TextEditor.Document
                         }
                         else
                         {
+                            // Картинка из Word, обтекаемая и отсчитанная от абзаца, не
+                            // помещается под ним до низа листа. Word в этом случае уносит
+                            // абзац вместе с картинкой на следующий лист, а не оставляет
+                            // её свисать за нижнее поле; цепочка «не отрывать от
+                            // следующего» над абзацем уезжает с ним (KeepWithNextChainHeight).
+                            if (contentYPt > pageYPt + mt + 0.5f)
+                            {
+                                float imageFloatsNeedPt = AnchoredFloatsNeedPt(blocks, bi);
+                                if (imageFloatsNeedPt > 0f
+                                    && contentYPt + imageFloatsNeedPt > pageBottomPt
+                                    && imageFloatsNeedPt <= pageBottomPt - (pageYPt + mt))
+                                {
+                                    pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                                    (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
+                                    pageBottomPt = pageYPt + pageHeightPt - mb;
+                                    contentYPt = pageYPt + mt;
+                                    pageIdx++;
+                                    newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                                }
+                            }
+
                             // Плавающая: позиция по смещению относительно области страницы.
                             // Смещение приводится к листу чтения тем же множителем, что
                             // и размер: поля ужаты, лист уже, и печатное смещение уводило
@@ -1946,8 +2081,15 @@ namespace Writersword.Modules.TextEditor.Document
                             //
                             // Во время перетаскивания проход всего один, картинка
                             // пересчитывается как обычно и следует за мышью.
+                            //
+                            // Картинка из Word, отсчитанная от своего абзаца, сюда не
+                            // относится: её место задаёт абзац, а не страница. Замороженная,
+                            // она оставалась там, где абзац стоял в первом проходе, и после
+                            // того как обтекание выше раздвигало текст, оказывалась над
+                            // чужими строками (см. FollowsAnchorParagraph).
                             ImageEntry? frozen = null;
-                            if (_wrapZoneImagesOverride is { } frozenImages)
+                            if (_wrapZoneImagesOverride is { } frozenImages
+                                && !FollowsAnchorParagraph(imageBlock, imageBlock.AnchorPosition))
                             {
                                 foreach (var fe in frozenImages)
                                 {
@@ -1988,6 +2130,10 @@ namespace Writersword.Modules.TextEditor.Document
                                     fx, fy, imgWpt, imgHpt, imageBlock.RotationDeg,
                                     floatSheet.PadLeftPt, floatSheet.Ypt,
                                     floatSheet.WidthPt, floatSheet.HeightPt);
+
+                                // Лист с переплётом справа показ сдвинет влево целиком; объект
+                                // от края листа или от бокового поля встаёт с поправкой.
+                                ffX += LayoutGutterCompensationPt(imageBlock.AnchorPosition, floatPageIdx);
 
                                 // Соседей по листу объект не знает — знание приходит
                                 // отсюда: он уступает уже размещённым и отходит вниз.
@@ -2045,6 +2191,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // а переезжает вместе с текстом, который он озаглавливает. Цепочка
                 // таких абзацев переезжает целиком. Если цепочка не помещается даже на
                 // пустой лист, правило не соблюсти — абзац остаётся где был, как в Word.
+                // Исключение — цепочка, которую разорвать законно негде (см. ниже).
                 //
                 // Интервал перед абзацем на верху листа. Абзац, который на новый лист
                 // привела сама вёрстка (не поместился или ушёл за следующим), Word ставит
@@ -2063,7 +2210,27 @@ namespace Writersword.Modules.TextEditor.Document
                         float chainPt = KeepWithNextChainHeight(blocks, bi, pvmByBlock, textWidthPt)
                             - collapseAppliedPt;
                         float pageTextPt = pageBottomPt - (pageYPt + mt);
-                        breakBefore = chainPt > pageBottomPt - contentYPt && chainPt <= pageTextPt;
+                        bool chainOverflowsPage = chainPt > pageBottomPt - contentYPt;
+                        breakBefore = chainOverflowsPage && chainPt <= pageTextPt;
+
+                        // Цепочка длиннее пустого листа, но разорвать её законно негде:
+                        // все её абзацы короче четырёх строк (запрет висячих строк их не
+                        // делит) или помечены «не разрывать», а лист переполняет начало
+                        // замыкающего блока — высокая картинка, неделимая строка таблицы.
+                        // Word в этом случае всё равно уносит начало цепочки на новый
+                        // лист: заголовок и подпись к картинке выше страницы стоят у него
+                        // на отдельном листе, а сама картинка — на следующем. Решение
+                        // принимает только первый абзац цепочки: её продолжение,
+                        // оказавшись на верху листа вслед за ним, правило уже не дробит.
+                        if (chainOverflowsPage && !breakBefore
+                            && !ContinuesKeepWithNextChain(blocks, bi))
+                        {
+                            var (chainHeadPt, chainHeadRigid) = KeepWithNextChainHead(
+                                blocks, bi, pvmByBlock, textWidthPt);
+                            breakBefore = chainHeadRigid
+                                && chainHeadPt - collapseAppliedPt <= pageTextPt;
+                        }
+
                         spaceBeforeDropped = breakBefore;
                     }
 
@@ -2388,11 +2555,10 @@ namespace Writersword.Modules.TextEditor.Document
                             // обтёкшие картинку сбоку, попадали в разницу и перебрасывались
                             // под низ несуществующего габарита — на месте картинки
                             // оставалась пустота, а под ней шли разорванные строки.
-                            double throwRad = ie.Block.RotationDeg * Math.PI / 180.0;
-                            float throwCos = (float)Math.Abs(Math.Cos(throwRad));
-                            float throwSin = (float)Math.Abs(Math.Sin(throwRad));
-                            float throwBoxW = ie.WidthPt * throwCos + ie.HeightPt * throwSin;
-                            float throwBoxH = ie.WidthPt * throwSin + ie.HeightPt * throwCos;
+                            //
+                            // У объекта из Word габарит — рамка с полями обрамления, как и
+                            // у его зоны (FloatingObjectBox).
+                            var (throwBoxW, throwBoxH) = FloatingObjectBox.Of(ie.Block, ie.WidthPt, ie.HeightPt);
                             float throwCx = ie.XPt + ie.WidthPt / 2f;
                             float throwCy = ie.Ypt + ie.HeightPt / 2f;
 
@@ -2676,6 +2842,10 @@ namespace Writersword.Modules.TextEditor.Document
             _passLayouts = newLayouts;
             _passPages = newPages;
             _passTables = newTables;
+
+            // Стороны переплёта по этому проходу — для мест плавающих объектов в
+            // следующем (см. LayoutGutterCompensationPt).
+            RememberGutterSides(newLayouts, newPages.Count);
             _passImages = newImages;
             _passShapes = newShapes;
             _passInlineTransferred = newInlineTransferred;
@@ -2765,6 +2935,12 @@ namespace Writersword.Modules.TextEditor.Document
             float textWidthPt)
         {
             float total = 0f;
+
+            // Нижний край обтекаемых объектов из Word, отсчитанных от абзаца цепочки,
+            // от её начала: такой объект должен поместиться на листе вместе с абзацем,
+            // иначе Word уносит абзац на следующий (см. AnchoredFloatsNeedPt), а с ним
+            // и всю цепочку.
+            float floatsBottomPt = 0f;
             bool collapseSpacing = DocVm?.Document.CollapseParagraphSpacing == true;
             float chainPrevAfterPt = float.NaN;
 
@@ -2782,8 +2958,15 @@ namespace Writersword.Modules.TextEditor.Document
                 if (block is BreakBlock) return 0f;
 
                 // Плавающая картинка или фигура высоты в потоке не занимает: цепочка
-                // держится за абзац под ней.
-                if (block is IFloatingObject { WrapMode: not WrapMode.Inline }) continue;
+                // держится за абзац под ней. Но обтекаемая, отсчитанная от абзаца,
+                // требует под ним места на своём листе.
+                if (block is IFloatingObject { WrapMode: not WrapMode.Inline })
+                {
+                    float floatsNeedPt = AnchoredFloatsNeedPt(blocks, k);
+                    if (floatsNeedPt > 0f && total + floatsNeedPt > floatsBottomPt)
+                        floatsBottomPt = total + floatsNeedPt;
+                    continue;
+                }
 
                 if (block is TableBlock table)
                 {
@@ -2802,12 +2985,12 @@ namespace Writersword.Modules.TextEditor.Document
                             ? SplittableRowLeadHeightPt(tableLayout.Rows[0])
                             : tableLayout.Rows[0].HeightPt;
                     }
-                    return total;
+                    return Math.Max(total, floatsBottomPt);
                 }
 
-                if (block is not ParagraphBlock para) return total;
+                if (block is not ParagraphBlock para) return Math.Max(total, floatsBottomPt);
                 if (k > startIndex && para.Properties.PageBreakBefore) return 0f;
-                if (!pvmByBlock.TryGetValue(para, out var vm)) return total;
+                if (!pvmByBlock.TryGetValue(para, out var vm)) return Math.Max(total, floatsBottomPt);
 
                 var layout = GetOrBuildLayout(vm, textWidthPt);
                 bool continuesChain = k == startIndex || para.Properties.KeepWithNext;
@@ -2823,7 +3006,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (layout.Lines.Count == 0)
                 {
                     total += FallbackLinePt;
-                    if (!continuesChain || !para.Properties.KeepWithNext) return total;
+                    if (!continuesChain || !para.Properties.KeepWithNext) return Math.Max(total, floatsBottomPt);
                     total += layout.SpaceAfterPt;
                     chainPrevAfterPt = float.NaN;
                     continue;
@@ -2835,7 +3018,7 @@ namespace Writersword.Modules.TextEditor.Document
                     int lines = layout.Lines.Count <= 2 ? layout.Lines.Count : 2;
                     for (int li = 0; li < lines; li++)
                         total += layout.Lines[li].Height;
-                    return total;
+                    return Math.Max(total, floatsBottomPt);
                 }
 
                 foreach (var line in layout.Lines)
@@ -2843,10 +3026,169 @@ namespace Writersword.Modules.TextEditor.Document
                 total += layout.SpaceAfterPt;
                 chainPrevAfterPt = CollapsibleSpaceAfterPt(layout);
 
-                if (!continuesChain) return total;
+                if (!continuesChain) return Math.Max(total, floatsBottomPt);
             }
 
-            return total;
+            return Math.Max(total, floatsBottomPt);
+        }
+
+        /// <summary>
+        /// Сколько места от верха абзаца-опоры требуют обтекаемые объекты из Word,
+        /// отсчитанные от него по вертикали, — от блока index до самого абзаца (объекты
+        /// стоят в потоке прямо перед своим абзацем). Ноль — таких объектов нет или за
+        /// ними не абзац.
+        ///
+        /// Word держит такой объект на одном листе со своим абзацем: если от верха
+        /// абзаца до низа объекта не хватает места до нижнего поля, абзац вместе с
+        /// объектом уходит на следующий лист, а не оставляет картинку свисать за поле.
+        /// Объекты поверх текста и за текстом листа не делят и сюда не входят.
+        /// </summary>
+        private float AnchoredFloatsNeedPt(IReadOnlyList<BlockModel> blocks, int index)
+        {
+            float needPt = 0f;
+
+            for (int k = index; k < blocks.Count; k++)
+            {
+                var block = blocks[k];
+                if (IsCollapsedBlock(block)) continue;
+
+                if (block is not IFloatingObject { WrapMode: not WrapMode.Inline } floating)
+                    return block is ParagraphBlock ? needPt : 0f;
+
+                if (floating.WrapMode is not (WrapMode.Square or WrapMode.Tight)) continue;
+                if (floating.PinnedPage > 0) continue;
+
+                TableFloatPosition? anchor;
+                float widthPt;
+                float heightPt;
+                switch (floating)
+                {
+                    case ImageBlock image:
+                        anchor = image.AnchorPosition;
+                        (widthPt, heightPt) = ReadingImageSize(image);
+                        break;
+                    case ShapeBlock shape:
+                        anchor = shape.AnchorPosition;
+                        (widthPt, heightPt) = ReadingShapeSize(shape);
+                        break;
+                    default:
+                        continue;
+                }
+
+                if (anchor is not { VerticalAnchor: TableFloatAnchor.Text }) continue;
+                if (widthPt <= 0f || heightPt <= 0f) continue;
+
+                // Габарит на листе — рамка Word с полями обрамления либо повёрнутый
+                // прямоугольник; он центрирован на месте самого объекта.
+                var (_, boxHeightPt) = FloatingObjectBox.Of(floating, widthPt, heightPt);
+                float topPt = (float)anchor.YPt + ReadingOffsetYPt(floating.OffsetYPt)
+                              + (heightPt - boxHeightPt) / 2f;
+                float bottomPt = topPt + boxHeightPt;
+
+                if (bottomPt > needPt) needPt = bottomPt;
+            }
+
+            return 0f;
+        }
+
+        /// <summary>
+        /// Стоит ли абзац bi внутри цепочки «не отрывать от следующего», а не в её
+        /// начале: ближайший видимый блок над ним — абзац с тем же правилом. Плавающие
+        /// объекты высоты в потоке не занимают и цепочку не прерывают.
+        /// </summary>
+        private bool ContinuesKeepWithNextChain(IReadOnlyList<BlockModel> blocks, int index)
+        {
+            for (int k = index - 1; k >= 0; k--)
+            {
+                var block = blocks[k];
+                if (IsCollapsedBlock(block)) continue;
+                if (block is IFloatingObject { WrapMode: not WrapMode.Inline }) continue;
+                if (block is TableBlock { FloatPosition: not null }) continue;
+
+                return block is ParagraphBlock { Properties.KeepWithNext: true };
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Голова цепочки «не отрывать от следующего»: абзацы цепочки до замыкающего
+        /// блока, без него самого. Высота считается так же, как в
+        /// <see cref="KeepWithNextChainHeight"/>.
+        ///
+        /// Rigid — разорвать голову законно негде: каждый её абзац короче четырёх строк
+        /// (запрет висячих строк не оставляет на листе одну строку и не уносит одну, и
+        /// такой абзац не делится) или помечен «не разрывать», а за головой действительно
+        /// стоит замыкающий блок. Обрыв цепочки разрывом страницы, потолок длины или
+        /// абзац, который делится, дают false — там место для разрыва есть.
+        /// </summary>
+        private (float HeadPt, bool Rigid) KeepWithNextChainHead(
+            IReadOnlyList<BlockModel> blocks,
+            int startIndex,
+            Dictionary<ParagraphBlock, ParagraphViewModel> pvmByBlock,
+            float textWidthPt)
+        {
+            float head = 0f;
+            bool collapseSpacing = DocVm?.Document.CollapseParagraphSpacing == true;
+            float chainPrevAfterPt = float.NaN;
+
+            int chainSeen = 0;
+            for (int k = startIndex; k < blocks.Count && chainSeen < MaxKeepWithNextChain; k++)
+            {
+                var block = blocks[k];
+
+                if (k > startIndex && IsCollapsedBlock(block)) continue;
+                chainSeen++;
+
+                if (block is BreakBlock) return (head, false);
+
+                if (block is IFloatingObject { WrapMode: not WrapMode.Inline }) continue;
+
+                if (block is TableBlock table)
+                {
+                    if (table.FloatPosition is not null) continue;
+
+                    // Таблица замыкает цепочку: голова кончилась перед ней.
+                    return (head, k > startIndex);
+                }
+
+                if (block is not ParagraphBlock para) return (head, false);
+                if (k > startIndex && para.Properties.PageBreakBefore) return (head, false);
+
+                // Замыкающий абзац в голову не входит.
+                if (k > startIndex && !para.Properties.KeepWithNext) return (head, true);
+
+                if (!pvmByBlock.TryGetValue(para, out var vm)) return (head, false);
+
+                var layout = GetOrBuildLayout(vm, textWidthPt);
+
+                // Абзац, который делится между листами, даёт законное место для разрыва.
+                if (layout.Lines.Count > 3 && !para.Properties.KeepTogether) return (head, false);
+
+                float chainBeforePt = layout.SpaceBeforePt;
+                if (collapseSpacing && !float.IsNaN(chainPrevAfterPt))
+                    chainBeforePt = Math.Max(0f,
+                        chainBeforePt - Math.Min(chainPrevAfterPt, CollapsibleSpaceBeforePt(layout)));
+                head += chainBeforePt;
+
+                if (layout.Lines.Count == 0)
+                {
+                    head += FallbackLinePt + layout.SpaceAfterPt;
+                    chainPrevAfterPt = float.NaN;
+                }
+                else
+                {
+                    foreach (var line in layout.Lines)
+                        head += line.Height;
+                    head += layout.SpaceAfterPt;
+                    chainPrevAfterPt = CollapsibleSpaceAfterPt(layout);
+                }
+
+                // Начало цепочки без своего правила — цепочки нет.
+                if (!para.Properties.KeepWithNext) return (head, false);
+            }
+
+            return (head, false);
         }
 
         // Результат последнего выполненного прохода раскладки страниц.
@@ -2970,7 +3312,7 @@ namespace Writersword.Modules.TextEditor.Document
                             justifyShift = 0f;
                         }
 
-                        if (seg.InlineImageId is Guid inlineId)
+                        if (seg.InlineImageId is Guid inlineId && !seg.IsHidden)
                         {
                             var block = FindInlineImage(inlineId);
                             if (block is not null && block.WidthPt > 0.0 && block.HeightPt > 0.0)
@@ -2988,7 +3330,7 @@ namespace Writersword.Modules.TextEditor.Document
                                     block,
                                     baseY - boxH + (boxH - imgH) / 2f,
                                     segX + (boxW - imgW) / 2f,
-                                    imgW, imgH, pl.PageIndex, InLine: true));
+                                    imgW, imgH, pl.PageIndex, InLine: true, InCell: pl.Cell is not null));
                             }
                         }
 

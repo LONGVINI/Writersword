@@ -209,12 +209,16 @@ namespace Writersword.Modules.TextEditor.Services
                 if (hfPlan is not null)
                     WriteHeaderFooterSettingsPart(mainPart, hfPlan);
 
+                // Запись исправлений, включённая в документе (ExportService.Revisions).
+                WriteTrackRevisionsSetting(mainPart, document);
+
                 for (int s = 0; s < document.Sections.Count; s++)
                 {
                     var section = document.Sections[s];
                     bool isFinal = s == document.Sections.Count - 1;
 
                     ctx.InlineObjects = BuildInlineObjectMap(section);
+                    ctx.InlineShapes = BuildInlineShapeMap(section);
 
                     if (section.FloatingObjects.Count > 0)
                         ctx.Warnings.Add(
@@ -393,8 +397,10 @@ namespace Writersword.Modules.TextEditor.Services
                                     break;
                                 }
 
-                                // Плавающий объект ждёт своего абзаца.
-                                if (block is IFloatingObject { WrapMode: not WrapMode.Inline })
+                                // Плавающий объект ждёт своего абзаца. Объект «сверху и снизу»
+                                // из Word — тоже: он уходит якорем, как был у Word.
+                                if (block is IFloatingObject { WrapMode: not WrapMode.Inline }
+                                    or IFloatingObject { WordDrawing.WrapTopAndBottom: true })
                                 {
                                     pendingFloatRuns.Add(objectRun);
                                     break;
@@ -485,6 +491,45 @@ namespace Writersword.Modules.TextEditor.Services
                 if (obj is ImageBlock image)
                     map[image.Id] = image;
             return map;
+        }
+
+        /// <summary>Фигуры, стоящие в строке текста, по Id — на них ссылаются run-ы абзацев.</summary>
+        private static Dictionary<Guid, ShapeBlock> BuildInlineShapeMap(SectionModel section)
+        {
+            var map = new Dictionary<Guid, ShapeBlock>();
+            foreach (var obj in section.InlineObjects)
+                if (obj is ShapeBlock shape)
+                    map[shape.Id] = shape;
+            return map;
+        }
+
+        /// <summary>
+        /// Рисунок Word для фигуры в строке текста: фигура стоит среди букв своего
+        /// абзаца, как у Word (wp:inline с wps:wsp).
+        /// </summary>
+        private W.Drawing? BuildInlineShapeDrawing(Guid shapeId, DocxWriteContext ctx)
+        {
+            if (!ctx.InlineShapes.TryGetValue(shapeId, out var shape))
+                return null;
+
+            long cx = (long)Math.Round(Math.Max(shape.WidthPt, 0) * EmuPerPoint);
+            long cy = (long)Math.Round(Math.Max(shape.HeightPt, 0) * EmuPerPoint);
+
+            uint drawingId = ctx.NextDrawingId++;
+            string name = "Shape " + drawingId.ToString(CultureInfo.InvariantCulture);
+
+            string? fillRelationshipId = string.IsNullOrEmpty(shape.FillImageFileName)
+                ? null
+                : EnsureImageFilePart(shape.FillImageFileName!, ctx);
+
+            var graphic = new Dr.Graphic(
+                new Dr.GraphicData(XmlElement(BuildShapeXml(shape, cx, cy, fillRelationshipId, ctx)))
+                {
+                    Uri = WordprocessingShapeNamespace
+                });
+
+            return BuildObjectDrawing(
+                shape, null, cx, cy, drawingId, name, shape.AltText, graphic, topAndBottomAnchor: false);
         }
 
         // ── docx: стили ─────────────────────────────────────────────────────
@@ -1072,21 +1117,28 @@ namespace Writersword.Modules.TextEditor.Services
             var propertyElements = BuildParagraphPropertyElements(
                 para.Properties, para.ListProperties, ctx.Numbering, null);
 
-            if (propertyElements.Count > 0)
+            if (propertyElements.Count > 0 || para.Properties.HasRevision)
             {
                 var pPr = new W.ParagraphProperties();
                 foreach (var element in propertyElements) pPr.AppendChild(element);
+
+                // Правки знака абзаца и его оформления (ExportService.Revisions).
+                AppendParagraphRevisions(pPr, para, ctx);
+
                 result.AppendChild(pPr);
             }
 
+            // Раны собираются вместе со своими правками: подряд идущие раны одной
+            // правки уходят одним w:ins или w:del.
+            var runElements = new List<(RunModel Run, List<OpenXmlElement> Elements)>();
             foreach (var chunk in para.Chunks)
             {
                 foreach (var run in chunk.Runs)
-                {
-                    foreach (var element in BuildRunElements(run, ctx))
-                        result.AppendChild(element);
-                }
+                    runElements.Add((run, BuildRunElements(run, ctx)));
             }
+
+            foreach (var element in WrapRunRevisions(runElements, ctx))
+                result.AppendChild(element);
 
             return result;
         }
@@ -1097,15 +1149,18 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (run.InlineImageId is Guid imageId)
             {
-                var drawing = BuildImageDrawing(imageId, ctx);
+                // Объект строки — картинка или фигура: обе стоят среди букв абзаца.
+                var drawing = BuildImageDrawing(imageId, ctx) ?? BuildInlineShapeDrawing(imageId, ctx);
                 if (drawing is null) return elements;
 
                 var imageRun = new W.Run();
                 var imageProps = BuildRunPropertyElements(run.Properties, writeExplicitToggles: true);
-                if (imageProps.Count > 0)
+                if (imageProps.Count > 0 || run.Properties?.FormatChange is not null)
                 {
                     var rPr = new W.RunProperties();
                     foreach (var element in imageProps) rPr.AppendChild(element);
+                    if (run.Properties?.FormatChange is { } imageFormatChange)
+                        AppendRunFormatChange(rPr, imageFormatChange, ctx);
                     imageRun.AppendChild(rPr);
                 }
 
@@ -1122,10 +1177,15 @@ namespace Writersword.Modules.TextEditor.Services
 
             var wordRun = new W.Run();
             var runProperties = BuildRunPropertyElements(run.Properties, writeExplicitToggles: true);
-            if (runProperties.Count > 0)
+            if (runProperties.Count > 0 || run.Properties?.FormatChange is not null)
             {
                 var rPr = new W.RunProperties();
                 foreach (var element in runProperties) rPr.AppendChild(element);
+
+                // Смена оформления под рецензированием — последним элементом w:rPr.
+                if (run.Properties?.FormatChange is { } formatChange)
+                    AppendRunFormatChange(rPr, formatChange, ctx);
+
                 wordRun.AppendChild(rPr);
             }
 
@@ -1222,33 +1282,27 @@ namespace Writersword.Modules.TextEditor.Services
             string? relationshipId = EnsureImagePart(image, ctx);
             if (relationshipId is null) return null;
 
-            long cx = (long)Math.Round(Math.Max(image.WidthPt, 1) * EmuPerPoint);
-            long cy = (long)Math.Round(Math.Max(image.HeightPt, 1) * EmuPerPoint);
+            // Нулевой габарит — рисунок Word без места на листе: уходит таким же.
+            long cx = (long)Math.Round(Math.Max(image.WidthPt, 0) * EmuPerPoint);
+            long cy = (long)Math.Round(Math.Max(image.HeightPt, 0) * EmuPerPoint);
 
             uint drawingId = ctx.NextDrawingId++;
             string name = string.IsNullOrWhiteSpace(image.ImageFileName)
                 ? "Picture " + drawingId.ToString(CultureInfo.InvariantCulture)
                 : image.ImageFileName;
 
-            var picture = BuildPictureElement(image, relationshipId, cx, cy, name);
+            var picture = BuildPictureElement(image, relationshipId, cx, cy, name, ctx);
 
-            var inline = new Wp.Inline(
-                new Wp.Extent { Cx = cx, Cy = cy },
-                new Wp.EffectExtent { LeftEdge = 0L, TopEdge = 0L, RightEdge = 0L, BottomEdge = 0L },
-                new Wp.DocProperties
+            var graphic = new Dr.Graphic(
+                new Dr.GraphicData(picture)
                 {
-                    Id = (UInt32Value)drawingId,
-                    Name = name
-                },
-                new Wp.NonVisualGraphicFrameDrawingProperties(
-                    new Dr.GraphicFrameLocks { NoChangeAspect = true }),
-                new Dr.Graphic(
-                    new Dr.GraphicData(picture)
-                    {
-                        Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture"
-                    }));
+                    Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture"
+                });
 
-            return new W.Drawing(inline);
+            // Картинка в строке текста — всегда рисунок в строке: «сверху и снизу» у
+            // неё быть не может, она стоит среди букв своего абзаца.
+            return BuildObjectDrawing(
+                image, null, cx, cy, drawingId, name, image.AltText, graphic, topAndBottomAnchor: false);
         }
 
         /// <summary>
@@ -1257,7 +1311,18 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         private static Pic.BlipFill BuildPictureFill(ImageBlock image, string relationshipId)
         {
-            var fill = new Pic.BlipFill(new Dr.Blip { Embed = relationshipId });
+            var blip = new Dr.Blip { Embed = relationshipId };
+
+            // Непрозрачность картинки у Word — a:alphaModFix в стотысячных.
+            if (image.Opacity < 0.9999)
+            {
+                blip.AppendChild(new Dr.AlphaModulationFixed
+                {
+                    Amount = (int)Math.Round(Math.Clamp(image.Opacity, 0.0, 1.0) * 100000.0)
+                });
+            }
+
+            var fill = new Pic.BlipFill(blip);
 
             bool cropped = image.CropLeftFrac > 0 || image.CropTopFrac > 0
                 || image.CropRightFrac > 0 || image.CropBottomFrac > 0;
@@ -1281,10 +1346,20 @@ namespace Writersword.Modules.TextEditor.Services
 
         /// <summary>
         /// Размер картинки вместе с поворотом и отражением (a:xfrm): угол — в
-        /// 60000-х долях градуса по часовой стрелке.
+        /// 60000-х долях градуса по часовой стрелке. Размер самой картинки, когда у
+        /// Word он отличался от габарита рисунка, уходит прежним, пока рисунок не
+        /// меняли в размере.
         /// </summary>
         private static Dr.Transform2D BuildPictureTransform(ImageBlock image, long cx, long cy)
         {
+            if (image.WordDrawing is { PictureWidthPt: > 0, PictureHeightPt: > 0 } word
+                && Math.Abs(image.WidthPt - word.EffectForWidthPt) < 0.01
+                && Math.Abs(image.HeightPt - word.EffectForHeightPt) < 0.01)
+            {
+                cx = (long)Math.Round(word.PictureWidthPt * EmuPerPoint);
+                cy = (long)Math.Round(word.PictureHeightPt * EmuPerPoint);
+            }
+
             var transform = new Dr.Transform2D(
                 new Dr.Offset { X = 0L, Y = 0L },
                 new Dr.Extents { Cx = cx, Cy = cy });
@@ -1303,6 +1378,10 @@ namespace Writersword.Modules.TextEditor.Services
         /// <summary>
         /// Кладёт файл картинки в пакет один раз и возвращает id связи.
         /// Повторные ссылки на ту же картинку переиспользуют готовую связь.
+        ///
+        /// Картинка, которую лист показывает перекодированной (TIFF, EMF, WMF из .docx),
+        /// уходит своим исходником (<see cref="ImageBlock.SourceImageFileName"/>): тот же
+        /// вектор и тот же формат, что был у Word.
         /// </summary>
         private string? EnsureImagePart(ImageBlock image, DocxWriteContext ctx)
         {
@@ -1315,10 +1394,39 @@ namespace Writersword.Modules.TextEditor.Services
                 return null;
             }
 
+            string? relationshipId = null;
+
+            if (!string.IsNullOrWhiteSpace(image.SourceImageFileName))
+                relationshipId = EnsureImageFilePart(image.SourceImageFileName!, ctx, quiet: true);
+
+            relationshipId ??= EnsureImageFilePart(image.ImageFileName, ctx);
+            if (relationshipId is null) return null;
+
+            ctx.ImageRelationshipIds[image.Id] = relationshipId;
+            return relationshipId;
+        }
+
+        /// <summary>
+        /// Кладёт файл проекта в пакет один раз и возвращает id связи. Один и тот же
+        /// файл, на который ссылаются несколько рисунков, уходит одной частью — как у
+        /// Word, где два рисунка ссылаются на одну связь. Null — файла нет или Word его
+        /// формат не знает; quiet — без предупреждения (вызывающий попробует иначе).
+        /// </summary>
+        private string? EnsureImageFilePart(string fileName, DocxWriteContext ctx, bool quiet = false)
+        {
+            if (ctx.ImageRelationshipIdsByFile.TryGetValue(fileName, out var known))
+                return known;
+
+            if (ctx.ResolveImage is null)
+            {
+                if (!quiet) ctx.Warnings.Add("Картинки не встроены: содержимое файлов недоступно.");
+                return null;
+            }
+
             byte[]? data;
             try
             {
-                data = ctx.ResolveImage(image.ImageFileName);
+                data = ctx.ResolveImage(fileName);
             }
             catch
             {
@@ -1327,26 +1435,35 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (data is null || data.Length == 0)
             {
-                ctx.Warnings.Add($"Картинка \"{image.ImageFileName}\" не найдена и пропущена.");
+                if (!quiet) ctx.Warnings.Add($"Картинка \"{fileName}\" не найдена и пропущена.");
                 return null;
             }
 
-            var partType = ImagePartTypeFor(image.ImageFileName);
-            if (partType is null)
+            ImagePart imagePart;
+            var partType = ImagePartTypeFor(fileName);
+            if (partType is not null)
             {
-                ctx.Warnings.Add(
-                    $"Картинка \"{image.ImageFileName}\" в неподдерживаемом Word формате и пропущена.");
+                imagePart = ctx.MainPart.AddImagePart(partType.Value);
+            }
+            else if (Path.GetExtension(fileName).Equals(".webp", StringComparison.OrdinalIgnoreCase))
+            {
+                // WebP Word читает с версии 2019; в наборе типов SDK его нет.
+                imagePart = ctx.MainPart.AddImagePart("image/webp");
+            }
+            else
+            {
+                if (!quiet)
+                    ctx.Warnings.Add($"Картинка \"{fileName}\" в неподдерживаемом Word формате и пропущена.");
                 return null;
             }
 
-            var imagePart = ctx.MainPart.AddImagePart(partType.Value);
             using (var stream = new MemoryStream(data, false))
             {
                 imagePart.FeedData(stream);
             }
 
             string relationshipId = ctx.MainPart.GetIdOfPart(imagePart);
-            ctx.ImageRelationshipIds[image.Id] = relationshipId;
+            ctx.ImageRelationshipIdsByFile[fileName] = relationshipId;
             return relationshipId;
         }
 
@@ -1734,6 +1851,7 @@ namespace Writersword.Modules.TextEditor.Services
                     Id = cell.Id,
                     Paragraphs = cell.Paragraphs,
                     NestedTables = cell.NestedTables,
+                    Floats = cell.Floats,
                     Row = cell.Row,
                     Column = cell.Column,
                     RowSpan = cell.RowSpan,
@@ -1876,7 +1994,31 @@ namespace Writersword.Modules.TextEditor.Services
                 }
 
                 if (pi < cell.Paragraphs.Count)
-                    result.AppendChild(BuildParagraph(cell.Paragraphs[pi], ctx));
+                {
+                    var cellParagraph = BuildParagraph(cell.Paragraphs[pi], ctx);
+
+                    // Плавающие объекты ячейки — якорями в начало своего абзаца, сразу
+                    // за его свойствами, с привязкой к ячейке (layoutInCell), как у Word.
+                    if (cell.Floats is { Count: > 0 } cellFloats)
+                    {
+                        int floatInsertAt = cellParagraph.GetFirstChild<W.ParagraphProperties>() is null ? 0 : 1;
+                        foreach (var cellFloat in cellFloats)
+                        {
+                            if (cell.FloatParagraphIndex(cellFloat) != pi) continue;
+
+                            var floatRun = BuildFlowObjectRun(cellFloat.Object, ctx);
+                            if (floatRun is null)
+                            {
+                                ctx.Warnings.Add("Картинка без файла в .docx не перенесена.");
+                                continue;
+                            }
+
+                            cellParagraph.InsertAt(floatRun, floatInsertAt++);
+                        }
+                    }
+
+                    result.AppendChild(cellParagraph);
+                }
             }
 
             // Ячейка у Word обязана кончаться абзацем: пустая ячейка и ячейка, где за
@@ -2194,9 +2336,14 @@ namespace Writersword.Modules.TextEditor.Services
         public Func<string, byte[]?>? ResolveImage;
         public DocxNumberingBuilder Numbering = new();
         public Dictionary<Guid, ImageBlock> InlineObjects = new();
+        public Dictionary<Guid, ShapeBlock> InlineShapes = new();
         public readonly Dictionary<Guid, string> ImageRelationshipIds = new();
+        public readonly Dictionary<string, string> ImageRelationshipIdsByFile = new(StringComparer.OrdinalIgnoreCase);
         public readonly List<string> Warnings = new();
         public uint NextDrawingId = 1;
+
+        /// <summary>Следующий номер правки рецензирования (w:id): номера не повторяются по всему документу.</summary>
+        public int NextRevisionId = 1;
     }
 
     /// <summary>
@@ -3206,9 +3353,12 @@ namespace Writersword.Modules.TextEditor.Services
             var picture = GetImage(image.ImageFileName);
             if (picture is null) return null;
 
+            // Рисунок нулевого размера у Word не виден — не виден и в PDF.
+            if (image.WidthPt <= 0 || image.HeightPt <= 0) return null;
+
             float maxWidth = _right - _left;
-            float width = (float)Math.Max(image.WidthPt, 1);
-            float height = (float)Math.Max(image.HeightPt, 1);
+            float width = (float)image.WidthPt;
+            float height = (float)image.HeightPt;
 
             if (width > maxWidth)
             {

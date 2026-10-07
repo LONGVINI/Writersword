@@ -103,7 +103,7 @@ namespace Writersword.Modules.TextEditor.Commands
         private static IEnumerable<string> ExtractImageNames(string json)
         {
             foreach (System.Text.RegularExpressions.Match m in
-                System.Text.RegularExpressions.Regex.Matches(json, "\"ImageFileName\"\\s*:\\s*\"([^\"]+)\""))
+                System.Text.RegularExpressions.Regex.Matches(json, "\"(?:Fill|Source)?ImageFileName\"\\s*:\\s*\"([^\"]+)\""))
             {
                 yield return m.Groups[1].Value;
             }

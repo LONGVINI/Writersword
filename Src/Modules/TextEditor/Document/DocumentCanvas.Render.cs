@@ -300,11 +300,22 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
-            // Диагностика: почему кадр может уйти в полный рендер.
-            if (!_caretOnlyRedraw) PerfCount("r.why.requested");
-            else if (_contentDirty) PerfCount("r.why.dirty");
+            // Кадр, который никто из канваса полным не заказывал (его запросил сам
+            // Avalonia: окно перекрылось, компоновщик попросил кадр заново), содержимое
+            // не меняет — снимок верен, и брать его можно так же, как кадр прокрутки.
+            // Раньше такой кадр уходил в полный рендер всех видимых листов: при листах
+            // рядом это 130–180 мс посреди прокрутки, и она дёргалась раз в секунду-две.
+            // Содержимое, которое правда сменилось, заказывает полный кадр само:
+            // InvalidateFull поднимает _contentDirty, InvalidateVisual канваса —
+            // _fullRenderRequested.
+            bool cacheAllowed = !_contentDirty && (_caretOnlyRedraw || !_fullRenderRequested);
 
-            if (_caretOnlyRedraw && !_contentDirty)
+            // Диагностика: почему кадр может уйти в полный рендер.
+            if (!_caretOnlyRedraw && !cacheAllowed) PerfCount("r.why.requested");
+            else if (_contentDirty) PerfCount("r.why.dirty");
+            else if (!_caretOnlyRedraw) PerfCount("r.why.external");
+
+            if (cacheAllowed)
             {
                 // Проверка валидности и DrawImage выполняются ПОД ОДНИМ локом:
                 // раньше ссылка копировалась под локом, а рисование шло вне его,
@@ -355,6 +366,8 @@ namespace Writersword.Modules.TextEditor.Document
                     long perfOverlayTs = PerfNow();
                     canvas.Save();
                     canvas.Scale(scale, scale);
+                    // Кадры анимаций — поверх снимка, под выделением (DocumentCanvas.Animation).
+                    DrawAnimationOverlay(canvas, pages, images, canvasWidth);
                     DrawSelectionOverlay(canvas, layouts, pages, canvasWidth);
                     DrawHeadingToggles(canvas, layouts, pages, canvasWidth);
                     canvas.Restore();
@@ -532,6 +545,8 @@ namespace Writersword.Modules.TextEditor.Document
                 long perfOverlayTs = PerfNow();
                 canvas.Save();
                 canvas.Scale(scale, scale);
+                // Кадры анимаций — поверх снимка, под выделением (DocumentCanvas.Animation).
+                DrawAnimationOverlay(canvas, pages, images, canvasWidth);
                 DrawSelectionOverlay(canvas, layouts, pages, canvasWidth);
                 DrawHeadingToggles(canvas, layouts, pages, canvasWidth);
                 canvas.Restore();
@@ -567,6 +582,13 @@ namespace Writersword.Modules.TextEditor.Document
                     RenderFlowMode(canvas, mode, layouts, tables, images, canvasHeightPt, canvasWidth, CaretDrawable);
                 DrawSpreadCornerHint(canvas);
                 canvas.Restore();
+
+                // Кадры анимаций, пропущенные проходом содержимого (DocumentCanvas.Animation).
+                canvas.Save();
+                canvas.Scale(scale, scale);
+                DrawAnimationOverlay(canvas, pages, images, canvasWidth);
+                canvas.Restore();
+
                 _contentDirty = false;
             }
         }
@@ -1107,7 +1129,16 @@ namespace Writersword.Modules.TextEditor.Document
             lock (ContentPassLock)
             {
                 PerfTime(t_contentViewTopPx is null ? "r.lockwait" : "bg.lockwait", perfLockTs);
-                RenderPageModeCore(canvas, layouts, pages, tables, images, canvasHeightPt, canvasWidth, drawCaret);
+                // Картинки экрана — готовыми копиями экранного размера (ScreenImageCache).
+                bool imageCacheBefore = ScreenImageCache.Enter(!ExportPassActive);
+                try
+                {
+                    RenderPageModeCore(canvas, layouts, pages, tables, images, canvasHeightPt, canvasWidth, drawCaret);
+                }
+                finally
+                {
+                    ScreenImageCache.Exit(imageCacheBefore);
+                }
             }
         }
 
@@ -1475,8 +1506,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (srcRect.Right <= srcRect.Left + 1f) srcRect.Right = srcRect.Left + 1f;
                 if (srcRect.Bottom <= srcRect.Top + 1f) srcRect.Bottom = srcRect.Top + 1f;
                 bool shapeClip = PushImageShapeClip(canvas, ie.Block, imgRect);
-                canvas.DrawImage(skImg, srcRect, imgRect,
-                    FloatingObjectRenderer.SamplingFor(canvas, srcRect, imgRect), imgPaint);
+                ScreenImageCache.DrawImage(canvas, skImg, srcRect, imgRect, imgPaint);
                 if (shapeClip) canvas.Restore();
                 _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
                 // Рамка картинки — в той же системе координат (поворот + отражение).
@@ -1570,6 +1600,11 @@ namespace Writersword.Modules.TextEditor.Document
                 if (ie.InLine) continue;
                 var wm = ie.Block.WrapMode;
                 if (wm != WrapMode.InFront && wm != WrapMode.Square && wm != WrapMode.Tight) continue;
+
+                // Анимированную картинку, над которой ничего нет, рисует наложение поверх
+                // снимка — смена её кадра не пересобирает снимок (DocumentCanvas.Animation).
+                if (IsOverlayAnimation(ie, images, pages)) continue;
+
                 var skImg = GetImageBitmap(ie.Block.ImageFileName);
                 if (skImg is null)
                 {
@@ -1643,8 +1678,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (srcRect.Right <= srcRect.Left + 1f) srcRect.Right = srcRect.Left + 1f;
                 if (srcRect.Bottom <= srcRect.Top + 1f) srcRect.Bottom = srcRect.Top + 1f;
                 bool shapeClip = PushImageShapeClip(canvas, ie.Block, imgRect);
-                canvas.DrawImage(skImg, srcRect, imgRect,
-                    FloatingObjectRenderer.SamplingFor(canvas, srcRect, imgRect), imgPaint);
+                ScreenImageCache.DrawImage(canvas, skImg, srcRect, imgRect, imgPaint);
                 if (shapeClip) canvas.Restore();
                 _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
                 // Рамка картинки — в той же системе координат (поворот + отражение).
@@ -1667,6 +1701,10 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Фигуры поверх текста (InFront / Square / Tight) — после текста и картинок.
             RenderShapes(canvas, pages, firstPage, lastPage, beforeText: false);
+
+            // Плавающие картинки и фигуры в ячейках таблиц — на местах, которые им
+            // дала вёрстка ячейки; текст ячейки их уже обтекает.
+            RenderCellFloats(canvas, layouts, tables, pages, firstPage, lastPage);
 
             // Предпросмотр обрезки — поверх всего: исходная картинка целиком,
             // срезаемые края затемнены, рамка кадрирования с маркерами. Картинка в
@@ -1862,7 +1900,16 @@ namespace Writersword.Modules.TextEditor.Document
             if (seg.InlineImageId is not Guid id) return;
 
             var block = FindInlineImage(id);
-            if (block is null) return;
+            if (block is null)
+            {
+                // Объект строки может быть и фигурой Word (wps:wsp в wp:inline).
+                DrawInlineShapeSegment(canvas, seg, segX, baseY, id);
+                return;
+            }
+
+            // Анимированную картинку в строке рисует наложение поверх снимка
+            // (DocumentCanvas.Animation).
+            if (IsOverlayInlineAnimation(block)) return;
 
             var skImg = GetImageBitmap(block.ImageFileName);
             if (skImg is null) return;
@@ -1884,16 +1931,147 @@ namespace Writersword.Modules.TextEditor.Document
 
             canvas.Save();
 
-            // Обрезка по своему листу. Плавающие картинки клипует проход по списку
-            // картинок, а эту рисует рендер текста — он про страницы ничего не знает,
-            // и без клипа картинка, вылезшая за край страницы, продолжает рисоваться
-            // по серому фону и залезает в межстраничный зазор.
-            //
-            // Страницу ищем по НАИБОЛЬШЕМУ перекрытию с габаритом картинки, а не по
-            // базовой линии: у высокой строки на стыке страниц базовая линия попадает
-            // в межстраничный зазор, где страницы нет вообще — поиск не находил ничего
-            // и клип не ставился совсем. Если перекрытия нет ни с одной страницей,
-            // берём ближайшую: клип должен стоять всегда.
+            ClipInlineObjectToPage(canvas, baseY, boxH);
+            if (OverflowsLineBox(block)) ClipInlineObjectToLine(canvas, baseY, boxH);
+            if (hasXform)
+            {
+                if (rotDeg != 0f) canvas.RotateDegrees(rotDeg, cx, cy);
+                if (block.FlipHorizontal || block.FlipVertical)
+                    canvas.Scale(
+                        block.FlipHorizontal ? -1f : 1f,
+                        block.FlipVertical ? -1f : 1f,
+                        cx, cy);
+            }
+            DrawInlineImageBody(canvas, block, skImg, left, top, imgW, imgH);
+        }
+
+        /// <summary>
+        /// Плавающие объекты ячеек таблиц (картинки и фигуры с привязкой к ячейке).
+        /// Объект рисуется вместе с первым куском своего абзаца: от области содержимого
+        /// ячейки этого куска отсчитано его место, и на стыке страниц он уходит туда же,
+        /// куда и абзац. Обрезка — по листу, как у плавающего объекта документа.
+        /// </summary>
+        private void RenderCellFloats(
+            SKCanvas canvas, List<ParaLayout> layouts, List<TableEntry> tables,
+            List<PageRect> pages, int firstPage, int lastPage)
+        {
+            foreach (var pl in layouts)
+            {
+                if (pl.Cell is not { } ci || ci.IsRotated) continue;
+                if (pl.LineFrom != 0) continue;
+                if (pl.PageIndex < firstPage || pl.PageIndex > lastPage) continue;
+                if (ci.Cell.Floats is not { Count: > 0 }) continue;
+                if (ci.TableEntryIdx < 0 || ci.TableEntryIdx >= tables.Count) continue;
+
+                var cellLayout = FindCellLayout(tables[ci.TableEntryIdx].Layout, ci.Cell);
+                if (cellLayout is null) continue;
+
+                foreach (var placed in cellLayout.Floats)
+                {
+                    if (placed.ParagraphIndex != ci.CellParaIndex) continue;
+
+                    var rect = new SKRect(
+                        ci.ContentXPt + placed.XPt,
+                        ci.ContentYPt + placed.YPt,
+                        ci.ContentXPt + placed.XPt + placed.WidthPt,
+                        ci.ContentYPt + placed.YPt + placed.HeightPt);
+
+                    canvas.Save();
+                    if (pl.PageIndex >= 0 && pl.PageIndex < pages.Count)
+                    {
+                        var pg = pages[pl.PageIndex];
+                        canvas.ClipRect(new SKRect(
+                            pg.PadLeftPt, pg.Ypt,
+                            pg.PadLeftPt + pg.WidthPt, pg.Ypt + pg.HeightPt));
+                    }
+
+                    switch (placed.Block)
+                    {
+                        case ShapeBlock shape:
+                            // Поворот фигуры делает сам рендер фигуры.
+                            DrawShape(canvas, shape, rect, offPage: false);
+                            canvas.Restore();
+                            break;
+
+                        case ImageBlock image when GetImageBitmap(image.ImageFileName) is { } skImg:
+                        {
+                            float cx = rect.MidX;
+                            float cy = rect.MidY;
+                            if (image.RotationDeg != 0.0)
+                                canvas.RotateDegrees((float)image.RotationDeg, cx, cy);
+                            if (image.FlipHorizontal || image.FlipVertical)
+                                canvas.Scale(
+                                    image.FlipHorizontal ? -1f : 1f,
+                                    image.FlipVertical ? -1f : 1f,
+                                    cx, cy);
+
+                            // Восстанавливает холст сама.
+                            DrawInlineImageBody(canvas, image, skImg, rect.Left, rect.Top, rect.Width, rect.Height);
+                            break;
+                        }
+
+                        default:
+                            canvas.Restore();
+                            break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>Раскладка ячейки таблицы верхнего уровня по её модели.</summary>
+        private static SKTableCellLayout? FindCellLayout(SKTableLayout tableLayout, TableCell cell)
+        {
+            foreach (var row in tableLayout.Rows)
+            {
+                foreach (var cellLayout in row.Cells)
+                {
+                    if (cellLayout.Row == cell.Row && cellLayout.Column == cell.Column)
+                        return cellLayout;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Рисует фигуру Word, стоящую в строке текста: фигура стоит на базовой линии,
+        /// как крупный глиф, и центрирована в своём боксе сегмента. Поворот и
+        /// отражение делает сам рендер фигуры.
+        /// </summary>
+        private void DrawInlineShapeSegment(SKCanvas canvas, SKRunSegment seg, float segX, float baseY, Guid id)
+        {
+            var shape = FindInlineShape(id);
+            if (shape is null) return;
+
+            float boxW = seg.ObjectWidthPt;
+            float boxH = seg.ObjectHeightPt;
+            var (shapeW, shapeH) = ReadingShapeSize(shape);
+            if (shapeW <= 0f || shapeH <= 0f) return;
+
+            float left = segX + (boxW - shapeW) / 2f;
+            float top = baseY - boxH + (boxH - shapeH) / 2f;
+
+            canvas.Save();
+            ClipInlineObjectToPage(canvas, baseY, boxH);
+            if (OverflowsLineBox(shape)) ClipInlineObjectToLine(canvas, baseY, boxH);
+            DrawShape(canvas, shape, new SKRect(left, top, left + shapeW, top + shapeH), offPage: false);
+            canvas.Restore();
+        }
+
+        /// <summary>
+        /// Обрезка объекта строки по своему листу. Плавающие объекты клипует проход по
+        /// их спискам, а объект строки рисует рендер текста — он про страницы ничего
+        /// не знает, и без клипа объект, вылезший за край страницы, продолжает
+        /// рисоваться по серому фону и залезает в межстраничный зазор.
+        ///
+        /// Страницу ищем по НАИБОЛЬШЕМУ перекрытию с габаритом объекта, а не по
+        /// базовой линии: у высокой строки на стыке страниц базовая линия попадает
+        /// в межстраничный зазор, где страницы нет вообще — поиск не находил ничего
+        /// и клип не ставился совсем. Если перекрытия нет ни с одной страницей,
+        /// берём ближайшую: клип должен стоять всегда.
+        /// </summary>
+        private void ClipInlineObjectToPage(SKCanvas canvas, float baseY, float boxH)
+        {
             if (DocVm?.ViewMode == EditorViewMode.Page)
             {
                 List<PageRect> clipPages;
@@ -1938,16 +2116,38 @@ namespace Writersword.Modules.TextEditor.Document
                         pg.PadLeftPt + pg.WidthPt, pg.Ypt + pg.HeightPt));
                 }
             }
-            if (hasXform)
-            {
-                if (rotDeg != 0f) canvas.RotateDegrees(rotDeg, cx, cy);
-                if (block.FlipHorizontal || block.FlipVertical)
-                    canvas.Scale(
-                        block.FlipHorizontal ? -1f : 1f,
-                        block.FlipVertical ? -1f : 1f,
-                        cx, cy);
-            }
+        }
 
+        /// <summary>
+        /// Обрезка объекта строки по высоте его места в строке. Объект из Word с полями
+        /// обрамления занимает в строке неповёрнутый размер плюс поля, а повёрнутый
+        /// выходит за него; Word рисует такой объект только в пределах его места по
+        /// высоте — от верха бокса до базовой линии, — а по ширине не обрезает: углы
+        /// заходят на соседние знаки. Картинка, повёрнутая на 30° с нулевыми полями,
+        /// у Word срезана сверху и снизу ровно по соседним картинкам строки.
+        /// У объекта без полей бокс — габарит повёрнутого прямоугольника, и обрезка
+        /// ничего не отнимает.
+        /// </summary>
+        private static bool OverflowsLineBox(IFloatingObject obj)
+            => obj.RotationDeg % 180.0 != 0.0
+               && obj.WordDrawing is { } word
+               && word.EffectExtentValidFor(obj);
+
+        /// <summary>Обрезка по высоте места объекта в строке (см. <see cref="OverflowsLineBox"/>).</summary>
+        private static void ClipInlineObjectToLine(SKCanvas canvas, float baseY, float boxH)
+        {
+            const float unboundedPt = 1_000_000f;
+            canvas.ClipRect(new SKRect(-unboundedPt, baseY - boxH, unboundedPt, baseY));
+        }
+
+        /// <summary>
+        /// Сама картинка строки: заливка с обрезкой, контур, рамка и выделение.
+        /// Холст уже сохранён, обрезан по листу и повёрнут вызывающим; здесь он
+        /// восстанавливается.
+        /// </summary>
+        private void DrawInlineImageBody(
+            SKCanvas canvas, ImageBlock block, SKImage skImg, float left, float top, float imgW, float imgH)
+        {
             byte imgAlpha = (byte)Math.Clamp(block.Opacity * 255.0, 0.0, 255.0);
             _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, imgAlpha);
 
@@ -1964,8 +2164,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (src.Bottom <= src.Top + 1f) src.Bottom = src.Top + 1f;
 
             bool inlineShapeClip = PushImageShapeClip(canvas, block, dst);
-            canvas.DrawImage(skImg, src, dst,
-                FloatingObjectRenderer.SamplingFor(canvas, src, dst), _paintImageDraw);
+            ScreenImageCache.DrawImage(canvas, skImg, src, dst, _paintImageDraw);
             if (inlineShapeClip) canvas.Restore();
             _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
 
@@ -2205,6 +2404,9 @@ namespace Writersword.Modules.TextEditor.Document
 
             lock (_imageCacheLock)
             {
+                // Анимированная картинка: кадр по времени (DocumentCanvas.Animation).
+                if (TryGetAnimationFrame(fileName, out var animationFrame)) return animationFrame;
+
                 if (_imageCache.TryGetValue(fileName, out var cached)) return cached;
 
                 // Файла нет — пробовать снова каждый кадр незачем. На его месте
@@ -2218,6 +2420,7 @@ namespace Writersword.Modules.TextEditor.Document
             System.Threading.Tasks.Task.Run(() =>
             {
                 SKImage? img = null;
+                AnimatedImage? animation = null;
 
                 // Растр держится рядом с образом и живёт столько же. SKImage.FromBitmap
                 // не обязан копировать пиксели: он вправе взять их у растра как есть, и
@@ -2252,6 +2455,10 @@ namespace Writersword.Modules.TextEditor.Document
                         // Растровый образ рисуется куда угодно.
                         bmp = DecodeImageForScreen(bytes, fileName);
                         if (bmp is not null) img = SKImage.FromBitmap(bmp);
+
+                        // Кадры анимации, если их больше одного: первый остаётся
+                        // обычной картинкой кэша, остальные идут в показ по времени.
+                        if (img is not null) animation = DecodeAnimation(bytes, fileName);
                     }
                 }
                 catch { img = null; }
@@ -2272,6 +2479,12 @@ namespace Writersword.Modules.TextEditor.Document
                         _imageCache[fileName] = img;
                         if (bmp is not null) _imageBitmaps[fileName] = bmp;
                         bmp = null;
+
+                        if (animation is not null && !_animatedImages.ContainsKey(fileName))
+                        {
+                            _animatedImages[fileName] = animation;
+                            animation = null;
+                        }
                     }
                     else if (img is not null)
                     {
@@ -2283,21 +2496,19 @@ namespace Writersword.Modules.TextEditor.Document
 
                 bmp?.Dispose();
 
+                // Кадры, оставшиеся без места в кэше (картинку успел положить другой
+                // заход), освобождаются: образы раньше растров.
+                if (animation is not null)
+                {
+                    foreach (var frame in animation.Frames) frame.Dispose();
+                    foreach (var frameBitmap in animation.Bitmaps) frameBitmap.Dispose();
+                }
+
                 if (img is not null)
                 {
-                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                    {
-                        // Сбрасываем кеш-битмап, чтобы полный ре-рендер отрисовал
-                        // только что загруженное изображение, а не старый снимок.
-                        _contentDirty = true;
-
-                        // И снимки страниц книги: снятые до загрузки, они застыли бы
-                        // с дырой на месте картинки навсегда — снимок берётся один раз
-                        // и переживает и переворот, и возврат к той же странице.
-                        InvalidateSpreadSnapshots();
-
-                        InvalidateVisual();
-                    });
+                    // Пересборка снимка — одна на пачку пришедших картинок
+                    // (DocumentCanvas.ImageLoad).
+                    Avalonia.Threading.Dispatcher.UIThread.Post(RequestImageLoadRefresh);
                 }
             });
 
@@ -2368,7 +2579,16 @@ namespace Writersword.Modules.TextEditor.Document
             lock (ContentPassLock)
             {
                 PerfTime(t_contentViewTopPx is null ? "r.lockwait" : "bg.lockwait", perfLockTs);
-                RenderFlowModeCore(canvas, mode, layouts, tables, images, canvasHeightPt, canvasWidth, drawCaret);
+                // Картинки экрана — готовыми копиями экранного размера (ScreenImageCache).
+                bool imageCacheBefore = ScreenImageCache.Enter(!ExportPassActive);
+                try
+                {
+                    RenderFlowModeCore(canvas, mode, layouts, tables, images, canvasHeightPt, canvasWidth, drawCaret);
+                }
+                finally
+                {
+                    ScreenImageCache.Exit(imageCacheBefore);
+                }
             }
         }
 
@@ -2586,8 +2806,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (src.Bottom <= src.Top + 1f) src.Bottom = src.Top + 1f;
 
             bool flowShapeClip = PushImageShapeClip(canvas, ie.Block, dst);
-            canvas.DrawImage(skImg, src, dst,
-                FloatingObjectRenderer.SamplingFor(canvas, src, dst), _paintImageDraw);
+            ScreenImageCache.DrawImage(canvas, skImg, src, dst, _paintImageDraw);
             if (flowShapeClip) canvas.Restore();
             _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
 

@@ -125,7 +125,27 @@ namespace Writersword.Modules.TextEditor.Models.Document
         Margin = 1,
 
         /// <summary>От краёв листа.</summary>
-        Page = 2
+        Page = 2,
+
+        // Опоры ниже есть только у рисунков Word: таблица с обтеканием их не знает.
+
+        /// <summary>Левое поле листа: от края листа до полосы набора (leftMargin).</summary>
+        LeftMargin = 3,
+
+        /// <summary>Правое поле листа: от полосы набора до края листа (rightMargin).</summary>
+        RightMargin = 4,
+
+        /// <summary>Внутреннее поле (insideMargin). Без зеркальных полей — левое.</summary>
+        InsideMargin = 5,
+
+        /// <summary>Внешнее поле (outsideMargin). Без зеркальных полей — правое.</summary>
+        OutsideMargin = 6,
+
+        /// <summary>Верхнее поле листа: от края листа до полосы набора (topMargin).</summary>
+        TopMargin = 7,
+
+        /// <summary>Нижнее поле листа: от полосы набора до края листа (bottomMargin).</summary>
+        BottomMargin = 8
     }
 
     /// <summary>Положение таблицы с обтеканием относительно своей опоры по одной оси.</summary>
@@ -195,10 +215,31 @@ namespace Writersword.Modules.TextEditor.Models.Document
             float pageYPt, float pageHeightPt, float marginTopPt, float marginBottomPt,
             float anchorYPt)
         {
-            // Опора по горизонтали: лист целиком или полоса набора.
-            bool fromPageX = HorizontalAnchor == TableFloatAnchor.Page;
-            float baseXPt = fromPageX ? pageXPt : textXPt;
-            float spanXPt = fromPageX ? pageWidthPt : textWidthPt;
+            // Опора по горизонтали: лист целиком, полоса набора или одно из боковых
+            // полей листа — промежуток между краем листа и полосой набора.
+            float baseXPt;
+            float spanXPt;
+            switch (HorizontalAnchor)
+            {
+                case TableFloatAnchor.Page:
+                    baseXPt = pageXPt;
+                    spanXPt = pageWidthPt;
+                    break;
+                case TableFloatAnchor.LeftMargin:
+                case TableFloatAnchor.InsideMargin:
+                    baseXPt = pageXPt;
+                    spanXPt = Math.Max(0f, textXPt - pageXPt);
+                    break;
+                case TableFloatAnchor.RightMargin:
+                case TableFloatAnchor.OutsideMargin:
+                    baseXPt = textXPt + textWidthPt;
+                    spanXPt = Math.Max(0f, pageXPt + pageWidthPt - (textXPt + textWidthPt));
+                    break;
+                default:
+                    baseXPt = textXPt;
+                    spanXPt = textWidthPt;
+                    break;
+            }
 
             float xPt = HorizontalAlign switch
             {
@@ -217,11 +258,30 @@ namespace Writersword.Modules.TextEditor.Models.Document
             }
             else
             {
-                bool fromPageY = VerticalAnchor == TableFloatAnchor.Page;
-                float baseYPt = fromPageY ? pageYPt : pageYPt + marginTopPt;
-                float spanYPt = fromPageY
-                    ? pageHeightPt
-                    : pageHeightPt - marginTopPt - marginBottomPt;
+                // Лист целиком, полоса набора или верхнее либо нижнее поле листа.
+                float baseYPt;
+                float spanYPt;
+                switch (VerticalAnchor)
+                {
+                    case TableFloatAnchor.Page:
+                        baseYPt = pageYPt;
+                        spanYPt = pageHeightPt;
+                        break;
+                    case TableFloatAnchor.TopMargin:
+                    case TableFloatAnchor.InsideMargin:
+                        baseYPt = pageYPt;
+                        spanYPt = marginTopPt;
+                        break;
+                    case TableFloatAnchor.BottomMargin:
+                    case TableFloatAnchor.OutsideMargin:
+                        baseYPt = pageYPt + pageHeightPt - marginBottomPt;
+                        spanYPt = marginBottomPt;
+                        break;
+                    default:
+                        baseYPt = pageYPt + marginTopPt;
+                        spanYPt = pageHeightPt - marginTopPt - marginBottomPt;
+                        break;
+                }
 
                 yPt = VerticalAlign switch
                 {
@@ -233,6 +293,33 @@ namespace Writersword.Modules.TextEditor.Models.Document
             }
 
             return (xPt, yPt);
+        }
+
+        /// <summary>
+        /// На какую долю сдвига полосы набора по горизонтали уходит объект с этим
+        /// положением. Полоса набора сдвигается, когда переплёт переходит на другую
+        /// сторону листа: поля меняются местами, а край бумаги остаётся где был.
+        /// От текста — объект уходит вместе с полосой целиком (1), от листа — стоит на
+        /// месте (0), по середине бокового поля — на половину сдвига: поле с одной
+        /// стороны сужается, с другой расширяется.
+        /// </summary>
+        public float HorizontalTextFollow()
+        {
+            // Отсчёт линейный по краю полосы набора при неизменном листе и ширине
+            // полосы, поэтому доля — разность двух расчётов при единичном сдвиге.
+            const float textXPt = 100f;
+            const float textWidthPt = 200f;
+            const float pageWidthPt = 400f;
+            const float objectWidthPt = 10f;
+
+            float atText = ResolveOrigin(
+                objectWidthPt, objectWidthPt, textXPt, textWidthPt, 0f, pageWidthPt,
+                0f, pageWidthPt, 0f, 0f, 0f).XPt;
+            float atShifted = ResolveOrigin(
+                objectWidthPt, objectWidthPt, textXPt + 1f, textWidthPt, 0f, pageWidthPt,
+                0f, pageWidthPt, 0f, 0f, 0f).XPt;
+
+            return atShifted - atText;
         }
     }
 
@@ -365,6 +452,27 @@ namespace Writersword.Modules.TextEditor.Models.Document
     }
 
     /// <summary>
+    /// Плавающий объект в ячейке таблицы — картинка или фигура Word с привязкой к
+    /// ячейке (layoutInCell). Стоит у своего абзаца ячейки, как плавающий объект
+    /// документа стоит у своего абзаца: положение отсчитывается от области
+    /// содержимого ячейки и от верха абзаца, текст ячейки его обтекает.
+    /// </summary>
+    public sealed class CellFloat
+    {
+        /// <summary>Абзац ячейки, к которому привязан объект.</summary>
+        public Guid AnchorParagraphId { get; set; }
+
+        /// <summary>
+        /// Номер этого абзаца в ячейке на момент последней вёрстки. Запасная привязка:
+        /// работает, когда абзаца с таким идентификатором в ячейке уже нет.
+        /// </summary>
+        public int AnchorParagraphIndex { get; set; }
+
+        /// <summary>Сам объект: <see cref="ImageBlock"/> или <see cref="ShapeBlock"/>.</summary>
+        public BlockModel Object { get; set; } = null!;
+    }
+
+    /// <summary>
     /// Одна ячейка таблицы.
     /// Содержит список параграфов (как и обычный поток документа) и, между ними,
     /// вложенные таблицы.
@@ -375,6 +483,41 @@ namespace Writersword.Modules.TextEditor.Models.Document
 
         /// <summary>Содержимое ячейки — список параграфов.</summary>
         public List<ParagraphBlock> Paragraphs { get; set; } = new() { new ParagraphBlock() };
+
+        /// <summary>
+        /// Плавающие объекты ячейки (картинки и фигуры Word с обтеканием). Null — их
+        /// нет. Каждый привязан к своему абзацу ячейки (см. <see cref="CellFloat"/>).
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<CellFloat>? Floats { get; set; }
+
+        /// <summary>
+        /// Номер абзаца ячейки, к которому привязан плавающий объект. Абзац, которого
+        /// уже нет, заменяется абзацем на его месте, а за концом ячейки — последним.
+        /// </summary>
+        public int FloatParagraphIndex(CellFloat cellFloat)
+        {
+            for (int i = 0; i < Paragraphs.Count; i++)
+                if (Paragraphs[i].Id == cellFloat.AnchorParagraphId) return i;
+
+            return Math.Clamp(cellFloat.AnchorParagraphIndex, 0, Math.Max(0, Paragraphs.Count - 1));
+        }
+
+        /// <summary>
+        /// Освежает привязку плавающих объектов: запоминает номер абзаца каждого, а
+        /// объект, чей абзац исчез, привязывает к абзацу на его месте.
+        /// </summary>
+        public void AnchorFloats()
+        {
+            if (Floats is not { Count: > 0 } floats || Paragraphs.Count == 0) return;
+
+            foreach (var cellFloat in floats)
+            {
+                int position = FloatParagraphIndex(cellFloat);
+                cellFloat.AnchorParagraphIndex = position;
+                cellFloat.AnchorParagraphId = Paragraphs[position].Id;
+            }
+        }
 
         /// <summary>
         /// Таблицы внутри ячейки. Null — вложенных таблиц нет. Каждая стоит перед своим

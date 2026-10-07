@@ -1128,22 +1128,120 @@ namespace Writersword.Infrastructure.Services.Project
         /// но событие пишется в журнал как ERR. Точка восстановления к этому
         /// моменту уже снята, поэтому вернуть прежнее состояние можно из истории.
         /// Порог намеренно грубый: ловим катастрофу, а не обычную правку.
+        /// <para>
+        /// Сравниваются размеры в байтах UTF-8: прежний размер берётся из таблицы
+        /// записей файла проекта, и сами данные ради проверки не читаются.
+        /// </para>
         /// </summary>
-        private void WarnOnCollapsedModules(Dictionary<string, object?> newData, ProjectFile savedProject)
+        private void WarnOnCollapsedModules(Dictionary<string, object?> newData, IReadOnlyDictionary<string, long> savedSizes)
         {
             const int MinimumSavedLength = 4096;
             const int CollapseRatio = 5;
 
-            foreach (var kvp in savedProject.ModulesData)
+            foreach (var kvp in savedSizes)
             {
                 if (!newData.TryGetValue(kvp.Key, out var fresh)) continue;
-                if (kvp.Value is not string saved || fresh is not string current) continue;
-                if (saved.Length < MinimumSavedLength) continue;
-                if (current.Length >= saved.Length / CollapseRatio) continue;
+                if (fresh is not string current) continue;
+
+                long saved = kvp.Value;
+                if (saved < MinimumSavedLength) continue;
+
+                long currentBytes = System.Text.Encoding.UTF8.GetByteCount(current);
+                if (currentBytes >= saved / CollapseRatio) continue;
 
                 _logger.LogError(
-                    "Module {M} collapsed on save: {Old} -> {New} chars. Previous state stays in the backup history.",
-                    kvp.Key, saved.Length, current.Length);
+                    "Module {M} collapsed on save: {Old} -> {New} bytes. Previous state stays in the backup history.",
+                    kvp.Key, saved, currentBytes);
+            }
+        }
+
+        /// <summary>
+        /// Что сохранению нужно от прежнего файла проекта: данные модулей, которых
+        /// нет среди собранных (их берут из файла, чтобы не затереть), и размеры
+        /// данных собранных модулей (для проверки на схлопывание).
+        /// </summary>
+        private sealed class SavedModulesInfo
+        {
+            public Dictionary<string, string> Missing { get; } = new(StringComparer.Ordinal);
+            public Dictionary<string, long> Sizes { get; } = new(StringComparer.Ordinal);
+        }
+
+        /// <summary>
+        /// Прочитать из файла проекта то, что нужно сохранению.
+        /// <para>
+        /// Раньше для этого проект загружался целиком: данные всех модулей, включая
+        /// весь текст рукописи, поднимались в память на каждом сохранении, а
+        /// использовались только данные модулей, которых нет среди собранных, —
+        /// обычно их нет вовсе. Теперь читается только таблица записей, а данные —
+        /// лишь у тех модулей, которые действительно пришлось бы взять из файла.
+        /// </para>
+        /// Null — файл не читается или в нём нет project.json; так же, как прежде
+        /// при неудачной загрузке, защита от затирания в этом случае не работает.
+        /// </summary>
+        private async Task<SavedModulesInfo?> ReadSavedModulesAsync(
+            string filePath, IReadOnlyDictionary<string, object?> collected)
+        {
+            const string ModulesPrefix = "modules/";
+            const string CustomDataName = "CustomData.json";
+
+            try
+            {
+                if (!File.Exists(filePath))
+                    return null;
+
+                return await Task.Run(() =>
+                {
+                    using var storage = new SqliteFileStorageService(filePath, Serilog.Log.Logger);
+
+                    var projectBytes = storage.ReadFile("project.json");
+                    if (projectBytes is null)
+                    {
+                        _logger.LogWarning("project.json not found in {FilePath}", filePath);
+                        return null;
+                    }
+
+                    var meta = Newtonsoft.Json.JsonConvert.DeserializeObject<ProjectFile>(
+                        System.Text.Encoding.UTF8.GetString(projectBytes));
+
+                    if (meta is null)
+                    {
+                        _logger.LogWarning("Failed to deserialize project.json in {FilePath}", filePath);
+                        return null;
+                    }
+
+                    var info = new SavedModulesInfo();
+
+                    foreach (var entry in storage.EnumerateEntries())
+                    {
+                        var parts = entry.Path.Split('/');
+
+                        if (parts.Length != 3
+                            || !string.Equals(parts[0] + "/", ModulesPrefix, StringComparison.OrdinalIgnoreCase)
+                            || !string.Equals(parts[2], CustomDataName, StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        var moduleType = parts[1];
+
+                        if (collected.ContainsKey(moduleType))
+                        {
+                            info.Sizes[moduleType] = entry.Size;
+                            continue;
+                        }
+
+                        var data = storage.ReadFile(entry.Path);
+                        if (data is null)
+                            continue;
+
+                        info.Missing[moduleType] = System.Text.Encoding.UTF8.GetString(data);
+                    }
+
+                    return info;
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to read saved modules from {FilePath}", filePath);
+                return null;
             }
         }
 
@@ -1233,7 +1331,10 @@ namespace Writersword.Infrastructure.Services.Project
                     var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
                     var activeModules = mainViewModel.GetActiveModules();
                     var activeCustomData = stateCollector.CollectCustomData(activeModules);
-                    var cache = _cacheService.LoadCache(filePath);
+
+                    // Копии открытых модулей в кеше всё равно затираются живыми данными
+                    // ниже, поэтому из кеша они не читаются.
+                    var cache = _cacheService.LoadCacheExcept(filePath, activeCustomData.Keys);
 
                     allData = new Dictionary<string, object?>();
 
@@ -1249,17 +1350,17 @@ namespace Writersword.Infrastructure.Services.Project
                     // а кеш пуст) — берём старое значение из проекта.
                     // Это предотвращает затирание данных при временном сбое сбора.
                     tab.Context.CloseStorage();
-                    var savedProject = await _projectService.LoadAsync(filePath);
+                    var savedModules = await ReadSavedModulesAsync(filePath, allData);
                     tab.Context.ReopenStorage();
 
-                    if (savedProject != null)
+                    if (savedModules != null)
                     {
-                        WarnOnCollapsedModules(allData, savedProject);
+                        WarnOnCollapsedModules(allData, savedModules.Sizes);
 
-                        foreach (var kvp in savedProject.ModulesData)
+                        foreach (var kvp in savedModules.Missing)
                         {
                             if (!allData.ContainsKey(kvp.Key) && kvp.Value != null
-                                && !(kvp.Value is string s0 && string.IsNullOrWhiteSpace(s0)))
+                                && !string.IsNullOrWhiteSpace(kvp.Value))
                             {
                                 allData[kvp.Key] = kvp.Value;
                                 _logger.LogWarning(
@@ -1308,17 +1409,17 @@ namespace Writersword.Infrastructure.Services.Project
                     // Защита от потери данных: если модуль был в проекте но не попал в кеш —
                     // берём старое значение из проекта.
                     tab.Context.CloseStorage();
-                    var savedProject = await _projectService.LoadAsync(filePath);
+                    var savedModules = await ReadSavedModulesAsync(filePath, allData);
                     tab.Context.ReopenStorage();
 
-                    if (savedProject != null)
+                    if (savedModules != null)
                     {
-                        WarnOnCollapsedModules(allData, savedProject);
+                        WarnOnCollapsedModules(allData, savedModules.Sizes);
 
-                        foreach (var kvp in savedProject.ModulesData)
+                        foreach (var kvp in savedModules.Missing)
                         {
                             if (!allData.ContainsKey(kvp.Key) && kvp.Value != null
-                                && !(kvp.Value is string s1 && string.IsNullOrWhiteSpace(s1)))
+                                && !string.IsNullOrWhiteSpace(kvp.Value))
                             {
                                 allData[kvp.Key] = kvp.Value;
                                 _logger.LogWarning(

@@ -192,8 +192,13 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (!drew) return false;
 
+            List<ImageEntry> overlayImages;
+            lock (_renderLock) { overlayImages = _images; }
+
             canvas.Save();
             canvas.Scale(scale, scale);
+            // Кадры анимаций — поверх снимка, под выделением (DocumentCanvas.Animation).
+            DrawAnimationOverlay(canvas, pages, overlayImages, canvasWidth);
             DrawSelectionOverlay(canvas, layouts, pages, canvasWidth);
             DrawHeadingToggles(canvas, layouts, pages, canvasWidth);
             canvas.Restore();

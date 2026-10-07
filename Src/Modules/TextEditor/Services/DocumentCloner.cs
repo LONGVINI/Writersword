@@ -379,6 +379,21 @@ namespace Writersword.Modules.TextEditor.Services
             foreach (var paragraph in source.Paragraphs)
                 clone.Paragraphs.Add(CloneParagraph(paragraph));
 
+            // Плавающие объекты ячейки — тоже её часть: картинка с обтеканием в ячейке.
+            if (source.Floats is { Count: > 0 } floats)
+            {
+                clone.Floats = new List<CellFloat>(floats.Count);
+                foreach (var cellFloat in floats)
+                {
+                    clone.Floats.Add(new CellFloat
+                    {
+                        AnchorParagraphId = cellFloat.AnchorParagraphId,
+                        AnchorParagraphIndex = cellFloat.AnchorParagraphIndex,
+                        Object = CloneBlock(cellFloat.Object)
+                    });
+                }
+            }
+
             // Вложенные таблицы — часть ячейки: без них копия для сохранения теряла бы их.
             if (source.NestedTables is { Count: > 0 } nestedTables)
             {
@@ -439,7 +454,9 @@ namespace Writersword.Modules.TextEditor.Services
                 OffsetXPt = source.OffsetXPt,
                 OffsetYPt = source.OffsetYPt,
                 ZOrder = source.ZOrder,
-                AltText = source.AltText
+                AltText = source.AltText,
+                SourceImageFileName = source.SourceImageFileName,
+                WordDrawing = source.WordDrawing?.Clone()
             };
         }
 
@@ -496,7 +513,8 @@ namespace Writersword.Modules.TextEditor.Services
                 TextInsetVerticalPt = source.TextInsetVerticalPt,
                 IsGrouped = source.IsGrouped,
                 GroupId = source.GroupId,
-                AltText = source.AltText
+                AltText = source.AltText,
+                WordDrawing = source.WordDrawing?.Clone()
             };
         }
 

@@ -79,8 +79,8 @@ namespace Writersword.Modules.TextEditor.Services
         /// колонтитулы и нумерация страниц (ImportService.HeaderFooter).
         /// Не поддерживается (игнорируется с предупреждением в Warnings):
         /// многораздельные документы (кроме последнего раздела),
-        /// сноски/концевые сноски, комментарии, отслеживание изменений (принимаются
-        /// как есть), вложенные таблицы, векторные картинки (WMF/EMF), обтекание
+        /// сноски/концевые сноски, комментарии, правки строк таблиц (w:trPr/w:ins,
+        /// w:del), вложенные таблицы, векторные картинки (WMF/EMF), обтекание
         /// текстом у плавающих объектов (импортируются как обычные картинки в тексте).
         /// </summary>
         public Task<ImportResult> ImportFromDocxAsync(string filePath)
@@ -127,6 +127,7 @@ namespace Writersword.Modules.TextEditor.Services
             BeginSectionTracking();
 
             _compatibilityMode = ApplyWordCompatibility(mainPart, doc);
+            ApplyTrackRevisionsSetting(mainPart, doc);
 
             ApplyFinalSectionPageSettings(body, doc, resolver, warnings);
 
@@ -1058,6 +1059,15 @@ namespace Writersword.Modules.TextEditor.Services
                 if (chunk.Runs.Count == 0)
                     chunk.Runs.Add(BuildParagraphMarkRun(p, resolver, effPara));
 
+                // Правки абзаца. Знак абзаца стоит в его последнем куске: куски до
+                // разрыва страницы кончаются разрывом, а не знаком.
+                ApplyParagraphRevisions(p, para, resolver);
+                if (i < segments.Count - 1)
+                {
+                    para.Properties.MarkInserted = null;
+                    para.Properties.MarkDeleted = null;
+                }
+
                 chunk.InvalidateLength();
                 section.Blocks.Add(para);
 
@@ -1261,6 +1271,11 @@ namespace Writersword.Modules.TextEditor.Services
             Dictionary<string, byte[]> extractedImages,
             List<string> warnings)
         {
+            // Правки рецензирования и границы перемещений (ImportService.Revisions).
+            if (TryAppendRevisionElement(element, chunk, section, resolver, effPara,
+                    mainPart, extractedImages, warnings))
+                return;
+
             switch (element)
             {
                 case W.Run run:
@@ -1275,16 +1290,6 @@ namespace Writersword.Modules.TextEditor.Services
                         AppendRun(innerRun, chunk, section, resolver, effPara, mainPart, extractedImages, warnings);
                     break;
 
-                case W.InsertedRun ins:
-                    foreach (var innerRun in ins.Elements<W.Run>())
-                        AppendRun(innerRun, chunk, section, resolver, effPara, mainPart, extractedImages, warnings);
-                    break;
-
-                case W.DeletedRun:
-                    // Текст, удалённый с отслеживанием правок — не переносим в импорт
-                    // (эквивалент «принять все правки» для удалений).
-                    break;
-
                 case W.SimpleField simpleField:
                     // В w:fldSimple Word хранит последнее вычисленное значение поля
                     // обычными ранами: код поля не нужен, а значение — это видимый
@@ -1293,17 +1298,6 @@ namespace Writersword.Modules.TextEditor.Services
                         AppendRun(innerRun, chunk, section, resolver, effPara, mainPart, extractedImages, warnings);
                     break;
 
-                case W.MoveToRun moveTo:
-                    // Приёмник перемещения равнозначен вставке: принятая правка
-                    // оставляет его текст в документе.
-                    foreach (var innerRun in moveTo.Elements<W.Run>())
-                        AppendRun(innerRun, chunk, section, resolver, effPara, mainPart, extractedImages, warnings);
-                    break;
-
-                case W.MoveFromRun:
-                    // Источник перемещения равнозначен удалению. Разбирать его нельзя:
-                    // фрагмент удвоился бы, оставшись и на старом месте, и на новом.
-                    break;
             }
         }
 
@@ -1336,6 +1330,9 @@ namespace Writersword.Modules.TextEditor.Services
             var effectiveRun = resolver.ResolveEffectiveRun(run, effPara);
             var runProps = effectiveRun.ToRunProperties();
 
+            // Смена оформления под рецензированием: прежнее оформление остаётся при ране.
+            runProps.FormatChange = ReadRunFormatChange(run, resolver, effPara);
+
             // Знаки вне ASCII (кириллица, латиница с диакритикой, типографские знаки)
             // Word набирает шрифтом w:hAnsi, а не w:ascii. Когда шрифты разные, текст
             // рана делится на куски по этому признаку.
@@ -1363,6 +1360,15 @@ namespace Writersword.Modules.TextEditor.Services
                             chunk.Runs.Add(new RunModel { Text = t.Text, Properties = complexProps });
                         else
                             AppendTextByFontSlot(chunk, t.Text, runProps, nonAsciiProps, complexProps);
+                        break;
+
+                    // Текст удалённой правки (w:delText) — тот же текст: он остаётся в
+                    // абзаце до принятия правки, отметку удаления ставит её контейнер.
+                    case W.DeletedText deletedText:
+                        if (wholeRunComplex && complexProps is not null)
+                            chunk.Runs.Add(new RunModel { Text = deletedText.Text, Properties = complexProps });
+                        else
+                            AppendTextByFontSlot(chunk, deletedText.Text, runProps, nonAsciiProps, complexProps);
                         break;
 
                     case W.TabChar:
@@ -1725,6 +1731,9 @@ namespace Writersword.Modules.TextEditor.Services
                     List<NestedTable>? nestedTables = null;
                     var pendingNested = new List<TableBlock>();
 
+                    // Плавающие объекты ячейки (картинки и фигуры с обтеканием).
+                    List<CellFloat>? cellFloats = null;
+
                     void AttachPendingNested(ParagraphBlock anchor, int anchorIndex)
                     {
                         if (pendingNested.Count == 0) return;
@@ -1747,11 +1756,39 @@ namespace Writersword.Modules.TextEditor.Services
                         switch (cellChild)
                         {
                             case W.Paragraph cellParagraph:
-                                var importedParagraph = ImportCellParagraph(cellParagraph, section, resolver,
-                                    numbering, listIdMap, mainPart, extractedImages, warnings);
+                            {
+                                // Плавающие картинки и фигуры абзаца остаются плавающими
+                                // внутри ячейки и привязываются к этому абзацу.
+                                var outerCollector = _cellFloatCollector;
+                                var collectedFloats = new List<BlockModel>();
+                                _cellFloatCollector = collectedFloats;
+
+                                ParagraphBlock importedParagraph;
+                                try
+                                {
+                                    importedParagraph = ImportCellParagraph(cellParagraph, section, resolver,
+                                        numbering, listIdMap, mainPart, extractedImages, warnings);
+                                }
+                                finally
+                                {
+                                    _cellFloatCollector = outerCollector;
+                                }
+
                                 paragraphs.Add(importedParagraph);
                                 AttachPendingNested(importedParagraph, paragraphs.Count - 1);
+
+                                foreach (var floatingObject in collectedFloats)
+                                {
+                                    cellFloats ??= new List<CellFloat>();
+                                    cellFloats.Add(new CellFloat
+                                    {
+                                        AnchorParagraphId = importedParagraph.Id,
+                                        AnchorParagraphIndex = paragraphs.Count - 1,
+                                        Object = floatingObject
+                                    });
+                                }
                                 break;
+                            }
 
                             case W.Table nested:
                                 var nestedBlock = depth < MaxNestedTableDepth
@@ -1796,6 +1833,7 @@ namespace Writersword.Modules.TextEditor.Services
                         ColSpan = gridSpan,
                         Paragraphs = paragraphs,
                         NestedTables = nestedTables,
+                        Floats = cellFloats,
                         BackgroundColor = cellProps?.Shading is not null
                             ? NormalizeShadingColor(cellProps.Shading)
                             : styleFill,
@@ -2356,6 +2394,8 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (chunk.Runs.Count == 0)
                 chunk.Runs.Add(BuildParagraphMarkRun(p, resolver, effPara));
+
+            ApplyParagraphRevisions(p, para, resolver);
 
             chunk.InvalidateLength();
             return para;

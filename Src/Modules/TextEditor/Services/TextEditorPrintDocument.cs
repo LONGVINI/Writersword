@@ -34,7 +34,11 @@ namespace Writersword.Modules.TextEditor.Services
             _document = document ?? throw new ArgumentNullException(nameof(document));
             _pageSettings = ConvertPageSettings(document.PageSettings);
             _renderer = new SKTextRenderer();
-            _styles = new StyleResolver(document.Styles);
+            // Печать идёт в выбранном виде показа исправлений, как у Word.
+            _styles = new StyleResolver(
+                document.Styles,
+                revisionView: document.RevisionView,
+                revisionAuthors: RevisionService.Authors(document));
             ReserveHeaderFooterSpace();
             // Габарит картинки в строке: без него объект встал бы в строку нулевой ширины
             // и переносы строк в печати разошлись бы с редактором.
@@ -145,6 +149,10 @@ namespace Writersword.Modules.TextEditor.Services
             // листа стоит левее на его ширину — как на полотне.
             float gutterShiftPt = GutterShiftPt(pageIndex);
 
+            // Плавающие объекты от края листа сдвиг не проходят — рендер возвращает
+            // их на место по этому значению.
+            SKTextRenderer.PrintGutterShiftPt = gutterShiftPt;
+
             try
             {
                 if (gutterShiftPt != 0f)
@@ -162,6 +170,7 @@ namespace Writersword.Modules.TextEditor.Services
             finally
             {
                 SKTextRenderer.PrintImageResolver = null;
+                SKTextRenderer.PrintGutterShiftPt = 0f;
             }
         }
 
@@ -260,15 +269,11 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 foreach (var block in section.InlineObjects)
                 {
-                    if (block is not ImageBlock image || image.Id != id) continue;
+                    // Объект строки — картинка или фигура; габарит у обоих один и
+                    // тот же, что и в редакторе (FloatingObjectBox).
+                    if (block is not IFloatingObject floating || block.Id != id) continue;
 
-                    double rad = image.RotationDeg * Math.PI / 180.0;
-                    float absCos = (float)Math.Abs(Math.Cos(rad));
-                    float absSin = (float)Math.Abs(Math.Sin(rad));
-                    float w = (float)image.WidthPt;
-                    float h = (float)image.HeightPt;
-
-                    return (w * absCos + h * absSin, w * absSin + h * absCos);
+                    return FloatingObjectBox.Of(floating, (float)floating.WidthPt, (float)floating.HeightPt);
                 }
             }
             return null;

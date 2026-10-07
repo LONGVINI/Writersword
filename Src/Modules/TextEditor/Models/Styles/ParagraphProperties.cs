@@ -196,6 +196,42 @@ namespace Writersword.Modules.TextEditor.Models.Styles
         public string? ShadingPatternColor { get; set; }
 
         /// <summary>
+        /// Знак абзаца вставлен под рецензированием (w:pPr/w:rPr/w:ins): абзац
+        /// появился правкой — нажатием Enter, вставкой текста. Отклонить правку — слить
+        /// абзац со следующим.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Inline.RevisionInfo? MarkInserted { get; set; }
+
+        /// <summary>
+        /// Знак абзаца удалён под рецензированием (w:pPr/w:rPr/w:del): принять правку —
+        /// слить абзац со следующим.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Inline.RevisionInfo? MarkDeleted { get; set; }
+
+        /// <summary>
+        /// Оформление абзаца сменено под рецензированием (w:pPrChange): прежнее
+        /// оформление и кто его сменил.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public ParagraphFormatChange? FormatChange { get; set; }
+
+        /// <summary>У абзаца есть правка рецензирования знака или оформления.</summary>
+        [JsonIgnore]
+        public bool HasRevision => MarkInserted is not null || MarkDeleted is not null || FormatChange is not null;
+
+        /// <summary>Копия одного оформления — без отметок правок рецензирования.</summary>
+        public ParagraphProperties WithoutRevisions()
+        {
+            var copy = Clone();
+            copy.MarkInserted = null;
+            copy.MarkDeleted = null;
+            copy.FormatChange = null;
+            return copy;
+        }
+
+        /// <summary>
         /// Создаёт копию свойств.
         ///
         /// Позиции табуляции копируются поимённо, а не ссылкой: почленное копирование
@@ -215,6 +251,11 @@ namespace Writersword.Modules.TextEditor.Models.Styles
 
             // Рамка копируется своей: общая у копии и оригинала менялась бы сразу у обоих.
             copy.Borders = Borders?.Clone();
+
+            // Отметки правок — тоже своими, по той же причине.
+            copy.MarkInserted = MarkInserted?.Clone();
+            copy.MarkDeleted = MarkDeleted?.Clone();
+            copy.FormatChange = FormatChange?.Clone();
 
             return copy;
         }
@@ -262,6 +303,33 @@ namespace Writersword.Modules.TextEditor.Models.Styles
             ShadingColor = src.ShadingColor;
             ShadingPattern = src.ShadingPattern;
             ShadingPatternColor = src.ShadingPatternColor;
+
+            // Правки рецензирования возвращаются вместе с оформлением: отмена правки
+            // оформления, записанной под рецензированием, снимает и её отметку.
+            MarkInserted = src.MarkInserted?.Clone();
+            MarkDeleted = src.MarkDeleted?.Clone();
+            FormatChange = src.FormatChange?.Clone();
         }
+    }
+
+    /// <summary>
+    /// Смена оформления абзаца под рецензированием (w:pPrChange): каким оформление
+    /// было до правки.
+    /// </summary>
+    public sealed class ParagraphFormatChange
+    {
+        /// <summary>Кто и когда сменил оформление.</summary>
+        public Inline.RevisionInfo Info { get; set; } = new();
+
+        /// <summary>Оформление абзаца до правки (без отметок правок).</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public ParagraphProperties? Previous { get; set; }
+
+        /// <summary>Глубокая копия.</summary>
+        public ParagraphFormatChange Clone() => new()
+        {
+            Info = Info.Clone(),
+            Previous = Previous?.WithoutRevisions()
+        };
     }
 }

@@ -1,0 +1,417 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:controls="using:Writersword.Styles.UserControls"
+             x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonReviewTab"
+             x:DataType="vm:RibbonReviewTabViewModel">
+
+	<!--
+	    Вкладка «Рецензирование».
+
+	    Три группы, и в каждой одно дело:
+	      «Запись» — включена ли запись исправлений и чьим именем подписываются правки;
+	      «Показ»  — как правки видны на листе: четыре вида Word кнопками, а не
+	                 списком, — выбранный вид виден сразу, без раскрытия;
+	      «Правки» — принять, отклонить, все сразу, назад, далее и сколько правок
+	                 осталось.
+
+	    Кнопки, группы и тумблеры ленты живут в Styles/Controls/Ribbon.axaml — одни
+	    на все вкладки. Здесь только подпись поля имени и подпись счётчика.
+
+	    Свёрнутые группы открывают во флайауте то же, что и развёрнутые: узкое окно
+	    меняет место кнопок, а не то, как ими пользуются.
+	-->
+
+	<UserControl.Styles>
+		<!-- Подпись поля: короткое слово слева от значения. -->
+		<Style Selector="TextBlock.FieldCaption">
+			<Setter Property="FontSize"          Value="10"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+		<!-- Счётчик правок под кнопками группы «Правки». -->
+		<Style Selector="TextBlock.RevisionCount">
+			<Setter Property="FontSize"            Value="10"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="HorizontalAlignment" Value="Center"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
+		</Style>
+
+		<!-- Кнопка вида показа: значок и подпись в строку, одна высота на все четыре. -->
+		<Style Selector="ToggleButton.ViewChoice">
+			<Setter Property="MinHeight"                  Value="24"/>
+			<Setter Property="Height"                     Value="24"/>
+			<Setter Property="MinWidth"                   Value="118"/>
+			<Setter Property="Padding"                    Value="6 0"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+		</Style>
+	</UserControl.Styles>
+
+	<controls:RibbonScrollContainer x:Name="ScrollContainer">
+		<controls:RibbonScrollContainer.RibbonContent>
+			<StackPanel Orientation="Horizontal">
+
+				<!-- ═══ ЗАПИСЬ ═══════════════════════════════════════════════
+				     Тумблер записи и имя, которым подписываются правки. Имя
+				     общее для всех документов: оно принадлежит человеку. Пустое
+				     поле — имя пользователя системы, как у Word. -->
+				<Border Classes="RibbonGroup" IsVisible="{Binding IsRecordGroupExpanded}">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom"
+						           Classes="RibbonGroupLabel"
+						           Text="Запись"/>
+						<StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+							<ToggleButton Classes="RibbonToggle RibbonToggleLarge"
+							              IsChecked="{Binding IsTrackRevisions, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Исправления"
+							              behaviours:TooltipBehavior.Description="Включено — каждая правка запоминается: набранное отмечается вставкой, удалённое остаётся в тексте зачёркнутым, смена оформления помнит прежнее. Правки можно принять или отклонить по одной или все сразу. Запись сохраняется в документе и переходит в Word">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="20" Height="20"
+									          Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+									<TextBlock Text="Исправления" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+
+							<StackPanel Spacing="4" VerticalAlignment="Center">
+								<StackPanel Orientation="Horizontal" Spacing="4">
+									<PathIcon Width="12" Height="12"
+									          VerticalAlignment="Center"
+									          Foreground="{DynamicResource TextMutedBrush}"
+									          Data="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+									<TextBlock Classes="FieldCaption" Text="Автор"/>
+								</StackPanel>
+								<TextBox Width="130" Height="24" MinHeight="24"
+								         Padding="6 2"
+								         FontSize="11"
+								         VerticalContentAlignment="Center"
+								         Text="{Binding ReviewerName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+								         behaviours:TooltipBehavior.Tip="Имя рецензента"
+								         behaviours:TooltipBehavior.Description="Этим именем подписываются новые правки. Пустое поле — имя пользователя системы. Имя общее для всех документов"/>
+							</StackPanel>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ЗАПИСЬ — свёрнутая -->
+				<Border Classes="RibbonGroupCollapsed" IsVisible="{Binding !IsRecordGroupExpanded}">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom"
+						           Classes="RibbonGroupLabel"
+						           Text="Запись"/>
+						<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+						        behaviours:TooltipBehavior.Tip="Запись исправлений">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Width="20" Height="20"
+								          Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+								<TextBlock Text="Запись" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+							<Button.Flyout>
+								<Flyout Placement="Bottom">
+									<StackPanel Orientation="Horizontal" Spacing="6" Margin="8">
+										<ToggleButton Classes="RibbonToggle RibbonToggleLarge"
+										              IsChecked="{Binding IsTrackRevisions, Mode=TwoWay}"
+										              behaviours:TooltipBehavior.Tip="Исправления">
+											<StackPanel Spacing="2" HorizontalAlignment="Center">
+												<PathIcon Width="20" Height="20"
+												          Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+												<TextBlock Text="Исправления" FontSize="9" TextAlignment="Center"/>
+											</StackPanel>
+										</ToggleButton>
+										<StackPanel Spacing="4" VerticalAlignment="Center">
+											<TextBlock Classes="FieldCaption" Text="Автор"/>
+											<TextBox Width="130" Height="24" MinHeight="24"
+											         Padding="6 2"
+											         FontSize="11"
+											         VerticalContentAlignment="Center"
+											         Text="{Binding ReviewerName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+										</StackPanel>
+									</StackPanel>
+								</Flyout>
+							</Button.Flyout>
+						</Button>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══ ПОКАЗ ════════════════════════════════════════════════
+				     Четыре вида Word сеткой два на два. Вид меняет только то,
+				     как правки видны на листе, — документ остаётся прежним.
+				     Печать и PDF идут в выбранном виде, как у Word. -->
+				<Border Classes="RibbonGroup" IsVisible="{Binding IsViewGroupExpanded}">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom"
+						           Classes="RibbonGroupLabel"
+						           Text="Показ"/>
+						<Grid ColumnDefinitions="Auto Auto"
+						      RowDefinitions="Auto Auto"
+						      ColumnSpacing="4" RowSpacing="4"
+						      VerticalAlignment="Center">
+							<ToggleButton Grid.Row="0" Grid.Column="0"
+							              Classes="RibbonToggle ViewChoice"
+							              IsChecked="{Binding IsViewAllMarkup, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Все исправления"
+							              behaviours:TooltipBehavior.Description="Видно всё: вставленное подчёркнуто, удалённое зачёркнуто, каждое цветом своего автора; у строк с правками на поле черта">
+								<StackPanel Orientation="Horizontal" Spacing="5">
+									<PathIcon Width="12" Height="12"
+									          Data="M3 18h12v-2H3v2zM3 6v2h18V6H3zm0 7h18v-2H3v2z"/>
+									<TextBlock Text="Все исправления" FontSize="11" VerticalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+							<ToggleButton Grid.Row="0" Grid.Column="1"
+							              Classes="RibbonToggle ViewChoice"
+							              IsChecked="{Binding IsViewSimpleMarkup, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Простая разметка"
+							              behaviours:TooltipBehavior.Description="Текст как после принятия всех правок, а строки с правками отмечены красной чертой на поле">
+								<StackPanel Orientation="Horizontal" Spacing="5">
+									<PathIcon Width="12" Height="12"
+									          Data="M3 4h2v16H3V4zm4 3h14v2H7V7zm0 4h14v2H7v-2zm0 4h10v2H7v-2z"/>
+									<TextBlock Text="Простая разметка" FontSize="11" VerticalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+							<ToggleButton Grid.Row="1" Grid.Column="0"
+							              Classes="RibbonToggle ViewChoice"
+							              IsChecked="{Binding IsViewNoMarkup, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Без исправлений"
+							              behaviours:TooltipBehavior.Description="Текст как после принятия всех правок, без пометок: так документ будет выглядеть, если все правки принять">
+								<StackPanel Orientation="Horizontal" Spacing="5">
+									<PathIcon Width="12" Height="12"
+									          Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+									<TextBlock Text="Без исправлений" FontSize="11" VerticalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+							<ToggleButton Grid.Row="1" Grid.Column="1"
+							              Classes="RibbonToggle ViewChoice"
+							              IsChecked="{Binding IsViewOriginal, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Исходный документ"
+							              behaviours:TooltipBehavior.Description="Текст как до правок: так документ будет выглядеть, если все правки отклонить">
+								<StackPanel Orientation="Horizontal" Spacing="5">
+									<PathIcon Width="12" Height="12"
+									          Data="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21a9 9 0 000-18z"/>
+									<TextBlock Text="Исходный документ" FontSize="11" VerticalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+						</Grid>
+					</DockPanel>
+				</Border>
+
+				<!-- ПОКАЗ — свёрнутая: на кнопке название выбранного вида. -->
+				<Border Classes="RibbonGroupCollapsed" IsVisible="{Binding !IsViewGroupExpanded}">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom"
+						           Classes="RibbonGroupLabel"
+						           Text="Показ"/>
+						<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+						        behaviours:TooltipBehavior.Tip="{Binding ViewTitle}">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Width="20" Height="20"
+								          Data="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+								<TextBlock Text="Показ" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+							<Button.Flyout>
+								<Flyout Placement="Bottom">
+									<StackPanel Spacing="4" Margin="8">
+										<ToggleButton Classes="RibbonToggle ViewChoice"
+										              IsChecked="{Binding IsViewAllMarkup, Mode=TwoWay}">
+											<TextBlock Text="Все исправления" FontSize="11" VerticalAlignment="Center"/>
+										</ToggleButton>
+										<ToggleButton Classes="RibbonToggle ViewChoice"
+										              IsChecked="{Binding IsViewSimpleMarkup, Mode=TwoWay}">
+											<TextBlock Text="Простая разметка" FontSize="11" VerticalAlignment="Center"/>
+										</ToggleButton>
+										<ToggleButton Classes="RibbonToggle ViewChoice"
+										              IsChecked="{Binding IsViewNoMarkup, Mode=TwoWay}">
+											<TextBlock Text="Без исправлений" FontSize="11" VerticalAlignment="Center"/>
+										</ToggleButton>
+										<ToggleButton Classes="RibbonToggle ViewChoice"
+										              IsChecked="{Binding IsViewOriginal, Mode=TwoWay}">
+											<TextBlock Text="Исходный документ" FontSize="11" VerticalAlignment="Center"/>
+										</ToggleButton>
+									</StackPanel>
+								</Flyout>
+							</Button.Flyout>
+						</Button>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══ ПРАВКИ ═══════════════════════════════════════════════
+				     «Принять» и «Отклонить» решают правку под кареткой (или все
+				     правки в выделении) и сразу ведут к следующей — как кнопки
+				     Word «Принять и перейти к следующему». «Все» — по всему
+				     документу. «Назад» и «Далее» выделяют соседнюю правку. -->
+				<Border Classes="RibbonGroup" IsVisible="{Binding IsChangesGroupExpanded}">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom"
+						           Classes="RibbonGroupLabel"
+						           Text="Правки"/>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<Button Classes="RibbonBtnLarge"
+							        Command="{Binding AcceptCommand}"
+							        IsEnabled="{Binding HasRevisions}"
+							        behaviours:TooltipBehavior.Tip="Принять"
+							        behaviours:TooltipBehavior.Description="Принимает правку под кареткой или все правки в выделении и переходит к следующей. Принятая вставка становится обычным текстом, принятое удаление убирает текст">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="20" Height="20"
+									          Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+									<TextBlock Text="Принять" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+							<Button Classes="RibbonBtnLarge"
+							        Command="{Binding RejectCommand}"
+							        IsEnabled="{Binding HasRevisions}"
+							        behaviours:TooltipBehavior.Tip="Отклонить"
+							        behaviours:TooltipBehavior.Description="Отклоняет правку под кареткой или все правки в выделении и переходит к следующей. Отклонённая вставка уходит, отклонённое удаление возвращает текст, оформление становится прежним">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="20" Height="20"
+									          Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+									<TextBlock Text="Отклонить" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<StackPanel Spacing="4" VerticalAlignment="Center">
+								<Button Classes="RibbonBtn"
+								        MinHeight="24" Height="24"
+								        HorizontalContentAlignment="Left"
+								        Command="{Binding AcceptAllCommand}"
+								        IsEnabled="{Binding HasRevisions}"
+								        behaviours:TooltipBehavior.Tip="Принять все"
+								        behaviours:TooltipBehavior.Description="Принимает все правки документа">
+									<StackPanel Orientation="Horizontal" Spacing="5">
+										<PathIcon Width="12" Height="12"
+										          Data="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/>
+										<TextBlock Text="Принять все" FontSize="11" VerticalAlignment="Center"/>
+									</StackPanel>
+								</Button>
+								<Button Classes="RibbonBtn"
+								        MinHeight="24" Height="24"
+								        HorizontalContentAlignment="Left"
+								        Command="{Binding RejectAllCommand}"
+								        IsEnabled="{Binding HasRevisions}"
+								        behaviours:TooltipBehavior.Tip="Отклонить все"
+								        behaviours:TooltipBehavior.Description="Отклоняет все правки документа: он возвращается к исходному виду">
+									<StackPanel Orientation="Horizontal" Spacing="5">
+										<PathIcon Width="12" Height="12"
+										          Data="M5 13h14v-2H5v2zm-2 4h14v-2H3v2zM7 7v2h14V7H7z"/>
+										<TextBlock Text="Отклонить все" FontSize="11" VerticalAlignment="Center"/>
+									</StackPanel>
+								</Button>
+							</StackPanel>
+
+							<Separator Classes="RibbonDivider"/>
+
+							<Button Classes="RibbonBtnLarge"
+							        Command="{Binding PreviousCommand}"
+							        IsEnabled="{Binding HasRevisions}"
+							        behaviours:TooltipBehavior.Tip="Назад"
+							        behaviours:TooltipBehavior.Description="Выделяет предыдущую правку">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="20" Height="20"
+									          Data="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+									<TextBlock Text="Назад" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+							<Button Classes="RibbonBtnLarge"
+							        Command="{Binding NextCommand}"
+							        IsEnabled="{Binding HasRevisions}"
+							        behaviours:TooltipBehavior.Tip="Далее"
+							        behaviours:TooltipBehavior.Description="Выделяет следующую правку; после последней поиск продолжается с начала документа">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="20" Height="20"
+									          Data="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+									<TextBlock Text="Далее" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<TextBlock Classes="RevisionCount"
+							           Margin="4 0 2 0"
+							           Text="{Binding RevisionCountText}"/>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ПРАВКИ — свёрнутая -->
+				<Border Classes="RibbonGroupCollapsed" IsVisible="{Binding !IsChangesGroupExpanded}">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom"
+						           Classes="RibbonGroupLabel"
+						           Text="Правки"/>
+						<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+						        behaviours:TooltipBehavior.Tip="{Binding RevisionCountText}">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Width="20" Height="20"
+								          Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+								<TextBlock Text="Правки" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+							<Button.Flyout>
+								<Flyout Placement="Bottom">
+									<StackPanel Spacing="6" Margin="8">
+										<StackPanel Orientation="Horizontal" Spacing="4">
+											<Button Classes="RibbonBtnLarge"
+											        Command="{Binding AcceptCommand}"
+											        IsEnabled="{Binding HasRevisions}"
+											        behaviours:TooltipBehavior.Tip="Принять">
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Width="20" Height="20"
+													          Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+													<TextBlock Text="Принять" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</Button>
+											<Button Classes="RibbonBtnLarge"
+											        Command="{Binding RejectCommand}"
+											        IsEnabled="{Binding HasRevisions}"
+											        behaviours:TooltipBehavior.Tip="Отклонить">
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Width="20" Height="20"
+													          Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+													<TextBlock Text="Отклонить" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</Button>
+											<Button Classes="RibbonBtnLarge"
+											        Command="{Binding PreviousCommand}"
+											        IsEnabled="{Binding HasRevisions}"
+											        behaviours:TooltipBehavior.Tip="Назад">
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Width="20" Height="20"
+													          Data="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+													<TextBlock Text="Назад" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</Button>
+											<Button Classes="RibbonBtnLarge"
+											        Command="{Binding NextCommand}"
+											        IsEnabled="{Binding HasRevisions}"
+											        behaviours:TooltipBehavior.Tip="Далее">
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Width="20" Height="20"
+													          Data="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+													<TextBlock Text="Далее" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</Button>
+										</StackPanel>
+										<StackPanel Orientation="Horizontal" Spacing="4">
+											<Button Classes="RibbonBtn"
+											        MinHeight="24" Height="24"
+											        Command="{Binding AcceptAllCommand}"
+											        IsEnabled="{Binding HasRevisions}">
+												<TextBlock Text="Принять все" FontSize="11" VerticalAlignment="Center"/>
+											</Button>
+											<Button Classes="RibbonBtn"
+											        MinHeight="24" Height="24"
+											        Command="{Binding RejectAllCommand}"
+											        IsEnabled="{Binding HasRevisions}">
+												<TextBlock Text="Отклонить все" FontSize="11" VerticalAlignment="Center"/>
+											</Button>
+											<TextBlock Classes="RevisionCount"
+											           Margin="6 0 0 0"
+											           Text="{Binding RevisionCountText}"/>
+										</StackPanel>
+									</StackPanel>
+								</Flyout>
+							</Button.Flyout>
+						</Button>
+					</DockPanel>
+				</Border>
+
+			</StackPanel>
+		</controls:RibbonScrollContainer.RibbonContent>
+	</controls:RibbonScrollContainer>
+</UserControl>

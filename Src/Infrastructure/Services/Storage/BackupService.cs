@@ -69,6 +69,23 @@ namespace Writersword.Infrastructure.Services.Storage
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _rootUsable =
             new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Разобранные манифесты точек по полному пути файла, с отметкой файла
+        /// (время записи и длина), при которой разобраны.
+        ///
+        /// Таймер истории раз в минуту сверяет проект с последней точкой, а для
+        /// этого читает все манифесты склада: какая из точек последняя, видно
+        /// только по дате внутри. Раньше каждый тик заново читал и разбирал их
+        /// все — на истории в десятки точек с сотнями записей это мегабайты
+        /// JSON и россыпь объектов в памяти каждую минуту, даже в простое.
+        /// Манифест после записи не меняется, поэтому разобранный хранится, пока
+        /// у файла та же отметка; изменённый файл разбирается заново, удалённый
+        /// забывается. Объекты из кеша только читаются: ни один из тех, кто
+        /// получает список точек, их не меняет.
+        /// </summary>
+        private static readonly Dictionary<string, ((DateTime Write, long Length) Stamp, BackupSnapshot Snapshot)> _manifestCache =
+            new(StringComparer.OrdinalIgnoreCase);
+
         public BackupService(ISettingsService settingsService)
         {
             _logger = App.Services.GetService<ILogger<BackupService>>()!;
@@ -637,7 +654,15 @@ namespace Writersword.Infrastructure.Services.Storage
                     ProjectName = Path.GetFileNameWithoutExtension(projectPath)
                 };
 
-                File.WriteAllText(metaPath, JsonConvert.SerializeObject(meta, Formatting.Indented));
+                var json = JsonConvert.SerializeObject(meta, Formatting.Indented);
+
+                // Пометка вызывается на каждом тике таймера истории, то есть раз в
+                // минуту, а меняется только при переносе проекта. Совпадающая не
+                // перезаписывается: лишняя запись на диск каждую минуту ни к чему.
+                if (File.Exists(metaPath) && string.Equals(File.ReadAllText(metaPath), json, StringComparison.Ordinal))
+                    return;
+
+                File.WriteAllText(metaPath, json);
             }
             catch (Exception ex)
             {
@@ -1067,20 +1092,41 @@ namespace Writersword.Infrastructure.Services.Storage
             if (!Directory.Exists(dir))
                 return result;
 
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var file in Directory.EnumerateFiles(dir, "*" + SnapshotExtension))
             {
                 try
                 {
-                    var snapshot = JsonConvert.DeserializeObject<BackupSnapshot>(File.ReadAllText(file));
+                    var info = new FileInfo(file);
+                    var stamp = (info.LastWriteTimeUtc, info.Length);
+                    seen.Add(info.FullName);
+
+                    BackupSnapshot? snapshot;
+
+                    lock (_manifestCache)
+                    {
+                        snapshot = _manifestCache.TryGetValue(info.FullName, out var cached) && cached.Stamp == stamp
+                            ? cached.Snapshot
+                            : null;
+                    }
 
                     if (snapshot == null)
                     {
-                        allReadable = false;
-                        continue;
-                    }
+                        snapshot = JsonConvert.DeserializeObject<BackupSnapshot>(File.ReadAllText(file));
 
-                    if (string.IsNullOrEmpty(snapshot.Id))
-                        snapshot.Id = Path.GetFileNameWithoutExtension(file);
+                        if (snapshot == null)
+                        {
+                            allReadable = false;
+                            continue;
+                        }
+
+                        if (string.IsNullOrEmpty(snapshot.Id))
+                            snapshot.Id = Path.GetFileNameWithoutExtension(file);
+
+                        lock (_manifestCache)
+                            _manifestCache[info.FullName] = (stamp, snapshot);
+                    }
 
                     result.Add(snapshot);
                 }
@@ -1090,6 +1136,23 @@ namespace Writersword.Infrastructure.Services.Storage
                     allReadable = false;
                     _logger.LogError(ex, "Unreadable snapshot manifest: {File}", file);
                 }
+            }
+
+            // Манифесты, которых в папке больше нет (прорежены, удалены, склад
+            // перенесён), из памяти уходят вместе с ними.
+            var fullDir = Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                          + Path.DirectorySeparatorChar;
+
+            lock (_manifestCache)
+            {
+                var gone = _manifestCache.Keys
+                    .Where(path => path.StartsWith(fullDir, StringComparison.OrdinalIgnoreCase)
+                                   && Path.GetDirectoryName(path)!.Length + 1 == fullDir.Length
+                                   && !seen.Contains(path))
+                    .ToList();
+
+                foreach (var path in gone)
+                    _manifestCache.Remove(path);
             }
 
             return result;

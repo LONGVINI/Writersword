@@ -1,4 +1,6 @@
 ﻿using System.Collections.Generic;
+using SkiaSharp;
+using Writersword.Modules.TextEditor.Models.Inline;
 using Writersword.Modules.TextEditor.Models.Styles;
 
 using RenderAlignment = Writersword.Core.Models.Rendering.TextAlignment;
@@ -79,6 +81,29 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public bool ShowHiddenText { get; }
 
+        /// <summary>
+        /// Как показываются исправления рецензирования: все с пометками, простая
+        /// разметка, без пометок или исходный документ. Свойство вида документа.
+        /// </summary>
+        public RevisionView RevisionView { get; }
+
+        // Цвета авторов правок: каждый новый автор получает следующий цвет набора, как
+        // в Word при «цвет по автору». Порядок — по первому появлению в документе.
+        private readonly Dictionary<string, SKColor> _authorColors = new(System.StringComparer.Ordinal);
+        private readonly object _authorColorsLock = new();
+
+        private static readonly SKColor[] AuthorPalette =
+        {
+            new(0xC0, 0x00, 0x00),
+            new(0x2E, 0x74, 0xB5),
+            new(0x53, 0x81, 0x35),
+            new(0x70, 0x30, 0xA0),
+            new(0xC5, 0x5A, 0x11),
+            new(0x1F, 0x7A, 0x7A),
+            new(0x7F, 0x60, 0x00),
+            new(0xC0, 0x35, 0x9A)
+        };
+
         public StyleResolver(
             IEnumerable<DocumentStyle> styles,
             IReadOnlyDictionary<string, string>? scriptFontMap = null,
@@ -87,7 +112,9 @@ namespace Writersword.Modules.TextEditor.Rendering
             bool breakOnHyphen = true,
             float defaultTabStopPt = 35.4f,
             bool justifyWithShrinking = false,
-            bool showHiddenText = false)
+            bool showHiddenText = false,
+            RevisionView revisionView = RevisionView.AllMarkup,
+            IEnumerable<string>? revisionAuthors = null)
         {
             _index = new Dictionary<string, DocumentStyle>(
                 System.StringComparer.OrdinalIgnoreCase);
@@ -105,6 +132,29 @@ namespace Writersword.Modules.TextEditor.Rendering
             DefaultTabStopPt = defaultTabStopPt > 1f ? defaultTabStopPt : 35.4f;
             JustifyWithShrinking = justifyWithShrinking;
             ShowHiddenText = showHiddenText;
+            RevisionView = revisionView;
+
+            if (revisionAuthors is not null)
+                foreach (var author in revisionAuthors)
+                    AuthorColor(author);
+        }
+
+        /// <summary>
+        /// Цвет пометок правок автора. Автор, которого ещё не было, получает следующий
+        /// цвет набора; набор кончился — цвета идут по кругу.
+        /// </summary>
+        public SKColor AuthorColor(string? author)
+        {
+            string key = author ?? string.Empty;
+
+            lock (_authorColorsLock)
+            {
+                if (_authorColors.TryGetValue(key, out var color)) return color;
+
+                color = AuthorPalette[_authorColors.Count % AuthorPalette.Length];
+                _authorColors[key] = color;
+                return color;
+            }
         }
 
         // ── Резолверы шрифта ──────────────────────────────────────────────

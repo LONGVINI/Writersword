@@ -33,6 +33,8 @@ namespace Writersword.Modules.TextEditor.Services
             "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
         private const string PictureGraphicUri =
             "http://schemas.openxmlformats.org/drawingml/2006/picture";
+        private const string RelationshipsNamespace =
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
         /// <summary>Порядок наложения у Word (relativeHeight) начинается с этого числа.</summary>
         private const long RelativeHeightBase = 251658240L;
@@ -50,8 +52,9 @@ namespace Writersword.Modules.TextEditor.Services
                     string? relationshipId = EnsureImagePart(image, ctx);
                     if (relationshipId is null) return null;
 
-                    long cx = (long)Math.Round(Math.Max(image.WidthPt, 1) * EmuPerPoint);
-                    long cy = (long)Math.Round(Math.Max(image.HeightPt, 1) * EmuPerPoint);
+                    // Нулевой габарит — рисунок Word без места на листе: уходит таким же.
+                    long cx = (long)Math.Round(Math.Max(image.WidthPt, 0) * EmuPerPoint);
+                    long cy = (long)Math.Round(Math.Max(image.HeightPt, 0) * EmuPerPoint);
 
                     uint drawingId = ctx.NextDrawingId++;
                     string name = string.IsNullOrWhiteSpace(image.ImageFileName)
@@ -59,7 +62,7 @@ namespace Writersword.Modules.TextEditor.Services
                         : image.ImageFileName;
 
                     var graphic = new Dr.Graphic(
-                        new Dr.GraphicData(BuildPictureElement(image, relationshipId, cx, cy, name))
+                        new Dr.GraphicData(BuildPictureElement(image, relationshipId, cx, cy, name, ctx))
                         {
                             Uri = PictureGraphicUri
                         });
@@ -76,11 +79,13 @@ namespace Writersword.Modules.TextEditor.Services
                     uint drawingId = ctx.NextDrawingId++;
                     string name = "Shape " + drawingId.ToString(CultureInfo.InvariantCulture);
 
-                    if (!string.IsNullOrEmpty(shape.FillImageFileName))
-                        ctx.Warnings.Add("Картинка внутри фигуры в .docx не переносится: фигура ушла с заливкой цветом.");
+                    // Картинка-заливка уходит в пакет отдельной частью, как обычная картинка.
+                    string? fillRelationshipId = string.IsNullOrEmpty(shape.FillImageFileName)
+                        ? null
+                        : EnsureImageFilePart(shape.FillImageFileName!, ctx);
 
                     var graphic = new Dr.Graphic(
-                        new Dr.GraphicData(XmlElement(BuildShapeXml(shape, cx, cy)))
+                        new Dr.GraphicData(XmlElement(BuildShapeXml(shape, cx, cy, fillRelationshipId, ctx)))
                         {
                             Uri = WordprocessingShapeNamespace
                         });
@@ -96,11 +101,20 @@ namespace Writersword.Modules.TextEditor.Services
 
         /// <summary>
         /// Картинка (pic:pic) со ссылкой на файл, обрезкой, поворотом и отражением —
-        /// одна на рисунок в строке и на плавающий.
+        /// одна на рисунок в строке и на плавающий. Оформление картинки уходит в её
+        /// свойства (pic:spPr): контур, по которому она обрезана, и рамка; прозрачность —
+        /// в заливку (a:alphaModFix).
         /// </summary>
         private static Pic.Picture BuildPictureElement(
-            ImageBlock image, string relationshipId, long cx, long cy, string name)
+            ImageBlock image, string relationshipId, long cx, long cy, string name, DocxWriteContext ctx)
         {
+            var properties = new Pic.ShapeProperties(
+                BuildPictureTransform(image, cx, cy),
+                BuildPictureGeometry(image));
+
+            if (BuildPictureOutline(image, ctx) is { } outline)
+                properties.AppendChild(outline);
+
             return new Pic.Picture(
                 new Pic.NonVisualPictureProperties(
                     new Pic.NonVisualDrawingProperties
@@ -111,39 +125,150 @@ namespace Writersword.Modules.TextEditor.Services
                     },
                     new Pic.NonVisualPictureDrawingProperties()),
                 BuildPictureFill(image, relationshipId),
-                new Pic.ShapeProperties(
-                    BuildPictureTransform(image, cx, cy),
-                    new Dr.PresetGeometry(new Dr.AdjustValueList())
-                    {
-                        Preset = new EnumValue<Dr.ShapeTypeValues>(Dr.ShapeTypeValues.Rectangle)
-                    }));
+                properties);
+        }
+
+        /// <summary>
+        /// Контур картинки: заготовка Word, пришедшая из .docx, пока её не меняли;
+        /// иначе — по виду картинки в редакторе: эллипс, выноска, прямоугольник со
+        /// скруглёнными углами или обычный прямоугольник.
+        /// </summary>
+        private static OpenXmlElement BuildPictureGeometry(ImageBlock image)
+        {
+            if (image.WordDrawing is { } word && word.PresetGeometryValidFor(image))
+                return XmlElement(WithDrawingNamespace(word.PresetGeometryXml!));
+
+            return XmlElement(PresetGeometryXml(image.ShapeType, image.CornerRadiusPt, image.WidthPt, image.HeightPt));
+        }
+
+        /// <summary>
+        /// Заготовка контура (a:prstGeom) по виду объекта в редакторе. Скругление у
+        /// Word — доля меньшей стороны в стотысячных (adj).
+        /// </summary>
+        private static string PresetGeometryXml(ShapeType shapeType, double cornerRadiusPt, double widthPt, double heightPt)
+        {
+            string ns = $"xmlns:a=\"{DrawingMainNamespace}\"";
+
+            switch (shapeType)
+            {
+                case ShapeType.Ellipse:
+                    return $"<a:prstGeom {ns} prst=\"ellipse\"><a:avLst/></a:prstGeom>";
+                case ShapeType.Line:
+                case ShapeType.Arrow:
+                    return $"<a:prstGeom {ns} prst=\"line\"><a:avLst/></a:prstGeom>";
+                case ShapeType.Callout:
+                    return $"<a:prstGeom {ns} prst=\"wedgeRectCallout\"><a:avLst/></a:prstGeom>";
+            }
+
+            double side = Math.Min(widthPt, heightPt);
+            if (cornerRadiusPt > 0.0 && side > 0.0)
+            {
+                long adj = (long)Math.Round(Math.Clamp(cornerRadiusPt / side, 0.0, 0.5) * 100000.0);
+                return $"<a:prstGeom {ns} prst=\"roundRect\"><a:avLst><a:gd name=\"adj\" fmla=\"val {adj.ToString(CultureInfo.InvariantCulture)}\"/></a:avLst></a:prstGeom>";
+            }
+
+            return $"<a:prstGeom {ns} prst=\"rect\"><a:avLst/></a:prstGeom>";
+        }
+
+        /// <summary>
+        /// Разметка, сохранённая из .docx, с объявлением пространства DrawingML на
+        /// корне: внешний XML элемента несёт префикс «a», но объявление пространства
+        /// у него было на предке.
+        /// </summary>
+        private static string WithDrawingNamespace(string outerXml)
+        {
+            if (outerXml.Contains("xmlns:a=", StringComparison.Ordinal)) return outerXml;
+
+            int nameEnd = outerXml.IndexOfAny(new[] { ' ', '>', '/' }, 1);
+            if (nameEnd < 0) return outerXml;
+
+            return outerXml.Substring(0, nameEnd) + $" xmlns:a=\"{DrawingMainNamespace}\"" + outerXml.Substring(nameEnd);
+        }
+
+        /// <summary>
+        /// Рамка картинки (a:ln). Линию снаружи рамки Word не рисует — у него линия
+        /// только по центру границы или внутри неё; такая рамка уходит по центру, а
+        /// человек получает предупреждение.
+        /// </summary>
+        private static Dr.Outline? BuildPictureOutline(ImageBlock image, DocxWriteContext ctx)
+        {
+            string? color = image.BorderThicknessPt > 0.0 ? OpaqueRgb(image.BorderColor) : null;
+            if (color is null) return null;
+
+            var outline = new Dr.Outline
+            {
+                Width = (Int32Value)(int)Math.Round(Math.Max(0.0, image.BorderThicknessPt) * EmuPerPoint)
+            };
+
+            if (image.BorderAlign == ImageBorderAlign.Inside)
+                outline.Alignment = new EnumValue<Dr.PenAlignmentValues>(Dr.PenAlignmentValues.Insert);
+            else if (image.BorderAlign == ImageBorderAlign.Outside)
+                ctx.Warnings.Add("Рамка картинки снаружи её границы в Word нарисована по центру границы: такого положения рамки у Word нет.");
+
+            outline.AppendChild(new Dr.SolidFill(new Dr.RgbColorModelHex { Val = color }));
+
+            Dr.PresetLineDashValues? dash = image.BorderDashStyle switch
+            {
+                ShapeDashStyle.Dash => Dr.PresetLineDashValues.Dash,
+                ShapeDashStyle.Dot => Dr.PresetLineDashValues.SystemDot,
+                ShapeDashStyle.DashDot => Dr.PresetLineDashValues.DashDot,
+                _ => null
+            };
+            if (dash is { } dashValue)
+                outline.AppendChild(new Dr.PresetDash { Val = new EnumValue<Dr.PresetLineDashValues>(dashValue) });
+
+            return outline;
         }
 
         /// <summary>
         /// Рисунок Word вокруг готовой графики: в строке (объект на собственной полосе)
         /// или якорем с положением и обтеканием (плавающий объект).
+        ///
+        /// Всё, что Word хранит о рисунке и что пришло с ним из .docx, уходит обратно:
+        /// поля обрамления, имя, заголовок и скрытость, флаги якоря, «сквозное»
+        /// обтекание и его контур, порядок наложения, точное имя опоры. Объект
+        /// «сверху и снизу» уходит якорем, как был у Word, если topAndBottomAnchor.
         /// </summary>
         private static W.Drawing BuildObjectDrawing(
             IFloatingObject obj, TableFloatPosition? anchorPosition,
             long cx, long cy, uint drawingId, string name, string? description,
-            Dr.Graphic graphic)
+            Dr.Graphic graphic, bool topAndBottomAnchor = true)
         {
+            var word = obj.WordDrawing;
+
             var properties = new Wp.DocProperties
             {
                 Id = (UInt32Value)drawingId,
-                Name = name
+                Name = string.IsNullOrWhiteSpace(word?.Name) ? name : word!.Name
             };
             if (!string.IsNullOrWhiteSpace(description))
                 properties.Description = description;
+            if (!string.IsNullOrWhiteSpace(word?.Title))
+                properties.Title = word!.Title;
+            if (word is { Hidden: true })
+                properties.Hidden = true;
 
             var frameProperties = new Wp.NonVisualGraphicFrameDrawingProperties(
                 new Dr.GraphicFrameLocks { NoChangeAspect = obj.LockAspectRatio });
 
-            if (obj.WrapMode == WrapMode.Inline)
+            var (effectLeft, effectTop, effectRight, effectBottom) = FloatingObjectBox.EffectExtentPt(obj);
+            Wp.EffectExtent BuildEffectExtent() => new()
+            {
+                LeftEdge = SignedEmu(effectLeft),
+                TopEdge = SignedEmu(effectTop),
+                RightEdge = SignedEmu(effectRight),
+                BottomEdge = SignedEmu(effectBottom)
+            };
+
+            bool topAndBottom = obj.WrapMode == WrapMode.Inline
+                && topAndBottomAnchor
+                && word is { WrapTopAndBottom: true };
+
+            if (obj.WrapMode == WrapMode.Inline && !topAndBottom)
             {
                 return new W.Drawing(new Wp.Inline(
                     new Wp.Extent { Cx = cx, Cy = cy },
-                    new Wp.EffectExtent { LeftEdge = 0L, TopEdge = 0L, RightEdge = 0L, BottomEdge = 0L },
+                    BuildEffectExtent(),
                     properties,
                     frameProperties,
                     graphic));
@@ -156,25 +281,109 @@ namespace Writersword.Modules.TextEditor.Services
             SetPlainAttribute(anchor, "distR", EmuText(obj.WrapPadRightPt));
             SetPlainAttribute(anchor, "simplePos", "0");
             SetPlainAttribute(anchor, "relativeHeight",
-                (RelativeHeightBase + Math.Clamp((long)obj.ZOrder, 0L, 1000000L))
-                    .ToString(CultureInfo.InvariantCulture));
-            SetPlainAttribute(anchor, "behindDoc", obj.WrapMode == WrapMode.Behind ? "1" : "0");
-            SetPlainAttribute(anchor, "locked", "0");
-            SetPlainAttribute(anchor, "layoutInCell", "1");
-            SetPlainAttribute(anchor, "allowOverlap", "1");
+                RelativeHeightFor(obj).ToString(CultureInfo.InvariantCulture));
+            bool behindDoc = obj.WrapMode == WrapMode.Behind
+                || (obj.WrapMode is WrapMode.Square or WrapMode.Tight && word is { BehindDoc: true });
+            SetPlainAttribute(anchor, "behindDoc", behindDoc ? "1" : "0");
+            SetPlainAttribute(anchor, "locked", word is { Locked: true } ? "1" : "0");
+            SetPlainAttribute(anchor, "layoutInCell", word is null || word.LayoutInCell ? "1" : "0");
+            SetPlainAttribute(anchor, "allowOverlap", word is null || word.AllowOverlap ? "1" : "0");
+
+            var position = topAndBottom
+                ? TopAndBottomPositionFor(obj, word!.TopAndBottomPosition)
+                : anchorPosition;
 
             anchor.AppendChild(XmlElement(
                 $"<wp:simplePos xmlns:wp=\"{WordprocessingDrawingNamespace}\" x=\"0\" y=\"0\"/>"));
-            anchor.AppendChild(XmlElement(BuildHorizontalPositionXml(obj, anchorPosition)));
-            anchor.AppendChild(XmlElement(BuildVerticalPositionXml(obj, anchorPosition)));
+            anchor.AppendChild(XmlElement(BuildHorizontalPositionXml(obj, position)));
+            anchor.AppendChild(XmlElement(BuildVerticalPositionXml(obj, position)));
             anchor.AppendChild(new Wp.Extent { Cx = cx, Cy = cy });
-            anchor.AppendChild(new Wp.EffectExtent { LeftEdge = 0L, TopEdge = 0L, RightEdge = 0L, BottomEdge = 0L });
-            anchor.AppendChild(XmlElement(BuildWrapXml(obj)));
+            anchor.AppendChild(BuildEffectExtent());
+            anchor.AppendChild(XmlElement(topAndBottom
+                ? $"<wp:wrapTopAndBottom xmlns:wp=\"{WordprocessingDrawingNamespace}\"/>"
+                : BuildWrapXml(obj)));
             anchor.AppendChild(properties);
             anchor.AppendChild(frameProperties);
             anchor.AppendChild(graphic);
 
             return new W.Drawing(anchor);
+        }
+
+        /// <summary>Длина в EMU со знаком: поля обрамления бывают отрицательными.</summary>
+        private static long SignedEmu(double points) => (long)Math.Round(points * EmuPerPoint);
+
+        /// <summary>
+        /// Порядок наложения для Word. Запись из .docx уходит как была, пока порядок
+        /// объекта в редакторе не меняли. Порядок, заведомо взятый из Word (большое
+        /// число), уходит как есть; порядок редактора отсчитывается от начала шкалы Word.
+        /// </summary>
+        private static long RelativeHeightFor(IFloatingObject obj)
+        {
+            if (obj.WordDrawing is { RelativeHeight: > 0 } word && word.RelativeHeightForZOrder == obj.ZOrder)
+                return word.RelativeHeight;
+
+            if (obj.ZOrder >= 1000000)
+                return obj.ZOrder;
+
+            return RelativeHeightBase + Math.Clamp((long)obj.ZOrder, 0L, 1000000L);
+        }
+
+        /// <summary>
+        /// Положение объекта «сверху и снизу» для Word: исходное, а сторона по
+        /// горизонтали — по выравниванию объекта в редакторе, если его меняли.
+        /// </summary>
+        private static TableFloatPosition TopAndBottomPositionFor(IFloatingObject obj, TableFloatPosition? source)
+        {
+            var position = source?.Clone() ?? new TableFloatPosition
+            {
+                HorizontalAnchor = TableFloatAnchor.Text,
+                VerticalAnchor = TableFloatAnchor.Text,
+                VerticalAlign = TableFloatAlign.Offset
+            };
+
+            bool keepOffset = position.HorizontalAlign == TableFloatAlign.Offset
+                && obj.Alignment == TextAlignment.Left;
+
+            if (!keepOffset)
+            {
+                position.HorizontalAlign = obj.Alignment switch
+                {
+                    TextAlignment.Center => TableFloatAlign.Center,
+                    TextAlignment.Right => TableFloatAlign.End,
+                    _ => TableFloatAlign.Start
+                };
+            }
+
+            return position;
+        }
+
+        /// <summary>
+        /// Имя опоры для Word. Когда модель различает опору грубее, чем Word, — колонка,
+        /// поле и знак для неё одна полоса набора, абзац и строка одна опора, — уходит
+        /// имя, пришедшее из .docx, если оно описывает ту же опору.
+        /// </summary>
+        private static string RelativeFromName(TableFloatAnchor anchor, string? sourceName, bool horizontal)
+        {
+            string name = anchor switch
+            {
+                TableFloatAnchor.Page => "page",
+                TableFloatAnchor.Margin => "margin",
+                TableFloatAnchor.LeftMargin => "leftMargin",
+                TableFloatAnchor.RightMargin => "rightMargin",
+                TableFloatAnchor.InsideMargin => "insideMargin",
+                TableFloatAnchor.OutsideMargin => "outsideMargin",
+                TableFloatAnchor.TopMargin => "topMargin",
+                TableFloatAnchor.BottomMargin => "bottomMargin",
+                _ => horizontal ? "column" : "paragraph"
+            };
+
+            if (sourceName is null) return name;
+
+            bool sameAnchor = horizontal
+                ? anchor == TableFloatAnchor.Text && sourceName is "column" or "margin" or "character"
+                : anchor == TableFloatAnchor.Text && sourceName is "paragraph" or "line";
+
+            return sameAnchor ? sourceName : name;
         }
 
         /// <summary>
@@ -189,12 +398,8 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (position is not null)
             {
-                relativeFrom = position.HorizontalAnchor switch
-                {
-                    TableFloatAnchor.Page => "page",
-                    TableFloatAnchor.Margin => "margin",
-                    _ => "column"
-                };
+                relativeFrom = RelativeFromName(
+                    position.HorizontalAnchor, obj.WordDrawing?.HorizontalRelativeFrom, horizontal: true);
 
                 // Сторона опоры сохраняется, пока объект с неё не сдвинули: смещение
                 // от стороны Word записать не умеет.
@@ -225,12 +430,8 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (position is not null)
             {
-                relativeFrom = position.VerticalAnchor switch
-                {
-                    TableFloatAnchor.Page => "page",
-                    TableFloatAnchor.Margin => "margin",
-                    _ => "paragraph"
-                };
+                relativeFrom = RelativeFromName(
+                    position.VerticalAnchor, obj.WordDrawing?.VerticalRelativeFrom, horizontal: false);
 
                 bool moved = Math.Abs(obj.OffsetYPt) > 0.05;
                 align = moved || position.VerticalAnchor == TableFloatAnchor.Text
@@ -259,7 +460,10 @@ namespace Writersword.Modules.TextEditor.Services
             return $"<wp:{element} xmlns:wp=\"{WordprocessingDrawingNamespace}\" relativeFrom=\"{relativeFrom}\">{inner}</wp:{element}>";
         }
 
-        /// <summary>Обтекание: вокруг рамки, по контуру либо без обтекания.</summary>
+        /// <summary>
+        /// Обтекание: вокруг рамки, по контуру, сквозное либо без обтекания. Контур
+        /// обтекания — пришедший из Word, иначе сама рамка объекта.
+        /// </summary>
         private static string BuildWrapXml(IFloatingObject obj)
         {
             string side = obj.WrapSide switch
@@ -272,17 +476,42 @@ namespace Writersword.Modules.TextEditor.Services
 
             string ns = $"xmlns:wp=\"{WordprocessingDrawingNamespace}\"";
 
+            if (obj.WrapMode == WrapMode.Tight)
+            {
+                var word = obj.WordDrawing;
+                string element = word is { WrapThrough: true } ? "wrapThrough" : "wrapTight";
+                string edited = word is { WrapPolygonEdited: true } ? "1" : "0";
+
+                var polygon = new StringBuilder();
+                polygon.Append("<wp:wrapPolygon edited=\"").Append(edited).Append("\">");
+
+                if (word?.WrapPolygon is { Count: >= 3 } points)
+                {
+                    for (int i = 0; i < points.Count; i++)
+                    {
+                        polygon.Append(i == 0 ? "<wp:start x=\"" : "<wp:lineTo x=\"")
+                            .Append(points[i].X.ToString(CultureInfo.InvariantCulture))
+                            .Append("\" y=\"")
+                            .Append(points[i].Y.ToString(CultureInfo.InvariantCulture))
+                            .Append("\"/>");
+                    }
+                }
+                else
+                {
+                    // Контур обтекания у Word обязателен; у прямоугольной рамки он — сама рамка.
+                    polygon.Append("<wp:start x=\"0\" y=\"0\"/><wp:lineTo x=\"0\" y=\"21600\"/>")
+                        .Append("<wp:lineTo x=\"21600\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"0\"/>")
+                        .Append("<wp:lineTo x=\"0\" y=\"0\"/>");
+                }
+
+                polygon.Append("</wp:wrapPolygon>");
+
+                return $"<wp:{element} {ns} wrapText=\"{side}\">{polygon}</wp:{element}>";
+            }
+
             return obj.WrapMode switch
             {
                 WrapMode.Square => $"<wp:wrapSquare {ns} wrapText=\"{side}\"/>",
-
-                // Контур обтекания у Word обязателен; у прямоугольной рамки он — сама рамка.
-                WrapMode.Tight =>
-                    $"<wp:wrapTight {ns} wrapText=\"{side}\"><wp:wrapPolygon edited=\"0\">"
-                    + "<wp:start x=\"0\" y=\"0\"/><wp:lineTo x=\"0\" y=\"21600\"/>"
-                    + "<wp:lineTo x=\"21600\" y=\"21600\"/><wp:lineTo x=\"21600\" y=\"0\"/>"
-                    + "<wp:lineTo x=\"0\" y=\"0\"/></wp:wrapPolygon></wp:wrapTight>",
-
                 _ => $"<wp:wrapNone {ns}/>"
             };
         }
@@ -291,13 +520,18 @@ namespace Writersword.Modules.TextEditor.Services
         /// Фигура Word (wps:wsp): вид, поворот и отражение, заливка, обводка с
         /// наконечниками и текст внутри.
         /// </summary>
-        private static string BuildShapeXml(ShapeBlock shape, long cx, long cy)
+        private static string BuildShapeXml(
+            ShapeBlock shape, long cx, long cy, string? fillRelationshipId, DocxWriteContext ctx)
         {
             bool hasText = shape.IsClosedShape && !string.IsNullOrEmpty(shape.InnerText);
+
+            // Непрозрачность фигуры у Word — прозрачность её заливки и обводки.
+            double opacity = Math.Clamp(shape.Opacity, 0.0, 1.0);
 
             var xml = new StringBuilder();
             xml.Append("<wps:wsp xmlns:wps=\"").Append(WordprocessingShapeNamespace)
                .Append("\" xmlns:a=\"").Append(DrawingMainNamespace)
+               .Append("\" xmlns:r=\"").Append(RelationshipsNamespace)
                .Append("\" xmlns:w=\"").Append(WordprocessingMainNamespace).Append("\">");
 
             xml.Append(hasText ? "<wps:cNvSpPr txBox=\"1\"/>" : "<wps:cNvSpPr/>");
@@ -316,28 +550,59 @@ namespace Writersword.Modules.TextEditor.Services
                .Append(cx.ToString(CultureInfo.InvariantCulture)).Append("\" cy=\"")
                .Append(cy.ToString(CultureInfo.InvariantCulture)).Append("\"/></a:xfrm>");
 
-            string preset = shape.ShapeType switch
-            {
-                ShapeType.Ellipse => "ellipse",
-                ShapeType.Line or ShapeType.Arrow => "line",
-                ShapeType.Callout => "wedgeRectCallout",
-                _ => shape.CornerRadiusPt > 0.0 ? "roundRect" : "rect"
-            };
-            xml.Append("<a:prstGeom prst=\"").Append(preset).Append("\"><a:avLst/></a:prstGeom>");
-
-            // Заливка.
-            string? fill = shape.IsClosedShape ? OpaqueRgb(shape.FillColor) : null;
-            if (fill is not null)
-                xml.Append("<a:solidFill><a:srgbClr val=\"").Append(fill).Append("\"/></a:solidFill>");
+            // Контур: заготовка Word, пришедшая из .docx, пока её не меняли; иначе — по
+            // виду фигуры в редакторе.
+            if (shape.WordDrawing is { } word && word.PresetGeometryValidFor(shape))
+                xml.Append(WithDrawingNamespace(word.PresetGeometryXml!));
             else
+                xml.Append(PresetGeometryXml(shape.ShapeType, shape.CornerRadiusPt, shape.WidthPt, shape.HeightPt));
+
+            // Заливка: картинка, цвет или ничего.
+            string? fill = shape.IsClosedShape ? OpaqueRgb(shape.FillColor) : null;
+            if (shape.IsClosedShape && fillRelationshipId is not null)
+            {
+                xml.Append("<a:blipFill rotWithShape=\"1\"><a:blip r:embed=\"").Append(fillRelationshipId).Append('"');
+                if (opacity < 1.0)
+                    xml.Append("><a:alphaModFix amt=\"").Append(AlphaUnits(opacity)).Append("\"/></a:blip>");
+                else
+                    xml.Append("/>");
+
+                bool cropped = shape.CropLeftFrac > 0 || shape.CropTopFrac > 0
+                    || shape.CropRightFrac > 0 || shape.CropBottomFrac > 0;
+                if (cropped)
+                {
+                    xml.Append("<a:srcRect l=\"").Append(CropUnits(shape.CropLeftFrac).ToString(CultureInfo.InvariantCulture))
+                       .Append("\" t=\"").Append(CropUnits(shape.CropTopFrac).ToString(CultureInfo.InvariantCulture))
+                       .Append("\" r=\"").Append(CropUnits(shape.CropRightFrac).ToString(CultureInfo.InvariantCulture))
+                       .Append("\" b=\"").Append(CropUnits(shape.CropBottomFrac).ToString(CultureInfo.InvariantCulture))
+                       .Append("\"/>");
+                }
+
+                xml.Append("<a:stretch><a:fillRect/></a:stretch></a:blipFill>");
+
+                if (!shape.FillImageStretch)
+                    ctx.Warnings.Add("Картинка-заливка фигуры «вписать с сохранением пропорций» в Word растянута на всю фигуру: такого режима заливки у Word нет.");
+            }
+            else if (fill is not null)
+            {
+                xml.Append("<a:solidFill>").Append(ColorXml(fill, opacity * ColorAlpha(shape.FillColor))).Append("</a:solidFill>");
+            }
+            else
+            {
                 xml.Append("<a:noFill/>");
+            }
 
             // Обводка и наконечники.
             string? stroke = shape.StrokeThicknessPt > 0.0 ? OpaqueRgb(shape.StrokeColor) : null;
             if (stroke is not null)
             {
-                xml.Append("<a:ln w=\"").Append(EmuText(shape.StrokeThicknessPt)).Append("\">")
-                   .Append("<a:solidFill><a:srgbClr val=\"").Append(stroke).Append("\"/></a:solidFill>");
+                xml.Append("<a:ln w=\"").Append(EmuText(shape.StrokeThicknessPt)).Append('"');
+                if (shape.StrokeAlign == ImageBorderAlign.Inside)
+                    xml.Append(" algn=\"in\"");
+                else if (shape.StrokeAlign == ImageBorderAlign.Outside)
+                    ctx.Warnings.Add("Обводка фигуры снаружи контура в Word нарисована по центру контура: такого положения обводки у Word нет.");
+                xml.Append('>')
+                   .Append("<a:solidFill>").Append(ColorXml(stroke, opacity * ColorAlpha(shape.StrokeColor))).Append("</a:solidFill>");
 
                 string? dash = shape.DashStyle switch
                 {
@@ -434,6 +699,37 @@ namespace Writersword.Modules.TextEditor.Services
                .Append("\"><a:noAutofit/></wps:bodyPr></wps:wsp>");
 
             return xml.ToString();
+        }
+
+        /// <summary>
+        /// Цвет DrawingML (a:srgbClr) с прозрачностью: альфа — доля непрозрачности
+        /// (1 — непрозрачен), у Word — в стотысячных.
+        /// </summary>
+        private static string ColorXml(string rgb, double alpha)
+        {
+            if (alpha >= 0.9999)
+                return "<a:srgbClr val=\"" + rgb + "\"/>";
+
+            return "<a:srgbClr val=\"" + rgb + "\"><a:alpha val=\"" + AlphaUnits(alpha) + "\"/></a:srgbClr>";
+        }
+
+        /// <summary>Непрозрачность в стотысячных, как её пишет Word.</summary>
+        private static string AlphaUnits(double alpha) =>
+            ((long)Math.Round(Math.Clamp(alpha, 0.0, 1.0) * 100000.0)).ToString(CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// Непрозрачность цвета «#AARRGGBB» (0..1). У цвета без альфы — 1.
+        /// </summary>
+        private static double ColorAlpha(string? color)
+        {
+            if (string.IsNullOrWhiteSpace(color)) return 1.0;
+
+            string hex = color.Trim().TrimStart('#');
+            if (hex.Length != 8) return 1.0;
+
+            return int.TryParse(hex.Substring(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int alpha)
+                ? alpha / 255.0
+                : 1.0;
         }
 
         private static string? ArrowHeadName(ShapeArrowHead head) => head switch

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Services;
 
 namespace Writersword.Modules.TextEditor.Document
@@ -27,9 +29,64 @@ namespace Writersword.Modules.TextEditor.Document
     ///
     /// Сдвиг действует в режиме страниц, в том числе при выгрузке листов в PDF. В ленте
     /// чтения и в развороте книги листы условные, и переплёта у них нет.
+    ///
+    /// Исключение — плавающий объект из Word, отсчитанный от края листа или от бокового
+    /// поля: край бумаги с переплётом не двигается, и объект от листа стоит на месте,
+    /// а от середины поля уходит на половину сдвига. Проход ставит такой объект на
+    /// листе с переплётом справа заранее с поправкой (<see cref="LayoutGutterCompensationPt"/>),
+    /// и общий сдвиг при показе приводит его ровно туда, где его ставит Word. Зоны
+    /// обтекания при этом строятся по тому же месту, что и рисуется картинка.
     /// </summary>
     public sealed partial class DocumentCanvas
     {
+        // Листы с переплётом справа по последнему проходу. Проход ставит плавающие
+        // объекты раньше, чем станут известны номера листов, поэтому сторона берётся
+        // из прошлого прохода; сходимость обтекания повторяет проход, и к концу она
+        // уже своя.
+        private bool[] _gutterRightHint = Array.Empty<bool>();
+
+        /// <summary>
+        /// Запоминает стороны переплёта по готовому проходу для следующего.
+        /// </summary>
+        private void RememberGutterSides(List<ParaLayout> layouts, int pageCount)
+        {
+            _gutterRightHint = BindingGutterPt() > 0f && pageCount > 0
+                ? GutterRightPages(layouts, pageCount)
+                : Array.Empty<bool>();
+        }
+
+        /// <summary>
+        /// Стоит ли переплёт справа на листе pageIndex по последнему проходу. Лист,
+        /// которого в нём ещё не было, продолжает чередование последнего известного.
+        /// </summary>
+        private bool GutterRightHint(int pageIndex)
+        {
+            if (pageIndex < 0) return false;
+
+            var hint = _gutterRightHint;
+            if (pageIndex < hint.Length) return hint[pageIndex];
+            if (hint.Length == 0) return (pageIndex + 1) % 2 == 0;
+
+            int last = hint.Length - 1;
+            return hint[last] ^ ((pageIndex - last) % 2 == 1);
+        }
+
+        /// <summary>
+        /// Поправка к месту плавающего объекта из Word на листе pageIndex, в пунктах
+        /// раскладки прохода. Показ сдвигает весь лист с переплётом справа на ширину
+        /// переплёта; объект, который за полосой набора уходит не целиком, ставится
+        /// заранее правее на ту часть сдвига, которую ему проходить не нужно.
+        /// </summary>
+        private float LayoutGutterCompensationPt(TableFloatPosition? anchor, int pageIndex)
+        {
+            if (anchor is null) return 0f;
+
+            float gutterPt = BindingGutterPt();
+            if (gutterPt <= 0f || !GutterRightHint(pageIndex)) return 0f;
+
+            return gutterPt * (1f - anchor.HorizontalTextFollow());
+        }
+
         /// <summary>
         /// Ширина переплёта, который меняет сторону по листам, в пунктах. Ноль —
         /// переплёта нет, он всегда слева или режим не листовой.

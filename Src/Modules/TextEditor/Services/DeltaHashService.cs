@@ -69,9 +69,8 @@ namespace Writersword.Modules.TextEditor.Services
         {
             // Сериализуем только данные влияющие на содержимое чанка.
             // Id чанка не включаем — он сам является ключом, а не содержимым.
-            using var sha = SHA256.Create();
-            using var stream = new System.IO.MemoryStream();
-            using var writer = new Utf8JsonWriter(stream);
+            using var lease = HashWriter.Rent();
+            var writer = lease.Writer;
 
             writer.WriteStartArray();
             foreach (var run in chunk.Runs)
@@ -94,11 +93,8 @@ namespace Writersword.Modules.TextEditor.Services
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
-            writer.Flush();
 
-            stream.Position = 0;
-            byte[] hash = sha.ComputeHash(stream);
-            return Convert.ToHexString(hash);
+            return lease.ComputeHash();
         }
 
         /// <summary>
@@ -111,9 +107,8 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         public string ComputeBlockPropertiesHash(BlockModel block)
         {
-            using var sha = SHA256.Create();
-            using var stream = new System.IO.MemoryStream();
-            using var writer = new Utf8JsonWriter(stream);
+            using var lease = HashWriter.Rent();
+            var writer = lease.Writer;
 
             writer.WriteStartObject();
             writer.WriteString("type", block.BlockType.ToString());
@@ -204,6 +199,21 @@ namespace Writersword.Modules.TextEditor.Services
                             writer.WriteEndArray();
                         }
 
+                        // Плавающие объекты ячейки: абзац привязки и объект целиком.
+                        if (cell.Floats is { Count: > 0 } cellFloats)
+                        {
+                            writer.WriteStartArray("floats");
+                            foreach (var cellFloat in cellFloats)
+                            {
+                                writer.WriteStartObject();
+                                writer.WriteString("anchor", cellFloat.AnchorParagraphId.ToString());
+                                writer.WriteNumber("at", cellFloat.AnchorParagraphIndex);
+                                writer.WriteString("hash", ComputeBlockPropertiesHash(cellFloat.Object));
+                                writer.WriteEndObject();
+                            }
+                            writer.WriteEndArray();
+                        }
+
                         writer.WriteEndObject();
                     }
                     writer.WriteEndArray();
@@ -233,10 +243,8 @@ namespace Writersword.Modules.TextEditor.Services
             }
 
             writer.WriteEndObject();
-            writer.Flush();
 
-            stream.Position = 0;
-            return Convert.ToHexString(sha.ComputeHash(stream));
+            return lease.ComputeHash();
         }
 
         /// <summary>
@@ -245,9 +253,8 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         public string ComputeSectionPropertiesHash(SectionModel section)
         {
-            using var sha = SHA256.Create();
-            using var stream = new System.IO.MemoryStream();
-            using var writer = new Utf8JsonWriter(stream);
+            using var lease = HashWriter.Rent();
+            var writer = lease.Writer;
 
             writer.WriteStartObject();
             if (section.PageSettings is not null)
@@ -268,10 +275,8 @@ namespace Writersword.Modules.TextEditor.Services
             WriteIdArray(writer, "floating", section.FloatingObjects.Select(b => b.Id));
             WriteIdArray(writer, "inline", section.InlineObjects.Select(b => b.Id));
             writer.WriteEndObject();
-            writer.Flush();
 
-            stream.Position = 0;
-            return Convert.ToHexString(sha.ComputeHash(stream));
+            return lease.ComputeHash();
         }
 
         /// <summary>
@@ -284,13 +289,14 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         public string ComputeDocumentPropertiesHash(DocumentModel document)
         {
-            using var sha = SHA256.Create();
-            using var stream = new System.IO.MemoryStream();
-            using var writer = new Utf8JsonWriter(stream);
+            using var lease = HashWriter.Rent();
+            var writer = lease.Writer;
 
             writer.WriteStartObject();
             writer.WriteString("title", document.Title);
             writer.WriteNumber("schema", document.SchemaVersion);
+            // Запись исправлений — свойство документа: её включение должно сохраняться.
+            writer.WriteBoolean("trackRevisions", document.TrackRevisions);
             writer.WritePropertyName("page");
             JsonSerializer.Serialize(writer, document.PageSettings);
             writer.WritePropertyName("columns");
@@ -321,10 +327,8 @@ namespace Writersword.Modules.TextEditor.Services
             }
             WriteIdArray(writer, "sections", document.Sections.Select(s => s.Id));
             writer.WriteEndObject();
-            writer.Flush();
 
-            stream.Position = 0;
-            return Convert.ToHexString(sha.ComputeHash(stream));
+            return lease.ComputeHash();
         }
 
         // Пишет массив идентификаторов — так в хеш попадает состав и порядок детей.
@@ -341,8 +345,6 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         public string ComputeAnnotationHash(InlineAnnotation annotation)
         {
-            using var sha = SHA256.Create();
-
             // Включаем в хеш все поля которые могут измениться.
             var sb = new StringBuilder();
             sb.Append(annotation.Type);
@@ -368,8 +370,89 @@ namespace Writersword.Modules.TextEditor.Services
             sb.Append(annotation.DisplayLabel ?? string.Empty);
 
             byte[] bytes = Encoding.UTF8.GetBytes(sb.ToString());
-            byte[] hash = sha.ComputeHash(bytes);
-            return Convert.ToHexString(hash);
+            return Convert.ToHexString(SHA256.HashData(bytes));
+        }
+        /// <summary>
+        /// Буфер и писатель JSON для хешей, общие на поток.
+        ///
+        /// Хеши считаются при каждом снимке документа — тике кеша и сохранении, —
+        /// причём для каждого чанка и каждого блока, на UI-потоке. Раньше на каждый
+        /// хеш заводились свой поток в памяти, свой писатель и свой объект SHA-256:
+        /// на рукописи в три тысячи абзацев это десятки мегабайт мусора и заметная
+        /// доля времени снимка. Здесь буфер и писатель переиспользуются, а хеш
+        /// считается разовым вызовом над записанными байтами.
+        ///
+        /// В хеш идут ровно те же байты, что и прежде: тот же JSON с теми же
+        /// настройками писателя, — поэтому хеши, уже лежащие в чанках, остаются
+        /// действительными, и после обновления документ не считается изменённым.
+        ///
+        /// Буфер свой у каждого потока: снимок снимается на UI-потоке, подготовка
+        /// данных при загрузке идёт в пуле. Повторный вход на том же потоке во время
+        /// записи получает отдельный буфер. Буфер, раздутый большим блоком, после
+        /// использования отпускается, чтобы не держать память до конца сессии.
+        /// </summary>
+        private sealed class HashWriter
+        {
+            private const int InitialCapacity = 16 * 1024;
+            private const int RetainedCapacityLimit = 1024 * 1024;
+
+            [ThreadStatic] private static HashWriter? t_cached;
+
+            private readonly System.Buffers.ArrayBufferWriter<byte> _buffer = new(InitialCapacity);
+            private readonly Utf8JsonWriter _writer;
+            private bool _inUse;
+
+            private HashWriter()
+            {
+                _writer = new Utf8JsonWriter(_buffer);
+            }
+
+            public static Lease Rent()
+            {
+                var cached = t_cached;
+
+                if (cached is null || cached._inUse)
+                {
+                    var fresh = new HashWriter();
+                    if (cached is null) t_cached = fresh;
+                    cached = fresh;
+                }
+
+                cached._inUse = true;
+                cached._buffer.ResetWrittenCount();
+                cached._writer.Reset(cached._buffer);
+                return new Lease(cached);
+            }
+
+            public readonly struct Lease : IDisposable
+            {
+                private readonly HashWriter _owner;
+
+                public Lease(HashWriter owner) => _owner = owner;
+
+                public Utf8JsonWriter Writer => _owner._writer;
+
+                /// <summary>SHA-256 записанного JSON в виде шестнадцатеричной строки.</summary>
+                public string ComputeHash()
+                {
+                    _owner._writer.Flush();
+
+                    Span<byte> hash = stackalloc byte[SHA256.HashSizeInBytes];
+                    SHA256.HashData(_owner._buffer.WrittenSpan, hash);
+                    return Convert.ToHexString(hash);
+                }
+
+                public void Dispose()
+                {
+                    _owner._inUse = false;
+
+                    if (_owner._buffer.Capacity > RetainedCapacityLimit
+                        && ReferenceEquals(t_cached, _owner))
+                    {
+                        t_cached = null;
+                    }
+                }
+            }
         }
     }
 }

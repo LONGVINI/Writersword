@@ -400,6 +400,17 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
+        /// CustomData из кеша, кроме перечисленных модулей. Данные пропущенных
+        /// модулей не читаются из базы вовсе (см. IProjectCacheService.LoadCacheExcept).
+        /// </summary>
+        public Dictionary<string, object?>? LoadCacheExcept(string projectPath, IEnumerable<string> skipModules)
+        {
+            var skip = new HashSet<string>(skipModules, StringComparer.Ordinal);
+            var result = LoadCacheWithSession(projectPath, null, withSession: false, skip);
+            return result?.CustomData;
+        }
+
+        /// <summary>
         /// Загрузить CustomData И SessionData из кеша одним обращением к базе.
         /// </summary>
         public (Dictionary<string, object?> CustomData, Dictionary<string, object?> SessionData)?
@@ -407,7 +418,8 @@ namespace Writersword.Infrastructure.Services.Storage
             => LoadCacheWithSession(projectPath, expectedProjectId, withSession: true);
 
         private (Dictionary<string, object?> CustomData, Dictionary<string, object?> SessionData)?
-            LoadCacheWithSession(string projectPath, string? expectedProjectId, bool withSession)
+            LoadCacheWithSession(string projectPath, string? expectedProjectId, bool withSession,
+                HashSet<string>? skipModules = null)
         {
             var cachePath = GetCachePath(projectPath);
             if (!File.Exists(cachePath) && !File.Exists(GetBackupPath(projectPath)))
@@ -458,6 +470,11 @@ namespace Writersword.Infrastructure.Services.Storage
                     while (reader.Read())
                     {
                         var moduleType = reader.GetString(0);
+
+                        // Столбец пропущенного модуля не читается: строка с его данными
+                        // так и не создаётся.
+                        if (skipModules is not null && skipModules.Contains(moduleType))
+                            continue;
 
                         customData[moduleType] =
                             JsonConvert.DeserializeObject<object>(reader.GetString(1));
@@ -904,6 +921,16 @@ namespace Writersword.Infrastructure.Services.Storage
         // ── Данные проекта ────────────────────────────────────────────────
 
         public Dictionary<string, object?>? ReadProjectDataWithoutLock(string projectPath)
+            => ReadProjectDataWithoutLockCore(projectPath, null);
+
+        /// <summary>
+        /// Данные только перечисленных модулей. Записи остальных модулей не
+        /// читаются из базы вовсе (см. IProjectCacheService).
+        /// </summary>
+        public Dictionary<string, object?>? ReadProjectDataWithoutLock(string projectPath, IEnumerable<string> onlyModules)
+            => ReadProjectDataWithoutLockCore(projectPath, new HashSet<string>(onlyModules, StringComparer.Ordinal));
+
+        private Dictionary<string, object?>? ReadProjectDataWithoutLockCore(string projectPath, HashSet<string>? onlyModules)
         {
             // «WithoutLock» относится к внутреннему замку КЕША. Замок файла
             // проекта здесь больше не нужен: база сама разводит читателей и
@@ -932,6 +959,8 @@ namespace Writersword.Infrastructure.Services.Storage
 
                     var parts = path.Split('/');
                     if (parts.Length < 3) continue;
+
+                    if (onlyModules is not null && !onlyModules.Contains(parts[1])) continue;
 
                     var data = storage.ReadFile(path);
                     if (data is null) continue;

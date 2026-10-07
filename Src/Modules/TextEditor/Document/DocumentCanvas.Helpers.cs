@@ -1093,6 +1093,9 @@ namespace Writersword.Modules.TextEditor.Document
             Opacity = s.Opacity,
             BorderColor = s.BorderColor,
             BorderThicknessPt = s.BorderThicknessPt,
+            BorderDashStyle = s.BorderDashStyle,
+            ShapeType = s.ShapeType,
+            CornerRadiusPt = s.CornerRadiusPt,
             BorderAlign = s.BorderAlign,
             FlipHorizontal = s.FlipHorizontal,
             FlipVertical = s.FlipVertical,
@@ -1101,6 +1104,7 @@ namespace Writersword.Modules.TextEditor.Document
             CropRightFrac = s.CropRightFrac,
             CropBottomFrac = s.CropBottomFrac,
             WrapMode = s.WrapMode,
+            WrapSide = s.WrapSide,
             Alignment = s.Alignment,
             Anchor = s.Anchor,
             AnchorPosition = s.AnchorPosition?.Clone(),
@@ -1111,7 +1115,9 @@ namespace Writersword.Modules.TextEditor.Document
             OffsetXPt = s.OffsetXPt,
             OffsetYPt = s.OffsetYPt,
             ZOrder = s.ZOrder,
-            AltText = s.AltText
+            AltText = s.AltText,
+            SourceImageFileName = s.SourceImageFileName,
+            WordDrawing = s.WordDrawing?.Clone()
         };
 
         /// <summary>
@@ -1364,6 +1370,9 @@ namespace Writersword.Modules.TextEditor.Document
             Opacity = src.Opacity,
             BorderColor = src.BorderColor,
             BorderThicknessPt = src.BorderThicknessPt,
+            BorderDashStyle = src.BorderDashStyle,
+            ShapeType = src.ShapeType,
+            CornerRadiusPt = src.CornerRadiusPt,
             BorderAlign = src.BorderAlign,
             FlipHorizontal = src.FlipHorizontal,
             FlipVertical = src.FlipVertical,
@@ -1384,7 +1393,9 @@ namespace Writersword.Modules.TextEditor.Document
             OffsetXPt = src.OffsetXPt,
             OffsetYPt = src.OffsetYPt,
             ZOrder = src.ZOrder,
-            AltText = src.AltText
+            AltText = src.AltText,
+            SourceImageFileName = src.SourceImageFileName,
+            WordDrawing = src.WordDrawing?.Clone()
         };
 
         /// <summary>

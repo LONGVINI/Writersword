@@ -75,6 +75,14 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// </summary>
         public string DefaultLanguage { get; set; } = "ru";
 
+        // ── Рецензирование ───────────────────────────────────────────────
+
+        /// <summary>
+        /// Имя, которым подписываются правки при записи исправлений. Null или пусто —
+        /// имя пользователя системы, как у Word без заданного имени.
+        /// </summary>
+        public string? ReviewerName { get; set; }
+
         /// <summary>Подчёркивать ошибки красным волнистой линией.</summary>
         public bool ShowSpellErrors { get; set; } = true;
 

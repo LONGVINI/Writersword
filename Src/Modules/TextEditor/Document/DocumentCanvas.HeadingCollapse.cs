@@ -81,6 +81,15 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void RefreshCollapsedBlocks()
         {
+            RefreshHeadingCollapsedBlocks();
+
+            // Абзацы, спрятанные видом показа исправлений (DocumentCanvas.TrackChanges).
+            MergeRevisionHiddenBlocks();
+        }
+
+        /// <summary>Скрытые свёрнутыми заголовками блоки.</summary>
+        private void RefreshHeadingCollapsedBlocks()
+        {
             var docVm = DocVm;
             if (docVm is null || !docVm.HasCollapsedHeadings)
             {

@@ -203,6 +203,244 @@ namespace Writersword.Modules.TextEditor.Models.Document
 
         /// <summary>Z-порядок среди плавающих объектов (больше = поверх).</summary>
         int ZOrder { get; set; }
+
+        /// <summary>
+        /// Свойства рисунка Word, которых нет в собственной модели объекта: они нужны,
+        /// чтобы объект из .docx стоял на листе как у Word и уходил обратно в .docx
+        /// без потерь. Null — объект создан в редакторе.
+        /// </summary>
+        WordDrawingInfo? WordDrawing { get; set; }
+    }
+
+    /// <summary>
+    /// Точка контура обтекания Word (wp:wrapPolygon) в его собственных единицах:
+    /// доли габарита объекта, где 21600 — вся его сторона.
+    /// </summary>
+    public sealed class WordWrapPoint
+    {
+        public long X { get; set; }
+        public long Y { get; set; }
+    }
+
+    /// <summary>
+    /// Свойства рисунка Word (wp:inline, wp:anchor), которые объект Writersword сам
+    /// не описывает, но без которых его место на листе и обратный перенос в .docx
+    /// расходятся с Word.
+    ///
+    /// Поля поля обрамления (effectExtent) действуют, пока объект не поворачивали и
+    /// не меняли в размере: Word пересчитывает их при каждой такой правке, а
+    /// редактор вместо этого переходит на свой собственный габарит — габарит
+    /// повёрнутого прямоугольника. Остальное переносится как есть.
+    /// </summary>
+    public sealed class WordDrawingInfo
+    {
+        /// <summary>Есть ли у объекта поля обрамления из Word.</summary>
+        public bool HasEffectExtent { get; set; }
+
+        /// <summary>Поле обрамления слева, пт (wp:effectExtent l).</summary>
+        public double EffectLeftPt { get; set; }
+
+        /// <summary>Поле обрамления сверху, пт (wp:effectExtent t).</summary>
+        public double EffectTopPt { get; set; }
+
+        /// <summary>Поле обрамления справа, пт (wp:effectExtent r).</summary>
+        public double EffectRightPt { get; set; }
+
+        /// <summary>Поле обрамления снизу, пт (wp:effectExtent b).</summary>
+        public double EffectBottomPt { get; set; }
+
+        /// <summary>Ширина объекта, для которой записаны поля обрамления, пт.</summary>
+        public double EffectForWidthPt { get; set; }
+
+        /// <summary>Высота объекта, для которой записаны поля обрамления, пт.</summary>
+        public double EffectForHeightPt { get; set; }
+
+        /// <summary>Угол объекта, для которого записаны поля обрамления, градусы.</summary>
+        public double EffectForRotationDeg { get; set; }
+
+        /// <summary>Объект привязан к ячейке таблицы (layoutInCell).</summary>
+        public bool LayoutInCell { get; set; } = true;
+
+        /// <summary>Объекту разрешено перекрывать другие объекты (allowOverlap).</summary>
+        public bool AllowOverlap { get; set; } = true;
+
+        /// <summary>Якорь объекта закреплён (locked).</summary>
+        public bool Locked { get; set; }
+
+        /// <summary>Объект скрыт (docPr hidden).</summary>
+        public bool Hidden { get; set; }
+
+        /// <summary>
+        /// Объект лежит за текстом (behindDoc). У объекта без обтекания это режим
+        /// «за текстом», у обтекаемого — только слой рисования.
+        /// </summary>
+        public bool BehindDoc { get; set; }
+
+        /// <summary>Заголовок объекта (docPr title).</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Title { get; set; }
+
+        /// <summary>Имя объекта (docPr name).</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Name { get; set; }
+
+        /// <summary>
+        /// Обтекание «сквозное» (wp:wrapThrough), а не «по контуру» (wp:wrapTight).
+        /// Раскладка у них одна; различие нужно для обратного переноса.
+        /// </summary>
+        public bool WrapThrough { get; set; }
+
+        /// <summary>
+        /// Обтекание «сверху и снизу» (wp:wrapTopAndBottom). Объект стоит в потоке
+        /// своей полосой, а в .docx уходит якорем с исходным положением.
+        /// </summary>
+        public bool WrapTopAndBottom { get; set; }
+
+        /// <summary>Положение объекта «сверху и снизу» относительно опоры, как в Word.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public TableFloatPosition? TopAndBottomPosition { get; set; }
+
+        /// <summary>Контур обтекания был изменён вручную (wrapPolygon edited).</summary>
+        public bool WrapPolygonEdited { get; set; }
+
+        /// <summary>Контур обтекания Word. Null — контур совпадает с рамкой объекта.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public System.Collections.Generic.List<WordWrapPoint>? WrapPolygon { get; set; }
+
+        /// <summary>
+        /// Порядок наложения Word как он записан (relativeHeight). Уходит обратно без
+        /// изменений, пока порядок объекта не меняли в редакторе.
+        /// </summary>
+        public long RelativeHeight { get; set; }
+
+        /// <summary>Порядок наложения объекта, при котором записан RelativeHeight.</summary>
+        public int RelativeHeightForZOrder { get; set; }
+
+        /// <summary>
+        /// Опора по горизонтали, как она названа у Word (relativeFrom), когда она
+        /// уже, чем различает модель: «character», «insideMargin» и т. п.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? HorizontalRelativeFrom { get; set; }
+
+        /// <summary>Опора по вертикали, как она названа у Word (relativeFrom).</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? VerticalRelativeFrom { get; set; }
+
+        /// <summary>
+        /// Размер самой картинки (a:xfrm a:ext), когда он отличается от габарита
+        /// рисунка (wp:extent): Word показывает рисунок по габариту, а размер картинки
+        /// хранит отдельно. 0 — совпадает с габаритом.
+        /// </summary>
+        public double PictureWidthPt { get; set; }
+
+        /// <summary>Высота самой картинки (a:xfrm a:ext). 0 — совпадает с габаритом.</summary>
+        public double PictureHeightPt { get; set; }
+
+        /// <summary>
+        /// Контур объекта Word (a:prstGeom) как он записан, когда модель различает его
+        /// грубее: шестиугольник, звезда, стрелка-блок и прочие заготовки Word. Уходит
+        /// обратно без изменений, пока контур объекта не меняли в редакторе.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? PresetGeometryXml { get; set; }
+
+        /// <summary>Контур объекта в модели, при котором записан PresetGeometryXml.</summary>
+        public ShapeType PresetGeometryShapeType { get; set; }
+
+        /// <summary>Скругление углов в модели, при котором записан PresetGeometryXml.</summary>
+        public double PresetGeometryCornerPt { get; set; }
+
+        /// <summary>Контур Word ещё описывает объект: его не меняли в редакторе.</summary>
+        public bool PresetGeometryValidFor(IFloatingObject obj) =>
+            PresetGeometryXml is not null
+            && obj.ShapeType == PresetGeometryShapeType
+            && System.Math.Abs(obj.CornerRadiusPt - PresetGeometryCornerPt) < 0.01;
+
+        /// <summary>
+        /// Действуют ли поля обрамления для объекта в его нынешнем виде: после
+        /// поворота или изменения размера в редакторе Word пересчитал бы их, и
+        /// раскладка переходит на габарит повёрнутого прямоугольника.
+        /// </summary>
+        public bool EffectExtentValidFor(IFloatingObject obj)
+        {
+            if (!HasEffectExtent) return false;
+
+            return System.Math.Abs(obj.WidthPt - EffectForWidthPt) < 0.01
+                && System.Math.Abs(obj.HeightPt - EffectForHeightPt) < 0.01
+                && System.Math.Abs(obj.RotationDeg - EffectForRotationDeg) < 0.01;
+        }
+
+        /// <summary>Глубокая копия.</summary>
+        public WordDrawingInfo Clone()
+        {
+            var copy = (WordDrawingInfo)MemberwiseClone();
+            copy.TopAndBottomPosition = TopAndBottomPosition?.Clone();
+
+            if (WrapPolygon is not null)
+            {
+                copy.WrapPolygon = new System.Collections.Generic.List<WordWrapPoint>(WrapPolygon.Count);
+                foreach (var point in WrapPolygon)
+                    copy.WrapPolygon.Add(new WordWrapPoint { X = point.X, Y = point.Y });
+            }
+
+            return copy;
+        }
+    }
+
+    /// <summary>
+    /// Габарит, который объект занимает в строке и в зоне обтекания.
+    ///
+    /// У Word это рамка объекта плюс поля обрамления (effectExtent): повёрнутая без
+    /// полей картинка занимает в строке свой неповёрнутый размер и выходит за него
+    /// при рисовании. У объекта без полей из Word — габарит повёрнутого
+    /// прямоугольника, как всегда было в редакторе.
+    /// </summary>
+    public static class FloatingObjectBox
+    {
+        /// <summary>
+        /// Габарит объекта шириной widthPt и высотой heightPt. Размер может быть
+        /// приведён к листу чтения; поля обрамления масштабируются тем же множителем.
+        /// </summary>
+        public static (float WidthPt, float HeightPt) Of(IFloatingObject obj, float widthPt, float heightPt)
+        {
+            if (obj.WordDrawing is { } word && word.EffectExtentValidFor(obj))
+            {
+                float scaleX = obj.WidthPt > 0.0 ? widthPt / (float)obj.WidthPt : 1f;
+                float scaleY = obj.HeightPt > 0.0 ? heightPt / (float)obj.HeightPt : 1f;
+
+                return (
+                    widthPt + (float)(word.EffectLeftPt + word.EffectRightPt) * scaleX,
+                    heightPt + (float)(word.EffectTopPt + word.EffectBottomPt) * scaleY);
+            }
+
+            double rad = obj.RotationDeg * System.Math.PI / 180.0;
+            float absCos = (float)System.Math.Abs(System.Math.Cos(rad));
+            float absSin = (float)System.Math.Abs(System.Math.Sin(rad));
+
+            return (widthPt * absCos + heightPt * absSin, widthPt * absSin + heightPt * absCos);
+        }
+
+        /// <summary>
+        /// Поля обрамления для записи в .docx: из Word — как пришли, пока действуют;
+        /// иначе — столько, сколько повёрнутый прямоугольник выходит за свою рамку.
+        /// </summary>
+        public static (double Left, double Top, double Right, double Bottom) EffectExtentPt(IFloatingObject obj)
+        {
+            if (obj.WordDrawing is { } word && word.EffectExtentValidFor(obj))
+                return (word.EffectLeftPt, word.EffectTopPt, word.EffectRightPt, word.EffectBottomPt);
+
+            double rad = obj.RotationDeg * System.Math.PI / 180.0;
+            double absCos = System.Math.Abs(System.Math.Cos(rad));
+            double absSin = System.Math.Abs(System.Math.Sin(rad));
+            double boxW = obj.WidthPt * absCos + obj.HeightPt * absSin;
+            double boxH = obj.WidthPt * absSin + obj.HeightPt * absCos;
+
+            double dx = System.Math.Max(0.0, (boxW - obj.WidthPt) / 2.0);
+            double dy = System.Math.Max(0.0, (boxH - obj.HeightPt) / 2.0);
+
+            return (dx, dy, dx, dy);
+        }
     }
 
     /// <summary>
@@ -428,6 +666,19 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// <summary>Вылет оформления за габарит для обтекания — наружная часть рамки.</summary>
         [JsonIgnore]
         public double WrapOutsetPt => BorderOutsetPt;
+
+        /// <summary>
+        /// Файл картинки в том виде, в каком он пришёл из .docx, когда лист показывает
+        /// его перекодированным: TIFF, EMF и WMF лист не читает и рисует их копию в
+        /// PNG (<see cref="ImageFileName"/>), а в .docx уходит исходный файл — тот же
+        /// вектор и тот же формат, что был у Word. Null — показывается сам исходник.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SourceImageFileName { get; set; }
+
+        /// <summary>Свойства рисунка Word, которых нет в модели картинки.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public WordDrawingInfo? WordDrawing { get; set; }
     }
 
     /// <summary>
@@ -713,6 +964,10 @@ namespace Writersword.Modules.TextEditor.Models.Document
             get => StrokeAlign;
             set => StrokeAlign = value;
         }
+
+        /// <summary>Свойства рисунка Word, которых нет в модели фигуры.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public WordDrawingInfo? WordDrawing { get; set; }
     }
 
     /// <summary>

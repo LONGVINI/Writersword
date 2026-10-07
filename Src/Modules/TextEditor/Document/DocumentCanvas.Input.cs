@@ -500,6 +500,7 @@ namespace Writersword.Modules.TextEditor.Document
                         _imgDragStartYPt = dragStartYPt;
                         _imgDragStartOffX = ie.Block.OffsetXPt;
                         _imgDragStartOffY = ie.Block.OffsetYPt;
+                        CaptureImageDragEntry(ie.XPt, ie.Ypt, ie.PageIndex);
                         BeginImageEdit("Перемещение изображения");
                         e.Pointer.Capture(this);
                     }
@@ -942,8 +943,9 @@ namespace Writersword.Modules.TextEditor.Document
                 // нельзя утащить за пределы видимой области, не отпуская кнопку.
                 UpdateAutoScroll(rawPt);
 
-                RebuildLayouts();
-                InvalidateFull();
+                // Картинка идёт за указателем сразу, текст переверстывается только у
+                // картинки с обтеканием и не на каждом шаге (DocumentCanvas.FloatingDrag).
+                RefreshAfterImageDragStep();
                 return;
             }
 
@@ -1351,8 +1353,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _selectedImage!.OffsetYPt = Math.Clamp(
                     _selectedImage.OffsetYPt + deltaPt, minAutoScrollOffsetYPt, docSpanPt);
 
-                RebuildLayouts();
-                InvalidateFull();
+                RefreshAfterImageDragStep();
                 return;
             }
 
@@ -1466,6 +1467,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (_imageDragMoved) CommitImageEdit();
                 else CancelImageEdit();
                 bool needsFinalPass = _imageDragMoved;
+                StopImageDragRelayout();
                 _imageDragging = false;
                 _imageDragMoved = false;
                 StopAutoScroll();
@@ -2476,6 +2478,9 @@ namespace Writersword.Modules.TextEditor.Document
         private void InsertText(string text)
         {
             if (IsEditingBlocked) return;
+
+            // Запись исправлений: набранное отмечается вставкой (DocumentCanvas.TrackChanges).
+            if (TryTrackedInsertText(text)) return;
             if (IsInCell(_caretPara))
             {
                 CellInsertText(text);
@@ -2659,6 +2664,9 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // Запись исправлений: удаляемое отмечается, а не убирается (DocumentCanvas.TrackChanges).
+            if (TryTrackedDeleteBack()) return;
+
             if (IsInCell(_caretPara))
             {
                 CellDeleteBack();
@@ -2688,6 +2696,9 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // Запись исправлений: удаляемое отмечается, а не убирается (DocumentCanvas.TrackChanges).
+            if (TryTrackedDeleteForward()) return;
+
             if (IsInCell(_caretPara))
             {
                 CellDeleteForward();
@@ -2699,6 +2710,9 @@ namespace Writersword.Modules.TextEditor.Document
         public void ExecuteNewParagraphSmart()
         {
             if (IsEditingBlocked) return;
+
+            // Запись исправлений: новый знак абзаца отмечается вставкой.
+            if (TryTrackedNewParagraph(ExecuteNewParagraphSmart)) return;
             if (IsInCell(_caretPara))
             {
                 if (TryInsertParagraphBeforeTable()) return;
@@ -3589,6 +3603,9 @@ namespace Writersword.Modules.TextEditor.Document
         // снимается — быстрый способ закончить список и продолжить обычным текстом.
         public void ExecuteNewParagraph(bool exitList = false)
         {
+            // Запись исправлений: новый знак абзаца отмечается вставкой.
+            if (TryTrackedNewParagraph(() => ExecuteNewParagraph(exitList))) return;
+
             var pvm = GetVmAt(_caretPara);
             if (pvm is null) return;
 
@@ -4192,8 +4209,33 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         public void ExecuteCopy() => _ = CopyAsync();
-        public void ExecuteCut() { if (IsEditingBlocked) return; _ = CutAsync(); }
-        public void ExecutePaste() { if (IsEditingBlocked) return; _ = PasteAsync(); }
+        public void ExecuteCut()
+        {
+            if (IsEditingBlocked) return;
+
+            // Запись исправлений: вырезанное остаётся в тексте удалённым.
+            if (TrackingActive && HasSel() && _tableSelections.Count == 0 && _selectedImage is null)
+            {
+                _ = TrackedCutAsync();
+                return;
+            }
+
+            _ = CutAsync();
+        }
+
+        public void ExecutePaste()
+        {
+            if (IsEditingBlocked) return;
+
+            // Запись исправлений: вставленное из буфера отмечается вставкой целиком.
+            if (TrackingActive)
+            {
+                _ = RunTrackedInsertionAsync("Вставка с исправлениями", PasteAsync);
+                return;
+            }
+
+            _ = PasteAsync();
+        }
 
         public void ExecuteUndo()
         {

@@ -69,6 +69,14 @@ namespace Writersword.Modules.TextEditor
         private DeltaCachePayload? _lastDeltaPayload;
 
         /// <summary>
+        /// Ревизия модуля (BaseModule.Revision) на момент последнего снимка данных
+        /// документа. Пока она не сдвинулась, модуль о правках не сообщал, и снимок
+        /// проверяется сверкой хешей; сдвинулась — снимок снимается без сверки.
+        /// Только UI-поток.
+        /// </summary>
+        private long _revisionAtLastSnapshot = long.MinValue;
+
+        /// <summary>
         /// Получал ли модуль данные документа из проекта.
         /// Ставится при успешном применении подготовленных данных. Пока флаг не
         /// поднят, модуль показывает пустой документ, созданный при инициализации,
@@ -641,34 +649,59 @@ namespace Writersword.Modules.TextEditor
 
             try
             {
-                DeltaCachePayload payload = _serializer.BuildDeltaPayload(
-                    _viewModel.DocumentViewModel.Document, _lastDeltaPayload);
+                var document = _viewModel.DocumentViewModel.Document;
+                long revision = Revision;
 
-                // Если изменений нет и есть базовая линия — возвращаем её как есть.
-                // Это гарантирует что HasUnsavedChanges вернёт false пока пользователь
-                // ничего не менял (хеш совпадёт с файлом на диске).
-                bool hasChanges = payload.ChangedChunks.Count > 0
-                                  || payload.RemovedChunks.Count > 0
-                                  || payload.ChangedAnnotations.Count > 0
-                                  || payload.RemovedAnnotations.Count > 0
-                                  // Правки картинок и фигур живут вне чанков:
-                                  // поворот, размер, обрезка, прозрачность, рамка,
-                                  // обтекание и позиция видны только здесь.
-                                  || payload.StructureChanged;
-
-                if (!hasChanges)
+                if (revision != _revisionAtLastSnapshot)
                 {
-                    lock (_baselineSync)
+                    // Модуль сам сообщил о правке с прошлого снимка: документ точно
+                    // изменился, и сверять хеши всех чанков ради ответа «есть ли
+                    // изменения» незачем — снимок снимается в любом случае, а сам он
+                    // полный, не из изменившихся чанков. Сверка всего документа
+                    // стоила десятков миллисекунд UI-потока на каждом тике кеша, пока
+                    // идёт набор. Чанки нормализуются, как и при сверке: снимок
+                    // должен уйти в том же виде, что и прежде.
+                    //
+                    // Хеши чанков после этого отстают от текста. Ближайшая сверка
+                    // (без новых правок) увидит расхождение и снимет снимок ещё раз —
+                    // лишняя работа один раз, но не пропуск правки.
+                    _serializer.NormalizeAllChunks(document);
+                }
+                else
+                {
+                    // Модуль о правках не сообщал. Сверка хешей остаётся страховкой:
+                    // правка, прошедшая мимо отслеживания, всё равно попадёт в
+                    // сохранение.
+                    DeltaCachePayload payload = _serializer.BuildDeltaPayload(document, _lastDeltaPayload);
+
+                    // Если изменений нет и есть базовая линия — возвращаем её как есть.
+                    // Это гарантирует что HasUnsavedChanges вернёт false пока пользователь
+                    // ничего не менял (хеш совпадёт с файлом на диске).
+                    bool hasChanges = payload.ChangedChunks.Count > 0
+                                      || payload.RemovedChunks.Count > 0
+                                      || payload.ChangedAnnotations.Count > 0
+                                      || payload.RemovedAnnotations.Count > 0
+                                      // Правки картинок и фигур живут вне чанков:
+                                      // поворот, размер, обрезка, прозрачность, рамка,
+                                      // обтекание и позиция видны только здесь.
+                                      || payload.StructureChanged;
+
+                    if (!hasChanges)
                     {
-                        if (_baselineCustomData is not null)
-                            return _baselineCustomData;
+                        lock (_baselineSync)
+                        {
+                            if (_baselineCustomData is not null)
+                                return _baselineCustomData;
+                        }
+                        // Базовая линия отсутствует (сериализация предыдущего снимка ещё
+                        // не завершилась) — снимаем полный снимок, чтобы вызывающий код
+                        // гарантированно получил актуальные данные.
                     }
-                    // Базовая линия отсутствует (сериализация предыдущего снимка ещё
-                    // не завершилась) — снимаем полный снимок, чтобы вызывающий код
-                    // гарантированно получил актуальные данные.
+
+                    _lastDeltaPayload = payload;
                 }
 
-                _lastDeltaPayload = payload;
+                _revisionAtLastSnapshot = revision;
 
                 // Удаляем из проекта файлы картинок, на которые в документе больше нет ссылок.
                 try { CleanupUnusedImages(_viewModel.DocumentViewModel.Document); }
@@ -676,7 +709,7 @@ namespace Writersword.Modules.TextEditor
 
                 string localSettingsJson = System.Text.Json.JsonSerializer.Serialize(_localSettings);
 
-                DocumentModel documentClone = DocumentCloner.Clone(_viewModel.DocumentViewModel.Document);
+                DocumentModel documentClone = DocumentCloner.Clone(document);
 
                 long version;
                 lock (_baselineSync)
@@ -774,16 +807,39 @@ namespace Writersword.Modules.TextEditor
                 {
                     switch (block)
                     {
-                        case Models.Document.ImageBlock image
-                            when !string.IsNullOrEmpty(image.ImageFileName):
-                            target.Add(image.ImageFileName);
+                        case Models.Document.ImageBlock image:
+                            if (!string.IsNullOrEmpty(image.ImageFileName))
+                                target.Add(image.ImageFileName);
+
+                            // Исходник перекодированной картинки (TIFF, EMF, WMF из
+                            // .docx) живой так же: экспорт пишет в .docx именно его.
+                            if (!string.IsNullOrEmpty(image.SourceImageFileName))
+                                target.Add(image.SourceImageFileName!);
+                            break;
+
+                        // Картинка-заливка фигуры — такой же файл проекта.
+                        case Models.Document.ShapeBlock shape
+                            when !string.IsNullOrEmpty(shape.FillImageFileName):
+                            target.Add(shape.FillImageFileName!);
                             break;
 
                         // Картинка может лежать внутри ячейки таблицы или надписи —
                         // такие ссылки тоже живые.
                         case Models.Document.TableBlock table:
                             foreach (var cell in table.Cells)
+                            {
                                 Walk(cell.ParagraphsDeep());
+
+                                // Плавающие картинки и фигуры ячейки.
+                                if (cell.Floats is { Count: > 0 } cellFloats)
+                                    Walk(cellFloats.Select(f => f.Object));
+                            }
+
+                            // Вложенные таблицы с их собственными плавающими объектами.
+                            Walk(table.Cells
+                                .Where(c => c.NestedTables is { Count: > 0 })
+                                .SelectMany(c => c.NestedTables!)
+                                .Select(n => (Models.Document.BlockModel)n.Table));
                             break;
 
                         case Models.Document.FloatingTextBlock floatingText:
@@ -1509,6 +1565,10 @@ namespace Writersword.Modules.TextEditor
 
                 // Инициализируем _lastDeltaPayload рассчитанной в фазе 1 дельтой.
                 _lastDeltaPayload = p.InitialDelta;
+
+                // Загруженный документ и есть исходная точка: первый снимок после
+                // загрузки проверяется сверкой хешей, как и прежде.
+                _revisionAtLastSnapshot = Revision;
 
                 if (p.BaselineJson is not null)
                 {
