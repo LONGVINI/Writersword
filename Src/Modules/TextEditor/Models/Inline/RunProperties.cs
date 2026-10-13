@@ -216,6 +216,18 @@ namespace Writersword.Modules.TextEditor.Models.Inline
         public bool HasRevision => Inserted is not null || Deleted is not null || FormatChange is not null;
 
         /// <summary>
+        /// Примечания рецензентов, к которым относится фрагмент (Id из
+        /// DocumentModel.Comments). Отметка едет вместе с текстом: правка внутри
+        /// выделенного примечанием места остаётся в нём. Null — примечаний нет.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public System.Collections.Generic.List<System.Guid>? CommentIds { get; set; }
+
+        /// <summary>Фрагмент относится хотя бы к одному примечанию.</summary>
+        [JsonIgnore]
+        public bool HasComments => CommentIds is { Count: > 0 };
+
+        /// <summary>
         /// Создаёт копию свойств. Отметки правок копируются своими: общая запись у
         /// копии и оригинала менялась бы сразу у обоих.
         /// </summary>
@@ -225,16 +237,21 @@ namespace Writersword.Modules.TextEditor.Models.Inline
             copy.Inserted = Inserted?.Clone();
             copy.Deleted = Deleted?.Clone();
             copy.FormatChange = FormatChange?.Clone();
+            copy.CommentIds = CommentIds is null ? null : new System.Collections.Generic.List<System.Guid>(CommentIds);
             return copy;
         }
 
-        /// <summary>Копия одного оформления — без отметок правок рецензирования.</summary>
+        /// <summary>
+        /// Копия одного оформления — без отметок правок рецензирования. Отметки
+        /// примечаний остаются: принятие правки примечание не снимает.
+        /// </summary>
         public RunProperties WithoutRevisions()
         {
             var copy = (RunProperties)MemberwiseClone();
             copy.Inserted = null;
             copy.Deleted = null;
             copy.FormatChange = null;
+            copy.CommentIds = CommentIds is null ? null : new System.Collections.Generic.List<System.Guid>(CommentIds);
             return copy;
         }
 
@@ -288,13 +305,17 @@ namespace Writersword.Modules.TextEditor.Models.Inline
         /// </summary>
         public static RunProperties? ClearedKeepingRevisions(RunProperties? props)
         {
-            if (props is null || !props.HasRevision) return null;
+            if (props is null || (!props.HasRevision && !props.HasComments)) return null;
 
+            // Примечания очисткой формата не снимаются: они не оформление.
             return new RunProperties
             {
                 Inserted = props.Inserted?.Clone(),
                 Deleted = props.Deleted?.Clone(),
-                FormatChange = props.FormatChange?.Clone()
+                FormatChange = props.FormatChange?.Clone(),
+                CommentIds = props.HasComments
+                    ? new System.Collections.Generic.List<System.Guid>(props.CommentIds!)
+                    : null
             };
         }
 
@@ -312,10 +333,34 @@ namespace Writersword.Modules.TextEditor.Models.Inline
             {
                 if (!property.CanRead || !property.CanWrite) continue;
                 if (property.GetIndexParameters().Length > 0) continue;
-                if (property.Name is nameof(Inserted) or nameof(Deleted) or nameof(FormatChange)) continue;
+                if (property.Name is nameof(Inserted) or nameof(Deleted) or nameof(FormatChange)
+                    or nameof(CommentIds)) continue;
 
                 property.SetValue(this, property.GetValue(blank));
             }
+        }
+
+        /// <summary>
+        /// Одинаковые отметки рецензента: правки и примечания. По нему соседние
+        /// символы решают, сливаться ли им в один ран.
+        /// </summary>
+        public static bool SameMarkup(RunProperties? a, RunProperties? b)
+            => SameRevisions(a, b) && SameComments(a, b);
+
+        /// <summary>Одинаковые отметки примечаний (порядок не важен).</summary>
+        public static bool SameComments(RunProperties? a, RunProperties? b)
+        {
+            var left = a?.CommentIds;
+            var right = b?.CommentIds;
+            int leftCount = left?.Count ?? 0;
+            int rightCount = right?.Count ?? 0;
+
+            if (leftCount != rightCount) return false;
+            if (leftCount == 0) return true;
+
+            foreach (var id in left!)
+                if (!right!.Contains(id)) return false;
+            return true;
         }
 
         /// <summary>Одинаковые отметки правок рецензирования.</summary>
@@ -335,7 +380,8 @@ namespace Writersword.Modules.TextEditor.Models.Inline
             return IsDefaultFormatting()
                 && Inserted is null
                 && Deleted is null
-                && FormatChange is null;
+                && FormatChange is null
+                && !HasComments;
         }
 
         /// <summary>

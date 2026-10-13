@@ -34,7 +34,13 @@ namespace Writersword.Modules.Characters.Interfaces
         int ApplyLabelToAll(CharacterLabel label);
 
         Character Create(string name);
-        Character CreateFromAnketas(string name, IEnumerable<CharacterAnketa> anketas, bool randomize = false);
+        /// <summary>
+        /// Персонаж с подключёнными анкетами. depths — глубина анкет по
+        /// умолчанию (из шаблона проекта); не заданные раскрываются по
+        /// важности персонажа.
+        /// </summary>
+        Character CreateFromAnketas(string name, IEnumerable<CharacterAnketa> anketas, bool randomize = false,
+            IReadOnlyDictionary<string, int>? depths = null);
         Character CreateCollective(string name, IEnumerable<CharacterAnketa>? anketas = null);
         void Update(Character character);
         void Delete(string id);
@@ -58,6 +64,13 @@ namespace Writersword.Modules.Characters.Interfaces
         /// не пропадает — удалять параметры можно поштучно и осознанно.
         /// </summary>
         void DetachAnketa(string characterId, string anketaId);
+
+        /// <summary>
+        /// Задать глубину подключённой анкеты у персонажа: 1 — кратко,
+        /// 2 — подробно, 3 — глубоко. null — снова по важности персонажа.
+        /// Скрытые уровнем поля значения не теряют.
+        /// </summary>
+        void SetAnketaDepth(string characterId, string anketaId, int? depth);
 
         /// <summary>
         /// Подключить к карточке все анкеты шаблона, которых на ней ещё нет.

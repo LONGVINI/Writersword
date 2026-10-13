@@ -298,9 +298,14 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             get => _importanceLevel;
             set
             {
+                if (_importanceLevel == value) return;
                 this.RaiseAndSetIfChanged(ref _importanceLevel, value);
                 this.RaisePropertyChanged(nameof(ImportanceLevelName));
                 this.RaisePropertyChanged(nameof(ImportanceLevelHint));
+
+                // Анкеты, глубину которых не выбирали, раскрываются по
+                // важности: стал персонаж главным — раскрылись глубже.
+                RebuildSections();
             }
         }
 
@@ -344,6 +349,11 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                 if (_isCollective == value) return;
                 this.RaiseAndSetIfChanged(ref _isCollective, value);
                 SyncCollectiveAnketa(value);
+
+                // Выбор анкет следует за тем, кто это: человеку — анкеты
+                // персонажа, группе — анкеты группы.
+                var character = _characterService.GetById(_characterId);
+                if (character != null) ReloadAnketas(character);
             }
         }
 
@@ -613,7 +623,13 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                 .SelectMany(c => c.AttachedAnketaIds)
                 .ToHashSet(StringComparer.Ordinal);
 
-            var rest = all.Where(a => !attachedIds.Contains(a.Id)).ToList();
+            // Предлагаются только анкеты, подходящие тому, кто это: группе
+            // не нужен «Рост», человеку — «Численность». Уже подключённые
+            // остаются на месте при любом раскладе.
+            var rest = all
+                .Where(a => !attachedIds.Contains(a.Id))
+                .Where(FitsAudience)
+                .ToList();
 
             foreach (var anketa in rest.Where(a => usedElsewhere.Contains(a.Id)))
                 AvailableAnketas.Add(anketa);
@@ -629,7 +645,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             // раз нечего, а строка, которая ничего не делает, только сбивает.
             RecentAnketas.Clear();
             foreach (var anketa in _anketaService.GetRecentAnketas())
-                if (!attachedIds.Contains(anketa.Id))
+                if (!attachedIds.Contains(anketa.Id) && FitsAudience(anketa))
                     RecentAnketas.Add(anketa);
 
             this.RaisePropertyChanged(nameof(HasTemplates));
@@ -643,6 +659,14 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             this.RaisePropertyChanged(nameof(CanAttachAnketa));
             this.RaisePropertyChanged(nameof(HasAnySets));
         }
+
+        /// <summary>Анкета подходит тому, кто это: отдельному персонажу или группе.</summary>
+        private bool FitsAudience(CharacterAnketa anketa) => anketa.Audience switch
+        {
+            CharacterAnketaAudience.Individual => !_isCollective,
+            CharacterAnketaAudience.Collective => _isCollective,
+            _ => true
+        };
 
         // ── Поля подключённых анкет ───────────────────────────────────────
         //
@@ -693,35 +717,74 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
 
             var taken = new HashSet<string>(StringComparer.Ordinal);
 
+            // Поля, которые принадлежат подключённым анкетам. Скрытое уровнем
+            // поле в «Свои поля» не уходит: оно не своё, а просто не раскрыто.
+            var belongs = new HashSet<string>(StringComparer.Ordinal);
+
             foreach (var anketaId in attachedIds)
             {
                 var anketa = _anketaService.GetById(anketaId);
                 if (anketa?.Fields == null) continue;
 
-                var fieldIds = anketa.Fields
-                    .Select(CharacterFieldId.Resolve)
-                    .Where(id => !string.IsNullOrEmpty(id))
-                    .ToHashSet(StringComparer.Ordinal);
+                var levels = CharacterDetailLevels.ByFieldId(anketa);
+                var max = CharacterDetailLevels.MaxOf(anketa);
+                var stored = character != null ? CharacterDetailLevels.StoredFor(character, anketa.Id) : null;
+                var depth = Math.Clamp(stored ?? CharacterDetailLevels.ForImportance(_importanceLevel),
+                    CharacterDetailLevels.Brief, max);
 
-                var items = _parameters.Parameters
-                    .Where(p => fieldIds.Contains(CharacterFieldId.Resolve(p.Model)))
+                belongs.UnionWith(levels.Keys);
+
+                var own = _parameters.Parameters
+                    .Where(p => levels.ContainsKey(CharacterFieldId.Resolve(p.Model)))
+                    .ToList();
+
+                var items = own
+                    .Where(p => levels[CharacterFieldId.Resolve(p.Model)] <= depth)
                     .Where(p => taken.Add(p.Id))
                     .ToList();
 
-                if (items.Count == 0) continue;
+                var hidden = own
+                    .Where(p => !taken.Contains(p.Id))
+                    .Select(p => CharacterFieldId.Resolve(p.Model))
+                    .ToHashSet(StringComparer.Ordinal);
 
-                Sections.Add(new CharacterAnketaSectionViewModel(anketa.Name, anketa.Id, items, anketa)
+                if (items.Count == 0 && hidden.Count == 0) continue;
+
+                Sections.Add(new CharacterAnketaSectionViewModel(anketa.Name, anketa.Id, items, anketa, hidden)
                 {
                     Icon = anketa.Icon,
-                    IconColor = anketa.IconColor
-                });
+                    IconColor = anketa.IconColor,
+                    IconBackground = anketa.IconBackground ?? string.Empty,
+                    IconBorder = anketa.IconBorder ?? string.Empty,
+                    AudienceMismatch = !FitsAudience(anketa),
+                    AudienceCaption = anketa.Audience == CharacterAnketaAudience.Collective
+                        ? "анкета группы"
+                        : "анкета персонажа"
+                }.WithDepth(depth, max, !stored.HasValue, hidden.Count, SetSectionDepth));
             }
 
-            var rest = _parameters.Parameters.Where(p => !taken.Contains(p.Id)).ToList();
+            var rest = _parameters.Parameters
+                .Where(p => !taken.Contains(p.Id))
+                .Where(p => !belongs.Contains(CharacterFieldId.Resolve(p.Model)))
+                .ToList();
             if (rest.Count > 0)
                 Sections.Add(new CharacterAnketaSectionViewModel("Свои поля", string.Empty, rest));
 
             this.RaisePropertyChanged(nameof(HasSections));
+        }
+
+        /// <summary>
+        /// Глубина анкеты у персонажа выбрана в заголовке раздела. Значения
+        /// скрытых полей остаются: вернул уровень — данные на месте. null —
+        /// снова по важности персонажа.
+        /// </summary>
+        public void SetSectionDepth(string anketaId, int? depth)
+        {
+            if (string.IsNullOrEmpty(anketaId)) return;
+
+            _characterService.SetAnketaDepth(_characterId, anketaId, depth);
+            RebuildSections();
+            RequestImmediateSave();
         }
 
         // ── Шаблоны ───────────────────────────────────────────────────────
@@ -1323,15 +1386,87 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             string title,
             string anketaId,
             IReadOnlyList<CharacterParameterItemViewModel> items,
-            CharacterAnketa? anketa = null)
+            CharacterAnketa? anketa = null,
+            ISet<string>? hiddenFieldIds = null)
         {
             Title = title;
             AnketaId = anketaId;
             Items = items;
             Groups = anketa != null && anketa.Layout.Count > 0
-                ? BuildFromLayout(anketa, items)
+                ? BuildFromLayout(anketa, items, hiddenFieldIds)
                 : BuildGroups(items);
         }
+
+        // ── Глубина ──────────────────────────────────────────────────────
+
+        private Action<string, int?>? _setDepth;
+
+        /// <summary>Выбранная у персонажа глубина анкеты.</summary>
+        public int Depth { get; private set; } = CharacterDetailLevels.Brief;
+
+        /// <summary>Самый глубокий уровень анкеты.</summary>
+        public int MaxDepth { get; private set; } = CharacterDetailLevels.Brief;
+
+        /// <summary>Глубину не выбирали — она по важности персонажа.</summary>
+        public bool IsAutoDepth { get; private set; } = true;
+
+        /// <summary>Анкета раскрывается глубже краткого — в заголовке есть выбор глубины.</summary>
+        public bool HasLevels => MaxDepth > CharacterDetailLevels.Brief;
+
+        public int HiddenCount { get; private set; }
+
+        public bool HasHidden => HiddenCount > 0;
+
+        /// <summary>Сколько полей не раскрыто — под разделом, чтобы было видно, что есть ещё.</summary>
+        public string HiddenCaption => HiddenCount switch
+        {
+            1 => "Ещё 1 поле на более глубоком уровне",
+            >= 2 and <= 4 => "Ещё " + HiddenCount + " поля на более глубоких уровнях",
+            _ => "Ещё " + HiddenCount + " полей на более глубоких уровнях"
+        };
+
+        /// <summary>Уровни для выбора — до последнего уровня анкеты.</summary>
+        public IReadOnlyList<CharacterDepthOptionViewModel> DepthOptions { get; private set; } =
+            Array.Empty<CharacterDepthOptionViewModel>();
+
+        internal CharacterAnketaSectionViewModel WithDepth(
+            int depth, int max, bool isAuto, int hiddenCount, Action<string, int?> setDepth)
+        {
+            Depth = CharacterDetailLevels.Clamp(depth);
+            MaxDepth = CharacterDetailLevels.Clamp(max);
+            IsAutoDepth = isAuto;
+            HiddenCount = hiddenCount;
+            _setDepth = setDepth;
+
+            DepthOptions = CharacterDetailLevels.All
+                .Where(level => level <= MaxDepth)
+                .Select(level => new CharacterDepthOptionViewModel(level, level == Depth, Choose)
+                {
+                    IsAuto = isAuto && level == Depth
+                })
+                .ToList();
+
+            return this;
+        }
+
+        private void Choose(int level) => _setDepth?.Invoke(AnketaId, level);
+
+        /// <summary>Вернуть глубину по важности персонажа.</summary>
+        public void ResetDepth() => _setDepth?.Invoke(AnketaId, null);
+
+        /// <summary>Раскрыть следующий уровень — с подписи «ещё N полей» под разделом.</summary>
+        public void ShowDeeper()
+        {
+            if (Depth >= MaxDepth) return;
+            _setDepth?.Invoke(AnketaId, Depth + 1);
+        }
+
+        // ── Для кого ─────────────────────────────────────────────────────
+
+        /// <summary>Анкета не для того, кто это: человеку подключена анкета группы или наоборот.</summary>
+        public bool AudienceMismatch { get; init; }
+
+        public string AudienceCaption { get; init; } = string.Empty;
 
         public string Title { get; }
 
@@ -1342,6 +1477,12 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public string Icon { get; init; } = string.Empty;
 
         public string IconColor { get; init; } = string.Empty;
+
+        /// <summary>Подложка значка анкеты раздела.</summary>
+        public string IconBackground { get; init; } = string.Empty;
+
+        /// <summary>Рамка значка анкеты раздела.</summary>
+        public string IconBorder { get; init; } = string.Empty;
 
         /// <summary>У «Своих полей» анкеты нет — нет и значка.</summary>
         public bool HasIcon => !string.IsNullOrEmpty(AnketaId);
@@ -1368,7 +1509,8 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         /// </summary>
         private static IReadOnlyList<CharacterFieldGroupViewModel> BuildFromLayout(
             CharacterAnketa anketa,
-            IReadOnlyList<CharacterParameterItemViewModel> items)
+            IReadOnlyList<CharacterParameterItemViewModel> items,
+            ISet<string>? hiddenFieldIds)
         {
             var byFieldId = new Dictionary<string, CharacterParameterItemViewModel>(StringComparer.Ordinal);
             foreach (var item in items)
@@ -1403,7 +1545,14 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                     continue;
                 }
 
+                // Поля, скрытые уровнем, место в строке не держат: строка
+                // «возраст, рост, телосложение» у краткого раскрытия — это
+                // «возраст, рост», а не «возраст, рост и пустота».
                 var cells = row.Cells
+                    .Where(key => hiddenFieldIds == null ||
+                                  string.IsNullOrEmpty(key) ||
+                                  !fieldIdByKey.TryGetValue(key, out var hiddenId) ||
+                                  !hiddenFieldIds.Contains(hiddenId))
                     .Select(key => !string.IsNullOrEmpty(key) &&
                                    fieldIdByKey.TryGetValue(key, out var fieldId) &&
                                    byFieldId.TryGetValue(fieldId, out var item) &&
@@ -1455,6 +1604,34 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                 .Select(key => new CharacterFieldGroupViewModel(key, CharacterFieldGroupViewModel.PairRows(byGroup[key])))
                 .ToList();
         }
+    }
+
+    /// <summary>Уровень детализации в заголовке раздела — кнопкой переключателя.</summary>
+    public class CharacterDepthOptionViewModel
+    {
+        private readonly Action<int> _choose;
+
+        public CharacterDepthOptionViewModel(int level, bool isSelected, Action<int> choose)
+        {
+            Level = level;
+            IsSelected = isSelected;
+            _choose = choose;
+        }
+
+        public int Level { get; }
+
+        public bool IsSelected { get; }
+
+        public string Name => CharacterDetailLevels.NameOf(Level);
+
+        /// <summary>Уровень стоит сам, по важности персонажа, — его не выбирали.</summary>
+        public bool IsAuto { get; init; }
+
+        public string Hint => IsAuto
+            ? CharacterDetailLevels.HintOf(Level) + ". Сейчас — по важности персонажа"
+            : CharacterDetailLevels.HintOf(Level);
+
+        public void Choose() => _choose(Level);
     }
 
     /// <summary>Группа полей внутри раздела анкеты.</summary>

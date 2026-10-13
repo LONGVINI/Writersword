@@ -89,6 +89,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         /// <summary>Есть ли у абзаца эффективный интервал после (с учётом стиля).</summary>
         public bool HasSpaceAfter { get; set; }
+
+        /// <summary>
+        /// Каретка стоит вплотную к формуле или формула попала в выделение: по нему
+        /// показывается контекстная вкладка «Формулы».
+        /// </summary>
+        public bool IsAtFormula { get; set; }
     }
 
     /// <summary>

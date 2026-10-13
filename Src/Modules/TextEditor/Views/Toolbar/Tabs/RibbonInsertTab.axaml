@@ -5,6 +5,7 @@
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
              xmlns:controls="using:Writersword.Styles.UserControls"
+             xmlns:dialogs="using:Writersword.Modules.TextEditor.Views.Dialogs"
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonInsertTab"
              x:DataType="vm:RibbonInsertTabViewModel">
 
@@ -340,6 +341,22 @@
 										</MenuFlyout>
 									</SplitButton.Flyout>
 								</SplitButton>
+								<SplitButton Classes="RibbonSplit"
+								             Command="{Binding InsertFormulaCommand}"
+								             behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Formula}">
+									<SplitButton.Content>
+										<StackPanel Spacing="2" HorizontalAlignment="Center">
+											<PathIcon Data="M18 4H6v2l6.5 6L6 18v2h12v-3h-7l5-5-5-5h7z" Width="20" Height="20"/>
+											<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Formula}" FontSize="9" TextAlignment="Center"/>
+										</StackPanel>
+									</SplitButton.Content>
+									<SplitButton.Flyout>
+										<Flyout Placement="BottomEdgeAlignedLeft">
+											<dialogs:FormulaReadyPanel Command="{Binding InsertReadyFormulaCommand}"
+											                           NewFormulaCommand="{Binding InsertFormulaCommand}"/>
+										</Flyout>
+									</SplitButton.Flyout>
+								</SplitButton>
 							</StackPanel>
 						</DockPanel>
 					</Border>
@@ -390,6 +407,22 @@
 														<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Arrow}"     Command="{Binding InsertShapeArrowCommand}"/>
 														<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Callout}"   Command="{Binding InsertShapeCalloutCommand}"/>
 													</MenuFlyout>
+												</SplitButton.Flyout>
+											</SplitButton>
+											<SplitButton Classes="RibbonSplit"
+											             Command="{Binding InsertFormulaCommand}"
+											             behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Formula}">
+												<SplitButton.Content>
+													<StackPanel Spacing="2" HorizontalAlignment="Center">
+														<PathIcon Data="M18 4H6v2l6.5 6L6 18v2h12v-3h-7l5-5-5-5h7z" Width="20" Height="20"/>
+														<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Formula}" FontSize="9" TextAlignment="Center"/>
+													</StackPanel>
+												</SplitButton.Content>
+												<SplitButton.Flyout>
+													<Flyout Placement="BottomEdgeAlignedLeft">
+														<dialogs:FormulaReadyPanel Command="{Binding InsertReadyFormulaCommand}"
+														                           NewFormulaCommand="{Binding InsertFormulaCommand}"/>
+													</Flyout>
 												</SplitButton.Flyout>
 											</SplitButton>
 										</StackPanel>
@@ -632,6 +665,14 @@
 										<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Comment}" FontSize="9" TextAlignment="Center"/>
 									</StackPanel>
 								</Button>
+								<Button Command="{Binding InsertDateTimeCommand}"
+                                        Classes="RibbonBtnLarge"
+                                        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_DateTime}">
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<PathIcon Data="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11zM7 11h5v5H7z" Width="20" Height="20"/>
+										<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_DateTime}" FontSize="9" TextAlignment="Center"/>
+									</StackPanel>
+								</Button>
 							</StackPanel>
 						</DockPanel>
 					</Border>
@@ -671,6 +712,14 @@
 												<StackPanel Spacing="2" HorizontalAlignment="Center">
 													<PathIcon Data="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z" Width="20" Height="20"/>
 													<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Comment}" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</Button>
+											<Button Command="{Binding InsertDateTimeCommand}"
+                                                    Classes="RibbonBtnLarge"
+                                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_DateTime}">
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Data="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11zM7 11h5v5H7z" Width="20" Height="20"/>
+													<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_DateTime}" FontSize="9" TextAlignment="Center"/>
 												</StackPanel>
 											</Button>
 										</StackPanel>

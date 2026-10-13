@@ -245,6 +245,20 @@
 						           Classes="RibbonGroupLabel"
 						           Text="Правки"/>
 						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<!-- Панель рецензии: все правки и примечания списком справа от листов. -->
+							<ToggleButton Classes="RibbonToggle RibbonToggleLarge"
+							              IsChecked="{Binding IsReviewPanelOpen, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Панель рецензии"
+							              behaviours:TooltipBehavior.Description="Все правки и примечания документа списком справа от листов: по главам, с поиском и отбором по автору. Щелчок по пункту ведёт к месту в тексте, кнопки в пункте принимают и отклоняют правку, в примечании можно ответить и закрыть обсуждение">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="20" Height="20"
+									          Data="M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM5 19V5h9v14H5zm11 0V5h3v14h-3z"/>
+									<TextBlock Text="Панель" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+
+							<Separator Classes="RibbonDivider"/>
+
 							<Button Classes="RibbonBtnLarge"
 							        Command="{Binding AcceptCommand}"
 							        IsEnabled="{Binding HasRevisions}"
@@ -346,6 +360,15 @@
 								<Flyout Placement="Bottom">
 									<StackPanel Spacing="6" Margin="8">
 										<StackPanel Orientation="Horizontal" Spacing="4">
+											<ToggleButton Classes="RibbonToggle RibbonToggleLarge"
+											              IsChecked="{Binding IsReviewPanelOpen, Mode=TwoWay}"
+											              behaviours:TooltipBehavior.Tip="Панель рецензии">
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Width="20" Height="20"
+													          Data="M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM5 19V5h9v14H5zm11 0V5h3v14h-3z"/>
+													<TextBlock Text="Панель" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</ToggleButton>
 											<Button Classes="RibbonBtnLarge"
 											        Command="{Binding AcceptCommand}"
 											        IsEnabled="{Binding HasRevisions}"
@@ -408,6 +431,54 @@
 								</Flyout>
 							</Button.Flyout>
 						</Button>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══ ОБСУЖДЕНИЕ ═══════════════════════════════════════════
+				     Три вида обсуждения к выделенному месту: примечание — мысль на
+				     полях, предложение — вариант на усмотрение автора, требование —
+				     исправить обязательно. Вид виден цветом значка на полях и карточки
+				     в панели рецензии, там же его можно сменить. -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom"
+						           Classes="RibbonGroupLabel"
+						           Text="Обсуждение"/>
+						<StackPanel Spacing="2" VerticalAlignment="Top">
+							<Button Classes="RibbonBtn"
+							        MinHeight="22" Height="22"
+							        HorizontalContentAlignment="Left"
+							        Command="{Binding NewNoteCommand}"
+							        behaviours:TooltipBehavior.Tip="Примечание"
+							        behaviours:TooltipBehavior.Description="Заметка на полях к выделенному месту текста">
+								<StackPanel Orientation="Horizontal" Spacing="6">
+									<Border Width="8" Height="8" CornerRadius="4" Background="#E0A33A" VerticalAlignment="Center"/>
+									<TextBlock Text="Примечание" FontSize="11" VerticalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+							<Button Classes="RibbonBtn"
+							        MinHeight="22" Height="22"
+							        HorizontalContentAlignment="Left"
+							        Command="{Binding NewSuggestionCommand}"
+							        behaviours:TooltipBehavior.Tip="Предложение"
+							        behaviours:TooltipBehavior.Description="Вариант к выделенному месту, который автор может принять или нет">
+								<StackPanel Orientation="Horizontal" Spacing="6">
+									<Border Width="8" Height="8" CornerRadius="4" Background="#3FB58A" VerticalAlignment="Center"/>
+									<TextBlock Text="Предложение" FontSize="11" VerticalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+							<Button Classes="RibbonBtn"
+							        MinHeight="22" Height="22"
+							        HorizontalContentAlignment="Left"
+							        Command="{Binding NewRequirementCommand}"
+							        behaviours:TooltipBehavior.Tip="Требование"
+							        behaviours:TooltipBehavior.Description="То, что в выделенном месте нужно исправить обязательно">
+								<StackPanel Orientation="Horizontal" Spacing="6">
+									<Border Width="8" Height="8" CornerRadius="4" Background="#E5605A" VerticalAlignment="Center"/>
+									<TextBlock Text="Требование" FontSize="11" VerticalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+						</StackPanel>
 					</DockPanel>
 				</Border>
 

@@ -97,12 +97,9 @@ namespace Writersword.Modules.TextEditor.Document
                 var decoration = decorations[p];
                 if (!decoration.BandsVisible) continue;
 
-                var (header, footer) = decoration.Variant switch
-                {
-                    HeaderFooterVariant.First => (settings.FirstHeader, settings.FirstFooter),
-                    HeaderFooterVariant.Even => (settings.EvenHeader, settings.EvenFooter),
-                    _ => (settings.Header, settings.Footer)
-                };
+                // Полосы листа: вариант шаблона или свой текст правила листа.
+                var header = settings.BandFor(decoration, true);
+                var footer = settings.BandFor(decoration, false);
 
                 int headerLines = PrintedLines(header, decoration);
                 int footerLines = PrintedLines(footer, decoration);

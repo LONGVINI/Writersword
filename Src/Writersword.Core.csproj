@@ -21,7 +21,7 @@
             ExcludeAssets="build;buildTransitive" — берём только типы из Avalonia,
             без build-таргетов и XAML-генератора. Core — библиотека без AXAML.
         -->
-		<PackageReference Include="Avalonia" Version="12.1.1">
+		<PackageReference Include="Avalonia" Version="12.1.3">
 			<ExcludeAssets>build;buildTransitive</ExcludeAssets>
 		</PackageReference>
 		<PackageReference Include="Dock.Model" Version="12.1.0.6" />

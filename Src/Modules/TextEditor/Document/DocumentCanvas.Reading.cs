@@ -1822,6 +1822,9 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Стрелка свёртки у заголовка видна, только пока указатель над ним.
             ClearHeadingToggleHover();
+
+            // Подсветка выноски и подсказка правки — тоже (DocumentCanvas.RevisionCards).
+            ClearMarkupHover();
         }
 
         /// <summary>

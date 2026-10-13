@@ -86,6 +86,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand InsertHyperlinkCommand { get; }
         public ICommand InsertBookmarkCommand { get; }
         public ICommand InsertCommentCommand { get; }
+        public ICommand InsertFormulaCommand { get; }
+
+        /// <summary>Готовая формула из меню кнопки «Формула»; параметр — запись LaTeX.</summary>
+        public ICommand InsertReadyFormulaCommand { get; }
+        public ICommand InsertDateTimeCommand { get; }
 
         public RibbonInsertTabViewModel(ITextEditorCommandTarget target)
         {
@@ -169,6 +174,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 () => _target.InsertShape(ShapeType.Arrow));
             InsertShapeCalloutCommand = ReactiveCommand.Create(
                 () => _target.InsertShape(ShapeType.Callout));
+            InsertFormulaCommand = ReactiveCommand.Create(() => _target.InsertFormula());
+            InsertReadyFormulaCommand = ReactiveCommand.Create<string>(latex => _target.InsertReadyFormula(latex));
+            InsertDateTimeCommand = ReactiveCommand.Create(() => _target.InsertDateTime());
             InsertPageBreakCommand = ReactiveCommand.Create(() => _target.InsertPageBreak());
             InsertSectionBreakNextPageCommand = ReactiveCommand.Create(
                 () => _target.InsertSectionBreak(BreakType.SectionNextPage));
@@ -176,7 +184,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 () => _target.InsertSectionBreak(BreakType.SectionContinuous));
             InsertHyperlinkCommand = ReactiveCommand.Create(() => { });
             InsertBookmarkCommand = ReactiveCommand.Create(() => { });
-            InsertCommentCommand = ReactiveCommand.Create(() => { });
+            InsertCommentCommand = ReactiveCommand.Create(() => _target.InsertComment(string.Empty));
         }
 
         /// <summary>
@@ -195,7 +203,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// </summary>
         public void UpdateLayout(double availableWidth)
         {
-            if (availableWidth >= 1240)
+            // Пороги групп, идущих после «Медиа», включают ширину кнопки «Формула» в ней.
+            if (availableWidth >= 1292)
             {
                 IsFileGroupExpanded = true;
                 IsTableGroupExpanded = true;
@@ -208,7 +217,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             IsLinksGroupExpanded = false;
 
-            if (availableWidth >= 1110)
+            if (availableWidth >= 1162)
             {
                 IsFileGroupExpanded = true;
                 IsTableGroupExpanded = true;
@@ -220,7 +229,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             IsHeaderFooterGroupExpanded = false;
 
-            if (availableWidth >= 940)
+            if (availableWidth >= 992)
             {
                 IsFileGroupExpanded = true;
                 IsTableGroupExpanded = true;
@@ -231,7 +240,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             IsPageGroupExpanded = false;
 
-            if (availableWidth >= 800)
+            if (availableWidth >= 852)
             {
                 IsFileGroupExpanded = true;
                 IsTableGroupExpanded = true;

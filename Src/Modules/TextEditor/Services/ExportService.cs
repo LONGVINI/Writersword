@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -71,13 +71,18 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 using var writer = new StreamWriter(outputPath, false, Encoding.UTF8);
 
+                // Сноски: в тексте — номер в квадратных скобках, сами сноски — списком
+                // в конце файла (ExportService.Notes).
+                var noteNumbering = NoteNumbering.Compute(document);
+                var liveFields = BuildInlineFieldMap(document);
+
                 foreach (var section in document.Sections)
                 {
                     foreach (var block in section.Blocks)
                     {
                         if (block is ParagraphBlock paragraph)
                         {
-                            await writer.WriteLineAsync(paragraph.GetPlainText());
+                            await writer.WriteLineAsync(PlainTextWithNoteMarks(paragraph, noteNumbering, liveFields));
                         }
                         else if (block is BreakBlock breakBlock)
                         {
@@ -85,6 +90,14 @@ namespace Writersword.Modules.TextEditor.Services
                                 await writer.WriteLineAsync("\f"); // form feed
                         }
                     }
+                }
+
+                var noteTexts = NoteTextsFor(noteNumbering);
+                if (noteTexts.Count > 0)
+                {
+                    await writer.WriteLineAsync();
+                    foreach (var (mark, text) in noteTexts)
+                        await writer.WriteLineAsync($"[{mark}] {text}");
                 }
 
                 return ExportResult.Ok(outputPath);
@@ -107,13 +120,17 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 var sb = new StringBuilder();
 
+                // Сноски — сносками Markdown: в тексте [^номер], определения в конце файла.
+                var noteNumbering = NoteNumbering.Compute(document);
+                var liveFields = BuildInlineFieldMap(document);
+
                 foreach (var section in document.Sections)
                 {
                     foreach (var block in section.Blocks)
                     {
                         if (block is ParagraphBlock paragraph)
                         {
-                            string mdLine = ConvertParagraphToMarkdown(paragraph);
+                            string mdLine = ConvertParagraphToMarkdown(paragraph, noteNumbering, liveFields);
                             sb.AppendLine(mdLine);
                         }
                         else if (block is BreakBlock b && b.BreakType == BreakType.Page)
@@ -123,6 +140,14 @@ namespace Writersword.Modules.TextEditor.Services
                             sb.AppendLine();
                         }
                     }
+                }
+
+                var noteTexts = NoteTextsFor(noteNumbering);
+                if (noteTexts.Count > 0)
+                {
+                    sb.AppendLine();
+                    foreach (var (mark, text) in noteTexts)
+                        sb.Append("[^").Append(mark).Append("]: ").AppendLine(text.Replace("\n", "\n    "));
                 }
 
                 await File.WriteAllTextAsync(outputPath, sb.ToString(), Encoding.UTF8);
@@ -199,6 +224,9 @@ namespace Writersword.Modules.TextEditor.Services
 
                 WriteStyleDefinitions(mainPart, document);
 
+                // Места примечаний в тексте (ExportService.Comments).
+                PlanComments(document, ctx);
+
                 ctx.Numbering = new DocxNumberingBuilder();
                 ctx.Numbering.Collect(document);
                 ctx.Numbering.Write(mainPart);
@@ -219,6 +247,9 @@ namespace Writersword.Modules.TextEditor.Services
 
                     ctx.InlineObjects = BuildInlineObjectMap(section);
                     ctx.InlineShapes = BuildInlineShapeMap(section);
+                    ctx.InlineFormulas = BuildInlineFormulaMap(section);
+                    ctx.InlineNotes = BuildInlineNoteMap(section);
+                    ctx.InlineFields = BuildInlineFieldMap(document);
 
                     if (section.FloatingObjects.Count > 0)
                         ctx.Warnings.Add(
@@ -228,6 +259,10 @@ namespace Writersword.Modules.TextEditor.Services
                         ctx.Warnings.Add("Колонтитулы не переносятся в .docx.");
 
                     W.Paragraph? lastParagraph = null;
+
+                    // Как начался раздел, который сейчас пишется: w:type его w:sectPr.
+                    // Первый раздел — как записал файл, следующие — по разрыву перед ними.
+                    var currentSectionStart = FirstSectionStart(document, section);
 
                     // Последний абзац — разрыв страницы: разрыв раздела Word встаёт на
                     // его место, иначе между разделами появился бы пустой лист.
@@ -250,7 +285,7 @@ namespace Writersword.Modules.TextEditor.Services
                     // Плавающие картинки и фигуры, встреченные в потоке: у Word они живут
                     // внутри абзаца, поэтому ждут здесь абзаца, перед которым стоят, и
                     // встают якорями в его начало.
-                    var pendingFloatRuns = new List<W.Run>();
+                    var pendingFloatRuns = new List<OpenXmlElement>();
 
                     // Плавающим объектам не досталось абзаца (за ними таблица или конец
                     // раздела): им отдаётся собственный пустой абзац.
@@ -309,7 +344,8 @@ namespace Writersword.Modules.TextEditor.Services
 
                                 if (hfPlan is not null && hfPlan.SectionStarts.TryGetValue(para.Id, out int wordSection))
                                 {
-                                    if (lastParagraph is not null)
+                                    if (lastParagraph is not null
+                                        && lastParagraph.GetFirstChild<W.ParagraphProperties>()?.GetFirstChild<W.SectionProperties>() is null)
                                     {
                                         var breakSectPr = BuildSectionProperties(section, document);
                                         ApplyHeaderFooterToSection(breakSectPr, hfPlan, ctx);
@@ -367,6 +403,48 @@ namespace Writersword.Modules.TextEditor.Services
                                 continueIntoLast = false;
                                 break;
 
+                            case BreakBlock sectionBreak when sectionBreak.IsSectionBreak:
+                            {
+                                // Разрыв раздела: параметры раздела, который им кончается,
+                                // встают в свойства последнего абзаца раздела.
+                                FlushPendingFloats();
+
+                                var ending = sectionBreak.Section;
+                                var endingSectPr = BuildSectionLayoutProperties(
+                                    ending,
+                                    ending?.Page ?? document.PageSettings,
+                                    ending?.Columns ?? ToSectionColumns(document.ColumnSettings),
+                                    currentSectionStart);
+                                if (hfPlan is not null)
+                                    ApplyHeaderFooterToSection(endingSectPr, hfPlan, ctx);
+                                NormalizeSectionProperties(endingSectPr);
+
+                                bool ownsSectPr = lastParagraph?.GetFirstChild<W.ParagraphProperties>()
+                                    ?.GetFirstChild<W.SectionProperties>() is not null;
+                                if (lastParagraph is null || ownsSectPr || lastIsPageBreak)
+                                {
+                                    lastParagraph = new W.Paragraph();
+                                    body.AppendChild(lastParagraph);
+                                }
+
+                                var sectionPPr = lastParagraph.GetFirstChild<W.ParagraphProperties>();
+                                if (sectionPPr is null)
+                                {
+                                    sectionPPr = new W.ParagraphProperties();
+                                    lastParagraph.InsertAt(sectionPPr, 0);
+                                }
+                                sectionPPr.AppendChild(endingSectPr);
+
+                                currentSectionStart = StartOf(sectionBreak.BreakType);
+
+                                // За разрывом раздела начинается новый абзац Word.
+                                lastIsPageBreak = false;
+                                lastBreakRun = null;
+                                lastIsFlowParagraph = false;
+                                continueIntoLast = false;
+                                break;
+                            }
+
                             case BreakBlock brk:
                                 if (lastIsFlowParagraph && lastParagraph is not null
                                     && brk.BreakType is BreakType.Page or BreakType.Column)
@@ -390,12 +468,15 @@ namespace Writersword.Modules.TextEditor.Services
                             case ImageBlock:
                             case ShapeBlock:
                             {
-                                var objectRun = BuildFlowObjectRun(block, ctx);
-                                if (objectRun is null)
+                                var builtRun = BuildFlowObjectRun(block, ctx);
+                                if (builtRun is null)
                                 {
                                     ctx.Warnings.Add("Картинка без файла в .docx не перенесена.");
                                     break;
                                 }
+
+                                // Правка плавающей картинки — обёрткой её рана, как у текста.
+                                OpenXmlElement objectRun = WrapObjectRevision(builtRun, block, ctx);
 
                                 // Плавающий объект ждёт своего абзаца. Объект «сверху и снизу»
                                 // из Word — тоже: он уходит якорем, как был у Word.
@@ -442,9 +523,17 @@ namespace Writersword.Modules.TextEditor.Services
 
                     FlushPendingFloats();
 
-                    var sectPr = BuildSectionProperties(section, document);
+                    var finalLayout = isFinal ? document.FinalSection : null;
+                    var sectPr = BuildSectionLayoutProperties(
+                        finalLayout,
+                        section.PageSettings ?? document.PageSettings,
+                        finalLayout?.Columns is { Columns: not null } finalColumns
+                            ? finalColumns
+                            : ToSectionColumns(section.ColumnSettings ?? document.ColumnSettings),
+                        currentSectionStart);
                     if (hfPlan is not null)
                         ApplyHeaderFooterToSection(sectPr, hfPlan, ctx);
+                    NormalizeSectionProperties(sectPr);
 
                     if (isFinal)
                     {
@@ -473,6 +562,13 @@ namespace Writersword.Modules.TextEditor.Services
                 if (!body.Elements<W.Paragraph>().Any() && !body.Elements<W.Table>().Any())
                     body.InsertAt(new W.Paragraph(), 0);
 
+                // Сноски: их части пишутся после тела — номера записей выданы по ходу
+                // записи абзацев (ExportService.Notes).
+                WriteNoteParts(mainPart, document, ctx);
+
+                // Текст примечаний — тоже после тела (ExportService.Comments).
+                WriteCommentParts(mainPart, ctx);
+
                 mainPart.Document.Save();
 
                 if (_writerswordOnlyEffectsWritten)
@@ -492,6 +588,46 @@ namespace Writersword.Modules.TextEditor.Services
                     map[image.Id] = image;
             return map;
         }
+
+        /// <summary>Формулы, стоящие в строке текста, по Id — на них ссылаются run-ы абзацев.</summary>
+        private static Dictionary<Guid, FormulaBlock> BuildInlineFormulaMap(SectionModel section)
+        {
+            var map = new Dictionary<Guid, FormulaBlock>();
+            foreach (var obj in section.InlineObjects)
+                if (obj is FormulaBlock formula)
+                    map[formula.Id] = formula;
+            return map;
+        }
+
+        /// <summary>
+        /// Формула для .docx: тот же XML Word (m:oMath), каким она хранится в документе.
+        /// Формула отдельной строкой заворачивается в абзац формул (m:oMathPara).
+        /// Нечитаемый XML формулы в файл не идёт: он сделал бы нечитаемым весь документ.
+        /// </summary>
+        private static OpenXmlElement? BuildFormulaElement(FormulaBlock formula)
+        {
+            if (string.IsNullOrWhiteSpace(formula.Omml)) return null;
+
+            try
+            {
+                var parsed = System.Xml.Linq.XElement.Parse(formula.Omml);
+                if (parsed.Name.LocalName != "oMath" || parsed.Name.NamespaceName != FormulaNamespace)
+                    return null;
+            }
+            catch (System.Xml.XmlException)
+            {
+                return null;
+            }
+
+            var math = new DocumentFormat.OpenXml.Math.OfficeMath(formula.Omml);
+            if (!formula.IsDisplay) return math;
+
+            var mathParagraph = new DocumentFormat.OpenXml.Math.Paragraph();
+            mathParagraph.AppendChild(math);
+            return mathParagraph;
+        }
+
+        private const string FormulaNamespace = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 
         /// <summary>Фигуры, стоящие в строке текста, по Id — на них ссылаются run-ы абзацев.</summary>
         private static Dictionary<Guid, ShapeBlock> BuildInlineShapeMap(SectionModel section)
@@ -1134,7 +1270,7 @@ namespace Writersword.Modules.TextEditor.Services
             foreach (var chunk in para.Chunks)
             {
                 foreach (var run in chunk.Runs)
-                    runElements.Add((run, BuildRunElements(run, ctx)));
+                    runElements.Add((run, WithCommentMarks(run, BuildRunElements(run, ctx), ctx)));
             }
 
             foreach (var element in WrapRunRevisions(runElements, ctx))
@@ -1149,6 +1285,35 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (run.InlineImageId is Guid imageId)
             {
+                // Живое поле — сложным полем Word (ExportService.Fields).
+                if (ctx.InlineFields.TryGetValue(imageId, out var liveField))
+                {
+                    elements.AddRange(BuildFieldRuns(run, liveField, ctx));
+                    return elements;
+                }
+
+                // Знак сноски — ран со ссылкой на её запись в части сносок.
+                if (ctx.InlineNotes.TryGetValue(imageId, out var note))
+                {
+                    if (BuildNoteReferenceRun(run, note, ctx) is { } noteRun) elements.Add(noteRun);
+                    return elements;
+                }
+
+                // Картинка или фигура в тексте сноски: связь с файлом картинки живёт в
+                // части документа, а текст сноски — в другой части файла.
+                if (ctx.WritingNote && !ctx.InlineFormulas.ContainsKey(imageId))
+                {
+                    ctx.Warnings.Add("Картинки и фигуры в тексте сносок не переносятся в .docx.");
+                    return elements;
+                }
+
+                // Формула в строке — не рисунок в ране, а свой элемент абзаца рядом с ранами.
+                if (ctx.InlineFormulas.TryGetValue(imageId, out var formula))
+                {
+                    if (BuildFormulaElement(formula) is { } math) elements.Add(math);
+                    return elements;
+                }
+
                 // Объект строки — картинка или фигура: обе стоят среди букв абзаца.
                 var drawing = BuildImageDrawing(imageId, ctx) ?? BuildInlineShapeDrawing(imageId, ctx);
                 if (drawing is null) return elements;
@@ -1247,8 +1412,9 @@ namespace Writersword.Modules.TextEditor.Services
             // Разрывы раздела в потоке блоков переносятся как разрыв страницы:
             // разделы документа описываются списком SectionModel, и импорт
             // приводит внутренние разрывы разделов Word к тем же разрывам страницы.
-            // Разрыв колонки из раздела в одну колонку работает как разрыв страницы, но
-            // в .docx возвращается тем, чем был в исходнике.
+            // Разрыв колонки (FromColumnBreak) в .docx возвращается разрывом колонки: в
+            // разделе из нескольких колонок он ведёт в следующую колонку, в разделе из
+            // одной — на следующую страницу.
             var breakType = block.BreakType == BreakType.Column || block.FromColumnBreak
                 ? W.BreakValues.Column
                 : W.BreakValues.Page;
@@ -2260,10 +2426,11 @@ namespace Writersword.Modules.TextEditor.Services
 
         // --- Вспомогательные методы (Markdown) ---
 
-        private static string ConvertParagraphToMarkdown(ParagraphBlock paragraph)
+        private static string ConvertParagraphToMarkdown(
+            ParagraphBlock paragraph, NoteNumbering noteNumbering, IReadOnlyDictionary<Guid, FieldBlock> liveFields)
         {
             string? styleName = paragraph.Properties.StyleName;
-            string plainText = paragraph.GetPlainText();
+            string plainText = PlainTextWithNoteMarks(paragraph, noteNumbering, liveFields);
 
             string prefix = styleName switch
             {
@@ -2281,13 +2448,14 @@ namespace Writersword.Modules.TextEditor.Services
             if (string.IsNullOrEmpty(prefix))
             {
                 // Применяем inline-форматирование для обычных абзацев.
-                return ConvertRunsToMarkdown(paragraph);
+                return ConvertRunsToMarkdown(paragraph, noteNumbering, liveFields);
             }
 
             return prefix + plainText;
         }
 
-        private static string ConvertRunsToMarkdown(ParagraphBlock paragraph)
+        private static string ConvertRunsToMarkdown(
+            ParagraphBlock paragraph, NoteNumbering noteNumbering, IReadOnlyDictionary<Guid, FieldBlock> liveFields)
         {
             var sb = new StringBuilder();
 
@@ -2295,6 +2463,20 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 foreach (var run in chunk.Runs)
                 {
+                    // Знак сноски — ссылкой на сноску Markdown.
+                    if (run.InlineImageId is Guid noteId && noteNumbering.MarkOf(noteId) is { } noteMark)
+                    {
+                        sb.Append("[^").Append(noteMark).Append(']');
+                        continue;
+                    }
+
+                    // Живое поле — своим значением.
+                    if (run.InlineImageId is Guid fieldId && liveFields.TryGetValue(fieldId, out var liveField))
+                    {
+                        sb.Append(LiveFieldValue(liveField, run.Properties));
+                        continue;
+                    }
+
                     // Картинка в строке: её символ-заполнитель в текстовом экспорте
                     // выглядел бы мусорным глифом. Заменяем ссылкой на альтернативный текст.
                     if (run.IsInlineObject)
@@ -2337,6 +2519,26 @@ namespace Writersword.Modules.TextEditor.Services
         public DocxNumberingBuilder Numbering = new();
         public Dictionary<Guid, ImageBlock> InlineObjects = new();
         public Dictionary<Guid, ShapeBlock> InlineShapes = new();
+        public Dictionary<Guid, FormulaBlock> InlineFormulas = new();
+
+        // Сноски раздела по Id их знаков и сноски, на которые уже записаны ссылки, в
+        // порядке записей своих частей файла (ExportService.Notes).
+        public Dictionary<Guid, NoteBlock> InlineNotes = new();
+
+        // Живые поля документа по Id их символов (ExportService.Fields).
+        public Dictionary<Guid, FieldBlock> InlineFields = new();
+        public readonly List<NoteBlock> Footnotes = new();
+        public readonly List<NoteBlock> Endnotes = new();
+
+        // Идёт запись текста сноски: ссылки на сноски и картинки в нём не пишутся.
+        public bool WritingNote;
+
+        // Примечания (ExportService.Comments): на каком ране начинается и кончается
+        // место каждого, номера записей и порядок записи.
+        public readonly Dictionary<RunModel, List<CommentModel>> CommentStarts = new(ReferenceEqualityComparer.Instance);
+        public readonly Dictionary<RunModel, List<CommentModel>> CommentEnds = new(ReferenceEqualityComparer.Instance);
+        public readonly Dictionary<Guid, int> CommentIds = new();
+        public readonly List<CommentModel> CommentsToWrite = new();
         public readonly Dictionary<Guid, string> ImageRelationshipIds = new();
         public readonly Dictionary<string, string> ImageRelationshipIdsByFile = new(StringComparer.OrdinalIgnoreCase);
         public readonly List<string> Warnings = new();

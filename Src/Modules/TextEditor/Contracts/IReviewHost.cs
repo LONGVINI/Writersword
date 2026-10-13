@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Writersword.Modules.TextEditor.Models.Inline;
 
 namespace Writersword.Modules.TextEditor.Contracts
@@ -58,6 +58,15 @@ namespace Writersword.Modules.TextEditor.Contracts
 
         /// <summary>Выполняет действие кнопки рецензирования.</summary>
         void ExecuteReview(ReviewAction action);
+
+        /// <summary>Панель рецензии справа от листов показана.</summary>
+        bool IsReviewPanelVisible { get; }
+
+        /// <summary>Показать или убрать панель рецензии.</summary>
+        void ToggleReviewPanel();
+
+        /// <summary>Оставить обсуждение нужного вида к выделенному месту.</summary>
+        void InsertComment(Models.Document.CommentKind kind);
 
         /// <summary>
         /// Состояние рецензирования сменилось: запись, вид, правки в документе или

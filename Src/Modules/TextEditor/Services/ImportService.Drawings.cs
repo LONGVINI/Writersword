@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -134,6 +134,11 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (anchor is not null)
             {
+                // Плавающая картинка уходит из строки блоком — правка рана, в котором
+                // она стояла (w:ins, w:del), уходит вместе с ней.
+                image.Inserted = runProps.Inserted?.Clone();
+                image.Deleted = runProps.Deleted?.Clone();
+
                 if (_floatingAllowed)
                 {
                     image.AnchorPosition = ApplyAnchorPlacement(image, anchor);
@@ -153,9 +158,14 @@ namespace Writersword.Modules.TextEditor.Services
                         return;
                     }
 
+                    image.Inserted = null;
+                    image.Deleted = null;
                     AppendInlineImage(image, chunk, section, runProps);
                     return;
                 }
+
+                image.Inserted = null;
+                image.Deleted = null;
 
                 if (!_floatKeptInlineWarned)
                 {

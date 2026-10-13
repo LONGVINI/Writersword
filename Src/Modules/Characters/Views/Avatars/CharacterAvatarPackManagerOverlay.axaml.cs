@@ -16,6 +16,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Writersword.Modules.Characters.ViewModels.Avatars;
 using Writersword.Src.Modules.Characters.Resources;
+using Writersword.Modules.Characters.Views;
 
 namespace Writersword.Modules.Characters.Views.Avatars
 {
@@ -927,6 +928,8 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
         private void OnManagerDragOver(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             var accepts = e.DataTransfer.Contains(DataFormat.File);
             e.DragEffects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
             SetDropTarget(accepts);
@@ -941,6 +944,8 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
         private async void OnManagerDrop(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             e.Handled = true;
             SetDropTarget(false);
 
@@ -981,6 +986,8 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
         private void OnZipDragOver(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             var accepts = e.DataTransfer.Contains(DataFormat.File);
             e.DragEffects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
             SetZipArmed(accepts);
@@ -996,6 +1003,8 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
         private async void OnZipDrop(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             e.Handled = true;
             SetZipArmed(false);
             SetDropTarget(false);

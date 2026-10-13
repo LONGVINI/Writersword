@@ -577,16 +577,29 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             Description = anketa.Description;
             Icon = anketa.Icon;
             IconColor = anketa.IconColor;
+            IconBackground = anketa.IconBackground ?? string.Empty;
+            IconBorder = anketa.IconBorder ?? string.Empty;
             IsBuiltIn = anketa.IsBuiltIn;
             FieldCount = anketa.Fields.Count;
             IsOpen = isOpen;
+            AudienceLabel = anketa.Audience == CharacterAnketaAudience.Collective ? "группа" : string.Empty;
+            HasLevels = CharacterDetailLevels.HasLevels(anketa);
         }
+
+        /// <summary>Пометка «группа» у анкет для групп: их ищут отдельно.</summary>
+        public string AudienceLabel { get; }
+        public bool HasAudienceLabel => !string.IsNullOrEmpty(AudienceLabel);
+
+        /// <summary>У анкеты есть уровни детализации глубже краткого.</summary>
+        public bool HasLevels { get; }
 
         public string Id { get; }
         public string Name { get; }
         public string Description { get; }
         public string Icon { get; }
         public string IconColor { get; }
+        public string IconBackground { get; }
+        public string IconBorder { get; }
         public bool IsBuiltIn { get; }
         public int FieldCount { get; }
         public bool IsOpen { get; }
@@ -623,6 +636,7 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             IsReadOnly = draft.IsBuiltIn;
             IsNew = isNew && !draft.IsBuiltIn;
 
+            BuildPreviewDepthOptions();
             Load(draft);
 
             _current = Serialize();
@@ -747,39 +761,40 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         private string _iconColor = CharacterAnketaIcons.DefaultColor;
         public string IconColor { get => _iconColor; private set => this.RaiseAndSetIfChanged(ref _iconColor, value); }
 
-        public ObservableCollection<AnketaIconOptionViewModel> IconOptions { get; } = new();
-        public ObservableCollection<AnketaIconColorOptionViewModel> IconColorOptions { get; } = new();
+        private string _iconBackground = string.Empty;
 
-        /// <summary>Наборы для выбора значка анкеты строятся, когда открывают выбор.</summary>
-        public void PrepareIconOptions()
+        /// <summary>Подложка значка: пусто — бледная цвета значка, «fill» — залитая, «none» — без подложки, иначе свой код цвета.</summary>
+        public string IconBackground { get => _iconBackground; private set => this.RaiseAndSetIfChanged(ref _iconBackground, value); }
+
+        private string _iconBorder = string.Empty;
+
+        /// <summary>Рамка вокруг подложки значка: пусто — нет, иначе CharacterIconFrame.</summary>
+        public string IconBorder { get => _iconBorder; private set => this.RaiseAndSetIfChanged(ref _iconBorder, value); }
+
+        /// <summary>
+        /// Поставить значок и цвет анкеты — из окна значков или броском
+        /// картинки на значок. Значок — встроенный ключ или своя картинка из
+        /// библиотеки проекта, цвет — код цвета программы, градиент тоже.
+        /// Подложка и рамка остаются прежними.
+        /// </summary>
+        public void ApplyIcon(string icon, string color) => ApplyIcon(icon, color, _iconBackground, _iconBorder);
+
+        /// <summary>Значок, цвет, подложка и рамка одной правкой — из окна значков.</summary>
+        public void ApplyIcon(string icon, string color, string background, string border)
         {
-            IconOptions.Clear();
-            IconColorOptions.Clear();
+            if (IsReadOnly) return;
 
-            foreach (var entry in CharacterAnketaIcons.All)
-                IconOptions.Add(new AnketaIconOptionViewModel(entry.Key, entry.Label, entry.Key == Icon, SetIcon) { IconColor = IconColor });
+            var newIcon = string.IsNullOrWhiteSpace(icon) ? CharacterAnketaIcons.Default : icon;
+            var newColor = string.IsNullOrWhiteSpace(color) ? CharacterAnketaIcons.DefaultColor : color;
+            var newBackground = background ?? string.Empty;
+            var newBorder = border ?? string.Empty;
+            if (newIcon == Icon && newColor == IconColor && newBackground == IconBackground && newBorder == IconBorder)
+                return;
 
-            foreach (var hex in CharacterAnketaIcons.Colors)
-                IconColorOptions.Add(new AnketaIconColorOptionViewModel(hex,
-                    string.Equals(hex, IconColor, StringComparison.OrdinalIgnoreCase), SetIconColor) { Icon = Icon });
-        }
-
-        private void SetIcon(string key)
-        {
-            if (IsReadOnly || Icon == key) return;
-            Icon = key;
-            foreach (var option in IconOptions) option.SetSelectedSilently(option.Key == key);
-            foreach (var option in IconColorOptions) option.Icon = key;
-            RecordChange(null);
-        }
-
-        private void SetIconColor(string hex)
-        {
-            if (IsReadOnly || string.Equals(IconColor, hex, StringComparison.OrdinalIgnoreCase)) return;
-            IconColor = hex;
-            foreach (var option in IconColorOptions)
-                option.SetSelectedSilently(string.Equals(option.Hex, hex, StringComparison.OrdinalIgnoreCase));
-            foreach (var option in IconOptions) option.IconColor = hex;
+            Icon = newIcon;
+            IconColor = newColor;
+            IconBackground = newBackground;
+            IconBorder = newBorder;
             RecordChange(null);
         }
 
@@ -806,8 +821,12 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
 
             _name = draft.Name;
             _description = draft.Description;
+            _audience = draft.Audience;
+            BuildAudienceOptions();
             Icon = string.IsNullOrWhiteSpace(draft.Icon) ? CharacterAnketaIcons.Default : draft.Icon;
             IconColor = string.IsNullOrWhiteSpace(draft.IconColor) ? CharacterAnketaIcons.DefaultColor : draft.IconColor;
+            IconBackground = draft.IconBackground ?? string.Empty;
+            IconBorder = draft.IconBorder ?? string.Empty;
             this.RaisePropertyChanged(nameof(Name));
             this.RaisePropertyChanged(nameof(Description));
 
@@ -823,6 +842,164 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
 
             RebuildGlyphChoices();
             this.RaisePropertyChanged(nameof(HasRows));
+            this.RaisePropertyChanged(nameof(Audience));
+            RefreshDepths();
+        }
+
+        // ── Для кого ─────────────────────────────────────────────────────
+
+        private CharacterAnketaAudience _audience = CharacterAnketaAudience.Any;
+
+        /// <summary>Для кого анкета: персонажа, группы или обоих. Карточка предлагает только подходящие.</summary>
+        public CharacterAnketaAudience Audience => _audience;
+
+        public ObservableCollection<AnketaOptionViewModel<CharacterAnketaAudience>> AudienceOptions { get; } = new();
+
+        private void BuildAudienceOptions()
+        {
+            AudienceOptions.Clear();
+
+            void Add(CharacterAnketaAudience value, string label, string hint) =>
+                AudienceOptions.Add(new AnketaOptionViewModel<CharacterAnketaAudience>(
+                    value, label, hint, _audience == value, SetAudience));
+
+            Add(CharacterAnketaAudience.Individual, "Персонаж",
+                "Анкета отдельного персонажа: внешность, характер, биография. Группе не предлагается");
+            Add(CharacterAnketaAudience.Collective, "Группа",
+                "Анкета народа, расы, организации: численность, обычаи, власть. Отдельному персонажу не предлагается");
+            Add(CharacterAnketaAudience.Any, "Все",
+                "Подходит и персонажу, и группе: фракция, цели, магия");
+        }
+
+        private void SetAudience(CharacterAnketaAudience value)
+        {
+            if (IsReadOnly || _audience == value)
+            {
+                foreach (var option in AudienceOptions) option.SetSelectedSilently(option.Value == _audience);
+                return;
+            }
+
+            _audience = value;
+            foreach (var option in AudienceOptions) option.SetSelectedSilently(option.Value == value);
+            this.RaisePropertyChanged(nameof(Audience));
+            RecordChange(null);
+        }
+
+        // ── Уровни детализации ───────────────────────────────────────────
+        //
+        // Анкета раскрывается на три глубины: кратко, подробно, глубоко.
+        // Уровень задаёт подзаголовок группы, поле может перебить его своим.
+        // Показ листа на уровне приглушает всё, что глубже: так видно, что
+        // увидит в карточке эпизодический персонаж, а что — главный герой.
+
+        private int _previewDepth;
+
+        /// <summary>Уровень показа листа. 0 — все поля без приглушения.</summary>
+        public int PreviewDepth => _previewDepth;
+
+        public ObservableCollection<AnketaOptionViewModel<int>> PreviewDepthOptions { get; } = new();
+
+        private void BuildPreviewDepthOptions()
+        {
+            PreviewDepthOptions.Clear();
+            PreviewDepthOptions.Add(new AnketaOptionViewModel<int>(0, "Все",
+                "Все поля анкеты. Новые поля встают на уровень своей группы", _previewDepth == 0, SetPreviewDepth));
+            foreach (var level in CharacterDetailLevels.All)
+                PreviewDepthOptions.Add(new AnketaOptionViewModel<int>(level, CharacterDetailLevels.NameOf(level),
+                    CharacterDetailLevels.HintOf(level) + ". Глубже — приглушено, новые поля встают на этот уровень",
+                    _previewDepth == level, SetPreviewDepth)
+                {
+                    GlyphLevel = level
+                });
+        }
+
+        private void SetPreviewDepth(int value)
+        {
+            _previewDepth = value;
+            foreach (var option in PreviewDepthOptions) option.SetSelectedSilently(option.Value == value);
+            this.RaisePropertyChanged(nameof(PreviewDepth));
+            this.RaisePropertyChanged(nameof(PreviewCaption));
+            RefreshDepths();
+            if (_isPreviewOpen) BuildPreview();
+        }
+
+        private string _levelsCaption = string.Empty;
+
+        /// <summary>Сколько полей видно на каждом уровне: «Кратко 4 · Подробно 9 · Глубоко 15».</summary>
+        public string LevelsCaption
+        {
+            get => _levelsCaption;
+            private set => this.RaiseAndSetIfChanged(ref _levelsCaption, value);
+        }
+
+        /// <summary>
+        /// Пересчитать уровни полей по раскладке: подзаголовок задаёт уровень
+        /// полям под ним, своё значение поля его перебивает. Заодно — что
+        /// приглушить при показе на уровне и сводка по уровням в шапке.
+        /// </summary>
+        internal void RefreshDepths()
+        {
+            var groupLevel = CharacterDetailLevels.Brief;
+            var counts = new int[CharacterDetailLevels.Max + 1];
+
+            foreach (var row in Rows)
+            {
+                if (row.IsGroup)
+                {
+                    groupLevel = row.Depth;
+                    row.IsBeyondPreview = _previewDepth > 0 && row.Depth > _previewDepth;
+                    continue;
+                }
+
+                row.IsBeyondPreview = false;
+
+                foreach (var cell in row.Cells)
+                {
+                    if (cell.Field == null) continue;
+
+                    var level = cell.Field.Depth ?? groupLevel;
+                    cell.Field.EffectiveDepth = level;
+                    cell.Field.IsBeyondPreview = _previewDepth > 0 && level > _previewDepth;
+                    counts[level]++;
+                }
+            }
+
+            var total = 0;
+            var parts = new List<string>();
+            foreach (var level in CharacterDetailLevels.All)
+            {
+                total += counts[level];
+                if (counts[level] > 0 || level == CharacterDetailLevels.Brief)
+                    parts.Add(CharacterDetailLevels.NameOf(level) + " " + total);
+            }
+
+            LevelsCaption = parts.Count > 1 ? string.Join(" · ", parts) : string.Empty;
+        }
+
+        /// <summary>Уровень группы, под которой стоит строка: ближайший подзаголовок выше.</summary>
+        private int GroupDepthOf(AnketaLayoutRowViewModel row)
+        {
+            var index = Rows.IndexOf(row);
+            for (int i = index - 1; i >= 0; i--)
+                if (Rows[i].IsGroup) return Rows[i].Depth;
+            return CharacterDetailLevels.Brief;
+        }
+
+        /// <summary>
+        /// Новое поле встаёт на уровень показа листа, если он выбран: так
+        /// анкету собирают слоями — сначала краткое, потом всё глубже.
+        /// Совпадает с уровнем группы — своё значение не нужно.
+        /// </summary>
+        private void ApplyPreviewDepth(AnketaFieldEditorViewModel editor, AnketaLayoutRowViewModel row)
+        {
+            if (_previewDepth <= 0) return;
+            editor.SetDepthSilently(GroupDepthOf(row) == _previewDepth ? null : _previewDepth);
+        }
+
+        internal void OnGroupDepthEdited(AnketaLayoutRowViewModel row)
+        {
+            RefreshDepths();
+            RecordChange(null);
         }
 
         private AnketaFieldEditorViewModel? _selectedField;
@@ -940,6 +1117,7 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                 target = newRow.Cells[0];
             }
 
+            ApplyPreviewDepth(editor, target.Row);
             target.Field = editor;
             SelectedField = editor;
             this.RaisePropertyChanged(nameof(HasRows));
@@ -969,12 +1147,20 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         {
             if (IsReadOnly) return null;
 
+            // Новая группа встаёт на уровень показа листа, а без него — на
+            // уровень группы выше: анкету чаще всего наращивают вглубь.
+            var index = InsertIndex();
+            var above = CharacterDetailLevels.Brief;
+            for (int i = index - 1; i >= 0; i--)
+                if (Rows[i].IsGroup) { above = Rows[i].Depth; break; }
+
             var row = new AnketaLayoutRowViewModel(this, new CharacterAnketaRow
             {
                 Kind = CharacterAnketaRowKind.Group,
-                Title = "Новая группа"
+                Title = "Новая группа",
+                Depth = _previewDepth > 0 ? _previewDepth : above
             });
-            Rows.Insert(InsertIndex(), row);
+            Rows.Insert(index, row);
             SelectedField = null;
             SelectedRow = row;
             this.RaisePropertyChanged(nameof(HasRows));
@@ -1218,10 +1404,13 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                 Name = string.IsNullOrWhiteSpace(_name) ? _meta.Name : _name.Trim(),
                 Description = _description?.Trim() ?? string.Empty,
                 IsBuiltIn = _meta.IsBuiltIn,
+                Audience = _audience,
                 ProjectTypeTags = _meta.ProjectTypeTags.ToList(),
                 CreatedAt = _meta.CreatedAt,
                 Icon = _icon,
                 IconColor = _iconColor,
+                IconBackground = _iconBackground,
+                IconBorder = _iconBorder,
                 Assets = _assets.Select(a => new CharacterAnketaAsset { Id = a.Id, Name = a.Name, Glyph = a.Glyph }).ToList()
             };
 
@@ -1284,7 +1473,14 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         /// </summary>
         internal void RecordChange(string? mergeKey)
         {
-            if (_restoring || _batch) return;
+            // Уровни полей зависят от раскладки: поле переехало под другой
+            // подзаголовок — у него другой уровень.
+            RefreshDepths();
+
+            // Встроенную анкету не правят — правят её копию. Случайный сдвиг
+            // ручки ширины или подобное на ней не должен делать лист
+            // «несохранённым»: сохранить его всё равно нельзя.
+            if (_restoring || _batch || IsReadOnly) return;
 
             var json = Serialize();
             if (json == _current) return;
@@ -1412,16 +1608,32 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         private void BuildPreview()
         {
             var draft = BuildAnketa(forSave: false);
+
+            // Превью показывает анкету на выбранном уровне — так, как её
+            // увидит персонаж с такой глубиной.
+            var levels = CharacterDetailLevels.ByFieldId(draft);
+            var hidden = _previewDepth > 0
+                ? levels.Where(p => p.Value > _previewDepth).Select(p => p.Key).ToHashSet(StringComparer.Ordinal)
+                : new HashSet<string>(StringComparer.Ordinal);
+
             var items = _service.BuildParameters(draft)
+                .Where(p => !hidden.Contains(CharacterFieldId.Resolve(p)))
                 .Select(p => new CharacterParameterItemViewModel(p))
                 .ToList();
 
-            Preview = new CharacterAnketaSectionViewModel(draft.Name, draft.Id, items, draft)
+            Preview = new CharacterAnketaSectionViewModel(draft.Name, draft.Id, items, draft, hidden)
             {
                 Icon = draft.Icon,
-                IconColor = draft.IconColor
+                IconColor = draft.IconColor,
+                IconBackground = draft.IconBackground ?? string.Empty,
+                IconBorder = draft.IconBorder ?? string.Empty
             };
         }
+
+        /// <summary>Подпись превью: уровень, на котором показана анкета.</summary>
+        public string PreviewCaption => _previewDepth > 0
+            ? "Превью · " + CharacterDetailLevels.NameOf(_previewDepth).ToLowerInvariant()
+            : "Превью";
     }
 
     /// <summary>Строка раскладки на листе: подзаголовок группы или одна–три ячейки.</summary>
@@ -1434,6 +1646,18 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             _sheet = sheet;
             Kind = row.Kind;
             _title = row.Title ?? string.Empty;
+            _depth = CharacterDetailLevels.Clamp(row.Depth);
+
+            if (Kind == CharacterAnketaRowKind.Group)
+                foreach (var level in CharacterDetailLevels.All)
+                    DepthOptions.Add(new AnketaOptionViewModel<int>(level, CharacterDetailLevels.NameOf(level),
+                        CharacterDetailLevels.HintOf(level)
+                        + ". Поля группы встают на этот уровень, если у них нет своего. "
+                        + CharacterDetailLevels.SymbolHint,
+                        level == _depth, SetDepth)
+                    {
+                        GlyphLevel = level
+                    });
 
             if (Kind == CharacterAnketaRowKind.Fields)
             {
@@ -1466,6 +1690,42 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
 
         public ObservableCollection<AnketaLayoutCellViewModel> Cells { get; } = new();
 
+        // ── Уровень группы ───────────────────────────────────────────────
+
+        private int _depth;
+
+        /// <summary>Уровень детализации группы — у подзаголовка.</summary>
+        public int Depth => _depth;
+
+        public ObservableCollection<AnketaOptionViewModel<int>> DepthOptions { get; } = new();
+
+        private void SetDepth(int level)
+        {
+            if (_sheet.IsReadOnly || _depth == level)
+            {
+                foreach (var option in DepthOptions) option.SetSelectedSilently(option.Value == _depth);
+                return;
+            }
+
+            _depth = level;
+            foreach (var option in DepthOptions) option.SetSelectedSilently(option.Value == level);
+            this.RaisePropertyChanged(nameof(Depth));
+            this.RaisePropertyChanged(nameof(DepthName));
+            _sheet.OnGroupDepthEdited(this);
+        }
+
+        /// <summary>Уровень группы словом — рядом с полосками, чтобы их не расшифровывать.</summary>
+        public string DepthName => CharacterDetailLevels.NameOf(_depth).ToLowerInvariant();
+
+        private bool _isBeyondPreview;
+
+        /// <summary>Подзаголовок глубже уровня показа листа — приглушён.</summary>
+        public bool IsBeyondPreview
+        {
+            get => _isBeyondPreview;
+            internal set => this.RaiseAndSetIfChanged(ref _isBeyondPreview, value);
+        }
+
         public int Columns => Math.Max(1, Cells.Count);
         public bool IsOneColumn => Columns == 1;
         public bool IsTwoColumns => Columns == 2;
@@ -1489,7 +1749,8 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         {
             Kind = Kind,
             Title = _title,
-            Cells = IsFields ? Cells.Select(c => c.Field?.Key ?? string.Empty).ToList() : new List<string>()
+            Cells = IsFields ? Cells.Select(c => c.Field?.Key ?? string.Empty).ToList() : new List<string>(),
+            Depth = IsGroup ? _depth : CharacterDetailLevels.Brief
         };
     }
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using DocumentFormat.OpenXml;
@@ -32,6 +32,33 @@ namespace Writersword.Modules.TextEditor.Services
         /// Ставит на элемент правки номер, автора и время. Время пишется в UTC без
         /// долей секунды, как у Word.
         /// </summary>
+        /// <summary>
+        /// Ран плавающей картинки под её правкой: удалённая — в w:del, вставленная — в
+        /// w:ins, удалённая вставка — w:del внутри w:ins. Без правки — ран как есть.
+        /// </summary>
+        private static OpenXmlElement WrapObjectRevision(W.Run run, Models.Document.BlockModel block, DocxWriteContext ctx)
+        {
+            if (block is not Models.Document.ImageBlock image) return run;
+
+            OpenXmlElement content = run;
+
+            if (image.Deleted is { } deleted)
+            {
+                var deletedRun = StampRevision(new W.DeletedRun(), deleted, ctx);
+                deletedRun.AppendChild(content);
+                content = deletedRun;
+            }
+
+            if (image.Inserted is { } inserted)
+            {
+                var insertedRun = StampRevision(new W.InsertedRun(), inserted, ctx);
+                insertedRun.AppendChild(content);
+                content = insertedRun;
+            }
+
+            return content;
+        }
+
         private static T StampRevision<T>(T element, RevisionInfo info, DocxWriteContext ctx) where T : OpenXmlElement
         {
             int id = ctx.NextRevisionId++;

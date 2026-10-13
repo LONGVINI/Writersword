@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Styles;
 
@@ -252,6 +252,32 @@ namespace Writersword.Modules.TextEditor.Document
             InvalidateCellLayoutCaches();
             RebuildLayouts();
             InvalidateFull();
+        }
+
+        /// <summary>
+        /// Ширина столбца и высота строки под кареткой — как они стоят на листе: из
+        /// раскладки таблицы, а не из заданных величин (у столбца «авто» заданной ширины
+        /// нет, у строки — только нижний предел высоты).
+        /// </summary>
+        private (double ColumnWidthMm, double RowHeightPt)? QueryTableCellSize()
+        {
+            if (_activeTableBlock is null) return null;
+            if (_activeCellTableEntryIdx < 0 || _activeCellTableEntryIdx >= _tables.Count) return null;
+
+            var layout = _tables[_activeCellTableEntryIdx].Layout;
+            if (_activeCellCol < 0 || _activeCellCol >= layout.ColumnWidthsPt.Count) return null;
+
+            double widthMm = layout.ColumnWidthsPt[_activeCellCol] * 25.4 / 72.0;
+
+            double heightPt = 0;
+            foreach (var row in layout.Rows)
+            {
+                if (row.Row != _activeCellRow) continue;
+                heightPt = row.HeightPt;
+                break;
+            }
+
+            return (widthMm, heightPt);
         }
 
         /// <summary>У строки под кареткой точная высота.</summary>

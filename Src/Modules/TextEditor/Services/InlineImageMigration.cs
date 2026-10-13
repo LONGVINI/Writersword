@@ -14,6 +14,9 @@ namespace Writersword.Modules.TextEditor.Services
     /// становится абзацем из одного объекта, а её выравнивание — выравниванием
     /// этого абзаца. Внешне документ не меняется: абзац из единственного
     /// объекта-символа даёт ту же строку с картинкой.
+    ///
+    /// Не трогается картинка «сверху и снизу», пришедшая из Word: она блок в потоке
+    /// и сегодня, это её нынешнее представление, а не старое.
     /// </summary>
     public static class InlineImageMigration
     {
@@ -33,6 +36,14 @@ namespace Writersword.Modules.TextEditor.Services
                 {
                     if (section.Blocks[i] is not ImageBlock image) continue;
                     if (image.WrapMode != WrapMode.Inline) continue;
+
+                    // Картинка «сверху и снизу» из Word (wp:wrapTopAndBottom) — блок на
+                    // своей полосе по замыслу, а не старое представление: импорт ставит
+                    // её так нарочно, раскладка отводит ей ровно её высоту, а выгрузка
+                    // по этому блоку возвращает в .docx исходный якорь. Переведённая в
+                    // символ абзаца, она получала строку со своим междустрочным
+                    // интервалом (текст ниже съезжал) и уходила в Word картинкой в строке.
+                    if (image.WordDrawing is { WrapTopAndBottom: true }) continue;
 
                     var para = new ParagraphBlock();
                     para.Properties.Alignment = image.Alignment;

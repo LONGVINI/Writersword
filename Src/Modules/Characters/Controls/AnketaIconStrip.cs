@@ -9,7 +9,9 @@ using Writersword.Infrastructure.Behaviours;
 namespace Writersword.Modules.Characters.Controls
 {
     /// <summary>Значок анкеты для полосы: что рисовать и что сказать в подсказке.</summary>
-    public sealed record AnketaGlyph(string Id, string Icon, string IconColor, string Name, string Description);
+    public sealed record AnketaGlyph(string Id, string Icon, string IconColor, string Name, string Description,
+        string IconBackground = "",
+        string IconBorder = "");
 
     /// <summary>
     /// Полоса значков анкет у неактивного блока шаблона. Все значки рисуются
@@ -94,7 +96,8 @@ namespace Writersword.Modules.Characters.Controls
             for (int i = 0; i < items.Count; i++)
             {
                 var glyph = items[i];
-                AnketaIconBadge.Draw(context, RectOf(i, columns), glyph.Icon, glyph.IconColor);
+                AnketaIconBadge.Draw(context, RectOf(i, columns), glyph.Icon, glyph.IconColor, glyph.IconBackground,
+                    border: glyph.IconBorder);
             }
         }
 

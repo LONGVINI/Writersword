@@ -233,6 +233,9 @@ namespace Writersword.Modules.TextEditor.Views.Reading
         private CheckBox _tileCheck = null!;
         private Button _duplicateBtn = null!;
         private Button _deleteBtn = null!;
+        private Button _defaultBtn = null!;
+        private PathIcon _defaultOffIcon = null!;
+        private PathIcon _defaultOnIcon = null!;
 
         // Пример вида: поле вокруг книги, бумага, картинка поверх неё, буквы и свет.
         private Border _previewBackdrop = null!;
@@ -310,6 +313,9 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             _tileCheck = this.FindControl<CheckBox>("TileCheck")!;
             _duplicateBtn = this.FindControl<Button>("DuplicateBtn")!;
             _deleteBtn = this.FindControl<Button>("DeleteBtn")!;
+            _defaultBtn = this.FindControl<Button>("DefaultBtn")!;
+            _defaultOffIcon = this.FindControl<PathIcon>("DefaultOffIcon")!;
+            _defaultOnIcon = this.FindControl<PathIcon>("DefaultOnIcon")!;
             _previewBackdrop = this.FindControl<Border>("PreviewBackdrop")!;
             _previewBackdropImage = this.FindControl<Border>("PreviewBackdropImage")!;
             _previewPaper = this.FindControl<Border>("PreviewPaper")!;
@@ -339,6 +345,7 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             this.FindControl<Button>("ClearImageBtn")!.Click += OnClearImage;
             _duplicateBtn.Click += OnDuplicate;
             _deleteBtn.Click += OnDelete;
+            _defaultBtn.Click += OnMakeDefault;
 
             _scrim.PointerPressed += OnScrimPressed;
 
@@ -552,6 +559,8 @@ namespace Writersword.Modules.TextEditor.Views.Reading
 
                 _deleteBtn.IsEnabled = editable;
                 _duplicateBtn.IsEnabled = theme is not null;
+                _defaultBtn.IsEnabled = theme is not null && DefaultRequested is not null;
+                UpdateDefaultButton();
             }
             finally
             {
@@ -1200,6 +1209,54 @@ namespace Writersword.Modules.TextEditor.Views.Reading
                 "translateY(" + dy.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "px)");
 
         private void OnAdd(object? sender, RoutedEventArgs e) => AddCopy(NewThemeName);
+
+        // ── Вид по умолчанию ──────────────────────────────────────────────
+
+        private string? _defaultThemeId;
+
+        /// <summary>
+        /// Опознаватель вида по умолчанию: им открываются книги, для которых свой
+        /// вид не выбирали. Задаёт тот, кто показывает окно.
+        /// </summary>
+        public string? DefaultThemeId
+        {
+            get => _defaultThemeId;
+            set
+            {
+                _defaultThemeId = value;
+                UpdateDefaultButton();
+            }
+        }
+
+        /// <summary>
+        /// Просьба сделать вид видом по умолчанию. Null — окно открыто там, где вида
+        /// по умолчанию нет, и кнопка недоступна.
+        /// </summary>
+        public Action<ReadingTheme>? DefaultRequested { get; set; }
+
+        private void OnMakeDefault(object? sender, RoutedEventArgs e)
+        {
+            if (_current?.Theme is not { } theme || DefaultRequested is not { } request) return;
+
+            // Правки полей, ещё не ушедшие наружу, — до того, как вид станет видом
+            // по умолчанию: иначе им станет его прежнее состояние.
+            ApplyNow();
+            request(theme);
+            UpdateDefaultButton();
+        }
+
+        /// <summary>Звезда закрашена, когда выбранный вид — вид по умолчанию.</summary>
+        private void UpdateDefaultButton()
+        {
+            if (_defaultBtn is null) return;
+
+            bool isDefault = _current?.Theme is { } theme
+                             && !string.IsNullOrEmpty(_defaultThemeId)
+                             && string.Equals(theme.Id, _defaultThemeId, StringComparison.Ordinal);
+
+            _defaultOnIcon.IsVisible = isDefault;
+            _defaultOffIcon.IsVisible = !isDefault;
+        }
 
         private void OnDuplicate(object? sender, RoutedEventArgs e)
         {

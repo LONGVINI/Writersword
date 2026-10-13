@@ -17,9 +17,11 @@ namespace Writersword.Modules.Characters.Controls
     /// строка одного из трёх видов:
     ///   «heart»      — ключ из CharacterAnketaIcons;
     ///   «path:M0 0…» — геометрия, например из SVG-файла;
-    ///   «png:…»      — картинка в base64, уменьшенная до 64 точек.
+    ///   «png:…»      — картинка в base64, уменьшенная до 64 точек;
+    ///   «img:…»      — свой значок из библиотеки проекта (CharacterIcons).
     /// Строкой — затем, чтобы значок жил прямо в анкете и уезжал вместе с её
-    /// файлом, без отдельного хранилища картинок.
+    /// файлом, без отдельного хранилища картинок. Значок из библиотеки — по
+    /// ссылке на картинку проекта: он общий с анкетами, шаблонами и метками.
     /// </summary>
     public static class CharacterGlyphs
     {
@@ -37,7 +39,7 @@ namespace Writersword.Modules.Characters.Controls
         public static bool IsEmpty(string? glyph) => string.IsNullOrWhiteSpace(glyph);
 
         public static bool IsImage(string? glyph) =>
-            glyph != null && glyph.StartsWith(PngPrefix, StringComparison.Ordinal);
+            glyph != null && (glyph.StartsWith(PngPrefix, StringComparison.Ordinal) || CharacterIcons.IsImage(glyph));
 
         /// <summary>Геометрия значка; null — значок картинкой или пустой.</summary>
         public static Geometry? GetGeometry(string? glyph)
@@ -67,6 +69,10 @@ namespace Writersword.Modules.Characters.Controls
         {
             if (!IsImage(glyph)) return null;
 
+            // Значок из библиотеки: картинка проекта, растр — как есть.
+            if (CharacterIcons.ImageRefOf(glyph) is { } libraryRef)
+                return Services.LabelIconImages.Get(libraryRef, null, ImageSide);
+
             if (BitmapCache.TryGetValue(glyph!, out var cached)) return cached;
 
             Bitmap? bitmap = null;
@@ -93,7 +99,12 @@ namespace Writersword.Modules.Characters.Controls
         {
             if (rect.Width <= 0 || rect.Height <= 0) return;
 
-            var bitmap = GetBitmap(glyph);
+            // Вектор из библиотеки красится кистью значка, как встроенная
+            // фигура; растр из неё идёт как есть.
+            var bitmap = CharacterIcons.ImageRefOf(glyph) is { } libraryRef && Services.LabelIconImages.IsVector(libraryRef)
+                ? Services.LabelIconImages.Get(libraryRef, TintOf(fill),
+                    Math.Max(16, (int)Math.Ceiling(Math.Max(rect.Width, rect.Height) * 2)))
+                : GetBitmap(glyph);
             if (bitmap != null)
             {
                 var size = bitmap.Size;
@@ -121,6 +132,14 @@ namespace Writersword.Modules.Characters.Controls
             using (context.PushTransform(matrix))
                 context.DrawGeometry(fill, null, geometry);
         }
+
+        /// <summary>Цвет перекраски вектора из кисти значка: у градиента — первый цвет.</summary>
+        private static Color? TintOf(IBrush? fill) => fill switch
+        {
+            ISolidColorBrush solid => solid.Color,
+            IGradientBrush gradient when gradient.GradientStops.Count > 0 => gradient.GradientStops[0].Color,
+            _ => null
+        };
 
         /// <summary>Значок из файла: SVG — геометрией, остальное — картинкой.</summary>
         public static string? FromFile(byte[] data, string fileName)

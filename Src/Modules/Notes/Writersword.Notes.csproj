@@ -1,12 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<AssemblyName>Writersword.Notes</AssemblyName>
 		<RootNamespace>Writersword.Src.Modules.Notes</RootNamespace>
-		<!-- SDK сам подхватывает все *.cs и *.axaml из папки проекта.
-		     Явные Include не нужны — они создают дубликаты (NETSDK1022). -->
+		<!-- SDK СЃР°Рј РїРѕРґС…РІР°С‚С‹РІР°РµС‚ РІСЃРµ *.cs Рё *.axaml РёР· РїР°РїРєРё РїСЂРѕРµРєС‚Р°.
+		     РЇРІРЅС‹Рµ Include РЅРµ РЅСѓР¶РЅС‹ вЂ” РѕРЅРё СЃРѕР·РґР°СЋС‚ РґСѓР±Р»РёРєР°С‚С‹ (NETSDK1022). -->
 		<EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
 		<AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
 	</PropertyGroup>
@@ -16,19 +16,19 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Avalonia" Version="12.1.1" />
-		<PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+		<PackageReference Include="Avalonia" Version="12.1.3" />
+		<PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.3" />
 		<PackageReference Include="ReactiveUI.Avalonia" Version="12.0.1" />
 		<PackageReference Include="Serilog" Version="4.3.2-dev-02419" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.5-beta1" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<!-- Core лежит в Src/ — два уровня вверх от Src/Modules/Notes/ -->
+		<!-- Core Р»РµР¶РёС‚ РІ Src/ вЂ” РґРІР° СѓСЂРѕРІРЅСЏ РІРІРµСЂС… РѕС‚ Src/Modules/Notes/ -->
 		<ProjectReference Include="..\..\Writersword.Core.csproj" />
-		<!-- Общие контролы и поведения оформления: ModalHost, стили ленты,
-		     компактный флажок. Без этой ссылки разметка модуля не собирается,
-		     а сам модуль рисовался бы штатной Fluent-темой вместо программы. -->
+		<!-- РћР±С‰РёРµ РєРѕРЅС‚СЂРѕР»С‹ Рё РїРѕРІРµРґРµРЅРёСЏ РѕС„РѕСЂРјР»РµРЅРёСЏ: ModalHost, СЃС‚РёР»Рё Р»РµРЅС‚С‹,
+		     РєРѕРјРїР°РєС‚РЅС‹Р№ С„Р»Р°Р¶РѕРє. Р‘РµР· СЌС‚РѕР№ СЃСЃС‹Р»РєРё СЂР°Р·РјРµС‚РєР° РјРѕРґСѓР»СЏ РЅРµ СЃРѕР±РёСЂР°РµС‚СЃСЏ,
+		     Р° СЃР°Рј РјРѕРґСѓР»СЊ СЂРёСЃРѕРІР°Р»СЃСЏ Р±С‹ С€С‚Р°С‚РЅРѕР№ Fluent-С‚РµРјРѕР№ РІРјРµСЃС‚Рѕ РїСЂРѕРіСЂР°РјРјС‹. -->
 		<ProjectReference Include="..\..\..\Writersword.UI.Shared.csproj" />
 	</ItemGroup>
 

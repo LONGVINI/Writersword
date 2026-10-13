@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
@@ -15,6 +15,10 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         {
             InitializeComponent();
             SizeChanged += OnSizeChanged;
+
+            // Колонки показываются по разделу под кареткой, а каретка ходит, пока лента
+            // не на виду: состояние перечитывается, когда к ленте подводят мышь.
+            PointerEntered += (_, _) => (DataContext as RibbonLayoutTabViewModel)?.RefreshColumns();
         }
 
         private void InitializeComponent()
@@ -26,6 +30,7 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         {
             base.OnAttachedToVisualTree(e);
             _scrollContainer = this.FindControl<RibbonScrollContainer>("ScrollContainer");
+            (DataContext as RibbonLayoutTabViewModel)?.RefreshColumns();
         }
 
         /// <summary>

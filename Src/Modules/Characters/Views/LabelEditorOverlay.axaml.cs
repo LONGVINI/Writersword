@@ -447,7 +447,10 @@ namespace Writersword.Modules.Characters.Views
                 // шире список форматов, и вектор проходит только здесь.
                 var imageRef = await AvatarService.SaveIconToProjectAsync(buffer.ToArray(), files[0].Name);
                 if (!string.IsNullOrEmpty(imageRef))
+                {
                     _draft.IconImage = await CropIconAsync(imageRef!);
+                    RememberInLibrary(_draft.IconImage, files[0].Name);
+                }
             }
             catch (Exception ex)
             {
@@ -545,6 +548,8 @@ namespace Writersword.Modules.Characters.Views
 
         private void OnIconDragOver(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             var accepts = _draft != null && e.DataTransfer.Contains(DataFormat.File);
             e.DragEffects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
             SetDropHint(accepts);
@@ -559,6 +564,8 @@ namespace Writersword.Modules.Characters.Views
 
         private async void OnIconDrop(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             e.Handled = true;
             SetDropHint(false);
 
@@ -587,7 +594,10 @@ namespace Writersword.Modules.Characters.Views
                     // Брошенная картинка идёт тем же путём, что и выбранная в
                     // диалоге: сразу за приёмом — выбор кадра.
                     if (!string.IsNullOrEmpty(imageRef))
+                    {
                         _draft.IconImage = await CropIconAsync(imageRef!);
+                        RememberInLibrary(_draft.IconImage, storageFile.Name);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -618,6 +628,50 @@ namespace Writersword.Modules.Characters.Views
         // Скрим блокирует модуль, но окно не закрывает — как в остальных
         // оверлеях модуля.
         private void OnScrimPressed(object? sender, PointerPressedEventArgs e) => e.Handled = true;
+
+        /// <summary>
+        /// Своя картинка метки встаёт и в библиотеку значков проекта: принесённый
+        /// герб пригодится и другой метке, и анкете, и шаблону.
+        /// </summary>
+        private void RememberInLibrary(string? imageRef, string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(imageRef)) return;
+            Icons.IconImport.ModuleOf(this)?.IconLibrary.Add(imageRef!, System.IO.Path.GetFileNameWithoutExtension(fileName));
+        }
+
+        /// <summary>
+        /// Все значки — общее окно значков: встроенный набор программы и свои
+        /// картинки проекта. Цвета у метки два и правятся здесь, поэтому в
+        /// окне значков цвет только показывается — цветом кружка.
+        /// </summary>
+        private async void OnAllIconsClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (_draft is not { } draft) return;
+            if (Icons.IconPickerOverlay.Find(this) is not { } picker) return;
+
+            var current = draft.HasCustomIcon
+                ? CharacterIcons.FromImageRef(draft.IconImage!)
+                : draft.Icon;
+
+            var choice = await picker.PickAsync(new CharacterIconRequest(
+                "Значок метки", current, draft.Color, AllowColor: false));
+
+            // Окно метки могли закрыть, пока выбирали значок.
+            if (choice == null || !ReferenceEquals(_draft, draft)) return;
+
+            var imageRef = CharacterIcons.ImageRefOf(choice.Icon);
+            if (imageRef != null)
+            {
+                draft.IconImage = imageRef;
+                return;
+            }
+
+            draft.IconImage = null;
+            draft.Icon = choice.Icon;
+            foreach (var icon in draft.Icons)
+                icon.IsSelected = icon.Key == choice.Icon;
+        }
 
         // Выбор значка: черновик запоминает ключ, выделение перерисовывается.
         private void OnIconClick(object? sender, RoutedEventArgs e)

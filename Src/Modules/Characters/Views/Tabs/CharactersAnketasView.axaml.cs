@@ -17,6 +17,7 @@ using Writersword.Modules.Characters.Controls;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Models.Enums;
 using Writersword.Modules.Characters.ViewModels.Anketas;
+using Writersword.Modules.Characters.Views;
 
 namespace Writersword.Modules.Characters.Views.Tabs
 {
@@ -282,6 +283,17 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         private void OnSheetTabCaptureLost(object? sender, PointerCaptureLostEventArgs e) => CancelDrag();
 
+        /// <summary>Строка меню уровня у поля: уровень встаёт, меню закрывается.</summary>
+        private void OnDepthChoiceClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is not Control control || control.DataContext is not AnketaOptionViewModel<int> option) return;
+
+            control.FindLogicalAncestorOfType<Avalonia.Controls.Primitives.Popup>()
+                ?.SetCurrentValue(Avalonia.Controls.Primitives.Popup.IsOpenProperty, false);
+            option.IsSelected = true;
+        }
+
         private void OnCloseSheetClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
@@ -306,6 +318,13 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
             if (FlyoutBase.GetAttachedFlyout(anchor) != null)
                 FlyoutBase.ShowAttachedFlyout(anchor);
+        }
+
+        /// <summary>Передумал закрывать: лист остаётся открытым со всеми правками.</summary>
+        private void OnCloseCancelClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            HideCloseFlyout();
         }
 
         private void OnCloseDiscardClick(object? sender, RoutedEventArgs e)
@@ -594,13 +613,69 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         // ── Шапка анкеты ─────────────────────────────────────────────────
 
-        private void OnAnketaIconClick(object? sender, RoutedEventArgs e)
+        /// <summary>Значок анкеты — окно значков: встроенные, свои картинки, цвет.</summary>
+        private async void OnAnketaIconClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
-            if (sender is not Control button || Sheet is not { IsEditable: true } sheet) return;
+            if (Sheet is not { IsEditable: true } sheet) return;
+            if (Icons.IconPickerOverlay.Find(this) is not { } picker) return;
 
-            sheet.PrepareIconOptions();
-            FlyoutBase.ShowAttachedFlyout(button);
+            var choice = await picker.PickAsync(new CharacterIconRequest(
+                "Значок анкеты", sheet.Icon, sheet.IconColor, AllowColor: true,
+                Background: sheet.IconBackground,
+                Border: sheet.IconBorder,
+                Look: CharacterIconLook.Badge,
+                PreviewTitle: string.IsNullOrWhiteSpace(sheet.Name) ? "Анкета" : sheet.Name,
+                PreviewDescription: sheet.Description));
+            if (choice != null) sheet.ApplyIcon(choice.Icon, choice.Color, choice.Background, choice.Border);
+        }
+
+        /// <summary>Библиотека значков проекта — посмотреть, пополнить, убрать лишнее.</summary>
+        private void OnIconLibraryClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            Icons.IconPickerOverlay.Find(this)?.ShowLibrary();
+        }
+
+        // ── Картинка броском на значок анкеты ────────────────────────────
+        //
+        // Файл значка чаще всего уже лежит в открытой рядом папке, и путь
+        // «щелчок → окно → диалог → тот же файл» здесь лишний. Брошенная
+        // картинка встаёт в свои значки проекта — она пригодится и шаблону,
+        // и метке — и сразу становится значком анкеты.
+
+        private void OnAnketaIconDragOver(object? sender, DragEventArgs e)
+        {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
+            var accepts = Sheet is { IsEditable: true } && Icons.IconImport.HasFiles(e);
+            e.DragEffects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
+            (sender as Control)?.Classes.Set("drop", accepts);
+            e.Handled = true;
+        }
+
+        private void OnAnketaIconDragLeave(object? sender, DragEventArgs e)
+        {
+            (sender as Control)?.Classes.Set("drop", false);
+            e.Handled = true;
+        }
+
+        private async void OnAnketaIconDrop(object? sender, DragEventArgs e)
+        {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
+            e.Handled = true;
+            (sender as Control)?.Classes.Set("drop", false);
+
+            if (Sheet is not { IsEditable: true } sheet) return;
+            if (Icons.IconImport.ModuleOf(this) is not { AvatarService: { } avatars } module) return;
+            var library = module.IconLibrary;
+
+            var files = Icons.IconImport.DroppedIconFiles(e);
+            if (files.Count == 0) return;
+
+            var added = await Icons.IconImport.AddToLibraryAsync(this, avatars, library, files.Take(1).ToList());
+            if (added.Count > 0) sheet.ApplyIcon(added[0].Icon, sheet.IconColor);
         }
 
         // ── Строки ───────────────────────────────────────────────────────
@@ -765,6 +840,30 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
             ApplyGlyph(_glyphTarget, option.Glyph);
             GlyphFlyout.Hide();
+        }
+
+        /// <summary>Значок поля из окна значков: встроенные и свои картинки проекта.</summary>
+        private async void OnGlyphLibraryClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+
+            if (Sheet is not { IsEditable: true } sheet || sheet.SelectedField is not { } field) return;
+            if (Icons.IconPickerOverlay.Find(this) is not { } picker) return;
+
+            var target = _glyphTarget;
+            GlyphFlyout.Hide();
+
+            var current = target == GlyphTargetRating ? field.RatingGlyph : field.LabelIcon;
+            var color = string.IsNullOrWhiteSpace(field.AccentColor) ? CharacterAnketaIcons.DefaultColor : field.AccentColor;
+
+            var choice = await picker.PickAsync(new CharacterIconRequest(
+                target == GlyphTargetRating ? "Значок оценки" : "Значок у подписи",
+                string.IsNullOrWhiteSpace(current) ? CharacterAnketaIcons.Default : current,
+                color,
+                AllowColor: false));
+
+            if (choice != null && ReferenceEquals(sheet.SelectedField, field))
+                ApplyGlyph(target, choice.Icon);
         }
 
         private void OnGlyphClearClick(object? sender, RoutedEventArgs e)

@@ -109,7 +109,7 @@
 					           FontSize="16" FontWeight="SemiBold"
 					           Foreground="{DynamicResource TextPrimaryBrush}"
 					           VerticalAlignment="Center"/>
-					<Button Grid.Column="1" Content="✕" Click="OnCancelClick"
+					<Button Classes="ro-allow" Grid.Column="1" Content="✕" Click="OnCancelClick"
 					        Background="Transparent" BorderThickness="0"
 					        Foreground="{DynamicResource TextSecondaryBrush}"
 					        FontSize="14" Padding="6,2"/>
@@ -265,7 +265,7 @@
 				</StackPanel>
 
 				<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-					<Button Content="Отмена" Click="OnCancelClick" Padding="14,6" CornerRadius="6"
+					<Button Classes="ro-allow" Content="Отмена" Click="OnCancelClick" Padding="14,6" CornerRadius="6"
 					        Background="{DynamicResource BgSurfaceBrush}"
 					        BorderBrush="{DynamicResource BorderDefaultBrush}" BorderThickness="1"/>
 					<Button Content="OK" Click="OnOkClick" Padding="18,6" CornerRadius="6"

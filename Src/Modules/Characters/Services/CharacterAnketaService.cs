@@ -11,9 +11,11 @@ using Writersword.Modules.Characters.Models.Enums;
 namespace Writersword.Modules.Characters.Services
 {
     /// <summary>
-    /// Реализация сервиса управления анкетами (шаблонами) персонажей.
-    /// Содержит встроенные шаблоны с описанием точек шкалы и диапазонами рандомизации.
-    /// Управляет пользовательскими шаблонами.
+    /// Сервис анкет и шаблонов персонажей.
+    ///
+    /// Анкета — раздел полей с уровнями детализации, шаблон — сочетание
+    /// анкет под тип персонажа. Встроенные анкеты и шаблоны лежат в
+    /// CharacterBuiltInContent; здесь живут они и свои анкеты проекта.
     /// </summary>
     public class CharacterAnketaService : ICharacterAnketaService
     {
@@ -23,9 +25,24 @@ namespace Writersword.Modules.Characters.Services
         private readonly List<CharacterAnketa> _customAnketas = new();
         private readonly List<CharacterAnketa> _builtInAnketas;
 
+        /// <summary>
+        /// Режим сравнения версий: анкеты и шаблоны не создаются, не
+        /// меняются, не удаляются и не переставляются. Последний рубеж —
+        /// какой бы путь ни привёл к записи. Загрузка данных идёт как обычно:
+        /// без неё нечего было бы сравнивать.
+        /// </summary>
+        public Func<bool>? IsReadOnlyProvider { get; set; }
+
+        private bool IsReadOnly(string operation)
+        {
+            if (IsReadOnlyProvider?.Invoke() != true) return false;
+            _logger.Debug("{Operation} ignored (compare mode)", operation);
+            return true;
+        }
+
         public CharacterAnketaService()
         {
-            _builtInAnketas = BuildBuiltInAnketas();
+            _builtInAnketas = CharacterBuiltInContent.BuildAnketas();
             foreach (var anketa in _builtInAnketas)
             {
                 CharacterAnketaLayout.Normalize(anketa);
@@ -36,7 +53,7 @@ namespace Writersword.Modules.Characters.Services
             // проекта: без них список шаблонов у нового проекта был бы пуст,
             // и первое, что увидел бы человек, — пустоту вместо готовых
             // сочетаний. Загрузка проекта потом дополняет их своими.
-            _templates.AddRange(BuildBuiltInTemplates());
+            _templates.AddRange(CharacterBuiltInContent.BuildTemplates());
         }
 
         // ── Получение ─────────────────────────────────────────────────────
@@ -80,6 +97,9 @@ namespace Writersword.Modules.Characters.Services
                 CreatedAt = DateTime.UtcNow
             };
 
+            // Анкета создаётся, но в список не встаёт: в проект она не попадёт.
+            if (IsReadOnly("Anketa create")) return anketa;
+
             _customAnketas.Add(anketa);
             _logger.Debug("Anketa created: {Id} '{Name}'", anketa.Id, anketa.Name);
             return anketa;
@@ -88,6 +108,8 @@ namespace Writersword.Modules.Characters.Services
         /// <inheritdoc/>
         public void Update(CharacterAnketa anketa)
         {
+            if (IsReadOnly("Anketa update")) return;
+
             if (anketa.IsBuiltIn)
             {
                 _logger.Warning("Cannot update built-in anketa: {Id}", anketa.Id);
@@ -113,6 +135,8 @@ namespace Writersword.Modules.Characters.Services
         /// <inheritdoc/>
         public void Delete(string id)
         {
+            if (IsReadOnly("Anketa delete")) return;
+
             var anketa = _customAnketas.FirstOrDefault(a => a.Id == id);
             if (anketa == null)
             {
@@ -138,6 +162,8 @@ namespace Writersword.Modules.Characters.Services
             copy.Name = $"{original.Name} (копия)";
             copy.IsBuiltIn = false;
             copy.CreatedAt = DateTime.UtcNow;
+
+            if (IsReadOnly("Anketa duplicate")) return copy;
 
             _customAnketas.Add(copy);
             _logger.Debug("Anketa duplicated: {OriginalId} -> {NewId}", id, copy.Id);
@@ -267,6 +293,7 @@ namespace Writersword.Modules.Characters.Services
         public void RememberAnketa(string anketaId)
         {
             if (string.IsNullOrEmpty(anketaId)) return;
+            if (IsReadOnly("Recent anketa")) return;
 
             _recentAnketaIds.Remove(anketaId);
             _recentAnketaIds.Insert(0, anketaId);
@@ -275,14 +302,19 @@ namespace Writersword.Modules.Characters.Services
                 _recentAnketaIds.RemoveAt(_recentAnketaIds.Count - 1);
         }
 
-        public void ClearRecentAnketas() => _recentAnketaIds.Clear();
+        public void ClearRecentAnketas()
+        {
+            if (IsReadOnly("Recent anketas clear")) return;
+            _recentAnketaIds.Clear();
+        }
 
         public IReadOnlyList<string> GetRecentAnketaIds() => _recentAnketaIds;
 
         public void LoadRecentAnketas(List<string> ids)
         {
             _recentAnketaIds.Clear();
-            if (ids != null) _recentAnketaIds.AddRange(ids.Where(id => !string.IsNullOrEmpty(id)));
+            if (ids != null)
+                _recentAnketaIds.AddRange(CharacterBuiltInContent.ExpandLegacyIds(ids).Take(RecentLimit));
         }
 
         // ── Шаблоны ───────────────────────────────────────────────────────
@@ -308,6 +340,8 @@ namespace Writersword.Modules.Characters.Services
                 Name = string.IsNullOrWhiteSpace(name) ? "Новый шаблон" : name.Trim()
             };
 
+            if (IsReadOnly("Template create")) return template;
+
             _templates.Add(template);
             _logger.Debug("Template created: {Name}", template.Name);
             return template;
@@ -316,6 +350,7 @@ namespace Writersword.Modules.Characters.Services
         public void UpdateTemplate(CharacterTemplate template)
         {
             if (template == null) return;
+            if (IsReadOnly("Template update")) return;
 
             var index = _templates.FindIndex(t => t.Id == template.Id);
             if (index < 0)
@@ -332,6 +367,8 @@ namespace Writersword.Modules.Characters.Services
             // Встроенные не удаляются: они лежат в коде, и следующий запуск
             // вернул бы их обратно — удаление выглядело бы сработавшим ровно
             // до перезапуска.
+            if (IsReadOnly("Template delete")) return;
+
             var template = GetTemplateById(id);
             if (template == null || template.IsBuiltIn) return;
 
@@ -340,6 +377,8 @@ namespace Writersword.Modules.Characters.Services
 
         public void MoveTemplate(string id, int index)
         {
+            if (IsReadOnly("Template move")) return;
+
             var template = GetTemplateById(id);
             if (template == null || template.IsBuiltIn) return;
 
@@ -364,49 +403,47 @@ namespace Writersword.Modules.Characters.Services
         public void LoadTemplates(List<CharacterTemplate> templates)
         {
             _templates.Clear();
-            _templates.AddRange(BuildBuiltInTemplates());
+            _templates.AddRange(CharacterBuiltInContent.BuildTemplates());
 
             if (templates != null)
-                _templates.AddRange(templates.Where(t => !t.IsBuiltIn));
+            {
+                foreach (var template in templates.Where(t => !t.IsBuiltIn))
+                {
+                    // Свои шаблоны старых проектов ссылаются на прежние
+                    // жанровые анкеты — они разошлись по разделам, и шаблон
+                    // получает разделы вместо исчезнувшей анкеты.
+                    template.AnketaIds = CharacterBuiltInContent.ExpandLegacyIds(template.AnketaIds);
+                    template.AnketaDepths = ExpandLegacyDepths(template.AnketaDepths);
+                    _templates.Add(template);
+                }
+            }
 
             _logger.Debug("Templates loaded: {Count}", _templates.Count);
         }
 
         /// <summary>
-        /// Встроенные шаблоны собираются из встроенных же анкет — новых полей
-        /// они не заводят. Это готовые сочетания под частые виды историй:
-        /// открыл проект, выбрал «Детективная история», и у персонажа сразу
-        /// и общие данные, и профессиональные.
+        /// Глубины по анкетам с прежними идентификаторами, разнесённые по
+        /// новым разделам: глубина «Обычного человека» достаётся каждому из
+        /// его разделов.
         /// </summary>
-        private static List<CharacterTemplate> BuildBuiltInTemplates()
+        private static Dictionary<string, int> ExpandLegacyDepths(Dictionary<string, int>? depths)
         {
-            return new List<CharacterTemplate>
+            var result = new Dictionary<string, int>(StringComparer.Ordinal);
+            if (depths == null) return result;
+
+            foreach (var pair in depths)
             {
-                new CharacterTemplate
+                if (CharacterBuiltInContent.LegacyAnketaIds.TryGetValue(pair.Key, out var replacement))
                 {
-                    Id = "builtin_template_person",
-                    Name = "Обычная история",
-                    Description = "Один раздел общих данных: возраст, здоровье, профессия.",
-                    IsBuiltIn = true,
-                    AnketaIds = new List<string> { "builtin_human" }
-                },
-                new CharacterTemplate
-                {
-                    Id = "builtin_template_detective",
-                    Name = "Детективная история",
-                    Description = "Общие данные плюс профессиональные качества сыщика.",
-                    IsBuiltIn = true,
-                    AnketaIds = new List<string> { "builtin_human", "builtin_detective" }
-                },
-                new CharacterTemplate
-                {
-                    Id = "builtin_template_fantasy",
-                    Name = "Фэнтези",
-                    Description = "Общие данные и боевые характеристики.",
-                    IsBuiltIn = true,
-                    AnketaIds = new List<string> { "builtin_human", "builtin_fantasy_warrior" }
+                    foreach (var id in replacement)
+                        if (!result.ContainsKey(id)) result[id] = CharacterDetailLevels.Clamp(pair.Value);
+                    continue;
                 }
-            };
+
+                result[pair.Key] = CharacterDetailLevels.Clamp(pair.Value);
+            }
+
+            return result;
         }
 
         // ── Вспомогательные ───────────────────────────────────────────────
@@ -478,554 +515,6 @@ namespace Writersword.Modules.Characters.Services
             }
 
             return param;
-        }
-
-        // ── Встроенные шаблоны ────────────────────────────────────────────
-
-        private static List<CharacterAnketa> BuildBuiltInAnketas()
-        {
-            var list = new List<CharacterAnketa>
-            {
-                BuildHumanAnketa(),
-                BuildDetectiveAnketa(),
-                BuildFantasyWarriorAnketa(),
-                BuildHorrorAnketa(),
-                BuildScifiAnketa(),
-                BuildCollectiveAnketa()
-            };
-
-            // Значки встроенных — по смыслу анкеты: в списке их находят по
-            // значку, а не по названию.
-            var icons = new Dictionary<string, (string Icon, string Color)>
-            {
-                ["builtin_human"] = ("person", "#5B7FA8"),
-                ["builtin_detective"] = ("search", "#9A8F85"),
-                ["builtin_fantasy_warrior"] = ("shield", "#C75B5B"),
-                ["builtin_horror"] = ("skull", "#8A6FC0"),
-                ["builtin_scifi"] = ("flight", "#4FA39A"),
-                [CharacterAnketa.CollectiveId] = ("group", "#D4A33B")
-            };
-
-            foreach (var anketa in list)
-            {
-                if (!icons.TryGetValue(anketa.Id, out var icon)) continue;
-                anketa.Icon = icon.Icon;
-                anketa.IconColor = icon.Color;
-            }
-
-            return list;
-        }
-
-        private static CharacterAnketa BuildHumanAnketa()
-        {
-            return new CharacterAnketa
-            {
-                Id = "builtin_human",
-                Name = "Обычный человек",
-                Description = "Базовый набор параметров для любого человеческого персонажа",
-                IsBuiltIn = true,
-                ProjectTypeTags = new List<string>(),
-                Fields = new List<CharacterAnketaField>
-                {
-                    new()
-                    {
-                        Name = "Возраст", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 120, Step = 1,
-                        RandomRangeMin = 18, RandomRangeMax = 60,
-                        GroupName = "Физическое", Description = "Возраст персонажа в годах",
-                        Order = 0
-                    },
-                    new()
-                    {
-                        Name = "Здоровье", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 40, RandomRangeMax = 100,
-                        MinDescription = "При смерти, нуждается в экстренной помощи",
-                        MaxDescription = "Абсолютно здоров, никаких симптомов",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 10, "Тяжёлое состояние, не может передвигаться" },
-                            { 30, "Ранен или болен, с трудом держится на ногах" },
-                            { 60, "Работоспособен несмотря на усталость" },
-                            { 90, "Отличная форма, полная боеспособность" }
-                        },
-                        GroupName = "Физическое", Order = 1
-                    },
-                    new()
-                    {
-                        Name = "Выносливость", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 20, RandomRangeMax = 80,
-                        MinDescription = "Задыхается от подъёма на один пролёт",
-                        MaxDescription = "Может сутками двигаться без отдыха",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 20, "Выдыхается при лёгкой нагрузке" },
-                            { 50, "Средний уровень физической подготовки" },
-                            { 80, "Марафонец, выносливость выше нормы" }
-                        },
-                        GroupName = "Физическое", Order = 2
-                    },
-                    new()
-                    {
-                        Name = "Сила", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 10, RandomRangeMax = 70,
-                        MinDescription = "Не может провернуть дверную ручку",
-                        MaxDescription = "Содрогает землю ударом",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 10, "Может поднять нетяжёлые предметы, сломать ветку" },
-                            { 30, "Таскает мешки с цементом, рубит дрова" },
-                            { 60, "Опрокидывает шкаф, ломает доску об колено" },
-                            { 80, "Ломает кирпичи руками, гнёт арматуру" },
-                            { 100, "Абсолют — физически невозможное для обычного человека" }
-                        },
-                        GroupName = "Физическое", Order = 3
-                    },
-                    new()
-                    {
-                        Name = "Интеллект", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 30, RandomRangeMax = 80,
-                        MinDescription = "Не способен к абстрактному мышлению",
-                        MaxDescription = "Гений, видит закономерности недоступные другим",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 30, "Справляется с простыми задачами и инструкциями" },
-                            { 50, "Средний уровень, ~100 IQ" },
-                            { 70, "Образован, быстро обучается, ~120 IQ" },
-                            { 90, "Редкий интеллект, ~140+ IQ" }
-                        },
-                        GroupName = "Интеллект", Order = 4
-                    },
-                    new()
-                    {
-                        Name = "Харизма", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 20, RandomRangeMax = 80,
-                        MinDescription = "Отталкивает людей одним присутствием",
-                        MaxDescription = "Ведёт за собой толпы, прирождённый лидер",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 20, "Замкнут, избегает контактов" },
-                            { 50, "Обычный в общении, не выделяется" },
-                            { 80, "Располагает к себе, умеет убеждать" }
-                        },
-                        GroupName = "Социальное", Order = 5
-                    },
-                    new()
-                    {
-                        Name = "Профессия", Type = CharacterParameterType.Text,
-                        GroupName = "Биография", Order = 6
-                    },
-                    new()
-                    {
-                        Name = "Место рождения", Type = CharacterParameterType.Text,
-                        GroupName = "Биография", Order = 7
-                    },
-                    new()
-                    {
-                        Name = "Статус жизни", Type = CharacterParameterType.StateList,
-                        StatesRaw = "Жив, Ранен, В коме, Мёртв",
-                        GroupName = "Статус", Order = 8
-                    }
-                }
-            };
-        }
-
-        private static CharacterAnketa BuildDetectiveAnketa()
-        {
-            return new CharacterAnketa
-            {
-                Id = "builtin_detective",
-                Name = "Детектив / Нуар",
-                Description = "Параметры для детективных историй — психология, профессионализм, пороки",
-                IsBuiltIn = true,
-                ProjectTypeTags = new List<string> { "Детектив", "Нуар", "Триллер" },
-                Fields = new List<CharacterAnketaField>
-                {
-                    new()
-                    {
-                        Name = "Наблюдательность", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 30, RandomRangeMax = 90,
-                        MinDescription = "Ничего не замечает, легко обмануть",
-                        MaxDescription = "Видит всё — каждую деталь, каждую ложь",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 30, "Замечает очевидное, упускает детали" },
-                            { 60, "Профессиональный уровень" },
-                            { 90, "Шерлоковский уровень" }
-                        },
-                        GroupName = "Профессиональное", Order = 0
-                    },
-                    new()
-                    {
-                        Name = "Дедукция", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 20, RandomRangeMax = 90,
-                        MinDescription = "Не может связать очевидные факты",
-                        MaxDescription = "Строит цепочки из ничего",
-                        GroupName = "Профессиональное", Order = 1
-                    },
-                    new()
-                    {
-                        Name = "Доверие к системе", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 0, RandomRangeMax = 100,
-                        MinDescription = "Полный циник, законы не для него",
-                        MaxDescription = "Свято верит в закон и справедливость",
-                        GroupName = "Психология", Order = 2
-                    },
-                    new()
-                    {
-                        Name = "Моральная гибкость", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 0, RandomRangeMax = 100,
-                        MinDescription = "Абсолютная принципиальность, никаких компромиссов",
-                        MaxDescription = "Любые методы если цель оправдывает",
-                        GroupName = "Психология", Order = 3
-                    },
-                    new()
-                    {
-                        Name = "Алкоголизм", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 0, RandomRangeMax = 50,
-                        MinDescription = "Абсолютный трезвенник",
-                        MaxDescription = "Не может функционировать без бутылки",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 30, "Пьёт по вечерам, но контролирует себя" },
-                            { 60, "Заметная зависимость, влияет на работу" },
-                            { 90, "Хронический алкоголик" }
-                        },
-                        GroupName = "Пороки", Order = 4
-                    },
-                    new()
-                    {
-                        Name = "Статус", Type = CharacterParameterType.StateList,
-                        StatesRaw = "Активен, Отстранён, Под следствием, В бегах, Мёртв",
-                        GroupName = "Статус", Order = 5
-                    },
-                    new()
-                    {
-                        Name = "Лицензия", Type = CharacterParameterType.Boolean,
-                        TrueLabel = "Действующая", FalseLabel = "Отозвана",
-                        GroupName = "Статус", Order = 6
-                    }
-                }
-            };
-        }
-
-        private static CharacterAnketa BuildFantasyWarriorAnketa()
-        {
-            return new CharacterAnketa
-            {
-                Id = "builtin_fantasy_warrior",
-                Name = "Фэнтези: Воин",
-                Description = "Боевые и магические параметры для фэнтезийного воина",
-                IsBuiltIn = true,
-                ProjectTypeTags = new List<string> { "Фэнтези", "РПГ", "Эпик" },
-                Fields = new List<CharacterAnketaField>
-                {
-                    new()
-                    {
-                        Name = "Сила", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 1, DefaultMaxValue = 20, Step = 1,
-                        RandomRangeMin = 6, RandomRangeMax = 16,
-                        MinDescription = "Слабак, не удержит меч двумя руками",
-                        MaxDescription = "Легендарная сила, разрубает камень",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 5, "Слабый, ниже среднего" },
-                            { 10, "Средний воин" },
-                            { 16, "Ветеран, опытный боец" },
-                            { 20, "Легенда" }
-                        },
-                        GroupName = "Боевое", Order = 0
-                    },
-                    new()
-                    {
-                        Name = "Ловкость", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 1, DefaultMaxValue = 20, Step = 1,
-                        RandomRangeMin = 6, RandomRangeMax = 16,
-                        MinDescription = "Неуклюжий, постоянно спотыкается",
-                        MaxDescription = "Движется как тень, неуловим",
-                        GroupName = "Боевое", Order = 1
-                    },
-                    new()
-                    {
-                        Name = "Выносливость", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 1, DefaultMaxValue = 20, Step = 1,
-                        RandomRangeMin = 6, RandomRangeMax = 16,
-                        GroupName = "Боевое", Order = 2
-                    },
-                    new()
-                    {
-                        Name = "Мана", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 0, RandomRangeMax = 60,
-                        MinDescription = "Нет магического дара",
-                        MaxDescription = "Безграничный магический резерв",
-                        GroupName = "Магическое", Order = 3
-                    },
-                    new()
-                    {
-                        Name = "Владеет магией", Type = CharacterParameterType.Boolean,
-                        TrueLabel = "Да", FalseLabel = "Нет",
-                        GroupName = "Магическое", Order = 4
-                    },
-                    new()
-                    {
-                        Name = "Мировоззрение", Type = CharacterParameterType.StateList,
-                        StatesRaw = "Законопослушный добрый, Нейтральный добрый, Хаотичный добрый, Законопослушный нейтральный, Истинный нейтральный, Хаотичный нейтральный, Законопослушный злой, Нейтральный злой, Хаотичный злой",
-                        GroupName = "Личность", Order = 5
-                    },
-                    new()
-                    {
-                        Name = "Класс", Type = CharacterParameterType.Text,
-                        GroupName = "Личность", Order = 6
-                    },
-                    new()
-                    {
-                        Name = "Раса", Type = CharacterParameterType.Text,
-                        GroupName = "Личность", Order = 7
-                    }
-                }
-            };
-        }
-
-        private static CharacterAnketa BuildHorrorAnketa()
-        {
-            return new CharacterAnketa
-            {
-                Id = "builtin_horror",
-                Name = "Хоррор / Психологический",
-                Description = "Параметры психологического состояния для хоррора и триллера",
-                IsBuiltIn = true,
-                ProjectTypeTags = new List<string> { "Хоррор", "Психологический триллер", "Мистика" },
-                Fields = new List<CharacterAnketaField>
-                {
-                    new()
-                    {
-                        Name = "Рассудок", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 50, RandomRangeMax = 100,
-                        MinDescription = "Полное безумие — оторван от реальности",
-                        MaxDescription = "Абсолютно здрав, критически мыслит",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 10, "Галлюцинации, неотличимые от реальности" },
-                            { 30, "Тяжёлые психические расстройства" },
-                            { 60, "Нестабилен, срывы под давлением" },
-                            { 80, "Небольшие тики, фобии" }
-                        },
-                        GroupName = "Психология", Order = 0
-                    },
-                    new()
-                    {
-                        Name = "Страх", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 20, RandomRangeMax = 80,
-                        MinDescription = "Абсолютное бесстрашие — патологическое отсутствие страха",
-                        MaxDescription = "Парализующий ужас от малейшей угрозы",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 20, "Смелый, контролирует страх" },
-                            { 50, "Нормальная реакция на опасность" },
-                            { 80, "Панические атаки в стрессе" }
-                        },
-                        GroupName = "Психология", Order = 1
-                    },
-                    new()
-                    {
-                        Name = "Паранойя", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 0, RandomRangeMax = 60,
-                        MinDescription = "Полностью доверяет окружающим",
-                        MaxDescription = "Видит угрозу в каждом человеке и предмете",
-                        GroupName = "Психология", Order = 2
-                    },
-                    new()
-                    {
-                        Name = "Воля к выживанию", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 30, RandomRangeMax = 100,
-                        MinDescription = "Сдался, принял смерть",
-                        MaxDescription = "Выживет любой ценой, инстинкт на пределе",
-                        GroupName = "Психология", Order = 3
-                    },
-                    new()
-                    {
-                        Name = "Психологическое состояние", Type = CharacterParameterType.StateList,
-                        StatesRaw = "Стабилен, Взволнован, В панике, Диссоциация, Психоз, Кататония",
-                        GroupName = "Статус", Order = 4
-                    },
-                    new()
-                    {
-                        Name = "Видит сверхъестественное", Type = CharacterParameterType.Boolean,
-                        TrueLabel = "Да", FalseLabel = "Нет",
-                        GroupName = "Особое", Order = 5
-                    }
-                }
-            };
-        }
-
-        private static CharacterAnketa BuildScifiAnketa()
-        {
-            return new CharacterAnketa
-            {
-                Id = "builtin_scifi",
-                Name = "Научная фантастика",
-                Description = "Параметры для sci-fi: кибернетика, фракции, технологии",
-                IsBuiltIn = true,
-                ProjectTypeTags = new List<string> { "Sci-fi", "Киберпанк", "Космическая опера" },
-                Fields = new List<CharacterAnketaField>
-                {
-                    new()
-                    {
-                        Name = "Уровень кибернетизации", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 0, RandomRangeMax = 70,
-                        MinDescription = "Чистый биологический организм",
-                        MaxDescription = "Почти полная машина — человеческого почти не осталось",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 10, "Незначительные импланты (сетчатка, слух)" },
-                            { 30, "Протезы конечностей или органов" },
-                            { 60, "Кибернетический скелет, нейроинтерфейс" },
-                            { 90, "Почти полная замена тела" }
-                        },
-                        GroupName = "Физическое", Order = 0
-                    },
-                    new()
-                    {
-                        Name = "Хакерство", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 0, RandomRangeMax = 80,
-                        MinDescription = "Не умеет пользоваться компьютером",
-                        MaxDescription = "Взламывает защищённые системы за секунды",
-                        GroupName = "Навыки", Order = 1
-                    },
-                    new()
-                    {
-                        Name = "Пилотирование", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 0, RandomRangeMax = 80,
-                        GroupName = "Навыки", Order = 2
-                    },
-                    new()
-                    {
-                        Name = "Фракция", Type = CharacterParameterType.Text,
-                        GroupName = "Политическое", Order = 3
-                    },
-                    new()
-                    {
-                        Name = "Лояльность фракции", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 20, RandomRangeMax = 90,
-                        MinDescription = "Предатель, работает на несколько сторон",
-                        MaxDescription = "Фанатично предан, умрёт за фракцию",
-                        GroupName = "Политическое", Order = 4
-                    },
-                    new()
-                    {
-                        Name = "Биологический вид", Type = CharacterParameterType.StateList,
-                        StatesRaw = "Человек, Клон, Андроид, Мутант, Инопланетянин, Гибрид, ИИ",
-                        GroupName = "Физическое", Order = 5
-                    },
-                    new()
-                    {
-                        Name = "Бессмертен", Type = CharacterParameterType.Boolean,
-                        TrueLabel = "Да", FalseLabel = "Нет",
-                        GroupName = "Физическое", Order = 6
-                    }
-                }
-            };
-        }
-
-        private static CharacterAnketa BuildCollectiveAnketa()
-        {
-            return new CharacterAnketa
-            {
-                Id = CharacterAnketa.CollectiveId,
-                Name = "Народ / Группа",
-                Description = "Среднестатистические параметры для коллективного персонажа — расы, народа, социальной группы",
-                IsBuiltIn = true,
-                ProjectTypeTags = new List<string>(),
-                Fields = new List<CharacterAnketaField>
-                {
-                    new()
-                    {
-                        Name = "Средний интеллект", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 40, RandomRangeMax = 70,
-                        MinDescription = "Примитивное мышление, нет абстракции",
-                        MaxDescription = "Высокоразвитая цивилизация, средний IQ 140+",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 40, "Ниже среднего, ~85 IQ" },
-                            { 50, "Средний, ~100 IQ" },
-                            { 70, "Выше среднего, ~115 IQ" },
-                            { 90, "Высокоразвитые, ~130+ IQ" }
-                        },
-                        GroupName = "Характеристики группы", Order = 0
-                    },
-                    new()
-                    {
-                        Name = "Средняя сила", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 20, RandomRangeMax = 60,
-                        MinDescription = "Физически слабые существа",
-                        MaxDescription = "Физически превосходящие людей в разы",
-                        GroupName = "Характеристики группы", Order = 1
-                    },
-                    new()
-                    {
-                        Name = "Отношение к чужакам", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 0, RandomRangeMax = 100,
-                        MinDescription = "Убивают чужаков на месте",
-                        MaxDescription = "Открытое гостеприимство, принимают всех",
-                        ScalePoints = new Dictionary<double, string>
-                        {
-                            { 10, "Агрессивная ксенофобия" },
-                            { 30, "Недоверие, избегают контактов" },
-                            { 50, "Нейтральны, торгуют но не доверяют" },
-                            { 70, "Дружелюбны при знакомстве" }
-                        },
-                        GroupName = "Социальное", Order = 2
-                    },
-                    new()
-                    {
-                        Name = "Лояльность власти", Type = CharacterParameterType.Numeric,
-                        DefaultMinValue = 0, DefaultMaxValue = 100,
-                        RandomRangeMin = 20, RandomRangeMax = 80,
-                        MinDescription = "Открытый бунт, не признают власть",
-                        MaxDescription = "Слепое подчинение, не рассуждают",
-                        GroupName = "Социальное", Order = 3
-                    },
-                    new()
-                    {
-                        Name = "Численность", Type = CharacterParameterType.Text,
-                        Description = "Примерная численность группы или населения",
-                        GroupName = "Описание группы", Order = 4
-                    },
-                    new()
-                    {
-                        Name = "Территория", Type = CharacterParameterType.Text,
-                        Description = "Где проживает группа",
-                        GroupName = "Описание группы", Order = 5
-                    },
-                    new()
-                    {
-                        Name = "Уровень угрозы", Type = CharacterParameterType.StateList,
-                        StatesRaw = "Мирные, Нейтральные, Враждебные, Опасные, Смертоносные",
-                        GroupName = "Статус", Order = 6
-                    }
-                }
-            };
         }
     }
 }

@@ -77,7 +77,7 @@
 			<Grid ColumnDefinitions="Auto,*,Auto">
 				<!-- Шаг назад: разговор без возврата — ловушка, ошибся
 				     на первом вопросе и деваться некуда. -->
-				<Button Grid.Column="0"
+				<Button Classes="ro-allow" Grid.Column="0"
 				        Content="{x:Static loc:CharactersStrings.Onboarding_Back}"
 				        Command="{Binding BackCommand}"
 				        IsVisible="{Binding CanGoBack}"

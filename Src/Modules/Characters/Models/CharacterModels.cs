@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using Writersword.Modules.Characters.Models.Enums;
 
 namespace Writersword.Modules.Characters.Models
 {
@@ -107,6 +108,14 @@ namespace Writersword.Modules.Characters.Models
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public bool IsBuiltIn { get; set; } = false;
+
+        /// <summary>
+        /// Для кого анкета: отдельного персонажа, группы или обоих. По этому
+        /// признаку карточка предлагает анкеты — человеку не подсовывается
+        /// «Численность», группе — «Рост». У старых анкет — для всех.
+        /// </summary>
+        public CharacterAnketaAudience Audience { get; set; } = CharacterAnketaAudience.Any;
+
         public List<string> ProjectTypeTags { get; set; } = new();
         public List<CharacterAnketaField> Fields { get; set; } = new();
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -119,6 +128,16 @@ namespace Writersword.Modules.Characters.Models
 
         /// <summary>Цвет значка строкой #RRGGBB. Пусто — цвет по умолчанию.</summary>
         public string IconColor { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Подложка значка: пусто — как обычно (бледная, цвета значка), «fill» —
+        /// залитая цветом значка с белым значком, «none» — без подложки, иначе —
+        /// код цвета подложки, градиент тоже (CharacterIcons).
+        /// </summary>
+        public string IconBackground { get; set; } = string.Empty;
+
+        /// <summary>Рамка вокруг подложки значка: пусто — нет, иначе CharacterIconFrame.</summary>
+        public string IconBorder { get; set; } = string.Empty;
 
         /// <summary>
         /// Раскладка полей: строки из одной–трёх ячеек и подзаголовки групп.
@@ -161,6 +180,14 @@ namespace Writersword.Modules.Characters.Models
         /// </summary>
         public List<string> AnketaIds { get; set; } = new();
 
+        /// <summary>
+        /// Глубина анкет шаблона по умолчанию: ключ — анкета, значение —
+        /// уровень детализации. Выбрал «Фэнтези: Воин» — «Бой» раскрылся
+        /// глубоко, «Внешность» кратко. Анкеты без записи раскрываются по
+        /// важности персонажа.
+        /// </summary>
+        public Dictionary<string, int> AnketaDepths { get; set; } = new();
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         /// <summary>
@@ -171,6 +198,22 @@ namespace Writersword.Modules.Characters.Models
 
         /// <summary>Цвет блока шаблона: рамка и подложка значка. Пусто — цвет по умолчанию.</summary>
         public string IconColor { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Подложка значка шаблона: пусто — как обычно (бледная, цвета шаблона,
+        /// значок цветной), «fill» — залитая цветом шаблона с белым значком,
+        /// «none» — без подложки, иначе — свой код цвета подложки.
+        /// </summary>
+        public string IconBackground { get; set; } = string.Empty;
+
+        /// <summary>Рамка вокруг подложки значка шаблона: пусто — нет, иначе CharacterIconFrame.</summary>
+        public string IconBorder { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Цвет внешней рамки блока шаблона и его ленточки. Пусто — цвет
+        /// шаблона (IconColor), иначе свой код цвета, градиент тоже.
+        /// </summary>
+        public string FrameColor { get; set; } = string.Empty;
 
         /// <summary>
         /// Картинка блока — ссылка в хранилище картинок проекта, та же, что у

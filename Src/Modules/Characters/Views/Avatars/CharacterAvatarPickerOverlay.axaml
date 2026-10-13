@@ -121,7 +121,7 @@
 						            HorizontalAlignment="Center">
 							<Button Content="Да" Classes="confirmYes"
 							        Command="{Binding ConfirmDeleteCommand}"/>
-							<Button Content="Нет" Classes="confirmNo"
+							<Button Content="Нет" Classes="confirmNo ro-allow"
 							        Command="{Binding CancelDeleteCommand}"/>
 						</StackPanel>
 					</StackPanel>
@@ -340,7 +340,7 @@
 						           VerticalAlignment="Center"/>
 						<Button Grid.Column="1" Content="✕"
 						        Command="{Binding CancelCommand}"
-						        Classes="ghost"
+						        Classes="ghost ro-allow"
 						        Padding="8,2" FontSize="15"
 						        Foreground="{DynamicResource TextSecondaryBrush}"
 						        behaviours:TooltipBehavior.Tip="Закрыть"
@@ -490,7 +490,7 @@
 						<Button Grid.Column="4"
 								Content="{x:Static res:CharactersStrings.AvatarPicker_Cancel}"
 								Command="{Binding CancelCommand}"
-								Classes="subtleOutline"
+								Classes="subtleOutline ro-allow"
 								Padding="14,6"/>
 					</Grid>
 

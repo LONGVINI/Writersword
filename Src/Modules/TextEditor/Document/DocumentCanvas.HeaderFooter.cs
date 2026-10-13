@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Avalonia;
 using SkiaSharp;
@@ -298,10 +298,18 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         /// <summary>Лист глазами колонтитула — в логических координатах раскладки.</summary>
-        private HeaderFooterPageBox HeaderFooterBox(PageRect page)
+        private HeaderFooterPageBox HeaderFooterBox(PageRect page, int pageIndex = -1)
         {
             var (_, _, marginRight, _) = GetPagePaddingPt();
             var ps = DocVm?.Document.PageSettings;
+
+            // Лист раздела со своими полями: колонтитул стоит в его полях и на его
+            // расстояниях от края, а не в полях документа.
+            if (pageIndex >= 0 && SectionSheetOfPage(pageIndex) is { } sectionPage)
+            {
+                ps = sectionPage;
+                marginRight = MmToPt(sectionPage.MarginRightMm);
+            }
 
             return new HeaderFooterPageBox(
                 page.PadLeftPt,
@@ -362,7 +370,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 for (int pi = Math.Max(firstPage, 0); pi <= lastPage && pi < pages.Count && pi < decorations.Length; pi++)
                 {
-                    var box = HeaderFooterBox(pages[pi]);
+                    var box = HeaderFooterBox(pages[pi], pi);
                     var decoration = decorations[pi];
 
                     bool editingHere = mode && pi == _hfEditPage;
@@ -418,7 +426,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             for (int pi = Math.Max(firstPage, 0); pi <= lastPage && pi < pages.Count; pi++)
             {
-                var box = HeaderFooterBox(pages[pi]);
+                var box = HeaderFooterBox(pages[pi], pi);
                 var decoration = pi < decorations.Length ? decorations[pi] : null;
 
                 // Граница верхнего колонтитула — по нижнему краю поля листа, но не выше
@@ -444,7 +452,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (decoration is null) return 1;
 
-            var band = settings.GetBand(decoration.Variant, header);
+            var band = settings.BandFor(decoration, header);
             int lines = 1;
             for (int s = 0; s < 3; s++)
             {
@@ -471,7 +479,7 @@ namespace Writersword.Modules.TextEditor.Document
             for (int band = 0; band < 2; band++)
             {
                 bool header = band == 0;
-                var bandModel = settings.GetBand(decoration.Variant, header);
+                var bandModel = settings.BandFor(decoration, header);
 
                 for (int slot = 0; slot < 3; slot++)
                 {
@@ -625,7 +633,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (xPt < page.PadLeftPt || xPt > page.PadLeftPt + page.WidthPt) continue;
                 if (yPt < page.Ypt || yPt > page.Ypt + page.HeightPt) continue;
 
-                var box = HeaderFooterBox(page);
+                var box = HeaderFooterBox(page, pi);
                 var top = HeaderFooterPainter.ZoneRect(box, true);
                 var bottom = HeaderFooterPainter.ZoneRect(box, false);
 
@@ -655,7 +663,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             var settings = DocVm?.HeaderFooter ?? new HeaderFooterSettings();
             var page = pages[pageIndex];
-            var box = HeaderFooterBox(page);
+            var box = HeaderFooterBox(page, pageIndex);
 
             using var font = HeaderFooterPainter.CreateFont(settings, SKTextRenderer.ResolveTypeface,
                 HeaderFooterFallbackFamily());
@@ -664,7 +672,7 @@ namespace Writersword.Modules.TextEditor.Document
             var decoration = DocVm?.GetPageDecoration(pageIndex);
             if (decoration is not null)
             {
-                var band = settings.GetBand(decoration.Variant, header);
+                var band = settings.BandFor(decoration, header);
                 for (int s = 0; s < 3; s++)
                 {
                     string text = band.GetSlot(s);

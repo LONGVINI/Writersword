@@ -105,9 +105,15 @@ namespace Writersword.Modules.Characters.Models
         public const string Moon = "moon";
         public const string Check = "check";
 
-        /// <summary>Геометрия по ключу; неизвестный ключ падает на точку.</summary>
+        /// <summary>
+        /// Геометрия по ключу. Набор значков общий с анкетами и шаблонами:
+        /// ключ, которого нет среди значков меток, ищется в общем наборе
+        /// (CharacterAnketaIcons). Неизвестный ключ падает на точку.
+        /// </summary>
         public static string GetPathData(string icon) =>
-            Paths.TryGetValue(icon ?? string.Empty, out var data) ? data : Paths[Dot];
+            Paths.TryGetValue(icon ?? string.Empty, out var data)
+                ? data
+                : CharacterAnketaIcons.FindPathData(icon) ?? Paths[Dot];
 
         private static readonly Dictionary<string, string> Paths = new()
         {

@@ -181,7 +181,7 @@
 						Content="{x:Static res:CharactersStrings.Button_UploadAvatar}"
 						Command="{Binding UploadCommand}"
 						Padding="12,6"/>
-				<Button Grid.Column="2"
+				<Button Classes="ro-allow" Grid.Column="2"
 						Content="{x:Static res:CharactersStrings.AvatarPicker_Cancel}"
 						Command="{Binding CancelCommand}"
 						Padding="12,6"/>

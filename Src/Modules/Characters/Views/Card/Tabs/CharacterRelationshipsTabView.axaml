@@ -66,20 +66,20 @@
                     BorderBrush="{DynamicResource BorderDefaultBrush}"
                     BorderThickness="0,0,0,1">
 				<StackPanel Orientation="Horizontal">
-					<Button Classes="filter"
+					<Button Classes="filter ro-allow"
                             Classes.active="{Binding IsFilterAll}"
                             Content="{x:Static loc:CharactersStrings.Relationship_FilterAll}"
                             Click="OnFilterAllClick"/>
 					<!-- Цветные фильтры — по эмоции связи. Повторное нажатие
 					     снимает фильтр. -->
-					<Button Classes="filter"
+					<Button Classes="filter ro-allow"
                             Classes.active="{Binding IsFilterPositive}"
                             Click="OnFilterPositiveClick"
                             behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Relationship_FilterPositive}"
                             behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Relationship_FilterHint}">
 						<Ellipse Width="10" Height="10" Fill="#4CAF50"/>
 					</Button>
-					<Button Classes="filter"
+					<Button Classes="filter ro-allow"
                             Classes.active="{Binding IsFilterNegative}"
                             Click="OnFilterNegativeClick"
                             behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Relationship_FilterNegative}"

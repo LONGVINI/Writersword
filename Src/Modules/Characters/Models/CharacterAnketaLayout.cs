@@ -29,11 +29,19 @@ namespace Writersword.Modules.Characters.Models
 
         public List<string> Cells { get; set; } = new();
 
+        /// <summary>
+        /// Уровень детализации группы — у строки-подзаголовка. Поля под ним
+        /// получают этот уровень, если не задали свой. У старых анкет —
+        /// кратко: до появления уровней всё показывалось всем.
+        /// </summary>
+        public int Depth { get; set; } = CharacterDetailLevels.Brief;
+
         public CharacterAnketaRow Clone() => new()
         {
             Kind = Kind,
             Title = Title,
-            Cells = Cells.ToList()
+            Cells = Cells.ToList(),
+            Depth = Depth
         };
     }
 
@@ -91,6 +99,10 @@ namespace Writersword.Modules.Characters.Models
             anketa.Assets ??= new List<CharacterAnketaAsset>();
             EnsureKeys(anketa);
 
+            foreach (var field in anketa.Fields)
+                if (field.Depth.HasValue)
+                    field.Depth = CharacterDetailLevels.Clamp(field.Depth.Value);
+
             if (anketa.Layout == null || anketa.Layout.Count == 0)
             {
                 anketa.Layout = BuildDefault(anketa);
@@ -108,6 +120,7 @@ namespace Writersword.Modules.Characters.Models
                 if (row.Kind == CharacterAnketaRowKind.Group)
                 {
                     row.Cells.Clear();
+                    row.Depth = CharacterDetailLevels.Clamp(row.Depth);
                     continue;
                 }
 

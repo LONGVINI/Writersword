@@ -128,14 +128,17 @@ namespace Writersword.Modules.TextEditor.Services
 
             _compatibilityMode = ApplyWordCompatibility(mainPart, doc);
             ApplyTrackRevisionsSetting(mainPart, doc);
+            ApplyNoteSettings(mainPart, body, doc);
+            BeginNoteImport(numbering, listIdMap);
+            _openFields.Clear();
+            ImportComments(mainPart, doc, section, resolver, numbering, listIdMap, extractedImages, warnings);
 
             ApplyFinalSectionPageSettings(body, doc, resolver, warnings);
 
-            // Разрывы разделов считаются отдельным проходом: так разбор элементов не
-            // тащит за собой счётчик и может вызывать сам себя для содержимого
-            // контейнеров, вложенных на любую глубину.
-            int nonFinalSectionBreaks = body.Descendants<W.Paragraph>()
-                .Count(HasOwnSectionProperties);
+            // Параметры всех разделов — до разбора абзацев: тип разрыва раздела берётся
+            // у следующего раздела, а он в файле ещё впереди.
+            CollectDocumentSections(body);
+            doc.FinalSection = ReadFinalSection(body);
 
             ImportBlockElements(body.Elements(), section, resolver, numbering, listIdMap,
                 mainPart, extractedImages, warnings);
@@ -152,12 +155,6 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (section.Blocks.Count == 0)
                 section.Blocks.Add(new ParagraphBlock());
-
-            if (nonFinalSectionBreaks > 0)
-                warnings.Add(
-                    $"Документ содержит {nonFinalSectionBreaks} внутр. разрыв(ов) раздела — " +
-                    "импортированы как разрывы страницы; параметры страницы применены только " +
-                    "из последнего раздела документа.");
 
             var result = ImportResult.Ok(doc, warnings.Distinct().ToArray());
             result.ExtractedImages = extractedImages;
@@ -951,6 +948,12 @@ namespace Writersword.Modules.TextEditor.Services
                         }
                         break;
 
+                    // Границы места примечания между абзацами (ImportService.Comments).
+                    case W.CommentRangeStart:
+                    case W.CommentRangeEnd:
+                        TryHandleCommentBoundary(element);
+                        break;
+
                     case W.BookmarkStart bookmark:
                         // Закладка между абзацами относится к следующему абзацу: так
                         // её ставит Word, когда выделение начинается с начала абзаца.
@@ -983,16 +986,13 @@ namespace Writersword.Modules.TextEditor.Services
             var effPara = resolver.ResolveEffectiveParagraph(p);
             string? styleName = resolver.MapStyleName(p, effPara);
 
-            // Разрыв колонки в разделе из одной колонки Word ведёт на следующую страницу:
-            // следующая колонка там — колонка нового листа. Вёрстка Writersword колонок не
-            // строит, поэтому в разделе из нескольких колонок разрыв остаётся переносом
-            // строки: страница на каждый разрыв колонки растянула бы документ вдвое.
-            // Раздел ищется только у абзаца с разрывом колонки: поиск идёт по всему телу
-            // документа, и для каждого абзаца подряд импорт стал бы квадратичным.
+            // Разрыв колонки режет абзац так же, как разрыв страницы, и становится разрывом
+            // с пометкой FromColumnBreak: в разделе из нескольких колонок раскладка ведёт
+            // текст за ним в следующую колонку, в разделе из одной колонки — на следующий
+            // лист, как Word (DocumentCanvas.Columns).
             bool columnBreakIsPage = p.Elements<W.Run>()
-                    .SelectMany(r => r.Elements<W.Break>())
-                    .Any(b => b.Type?.Value == W.BreakValues.Column)
-                && IsInSingleColumnSection(p);
+                .SelectMany(r => r.Elements<W.Break>())
+                .Any(b => b.Type?.Value == W.BreakValues.Column);
 
             var splits = new List<BreakSplit>();
             var segments = SplitRunsByPageBreak(p, columnBreakIsPage, splits);
@@ -1055,6 +1055,8 @@ namespace Writersword.Modules.TextEditor.Services
                     if (previousBreak is not null) previousBreak.ContinuesParagraph = false;
                     break;
                 }
+
+                ApplyFormulaParagraphAlignment(para, chunk);
 
                 if (chunk.Runs.Count == 0)
                     chunk.Runs.Add(BuildParagraphMarkRun(p, resolver, effPara));
@@ -1174,41 +1176,6 @@ namespace Writersword.Modules.TextEditor.Services
         }
 
         /// <summary>
-        /// Абзац тела документа стоит в разделе из одной колонки. Раздел абзаца закрывает
-        /// первый абзац с параметрами раздела, начиная с него самого, а для последнего
-        /// раздела — параметры в конце тела. Число колонок — w:cols/@w:num или число
-        /// заданных колонок w:col, если колонки неравной ширины.
-        /// </summary>
-        private static bool IsInSingleColumnSection(W.Paragraph p)
-        {
-            var body = p.Ancestors<W.Body>().FirstOrDefault();
-            if (body is null) return false;
-
-            W.SectionProperties? sectPr = null;
-            bool reached = false;
-            foreach (var candidate in body.Descendants<W.Paragraph>())
-            {
-                if (!reached)
-                {
-                    if (!ReferenceEquals(candidate, p)) continue;
-                    reached = true;
-                }
-
-                if (candidate.ParagraphProperties?.SectionProperties is { } own)
-                {
-                    sectPr = own;
-                    break;
-                }
-            }
-
-            sectPr ??= body.GetFirstChild<W.SectionProperties>();
-
-            var cols = sectPr?.GetFirstChild<W.Columns>();
-            int columnCount = Math.Max(cols?.ColumnCount?.Value ?? 1, cols?.Elements<W.Column>().Count() ?? 0);
-            return columnCount <= 1;
-        }
-
-        /// <summary>
         /// За абзацем в его контейнере есть ещё абзац, таблица или блок содержимого:
         /// новой странице после разрыва есть чем начаться.
         /// </summary>
@@ -1271,6 +1238,25 @@ namespace Writersword.Modules.TextEditor.Services
             Dictionary<string, byte[]> extractedImages,
             List<string> warnings)
         {
+            // Границы места примечания: фрагменты между ними получают отметку
+            // примечания (ImportService.Comments).
+            if (TryHandleCommentBoundary(element)) return;
+
+            int runsBefore = chunk.Runs.Count;
+            AppendRunOrDrawingCore(element, chunk, section, resolver, effPara, mainPart, extractedImages, warnings);
+            MarkOpenComments(chunk, runsBefore);
+        }
+
+        private void AppendRunOrDrawingCore(
+            OpenXmlElement element,
+            TextChunk chunk,
+            SectionModel section,
+            DocxFormatResolver resolver,
+            EffectiveParagraph effPara,
+            MainDocumentPart mainPart,
+            Dictionary<string, byte[]> extractedImages,
+            List<string> warnings)
+        {
             // Правки рецензирования и границы перемещений (ImportService.Revisions).
             if (TryAppendRevisionElement(element, chunk, section, resolver, effPara,
                     mainPart, extractedImages, warnings))
@@ -1282,24 +1268,271 @@ namespace Writersword.Modules.TextEditor.Services
                     AppendRun(run, chunk, section, resolver, effPara, mainPart, extractedImages, warnings);
                     break;
 
-                case W.Hyperlink hyperlink:
-                    // Гиперссылка — просто контейнер ранов; сам URL не хранится в модели
-                    // Writersword (гиперссылки как отдельная сущность не реализованы),
-                    // текст ссылки импортируется как обычный форматированный текст.
-                    foreach (var innerRun in hyperlink.Elements<W.Run>())
-                        AppendRun(innerRun, chunk, section, resolver, effPara, mainPart, extractedImages, warnings);
+                case W.Hyperlink:
+                    // Гиперссылка — контейнер; сам URL не хранится в модели Writersword
+                    // (гиперссылки как отдельная сущность не реализованы), текст ссылки
+                    // импортируется как обычный форматированный текст. Внутри бывают не
+                    // только раны: правка (w:ins, w:del), поле, другой контейнер.
+                    AppendContainerContent(element, chunk, section, resolver, effPara,
+                        mainPart, extractedImages, warnings);
                     break;
 
-                case W.SimpleField simpleField:
+                case W.SimpleField simpleField when TryAppendLiveSimpleField(simpleField, chunk, section, resolver, effPara):
+                    // Живое поле: дата, номер страницы (ImportService.Fields).
+                    break;
+
+                case W.SimpleField:
                     // В w:fldSimple Word хранит последнее вычисленное значение поля
-                    // обычными ранами: код поля не нужен, а значение — это видимый
-                    // текст документа, и терять его нельзя.
-                    foreach (var innerRun in simpleField.Elements<W.Run>())
-                        AppendRun(innerRun, chunk, section, resolver, effPara, mainPart, extractedImages, warnings);
+                    // обычным содержимым абзаца: код поля не нужен, а значение — это
+                    // видимый текст документа, и терять его нельзя.
+                    AppendContainerContent(element, chunk, section, resolver, effPara,
+                        mainPart, extractedImages, warnings);
                     break;
 
+                default:
+                    if (InlineContainerContent(element) is { } content)
+                    {
+                        AppendContainerContent(content, chunk, section, resolver, effPara,
+                            mainPart, extractedImages, warnings);
+                    }
+                    else if (IsOfficeMath(element))
+                    {
+                        AppendFormula(element, chunk, section, resolver, effPara);
+                    }
+                    break;
             }
         }
+
+        // Выравнивание абзаца формул (m:oMathPara), встреченного в разбираемом абзаце:
+        // формула отдельной строкой у Word стоит по центру, пока не задано иное.
+        private Models.Styles.TextAlignment? _formulaParagraphAlignment;
+
+        /// <summary>
+        /// Формула Word: m:oMath среди текста абзаца или абзац формул m:oMathPara —
+        /// одна или несколько формул отдельной строкой.
+        ///
+        /// Формула становится объектом строки, как картинка: сам её XML ложится в
+        /// <see cref="FormulaBlock"/> раздела, а в текст абзаца — один символ-заполнитель
+        /// со ссылкой на неё. Раньше формула пропускалась молча, и в предложении
+        /// оставалась дыра.
+        /// </summary>
+        private void AppendFormula(
+            OpenXmlElement element,
+            TextChunk chunk,
+            SectionModel section,
+            DocxFormatResolver resolver,
+            EffectiveParagraph effPara)
+        {
+            if (element.LocalName != "oMathPara")
+            {
+                AppendFormulaObject(element, display: false, chunk, section, resolver, effPara);
+                return;
+            }
+
+            string? justification = null;
+            bool first = true;
+
+            foreach (var child in element.ChildElements)
+            {
+                if (child.NamespaceUri != OfficeMathNamespace) continue;
+
+                if (child.LocalName == "oMathParaPr")
+                {
+                    foreach (var property in child.ChildElements)
+                    {
+                        if (property.NamespaceUri != OfficeMathNamespace || property.LocalName != "jc") continue;
+                        foreach (var attribute in property.GetAttributes())
+                            if (attribute.LocalName == "val") justification = attribute.Value;
+                    }
+                    continue;
+                }
+
+                if (child.LocalName != "oMath") continue;
+
+                // Несколько формул одного абзаца формул идут строка под строкой.
+                if (!first)
+                    chunk.Runs.Add(new RunModel { Text = "\n", Properties = effPara.ToRunProperties() });
+
+                AppendFormulaObject(child, display: true, chunk, section, resolver, effPara);
+                first = false;
+            }
+
+            _formulaParagraphAlignment = justification switch
+            {
+                "left" => Models.Styles.TextAlignment.Left,
+                "right" => Models.Styles.TextAlignment.Right,
+                _ => Models.Styles.TextAlignment.Center
+            };
+        }
+
+        private static void AppendFormulaObject(
+            OpenXmlElement math,
+            bool display,
+            TextChunk chunk,
+            SectionModel section,
+            DocxFormatResolver resolver,
+            EffectiveParagraph effPara)
+        {
+            // Оформление формулы — у её первого рана: кегль, гарнитура, цвет. Каскад
+            // стилей тот же, что у рана текста.
+            OpenXmlElement? firstRunProperties = null;
+            foreach (var descendant in math.Descendants())
+            {
+                if (descendant.LocalName == "rPr"
+                    && descendant.NamespaceUri == WordprocessingNamespace
+                    && descendant.Parent is { LocalName: "r" } owner
+                    && owner.NamespaceUri == OfficeMathNamespace)
+                {
+                    firstRunProperties = descendant;
+                    break;
+                }
+            }
+
+            var probeProperties = new W.RunProperties();
+            bool ownFont = false;
+            if (firstRunProperties is not null)
+            {
+                foreach (var child in firstRunProperties.ChildElements)
+                {
+                    if (child.LocalName == "rFonts") ownFont = true;
+                    probeProperties.AppendChild(child.CloneNode(true));
+                }
+            }
+
+            var probeRun = new W.Run();
+            probeRun.AppendChild(probeProperties);
+            var mathFormat = resolver.ResolveEffectiveRun(probeRun, effPara).ToRunProperties();
+
+            var formula = new FormulaBlock
+            {
+                Omml = math.OuterXml,
+                IsDisplay = display,
+                FontSizePt = mathFormat.FontSize is double size && size > 0.0 ? size : 11.0,
+                FontFamily = ownFont && !string.IsNullOrWhiteSpace(mathFormat.FontFamily)
+                    ? mathFormat.FontFamily!
+                    : FormulaBlock.DefaultFontFamily
+            };
+            section.InlineObjects.Add(formula);
+
+            // Символ-заполнитель несёт оформление текста абзаца, а не шрифт формулы:
+            // текст, набранный следом за формулой, продолжает абзац, а не Cambria Math.
+            var placeholderProperties = effPara.ToRunProperties();
+            if (!string.IsNullOrWhiteSpace(mathFormat.TextColor))
+                placeholderProperties.TextColor = mathFormat.TextColor;
+
+            chunk.Runs.Add(new RunModel
+            {
+                Text = RunModel.ObjectPlaceholder.ToString(),
+                InlineImageId = formula.Id,
+                Properties = placeholderProperties
+            });
+        }
+
+        /// <summary>
+        /// Абзац из одних формул отдельной строкой получает выравнивание абзаца
+        /// формул. Абзац, где рядом с формулой есть текст, выравнивание не меняет.
+        /// </summary>
+        private void ApplyFormulaParagraphAlignment(ParagraphBlock para, TextChunk chunk)
+        {
+            if (_formulaParagraphAlignment is not { } alignment) return;
+            _formulaParagraphAlignment = null;
+
+            foreach (var run in chunk.Runs)
+            {
+                if (run.InlineImageId is not null) continue;
+                if (string.IsNullOrEmpty(run.Text) || run.Text == "\n") continue;
+                return;
+            }
+
+            para.Properties.Alignment = alignment;
+        }
+
+        /// <summary>
+        /// Содержимое контейнера внутри абзаца разбирается тем же порядком, что и дети
+        /// самого абзаца: раны, правки рецензирования, вложенные контейнеры.
+        /// </summary>
+        private void AppendContainerContent(
+            OpenXmlElement container,
+            TextChunk chunk,
+            SectionModel section,
+            DocxFormatResolver resolver,
+            EffectiveParagraph effPara,
+            MainDocumentPart mainPart,
+            Dictionary<string, byte[]> extractedImages,
+            List<string> warnings)
+        {
+            foreach (var child in container.ChildElements)
+                AppendRunOrDrawing(Materialize(child), chunk, section, resolver, effPara,
+                    mainPart, extractedImages, warnings);
+        }
+
+        /// <summary>
+        /// Содержимое контейнера, которого библиотека разбора не знает (w:smartTag),
+        /// приходит от неё такими же неопознанными элементами: ран внутри смарт-тега —
+        /// не ран, а безымянный узел, и разбор абзаца его не узнаёт. Такой узел
+        /// собирается заново из своего XML уже как ран, гиперссылка или правка.
+        /// </summary>
+        private static OpenXmlElement Materialize(OpenXmlElement element)
+        {
+            if (element is not OpenXmlUnknownElement || element.NamespaceUri != WordprocessingNamespace)
+                return element;
+
+            string xml = element.OuterXml;
+            return element.LocalName switch
+            {
+                "r" => new W.Run(xml),
+                "hyperlink" => new W.Hyperlink(xml),
+                "ins" => new W.InsertedRun(xml),
+                "del" => new W.DeletedRun(xml),
+                "moveFrom" => new W.MoveFromRun(xml),
+                "moveTo" => new W.MoveToRun(xml),
+                "fldSimple" => new W.SimpleField(xml),
+                "sdt" => new W.SdtRun(xml),
+                _ => element
+            };
+        }
+
+        /// <summary>
+        /// Контейнеры Word, которые только оборачивают часть абзаца и своего вида на
+        /// листе не имеют: смарт-тег (w:smartTag), пользовательская разметка
+        /// (w:customXml), направление текста (w:dir, w:bdo) и элемент управления
+        /// содержимым (w:sdt) — у него текст лежит во вложенном w:sdtContent.
+        /// Возвращает элемент, чьи дети — содержимое абзаца, или null, если элемент
+        /// не контейнер. Без разбора таких контейнеров текст внутри них пропадал из
+        /// абзаца целиком: «Город Москва в предложении» становилось «Город  в
+        /// предложении».
+        /// </summary>
+        private static OpenXmlElement? InlineContainerContent(OpenXmlElement element)
+        {
+            if (element.NamespaceUri != WordprocessingNamespace) return null;
+
+            switch (element.LocalName)
+            {
+                case "smartTag":
+                case "customXml":
+                case "dir":
+                case "bdo":
+                    return element;
+
+                case "sdt":
+                    foreach (var child in element.ChildElements)
+                    {
+                        if (child.NamespaceUri == WordprocessingNamespace && child.LocalName == "sdtContent")
+                            return child;
+                    }
+                    return null;
+            }
+
+            return null;
+        }
+
+        private const string OfficeMathNamespace =
+            "http://schemas.openxmlformats.org/officeDocument/2006/math";
+
+        /// <summary>Формула Word в абзаце: m:oMath или абзац формул m:oMathPara.</summary>
+        private static bool IsOfficeMath(OpenXmlElement element) =>
+            element.NamespaceUri == OfficeMathNamespace
+            && (element.LocalName == "oMath" || element.LocalName == "oMathPara");
 
         /// <summary>
         /// Ран пустого абзаца. Высоту такой строки задаёт форматирование знака конца
@@ -1351,10 +1584,66 @@ namespace Writersword.Modules.TextEditor.Services
             RunProperties? complexProps = effectiveRun.ToComplexScriptProperties(runProps);
             bool wholeRunComplex = effectiveRun.RightToLeftRun == true || effectiveRun.ComplexScriptRun == true;
 
+            // Сноска со своим знаком (w:customMarkFollows): знак набран текстом сразу
+            // за ссылкой в том же ране и в текст абзаца не идёт — он становится знаком.
+            NoteBlock? customMarkNote = null;
+
             foreach (var child in run.ChildElements)
             {
+                // Границы и код сложного поля; знаки кода и значения живого поля в
+                // текст не идут (ImportService.Fields).
+                if (TryHandleFieldElement(child, chunk, section, runProps)) continue;
+                if (FieldTextSuppressed)
+                {
+                    switch (child)
+                    {
+                        case W.Text suppressedText:
+                            TryCaptureFieldText(suppressedText.Text, runProps);
+                            continue;
+                        case W.DeletedText suppressedDeleted:
+                            TryCaptureFieldText(suppressedDeleted.Text, runProps);
+                            continue;
+                        case W.TabChar:
+                        case W.Break:
+                        case W.CarriageReturn:
+                        case W.SymbolChar:
+                        case W.NoBreakHyphen:
+                        case W.SoftHyphen:
+                            continue;
+                    }
+                }
+
                 switch (child)
                 {
+                    case W.Text customMarkText when customMarkNote is not null:
+                        customMarkNote.CustomMark = customMarkText.Text;
+                        customMarkNote = null;
+                        break;
+
+                    case W.SymbolChar customMarkSymbol when customMarkNote is not null:
+                    {
+                        // Знак из символьного шрифта: тот же разбор, что у знака в тексте,
+                        // а шрифт знака переходит на символ-заполнитель сноски.
+                        var symbolChunk = new TextChunk();
+                        AppendSymbolChar(symbolChunk, customMarkSymbol, runProps);
+                        if (symbolChunk.Runs.Count > 0)
+                        {
+                            customMarkNote.CustomMark = symbolChunk.Runs[0].Text;
+
+                            if (chunk.Runs.Count > 0
+                                && chunk.Runs[chunk.Runs.Count - 1].InlineImageId == customMarkNote.Id
+                                && symbolChunk.Runs[0].Properties?.FontFamily is { Length: > 0 } symbolFont)
+                            {
+                                var markRun = chunk.Runs[chunk.Runs.Count - 1];
+                                var markProps = markRun.Properties?.Clone() ?? new RunProperties();
+                                markProps.FontFamily = symbolFont;
+                                markRun.Properties = markProps;
+                            }
+                        }
+                        customMarkNote = null;
+                        break;
+                    }
+
                     case W.Text t:
                         if (wholeRunComplex && complexProps is not null)
                             chunk.Runs.Add(new RunModel { Text = t.Text, Properties = complexProps });
@@ -1413,9 +1702,35 @@ namespace Writersword.Modules.TextEditor.Services
                         ImportVmlPicture(legacyPicture, chunk, section, runProps, mainPart, extractedImages, warnings);
                         break;
 
-                    case W.FootnoteReference:
-                    case W.EndnoteReference:
-                        warnings.Add("Сноски/концевые сноски не поддерживаются и были пропущены.");
+                    case W.FootnoteReference footnoteReference:
+                    {
+                        var footnote = AppendNoteReference(
+                            footnoteReference.Id?.Value, NoteKind.Footnote, chunk, section, resolver,
+                            runProps, mainPart, extractedImages, warnings);
+                        if (footnoteReference.CustomMarkFollows?.Value == true) customMarkNote = footnote;
+                        break;
+                    }
+
+                    case W.EndnoteReference endnoteReference:
+                    {
+                        var endnote = AppendNoteReference(
+                            endnoteReference.Id?.Value, NoteKind.Endnote, chunk, section, resolver,
+                            runProps, mainPart, extractedImages, warnings);
+                        if (endnoteReference.CustomMarkFollows?.Value == true) customMarkNote = endnote;
+                        break;
+                    }
+
+                    // Ссылка на примечание: место примечания уже отмечено на тексте,
+                    // примечание без места привязывается здесь (ImportService.Comments).
+                    case W.CommentReference commentReference:
+                        AnchorCommentReference(commentReference, chunk);
+                        break;
+
+                    // Место номера в тексте самой сноски: номер ставит вёрстка, от
+                    // рана остаётся его оформление.
+                    case W.FootnoteReferenceMark:
+                    case W.EndnoteReferenceMark:
+                        if (_importingNote) _noteMarkProperties = runProps;
                         break;
                 }
             }
@@ -2392,6 +2707,8 @@ namespace Writersword.Modules.TextEditor.Services
                     mainPart, extractedImages, warnings);
             }
 
+            ApplyFormulaParagraphAlignment(para, chunk);
+
             if (chunk.Runs.Count == 0)
                 chunk.Runs.Add(BuildParagraphMarkRun(p, resolver, effPara));
 
@@ -2633,6 +2950,7 @@ namespace Writersword.Modules.TextEditor.Services
             if (colCount is int cc && cc > 1)
             {
                 doc.ColumnSettings.ColumnCount = cc;
+                doc.ColumnSettings.ShowSeparator = cols?.Separator?.Value == true;
 
                 // Значение читается через InnerText: атрибут w:space в схеме — мера в twips,
                 // и разные версии SDK типизируют его по-разному. Строковое представление

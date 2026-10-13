@@ -81,7 +81,7 @@
 					           FontSize="16" FontWeight="SemiBold"
 					           Foreground="{DynamicResource TextPrimaryBrush}"
 					           VerticalAlignment="Center"/>
-					<Button Grid.Column="1" Content="✕" Click="OnCancelClick"
+					<Button Classes="ro-allow" Grid.Column="1" Content="✕" Click="OnCancelClick"
 					        Background="Transparent" BorderThickness="0"
 					        Foreground="{DynamicResource TextSecondaryBrush}"
 					        FontSize="14" Padding="6,2"/>
@@ -241,7 +241,7 @@
 
 				<StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8"
 				            HorizontalAlignment="Right">
-					<Button Content="{x:Static loc:CharactersStrings.AnketaEditor_Cancel}"
+					<Button Classes="ro-allow" Content="{x:Static loc:CharactersStrings.AnketaEditor_Cancel}"
 					        Click="OnCancelClick"
 					        FontSize="12" Padding="14,6" CornerRadius="6"/>
 					<Button Content="{x:Static loc:CharactersStrings.AnketaEditor_Save}"

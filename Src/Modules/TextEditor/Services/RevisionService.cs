@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
@@ -233,7 +233,27 @@ namespace Writersword.Modules.TextEditor.Services
                     count++;
             }
 
-            return count;
+            return count + FloatingImageRevisions(doc).Count;
+        }
+
+        /// <summary>
+        /// Плавающие картинки, вставленные или удалённые правкой: в потоке блоков и
+        /// закреплённые на листе. Картинки в строке сюда не входят — их правка в знаке.
+        /// </summary>
+        public static List<ImageBlock> FloatingImageRevisions(DocumentModel doc)
+        {
+            var result = new List<ImageBlock>();
+            foreach (var section in doc.Sections)
+            {
+                foreach (var block in section.Blocks)
+                    if (block is ImageBlock image && (image.Inserted is not null || image.Deleted is not null))
+                        result.Add(image);
+
+                foreach (var block in section.FloatingObjects)
+                    if (block is ImageBlock image && (image.Inserted is not null || image.Deleted is not null))
+                        result.Add(image);
+            }
+            return result;
         }
 
         /// <summary>Знаки принадлежат одной правке: те же отметки вставки, удаления и смены оформления.</summary>

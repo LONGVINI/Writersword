@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Writersword.Core.Models.Print;
 using Writersword.Modules.TextEditor.Models.Document;
 
@@ -44,6 +44,9 @@ namespace Writersword.Modules.TextEditor.Models.Page
 
         /// <summary>Расстояние от нижнего края до колонтитула в мм.</summary>
         public double FooterDistanceMm { get; set; } = 12;
+
+        /// <summary>Копия настроек: все поля — значения.</summary>
+        public TextEditorPageSettings Clone() => (TextEditorPageSettings)MemberwiseClone();
 
         /// <summary>
         /// Возвращает физическую ширину страницы в мм с учётом ориентации.

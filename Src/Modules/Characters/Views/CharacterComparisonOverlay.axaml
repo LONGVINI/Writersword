@@ -39,7 +39,7 @@
 						           FontSize="11"
 						           Foreground="{DynamicResource TextSecondaryBrush}"/>
 					</StackPanel>
-					<Button Grid.Column="1" Content="✕" Click="OnCloseClick"
+					<Button Classes="ro-allow" Grid.Column="1" Content="✕" Click="OnCloseClick"
 					        Background="Transparent" BorderThickness="0"
 					        Foreground="{DynamicResource TextSecondaryBrush}"
 					        FontSize="14" Padding="6,2"/>
@@ -113,11 +113,20 @@
 												</ItemsControl.ItemsPanel>
 												<ItemsControl.ItemTemplate>
 													<DataTemplate x:DataType="cmp:CharacterComparisonCell">
-														<TextBlock Text="{Binding Text}"
-														           Width="{Binding Width}"
-														           FontSize="12"
-														           TextTrimming="CharacterEllipsis"
-														           Foreground="{DynamicResource TextPrimaryBrush}"/>
+														<!-- «Не раскрыто» — поле глубже уровня анкеты у этого
+														     персонажа: не пусто, а не углублялись. -->
+														<Panel Width="{Binding Width}">
+															<TextBlock Text="{Binding Text}"
+															           IsVisible="{Binding IsRevealed}"
+															           FontSize="12"
+															           TextTrimming="CharacterEllipsis"
+															           Foreground="{DynamicResource TextPrimaryBrush}"/>
+															<TextBlock Text="{Binding Text}"
+															           IsVisible="{Binding IsNotRevealed}"
+															           FontSize="11" FontStyle="Italic"
+															           TextTrimming="CharacterEllipsis"
+															           Foreground="{DynamicResource TextMutedBrush}"/>
+														</Panel>
 													</DataTemplate>
 												</ItemsControl.ItemTemplate>
 											</ItemsControl>

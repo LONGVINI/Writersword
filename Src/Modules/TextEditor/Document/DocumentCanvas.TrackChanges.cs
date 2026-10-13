@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Writersword.Modules.TextEditor.Commands;
@@ -58,6 +58,20 @@ namespace Writersword.Modules.TextEditor.Document
         private bool TryTrackedInsertText(string text)
         {
             if (!TrackingActive || string.IsNullOrEmpty(text)) return false;
+
+            long perfTs = PerfNow();
+            try
+            {
+                return TrackedInsertTextCore(text);
+            }
+            finally
+            {
+                PerfTime("ui.key.tracked", perfTs);
+            }
+        }
+
+        private bool TrackedInsertTextCore(string text)
+        {
 
             if (HasSel())
             {
@@ -668,15 +682,22 @@ namespace Writersword.Modules.TextEditor.Document
             bool anyCell = false;
             bool fullRebuild = DocVm.Document.RevisionView != RevisionView.AllMarkup;
             var flowVms = FlowViewModelsByModel();
+            var cellParagraphs = new List<ParagraphBlock>();
 
             foreach (var paragraph in paragraphs)
             {
                 if (flowVms.TryGetValue(paragraph, out var pvm))
                 {
-                    pvm.RefreshPlainTextFromModel();
+                    // Отметки правки меняют вид строк и без смены текста: запись кеша
+                    // снимается до перечитывания текста. Сменившийся текст сам будит
+                    // перевёрстку абзаца (OnPvmPropertyChanged) — второй раз её не зовём,
+                    // иначе каждая буква верстала абзац дважды.
+                    string textBefore = pvm.PlainText ?? string.Empty;
                     _layoutCache.Remove(pvm);
+                    pvm.RefreshPlainTextFromModel();
+                    bool textChanged = !string.Equals(textBefore, pvm.PlainText ?? string.Empty, StringComparison.Ordinal);
 
-                    if (!fullRebuild)
+                    if (!fullRebuild && !textChanged)
                         ScheduleRebuild(DocVm.Paragraphs.IndexOf(pvm));
                     continue;
                 }
@@ -687,7 +708,33 @@ namespace Writersword.Modules.TextEditor.Document
                     _layoutCache.Remove(cellVm);
                 }
 
+                cellParagraphs.Add(paragraph);
                 anyCell = true;
+            }
+
+            // Набор в ячейке: её таблица перекладывается на месте, листы целиком — после
+            // паузы (DocumentCanvas.QuickTable). Раньше каждая буква в ячейке сбрасывала
+            // раскладки всех таблиц и раскладывала весь документ.
+            if (anyCell && !fullRebuild)
+            {
+                var tables = new HashSet<TableBlock>();
+                bool quick = TablesOfCellParagraphs(cellParagraphs, tables);
+                if (quick)
+                {
+                    foreach (var table in tables)
+                    {
+                        if (TryQuickTableUpdate(table)) continue;
+                        quick = false;
+                        break;
+                    }
+                }
+
+                if (quick)
+                {
+                    ScheduleDeferredFullRebuild();
+                    InvalidateFull();
+                    return;
+                }
             }
 
             if (anyCell) InvalidateCellLayoutCaches();
@@ -819,9 +866,14 @@ namespace Writersword.Modules.TextEditor.Document
             BeginTrackedSnapshot(accept ? "Принять все исправления" : "Отклонить все исправления");
             try
             {
+                // Плавающие картинки с правкой — тем же шагом (DocumentCanvas.ReviewPanel).
+                var floatingImages = RevisionService.FloatingImageRevisions(doc);
+                if (floatingImages.Count > 0) ApplyImageResolution(floatingImages, accept, whole: true);
+
                 var (touched, structureChanged) = RevisionService.Resolve(
                     doc, _ => new RevisionService.Scope(0, int.MaxValue, true), accept);
 
+                if (floatingImages.Count > 0) structureChanged = true;
                 RefreshAfterTrackedChange(touched, structureChanged);
                 RestoreCaretAfterResolve(caretParagraph, caretChar);
             }
@@ -1071,6 +1123,11 @@ namespace Writersword.Modules.TextEditor.Document
             if (docVm is null) return;
 
             var view = docVm.Document.RevisionView;
+
+            // Абзацы, чей знак абзаца спрятан видом, продолжаются текстом следующих, как
+            // у Word; ушедшие внутрь предыдущего абзаца на листе отдельно не стоят.
+            RevisionDisplay.PrepareJoins(docVm.Document, view);
+
             if (view == RevisionView.AllMarkup) return;
 
             HashSet<BlockModel>? hidden = null;
@@ -1080,7 +1137,8 @@ namespace Writersword.Modules.TextEditor.Document
                 foreach (var block in section.Blocks)
                 {
                     if (block is not ParagraphBlock paragraph) continue;
-                    if (!RevisionDisplay.IsParagraphHidden(paragraph, view)) continue;
+                    if (!RevisionDisplay.IsParagraphHidden(paragraph, view)
+                        && !RevisionDisplay.IsAbsorbed(paragraph)) continue;
 
                     hidden ??= _collapsedBlocks ?? new HashSet<BlockModel>();
                     hidden.Add(paragraph);

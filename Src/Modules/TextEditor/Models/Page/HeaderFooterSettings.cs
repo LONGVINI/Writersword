@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -67,7 +67,49 @@ namespace Writersword.Modules.TextEditor.Models.Page
         ManualNumber = 5,
 
         /// <summary>С этого листа номер печатается другим видом (<see cref="PageRule.Format"/>).</summary>
-        SetFormat = 6
+        SetFormat = 6,
+
+        /// <summary>
+        /// С этого листа (или на одном листе) колонтитулы печатаются своим текстом
+        /// (<see cref="PageRule.Texts"/>), а не общим шаблоном. Так приходят разделы Word
+        /// со своими колонтитулами: глава с бегущим заголовком, приложение со своей
+        /// шапкой. Номер, его вид и счёт по-прежнему решают остальные правила.
+        /// </summary>
+        SetText = 7
+    }
+
+    /// <summary>
+    /// Свой текст колонтитулов для правила <see cref="PageRuleAction.SetText"/>: обычные
+    /// полосы и полосы чётных листов (при <see cref="HeaderFooterSettings.DifferentOddEven"/>).
+    /// </summary>
+    public sealed class HeaderFooterTexts
+    {
+        public HeaderFooterBand Header { get; set; } = new();
+        public HeaderFooterBand Footer { get; set; } = new();
+        public HeaderFooterBand EvenHeader { get; set; } = new();
+        public HeaderFooterBand EvenFooter { get; set; } = new();
+
+        /// <summary>Во всех полосах пусто.</summary>
+        [JsonIgnore]
+        public bool IsEmpty => Header.IsEmpty && Footer.IsEmpty && EvenHeader.IsEmpty && EvenFooter.IsEmpty;
+
+        public HeaderFooterTexts Clone() => new()
+        {
+            Header = Header.Clone(),
+            Footer = Footer.Clone(),
+            EvenHeader = EvenHeader.Clone(),
+            EvenFooter = EvenFooter.Clone()
+        };
+
+        /// <summary>Тот же текст во всех полосах.</summary>
+        public static bool Same(HeaderFooterTexts? a, HeaderFooterTexts? b)
+        {
+            if (a is null || b is null) return a is null && b is null;
+            return HeaderFooterBand.Same(a.Header, b.Header)
+                && HeaderFooterBand.Same(a.Footer, b.Footer)
+                && HeaderFooterBand.Same(a.EvenHeader, b.EvenHeader)
+                && HeaderFooterBand.Same(a.EvenFooter, b.EvenFooter);
+        }
     }
 
     /// <summary>
@@ -107,6 +149,10 @@ namespace Writersword.Modules.TextEditor.Models.Page
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public PageNumberFormat? Format { get; set; }
 
+        /// <summary>Свой текст колонтитулов — для <see cref="PageRuleAction.SetText"/>.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public HeaderFooterTexts? Texts { get; set; }
+
         /// <summary>Правило действует и на листы после своего.</summary>
         [JsonIgnore]
         public bool IsRange => Scope == PageRuleScope.FromPage || Scope == PageRuleScope.FromAnchor;
@@ -115,7 +161,12 @@ namespace Writersword.Modules.TextEditor.Models.Page
         [JsonIgnore]
         public bool IsAnchored => Scope == PageRuleScope.Anchor || Scope == PageRuleScope.FromAnchor;
 
-        public PageRule Clone() => (PageRule)MemberwiseClone();
+        public PageRule Clone()
+        {
+            var copy = (PageRule)MemberwiseClone();
+            copy.Texts = Texts?.Clone();
+            return copy;
+        }
     }
 
     /// <summary>
@@ -335,12 +386,13 @@ namespace Writersword.Modules.TextEditor.Models.Page
         /// <summary>Исключения для отдельных листов и отрезков.</summary>
         public List<PageRule> Rules { get; set; } = new();
 
-        /// <summary>Ни в одном варианте колонтитула нет текста.</summary>
+        /// <summary>Ни в одном варианте колонтитула и ни в одном правиле со своим текстом нет текста.</summary>
         [JsonIgnore]
         public bool IsEmpty
             => Header.IsEmpty && Footer.IsEmpty
                && (!DifferentFirstPage || (FirstHeader.IsEmpty && FirstFooter.IsEmpty))
-               && (!DifferentOddEven || (EvenHeader.IsEmpty && EvenFooter.IsEmpty));
+               && (!DifferentOddEven || (EvenHeader.IsEmpty && EvenFooter.IsEmpty))
+               && !Rules.Exists(r => r.Action == PageRuleAction.SetText && r.Texts is { IsEmpty: false });
 
         /// <summary>Полоса варианта: верхняя или нижняя.</summary>
         public HeaderFooterBand GetBand(HeaderFooterVariant variant, bool header) => variant switch

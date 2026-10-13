@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -17,14 +17,15 @@ namespace Writersword.Modules.TextEditor.Services
     /// В Word колонтитулы живут в разделах: у каждого раздела свои (или унаследованные
     /// от предыдущего), своя «особая первая», свой вид номера и своё начало счёта. У нас
     /// колонтитулы одни на документ, а исключения — правила листов. Перевод такой:
-    ///   • текст колонтитулов берётся у первого раздела, где он вообще есть;
+    ///   • общий шаблон — колонтитулы первого раздела, где они вообще есть;
+    ///   • раздел с другим текстом — правило «свои колонтитулы отсюда» от первого
+    ///     абзаца раздела, раздел, вернувшийся к общему тексту, — «общие колонтитулы
+    ///     отсюда»; правила привязаны меткой к абзацу и едут вместе с текстом;
     ///   • разделы без колонтитулов или без номера становятся правилами «дальше без
-    ///     колонтитулов» / «дальше без номера» от первого абзаца раздела — правило
-    ///     привязано меткой к абзацу и едет вместе с текстом;
+    ///     колонтитулов» / «дальше без номера»;
     ///   • начало счёта и вид номера раздела — правила «счёт отсюда» и «вид номера отсюда»;
-    ///   • пустая «особая первая» у раздела в середине — правило одного листа.
-    /// Разделы с другим текстом колонтитулов сводятся к общему тексту — об этом
-    /// предупреждение.
+    ///   • «особая первая» у раздела в середине — правило одного листа: пустая —
+    ///     «без колонтитулов», с текстом — «свои колонтитулы» на этом листе.
     ///
     /// Места колонтитула — лево, центр, право — берутся по табуляциям абзаца (так
     /// колонтитулы делает Word: центральная и правая позиции стиля «Верхний колонтитул»),
@@ -79,20 +80,17 @@ namespace Writersword.Modules.TextEditor.Services
         private void BeginSectionTracking() => _sectionBreaks.Clear();
 
         /// <summary>
-        /// Абзац с параметрами раздела закрывает раздел. Разрыв «со следующей страницы»
-        /// (и «с чётной», «с нечётной») становится разрывом страницы; непрерывный —
-        /// ничем: текст идёт дальше на том же листе.
+        /// Абзац с параметрами раздела закрывает раздел: за ним встаёт разрыв раздела со
+        /// всеми параметрами этого раздела (ImportService.Sections). Вид разрыва — как
+        /// начинается следующий раздел: со следующей, чётной или нечётной страницы, на
+        /// той же странице или со следующей колонки.
         /// </summary>
         private void NoteSectionBreak(W.Paragraph p, SectionModel section)
         {
             var sectPr = p.ParagraphProperties?.SectionProperties;
             if (sectPr is null) return;
 
-            var type = sectPr.GetFirstChild<W.SectionType>()?.Val?.Value;
-            bool continuous = type == W.SectionMarkValues.Continuous;
-
-            if (!continuous)
-                section.Blocks.Add(new BreakBlock { BreakType = BreakType.Page });
+            section.Blocks.Add(BuildSectionBreak(sectPr));
 
             _sectionBreaks.Add((sectPr, section.Blocks.Count));
         }
@@ -208,8 +206,14 @@ namespace Writersword.Modules.TextEditor.Services
             bool visible = true;
             bool number = baseSection.DefaultHasPage;
             var format = baseSection.Format;
-            bool textDiffers = false;
             bool anchorsLost = false;
+
+            // Текст, который сейчас действует: null — общий шаблон. Полосы чётных листов
+            // сравниваются, только когда у документа они вообще свои.
+            var baseTexts = differentOddEven
+                ? SectionTexts(settings.Header, settings.Footer, settings.EvenHeader, settings.EvenFooter)
+                : SectionTexts(settings.Header, settings.Footer, settings.Header, settings.Footer);
+            HeaderFooterTexts? currentTexts = null;
 
             for (int i = 0; i < sections.Count; i++)
             {
@@ -240,9 +244,20 @@ namespace Writersword.Modules.TextEditor.Services
                         number = sNumber;
                     }
 
-                    if (!HeaderFooterBand.Same(s.DefaultHeader.Band, settings.Header)
-                        || !HeaderFooterBand.Same(s.DefaultFooter.Band, settings.Footer))
-                        textDiffers = true;
+                    // Свой текст раздела — правилом от его первого абзаца; возврат к общему
+                    // тексту — правилом без текста.
+                    var sTexts = differentOddEven
+                        ? SectionTexts(s.DefaultHeader.Band, s.DefaultFooter.Band, s.EvenHeader.Band, s.EvenFooter.Band)
+                        : SectionTexts(s.DefaultHeader.Band, s.DefaultFooter.Band, s.DefaultHeader.Band, s.DefaultFooter.Band);
+                    var wanted = HeaderFooterTexts.Same(sTexts, baseTexts) ? null : sTexts;
+
+                    if (!HeaderFooterTexts.Same(wanted, currentTexts))
+                    {
+                        var rule = SectionRule(anchor, true, PageRuleAction.SetText);
+                        rule.Texts = wanted;
+                        settings.Rules.Add(rule);
+                        currentTexts = wanted;
+                    }
                 }
 
                 if (s.Format != format)
@@ -261,27 +276,41 @@ namespace Writersword.Modules.TextEditor.Services
                 }
 
                 // «Особая первая» раздела в середине документа: пустая — лист без
-                // колонтитулов; с текстом — у нас одна «первая» на документ.
+                // колонтитулов; с другим текстом — свои колонтитулы этого листа.
                 if (i > 0 && s.TitlePage && sVisible)
                 {
                     if (s.FirstHeader.IsEmpty && s.FirstFooter.IsEmpty)
+                    {
                         settings.Rules.Add(SectionRule(anchor, false, PageRuleAction.HideHeaderFooter));
+                    }
                     else if (!HeaderFooterBand.Same(s.FirstHeader.Band, s.DefaultHeader.Band)
                              || !HeaderFooterBand.Same(s.FirstFooter.Band, s.DefaultFooter.Band))
-                        textDiffers = true;
+                    {
+                        // Первый лист раздела бывает и чётным: его текст один на оба варианта.
+                        var rule = SectionRule(anchor, false, PageRuleAction.SetText);
+                        rule.Texts = SectionTexts(s.FirstHeader.Band, s.FirstFooter.Band,
+                            s.FirstHeader.Band, s.FirstFooter.Band);
+                        settings.Rules.Add(rule);
+                    }
                 }
             }
-
-            if (textDiffers)
-                warnings.Add("У разделов документа разный текст колонтитулов — он сведён к колонтитулам " +
-                             "первого раздела с колонтитулами. Скрытие колонтитулов и номеров, начало " +
-                             "счёта и вид номера по разделам перенесены правилами страниц.");
 
             if (anchorsLost)
                 warnings.Add("Часть разделов начинается не абзацем — их правила колонтитулов не перенесены.");
 
             return settings;
         }
+
+        /// <summary>Текст колонтитулов раздела копией полос.</summary>
+        private static HeaderFooterTexts SectionTexts(
+            HeaderFooterBand header, HeaderFooterBand footer, HeaderFooterBand evenHeader, HeaderFooterBand evenFooter)
+            => new()
+            {
+                Header = header.Clone(),
+                Footer = footer.Clone(),
+                EvenHeader = evenHeader.Clone(),
+                EvenFooter = evenFooter.Clone()
+            };
 
         /// <summary>Правило раздела: для первого раздела — от первого листа, иначе — от метки у абзаца.</summary>
         private static PageRule SectionRule(Guid? anchor, bool range, PageRuleAction action)

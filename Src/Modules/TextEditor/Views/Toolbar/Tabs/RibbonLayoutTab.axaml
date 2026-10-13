@@ -189,6 +189,13 @@
 										<MenuItem Header="A3 (297 x 420 mm)"    Command="{Binding SetSizeA3Command}"/>
 										<MenuItem Header="A5 (148 x 210 mm)"    Command="{Binding SetSizeA5Command}"/>
 										<MenuItem Header="Letter (8.5 x 11 in)" Command="{Binding SetSizeLetterCommand}"/>
+										<Separator/>
+										<MenuItem Header="Ко всему разделу" ToggleType="Radio"
+										          IsChecked="{Binding ApplyToSection, Mode=TwoWay}"
+										          behaviours:TooltipBehavior.Tip="Размер, ориентация, поля и колонки меняются у всего раздела, в котором стоит каретка"/>
+										<MenuItem Header="Только к выделенному" ToggleType="Radio"
+										          IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
+										          behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом: разрывы раздела ставятся сами, остальной текст остаётся как был"/>
 									</MenuFlyout>
 								</SplitButton.Flyout>
 							</SplitButton>
@@ -205,6 +212,13 @@
 									<MenuFlyout>
 										<MenuItem Header="{x:Static loc:TextEditorStrings.Orientation_Portrait}"  Command="{Binding SetOrientationPortraitCommand}"/>
 										<MenuItem Header="{x:Static loc:TextEditorStrings.Orientation_Landscape}" Command="{Binding SetOrientationLandscapeCommand}"/>
+										<Separator/>
+										<MenuItem Header="Ко всему разделу" ToggleType="Radio"
+										          IsChecked="{Binding ApplyToSection, Mode=TwoWay}"
+										          behaviours:TooltipBehavior.Tip="Размер, ориентация, поля и колонки меняются у всего раздела, в котором стоит каретка"/>
+										<MenuItem Header="Только к выделенному" ToggleType="Radio"
+										          IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
+										          behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом: разрывы раздела ставятся сами, остальной текст остаётся как был"/>
 									</MenuFlyout>
 								</SplitButton.Flyout>
 							</SplitButton>
@@ -219,7 +233,7 @@
 								<Button.Flyout>
 									<Flyout Placement="Bottom" ShowMode="Standard" Opening="OnMarginsFlyoutOpening">
 										<Grid Margin="4" RowSpacing="6" ColumnSpacing="8"
-											  RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+											  RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
 											  ColumnDefinitions="Auto,Auto">
 											<TextBlock Grid.Row="0" Grid.Column="0" Text="Верхнее, мм" FontSize="11" VerticalAlignment="Center"
 													   Foreground="{DynamicResource TextSecondaryBrush}"/>
@@ -252,6 +266,14 @@
 														   FormatString="0.##" ClipValueToMinMax="True"
 														   Value="{Binding GutterMm, Mode=TwoWay}"
 														   behaviours:TooltipBehavior.Tip="Полоса под сшивку у корешка: прибавляется к полю. При разных колонтитулах чётных и нечётных страниц переплёт на нечётных листах слева, на чётных справа"/>
+											<StackPanel Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2" Margin="0 4 0 0">
+												<TextBlock Text="Применить" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+												<RadioButton Content="Ко всему разделу" FontSize="11"
+												             IsChecked="{Binding ApplyToSection, Mode=TwoWay}"/>
+												<RadioButton Content="Только к выделенному" FontSize="11"
+												             IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
+												             behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом со своими полями"/>
+											</StackPanel>
 										</Grid>
 									</Flyout>
 								</Button.Flyout>
@@ -288,6 +310,13 @@
 													<MenuItem Header="A3 (297 x 420 mm)"    Command="{Binding SetSizeA3Command}"/>
 													<MenuItem Header="A5 (148 x 210 mm)"    Command="{Binding SetSizeA5Command}"/>
 													<MenuItem Header="Letter (8.5 x 11 in)" Command="{Binding SetSizeLetterCommand}"/>
+													<Separator/>
+													<MenuItem Header="Ко всему разделу" ToggleType="Radio"
+													          IsChecked="{Binding ApplyToSection, Mode=TwoWay}"
+													          behaviours:TooltipBehavior.Tip="Размер, ориентация, поля и колонки меняются у всего раздела, в котором стоит каретка"/>
+													<MenuItem Header="Только к выделенному" ToggleType="Radio"
+													          IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
+													          behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом: разрывы раздела ставятся сами, остальной текст остаётся как был"/>
 												</MenuFlyout>
 											</SplitButton.Flyout>
 										</SplitButton>
@@ -304,6 +333,13 @@
 												<MenuFlyout>
 													<MenuItem Header="{x:Static loc:TextEditorStrings.Orientation_Portrait}"  Command="{Binding SetOrientationPortraitCommand}"/>
 													<MenuItem Header="{x:Static loc:TextEditorStrings.Orientation_Landscape}" Command="{Binding SetOrientationLandscapeCommand}"/>
+													<Separator/>
+													<MenuItem Header="Ко всему разделу" ToggleType="Radio"
+													          IsChecked="{Binding ApplyToSection, Mode=TwoWay}"
+													          behaviours:TooltipBehavior.Tip="Размер, ориентация, поля и колонки меняются у всего раздела, в котором стоит каретка"/>
+													<MenuItem Header="Только к выделенному" ToggleType="Radio"
+													          IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
+													          behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом: разрывы раздела ставятся сами, остальной текст остаётся как был"/>
 												</MenuFlyout>
 											</SplitButton.Flyout>
 										</SplitButton>
@@ -316,7 +352,7 @@
 											<Button.Flyout>
 												<Flyout Placement="Bottom" ShowMode="Standard" Opening="OnMarginsFlyoutOpening">
 													<Grid Margin="4" RowSpacing="6" ColumnSpacing="8"
-														  RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+														  RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
 														  ColumnDefinitions="Auto,Auto">
 														<TextBlock Grid.Row="0" Grid.Column="0" Text="Верхнее, мм" FontSize="11" VerticalAlignment="Center"
 																   Foreground="{DynamicResource TextSecondaryBrush}"/>
@@ -349,6 +385,14 @@
 																	   FormatString="0.##" ClipValueToMinMax="True"
 																	   Value="{Binding GutterMm, Mode=TwoWay}"
 																	   behaviours:TooltipBehavior.Tip="Полоса под сшивку у корешка: прибавляется к полю. При разных колонтитулах чётных и нечётных страниц переплёт на нечётных листах слева, на чётных справа"/>
+														<StackPanel Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2" Margin="0 4 0 0">
+															<TextBlock Text="Применить" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+															<RadioButton Content="Ко всему разделу" FontSize="11"
+															             IsChecked="{Binding ApplyToSection, Mode=TwoWay}"/>
+															<RadioButton Content="Только к выделенному" FontSize="11"
+															             IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
+															             behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом со своими полями"/>
+														</StackPanel>
 													</Grid>
 												</Flyout>
 											</Button.Flyout>

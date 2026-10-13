@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
@@ -297,6 +297,14 @@ namespace Writersword.Modules.TextEditor.Services
             writer.WriteNumber("schema", document.SchemaVersion);
             // Запись исправлений — свойство документа: её включение должно сохраняться.
             writer.WriteBoolean("trackRevisions", document.TrackRevisions);
+            writer.WriteNumber("footnoteNumbers", (int)document.FootnoteNumberFormat);
+            writer.WriteNumber("endnoteNumbers", (int)document.EndnoteNumberFormat);
+            writer.WriteNumber("footnoteStart", document.FootnoteNumberStart);
+            writer.WriteNumber("endnoteStart", document.EndnoteNumberStart);
+
+            // Примечания рецензентов живут вне блоков: их правка — правка документа.
+            writer.WritePropertyName("comments");
+            JsonSerializer.Serialize(writer, document.Comments);
             writer.WritePropertyName("page");
             JsonSerializer.Serialize(writer, document.PageSettings);
             writer.WritePropertyName("columns");
@@ -324,6 +332,14 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 writer.WritePropertyName("headerFooter");
                 JsonSerializer.Serialize(writer, document.HeaderFooter);
+            }
+            // Примечания и их обсуждения живут у документа, а в чанках только ссылки на
+            // них: ответ, закрытие обсуждения и правка текста примечания чанков не
+            // меняют, и без этого сверка считала бы документ неизменным.
+            if (document.Comments.Count > 0)
+            {
+                writer.WritePropertyName("comments");
+                JsonSerializer.Serialize(writer, document.Comments);
             }
             WriteIdArray(writer, "sections", document.Sections.Select(s => s.Id));
             writer.WriteEndObject();

@@ -21,7 +21,7 @@ namespace Writersword.Modules.TextEditor.Services
         private readonly PrintPageSettings _pageSettings;
         private readonly SKTextRenderer _renderer;
         private readonly StyleResolver _styles;
-        private readonly Core.Models.Rendering.SKPageLayout _pageLayout;
+        private Core.Models.Rendering.SKPageLayout _pageLayout;
 
         // ── IPrintableDocument ────────────────────────────────────────────
 
@@ -43,13 +43,54 @@ namespace Writersword.Modules.TextEditor.Services
             // Габарит картинки в строке: без него объект встал бы в строку нулевой ширины
             // и переносы строк в печати разошлись бы с редактором.
             _renderer.InlineImageSize = GetInlineImageSize;
-            _pageLayout = _renderer.BuildPageLayout(_document, _pageSettings, _styles);
+            _renderer.InlineObjectDescent = GetInlineObjectDescent;
+
+            // Сноски: знак — номером по порядку, текст — внизу своего листа, как в
+            // редакторе. Номера считаются в том же виде исправлений, что и печать.
+            _noteNumbering = NoteNumbering.Compute(document, document.RevisionView);
+            _renderer.InlineNoteMark = _noteNumbering.MarkOf;
+
+            // Живые поля: дата — на момент печати, номер страницы — по листу печати.
+            foreach (var section in document.Sections)
+                foreach (var block in section.InlineObjects)
+                    if (block is FieldBlock field)
+                        _liveFields[field.Id] = field;
+            _renderer.InlineFieldText = PrintFieldText;
+
+            // Склейка абзацев, чей знак абзаца спрятан видом исправлений, — как на экране.
+            RevisionDisplay.PrepareJoins(_document, document.RevisionView);
+
+            _pageLayout = _renderer.BuildPageLayout(_document, _pageSettings, _styles, _noteNumbering, _noteRules);
             _decorations = BuildDecorations();
+
+            // Номер страницы в поле узнаётся только после раскладки, а другой номер
+            // может сменить ширину строки и сдвинуть листы: раскладка собирается
+            // заново, пока номера в полях не совпадут с листами, — как у редактора.
+            for (int pass = 0; pass < PrintFieldRelayoutLimit && UpdatePrintPageValues(); pass++)
+            {
+                _noteRules.Clear();
+                _pageLayout = _renderer.BuildPageLayout(_document, _pageSettings, _styles, _noteNumbering, _noteRules);
+                _decorations = BuildDecorations();
+            }
         }
+
+        /// <summary>Сколько раз печать пересобирает раскладку ради номеров страниц в полях.</summary>
+        private const int PrintFieldRelayoutLimit = 3;
+
+        // Номера страниц и число листов для полей PAGE и NUMPAGES по раскладке печати.
+        private readonly System.Collections.Generic.Dictionary<Guid, string> _printPageValues = new();
 
         // Оформление листов печати: номера и видимость колонтитулов. Считается по
         // раскладке печати, а не по полотну: печать может идти без открытого редактора.
-        private readonly PageDecoration[] _decorations;
+        private PageDecoration[] _decorations;
+
+        // Живые поля документа по Id и текст, которым каждое сверстано.
+        private readonly System.Collections.Generic.Dictionary<Guid, FieldBlock> _liveFields = new();
+        private readonly System.Collections.Generic.Dictionary<Guid, string> _fieldTexts = new();
+
+        // Номера сносок документа и черты над сносками листов печати.
+        private readonly NoteNumbering _noteNumbering = NoteNumbering.Empty;
+        private readonly System.Collections.Generic.List<SKTextRenderer.PageNoteRule> _noteRules = new();
 
         /// <summary>
         /// Сведения о листах печати: где начинается каждый абзац и где главы. Индекс
@@ -65,7 +106,7 @@ namespace Writersword.Modules.TextEditor.Services
             foreach (var section in _document.Sections)
                 foreach (var block in section.Blocks)
                 {
-                    if (block is BreakBlock bb && bb.BreakType == BreakType.Page) continue;
+                    if (block is BreakBlock bb && bb.StartsNewPage) continue;
                     blocks.Add(block);
                 }
 
@@ -161,7 +202,32 @@ namespace Writersword.Modules.TextEditor.Services
                     canvas.Translate(gutterShiftPt, 0f);
                 }
 
-                SKTextRenderer.RenderPage(canvas, page, SKColors.Transparent);
+                // Знаки сносок рисует печать сама: обработчик объектов строки ставит
+                // редактор, а печать может идти и без него. Прочие объекты строки
+                // остаются прежнему обработчику.
+                var previousInlineDrawer = SKTextRenderer.DrawInlineObject;
+                if (_noteNumbering.HasNotes || _liveFields.Count > 0)
+                {
+                    SKTextRenderer.DrawInlineObject = (inlineCanvas, seg, segX, baseY) =>
+                    {
+                        if (seg.InlineImageId is Guid id && _noteNumbering.MarkOf(id) is { } mark)
+                            SKTextRenderer.DrawNoteMark(inlineCanvas, seg, mark, segX, baseY);
+                        else if (seg.InlineImageId is Guid fieldId && _fieldTexts.TryGetValue(fieldId, out var fieldText))
+                            SKTextRenderer.DrawNoteMark(inlineCanvas, seg, fieldText, segX, baseY);
+                        else
+                            previousInlineDrawer?.Invoke(inlineCanvas, seg, segX, baseY);
+                    };
+                }
+
+                try
+                {
+                    SKTextRenderer.RenderPage(canvas, page, SKColors.Transparent);
+                    DrawNoteRules(canvas, pageIndex);
+                }
+                finally
+                {
+                    SKTextRenderer.DrawInlineObject = previousInlineDrawer;
+                }
 
                 if (gutterShiftPt != 0f) canvas.Restore();
 
@@ -175,6 +241,122 @@ namespace Writersword.Modules.TextEditor.Services
         }
 
         /// <summary>
+        /// Текст живого поля в печати: дата — сейчас, номер страницы и число листов —
+        /// по раскладке печати; до первой раскладки — сохранённые в документе.
+        /// </summary>
+        private string? PrintFieldText(Guid id)
+        {
+            if (!_liveFields.TryGetValue(id, out var field)) return null;
+
+            string text = FieldCodes.KindOf(field.Instruction) switch
+            {
+                LiveFieldKind.Date or LiveFieldKind.Time
+                    => FieldCodes.FormatDateTime(field.Instruction, DateTime.Now, null),
+                LiveFieldKind.Page or LiveFieldKind.NumPages when _printPageValues.TryGetValue(id, out var value)
+                    => value,
+                LiveFieldKind.None => field.Result,
+                _ => string.IsNullOrEmpty(field.Result) ? "1" : field.Result
+            };
+
+            _fieldTexts[id] = text;
+            return text;
+        }
+
+        /// <summary>
+        /// Сверяет номера страниц в полях с листами печати, на которых поля встали.
+        /// true — хоть одно поле сверстано не тем номером и раскладку надо собрать заново.
+        /// </summary>
+        private bool UpdatePrintPageValues()
+        {
+            if (_liveFields.Count == 0) return false;
+
+            var pages = _pageLayout.Pages;
+            var pageOf = new System.Collections.Generic.Dictionary<Guid, int>();
+
+            void ScanLines(Core.Models.Rendering.SKTextLayout? layout, int lineFrom, int lineTo, int pageIndex)
+            {
+                if (layout is null) return;
+
+                lineFrom = Math.Max(0, lineFrom);
+                lineTo = lineTo < 0 ? layout.Lines.Count : Math.Min(lineTo, layout.Lines.Count);
+
+                for (int li = lineFrom; li < lineTo; li++)
+                    foreach (var segment in layout.Lines[li].Segments)
+                        if (segment.InlineImageId is Guid id && _liveFields.ContainsKey(id))
+                            pageOf.TryAdd(id, pageIndex);
+            }
+
+            for (int pi = 0; pi < pages.Count; pi++)
+            {
+                var page = pages[pi];
+
+                foreach (var paragraph in page.Paragraphs)
+                    ScanLines(paragraph.Layout, paragraph.LineFrom, paragraph.LineTo, pi);
+
+                foreach (var pageTable in page.Tables)
+                {
+                    var layout = pageTable.Layout;
+                    if (layout is null) continue;
+
+                    int rowFrom = Math.Max(0, pageTable.RowFrom);
+                    int rowTo = pageTable.RowTo < 0 ? layout.Rows.Count : Math.Min(pageTable.RowTo, layout.Rows.Count);
+
+                    for (int ri = rowFrom; ri < rowTo; ri++)
+                        foreach (var cell in layout.Rows[ri].Cells)
+                            foreach (var cellParagraph in cell.Paragraphs)
+                                ScanLines(cellParagraph.Layout, 0, -1, pi);
+                }
+            }
+
+            int PageNumber(int pageIndex)
+                => pageIndex >= 0 && pageIndex < _decorations.Length && _decorations[pageIndex].Number > 0
+                    ? _decorations[pageIndex].Number
+                    : pageIndex + 1;
+
+            bool changed = false;
+
+            foreach (var (id, field) in _liveFields)
+            {
+                string? value = FieldCodes.KindOf(field.Instruction) switch
+                {
+                    LiveFieldKind.NumPages => FieldCodes.FormatNumber(field.Instruction, _pageLayout.PageCount),
+                    LiveFieldKind.Page when pageOf.TryGetValue(id, out int pageIndex)
+                        => FieldCodes.FormatNumber(field.Instruction, PageNumber(pageIndex)),
+                    _ => null
+                };
+
+                if (value is null) continue;
+
+                _printPageValues[id] = value;
+                // Поле, которого нет в раскладке, пересборки не требует.
+                if (_fieldTexts.TryGetValue(id, out var laidOut) && laidOut != value)
+                    changed = true;
+            }
+
+            return changed;
+        }
+
+        /// <summary>Черты над сносками листа печати.</summary>
+        private void DrawNoteRules(SKCanvas canvas, int pageIndex)
+        {
+            if (_noteRules.Count == 0) return;
+
+            using var paint = new SKPaint
+            {
+                Color = SKColors.Black,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = NoteFlow.RuleThicknessPt,
+                IsAntialias = true
+            };
+
+            foreach (var rule in _noteRules)
+            {
+                if (rule.PageIndex != pageIndex) continue;
+                canvas.DrawLine(rule.XPt, rule.YPt, rule.XPt + rule.LengthPt, rule.YPt, paint);
+            }
+        }
+
+        /// <summary>
         /// Сдвиг содержимого листа из-за стороны переплёта, в пунктах. Раскладка печати
         /// кладёт переплёт слева на каждом листе; когда у чётных и нечётных страниц
         /// разные колонтитулы, Word считает документ двусторонним, и на листе с чётным
@@ -183,15 +365,21 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         private float GutterShiftPt(int pageIndex)
         {
-            if (_pageSettings.MarginGutterMm <= 0) return 0f;
             if (_document.HeaderFooter?.DifferentOddEven != true) return 0f;
+
+            // Переплёт у каждого раздела свой: лист раздела со своим листом сдвигается
+            // на него, а не на переплёт документа.
+            double gutterMm = pageIndex >= 0 && pageIndex < _pageLayout.Pages.Count
+                ? SKTextRenderer.PrintSheetGutterMm(_pageLayout.Pages[pageIndex]) ?? _pageSettings.MarginGutterMm
+                : _pageSettings.MarginGutterMm;
+            if (gutterMm <= 0) return 0f;
 
             int number = pageIndex >= 0 && pageIndex < _decorations.Length
                 ? _decorations[pageIndex].Number
                 : pageIndex + 1;
             if (number % 2 != 0) return 0f;
 
-            return -(float)(_pageSettings.MarginGutterMm * 72.0 / 25.4);
+            return -(float)(gutterMm * 72.0 / 25.4);
         }
 
         /// <summary>
@@ -269,14 +457,37 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 foreach (var block in section.InlineObjects)
                 {
+                    if (block.Id != id) continue;
+
+                    // Формула: ширина и полная высота вместе с частью под базовой линией.
+                    if (block is FormulaBlock formula)
+                    {
+                        var metrics = Rendering.Formulas.FormulaRenderer.Measure(formula);
+                        return (metrics.WidthPt, metrics.HeightPt);
+                    }
+
                     // Объект строки — картинка или фигура; габарит у обоих один и
                     // тот же, что и в редакторе (FloatingObjectBox).
-                    if (block is not IFloatingObject floating || block.Id != id) continue;
+                    if (block is not IFloatingObject floating) continue;
 
                     return FloatingObjectBox.Of(floating, (float)floating.WidthPt, (float)floating.HeightPt);
                 }
             }
             return null;
+        }
+
+        /// <summary>Спуск формулы под базовую линию; у картинки и фигуры его нет.</summary>
+        private float GetInlineObjectDescent(Guid id)
+        {
+            foreach (var section in _document.Sections)
+            {
+                foreach (var block in section.InlineObjects)
+                {
+                    if (block is FormulaBlock formula && formula.Id == id)
+                        return Rendering.Formulas.FormulaRenderer.Measure(formula).DescentPt;
+                }
+            }
+            return 0f;
         }
 
         /// <summary>

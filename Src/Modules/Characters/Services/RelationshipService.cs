@@ -12,6 +12,14 @@ namespace Writersword.Modules.Characters.Services
         private static readonly ILogger _logger = Log.ForContext<RelationshipService>();
         private readonly List<CharacterRelationship> _relationships = new();
 
+        /// <summary>
+        /// Режим сравнения версий: связи не создаются, не меняются и не
+        /// удаляются. Последний рубеж — какой бы путь ни привёл к записи.
+        /// </summary>
+        public Func<bool>? IsReadOnlyProvider { get; set; }
+
+        private bool IsReadOnly => IsReadOnlyProvider?.Invoke() == true;
+
         public IReadOnlyList<CharacterRelationship> GetAll() => _relationships.AsReadOnly();
 
         public IReadOnlyList<CharacterRelationship> GetAllForCharacter(string id) =>
@@ -36,6 +44,14 @@ namespace Writersword.Modules.Characters.Services
                 SourceCharacterId = sourceId,
                 TargetCharacterId = targetId
             };
+
+            // Связь создаётся, но в список не встаёт: в проект она не попадёт.
+            if (IsReadOnly)
+            {
+                _logger.Debug("Relationship create ignored (compare mode)");
+                return rel;
+            }
+
             _relationships.Add(rel);
             _logger.Debug("Relationship created: {Id}", rel.Id);
             return rel;
@@ -43,12 +59,14 @@ namespace Writersword.Modules.Characters.Services
 
         public void Update(CharacterRelationship relationship)
         {
+            if (IsReadOnly) return;
             var idx = _relationships.FindIndex(r => r.Id == relationship.Id);
             if (idx >= 0) _relationships[idx] = relationship;
         }
 
         public void Delete(string id)
         {
+            if (IsReadOnly) return;
             _relationships.RemoveAll(r => r.Id == id);
             _logger.Debug("Relationship deleted: {Id}", id);
         }

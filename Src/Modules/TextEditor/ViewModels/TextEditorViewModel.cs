@@ -677,6 +677,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 ? FindReadingTheme(editorBefore.ThemeId)
                 : null;
 
+            // Каким был записан вид по умолчанию — по тому же правилу: его копия в
+            // настройках перенимает правку, только если до сих пор с ним совпадала.
+            var beforeDefault = string.IsNullOrWhiteSpace(Settings.EditorThemeId)
+                ? null
+                : FindReadingTheme(Settings.EditorThemeId);
+
             var forDocument = new System.Collections.Generic.List<Models.Settings.ReadingTheme>();
             var forGlobal = new System.Collections.Generic.List<Models.Settings.ReadingTheme>();
 
@@ -774,6 +780,20 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
                 editorView.ThemeId = current.Id;
                 if (wasUntouched) editorView.Active = current.Clone();
+
+                // Свой вид книги запоминается уже с правкой из окна.
+                if (BookKey is { } book && Services.BookViewStore.Get(book) is not null)
+                    Services.BookViewStore.Save(book, editorView.ThemeEnabled, editorView.ThemeId, editorView.Active);
+            }
+
+            if (beforeDefault is not null)
+            {
+                var currentDefault = FindReadingTheme(Settings.EditorThemeId);
+                bool defaultUntouched = Settings.EditorTheme is null
+                                        || ReadingTheme.SameLook(beforeDefault, Settings.EditorTheme);
+
+                Settings.EditorThemeId = currentDefault.Id;
+                if (defaultUntouched) Settings.EditorTheme = currentDefault.Clone();
             }
 
             ReadingRibbon.RefreshAll();
@@ -938,6 +958,64 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Ribbon.Appearance.RefreshAll();
         }
 
+        // Ключ книги для её собственного вида листа (Services.BookViewStore). Null —
+        // у книги ключа нет, и она живёт видом по умолчанию.
+        private string? _bookKey;
+
+        /// <summary>Ключ книги, за которой запоминается вид листа. Задаёт модуль.</summary>
+        public string? BookKey
+        {
+            get => _bookKey;
+            set
+            {
+                if (string.Equals(_bookKey, value, StringComparison.Ordinal)) return;
+                _bookKey = value;
+
+                // Ключ пришёл после загрузки документа: вид листа — уже этой книги.
+                if (DocumentViewModel?.EditorView is not null)
+                    RefreshSharedEditorView();
+            }
+        }
+
+        /// <summary>Опознаватель вида по умолчанию. Null — по умолчанию лист без вида.</summary>
+        public string? DefaultEditorThemeId
+            => Settings.EditorThemeEnabled
+                ? (string.IsNullOrWhiteSpace(Settings.EditorThemeId)
+                    ? Models.Settings.ReadingTheme.WhiteId
+                    : Settings.EditorThemeId)
+                : null;
+
+        /// <summary>
+        /// Делает вид видом по умолчанию: им открываются книги, для которых свой вид
+        /// не выбирали. Текущая книга тоже переходит на него и дальше идёт за видом по
+        /// умолчанию, пока для неё не выберут другой.
+        /// </summary>
+        public void SetDefaultEditorView(Models.Settings.ReadingTheme theme)
+        {
+            Settings.EditorThemeEnabled = true;
+            Settings.EditorThemeId = theme.Id;
+            Settings.EditorTheme = theme.Clone();
+
+            if (BookKey is { } book)
+                Services.BookViewStore.Remove(book);
+
+            if (EditorView is { } v)
+            {
+                v.ThemeEnabled = true;
+                v.ThemeId = theme.Id;
+                v.Active = theme.Clone();
+                v.Normalize();
+            }
+
+            ApplyEditorViewVisual();
+            Ribbon.Appearance.RebuildThemeItems();
+            Ribbon.Appearance.RefreshAll();
+
+            // Остальные открытые книги без своего вида перейдут на новый вид по
+            // умолчанию (TextEditorModule.OnSharedReadingSettingsSaved).
+            GlobalSettingsChanged?.Invoke(Settings);
+        }
+
         /// <summary>Открывает окно видов чтения.</summary>
         public void OpenReadingThemes() => ReadingThemesRequested?.Invoke();
 
@@ -1070,15 +1148,31 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// </summary>
         private void ApplyEditorViewPreferences(Models.Settings.EditorViewSettings target)
         {
-            target.ThemeEnabled = Settings.EditorThemeEnabled;
-            target.ThemeId = string.IsNullOrWhiteSpace(Settings.EditorThemeId)
-                ? Models.Settings.ReadingTheme.WhiteId
-                : Settings.EditorThemeId;
+            // Вид листа — свой у каждой книги (Services.BookViewStore). Книга, для
+            // которой его не выбирали, открывается видом по умолчанию из настроек.
+            var own = BookKey is { } book ? Services.BookViewStore.Get(book) : null;
 
-            // Рабочая копия берётся из настроек, а если её там нет (данные прежних
-            // версий) — собирается из вида по опознавателю.
-            target.Active = Settings.EditorTheme?.Clone()
-                ?? FindReadingTheme(target.ThemeId).Clone();
+            if (own is not null)
+            {
+                target.ThemeEnabled = own.ThemeEnabled;
+                target.ThemeId = string.IsNullOrWhiteSpace(own.ThemeId)
+                    ? Models.Settings.ReadingTheme.WhiteId
+                    : own.ThemeId;
+                target.Active = own.Theme?.Clone()
+                    ?? FindReadingTheme(target.ThemeId).Clone();
+            }
+            else
+            {
+                target.ThemeEnabled = Settings.EditorThemeEnabled;
+                target.ThemeId = string.IsNullOrWhiteSpace(Settings.EditorThemeId)
+                    ? Models.Settings.ReadingTheme.WhiteId
+                    : Settings.EditorThemeId;
+
+                // Рабочая копия берётся из настроек, а если её там нет (данные прежних
+                // версий) — собирается из вида по опознавателю.
+                target.Active = Settings.EditorTheme?.Clone()
+                    ?? FindReadingTheme(target.ThemeId).Clone();
+            }
 
             target.FocusHidesRuler = Settings.FocusHidesRuler;
             target.FocusHidesStatusBar = Settings.FocusHidesStatusBar;
@@ -1102,9 +1196,22 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (EditorView is not { } v) return;
 
-            Settings.EditorThemeEnabled = v.ThemeEnabled;
-            Settings.EditorThemeId = v.ThemeId;
-            Settings.EditorTheme = v.Active?.Clone();
+            // Вид листа запоминается за этой книгой, а не за всеми: вид по умолчанию
+            // меняется только кнопкой «Вид по умолчанию» (SetDefaultEditorView).
+            // Книга без ключа (новая, ещё не сохранённая) живёт по-прежнему видом
+            // по умолчанию.
+            if (BookKey is { } book)
+            {
+                Services.BookViewStore.Save(book, v.ThemeEnabled, v.ThemeId, v.Active);
+            }
+            else
+            {
+                Settings.EditorThemeEnabled = v.ThemeEnabled;
+                Settings.EditorThemeId = v.ThemeId;
+                Settings.EditorTheme = v.Active?.Clone();
+            }
+
+            // Что прятать в режиме фокуса — предпочтение человека, а не книги.
             Settings.FocusHidesRuler = v.FocusHidesRuler;
             Settings.FocusHidesStatusBar = v.FocusHidesStatusBar;
             Settings.FocusRibbonOnHover = v.FocusRibbonOnHover;
@@ -1873,6 +1980,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // уже не нужны.
             DocumentViewModel.PurgeOrphanInlineObjects();
 
+            // Примечания, чьё место в тексте удалено целиком, — так же.
+            DocumentViewModel.PurgeOrphanComments();
+
             return _serializer.Serialize(DocumentViewModel.Document);
         }
 
@@ -1901,6 +2011,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private void OnCursorContextChanged(CursorContext ctx)
         {
             Ribbon.Home.UpdateFromCursorContext(ctx);
+            UpdateFormulaTab(ctx.IsAtFormula);
 
             // Группа «Эта страница» на вкладке колонтитулов говорит о листе каретки.
             if (Ribbon.IsHeaderFooterTabVisible)
@@ -1927,6 +2038,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void SyncRulerToDocument(DocumentModel document)
         {
+            // Линейка показывает лист раздела: его поля — не поля документа. Лист под
+            // кареткой сообщает полотно (NotifyRulerSheet).
+            if (Ruler.CurrentSection is not null) return;
+
             var ps = document.PageSettings;
             Ruler.UpdatePageSettings(
                 widthMm: ps.GetPhysicalWidthMm(),
@@ -1942,6 +2057,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (DocumentViewModel is null) return;
             SyncRulerToDocument(DocumentViewModel.Document);
         }
+
+        /// <summary>Лист под кареткой: размер, поля и колонки раздела — линейке.</summary>
+        public void NotifyRulerSheet(RulerSheet sheet) => Ruler.ShowSheet(sheet);
 
         public void NotifyPageOffsetChanged(double pageOffsetXPx)
         {
@@ -2009,11 +2127,35 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // когда каретка из таблицы ушла.
         private int _tabIndexBeforeTable = -1;
 
+        /// <summary>
+        /// Показывает контекстную вкладку «Формулы», пока каретка стоит у формулы, и
+        /// прячет, когда уходит. Сама вкладка не выбирается: каретка проходит мимо
+        /// формул при обычном наборе, и выдёргивать риббон с «Главной» на каждом
+        /// таком шаге нельзя.
+        /// </summary>
+        private void UpdateFormulaTab(bool atFormula)
+        {
+            if (atFormula == Ribbon.IsFormulaTabVisible) return;
+
+            if (atFormula)
+            {
+                Ribbon.IsFormulaTabVisible = true;
+                return;
+            }
+
+            // Выбранной не должна остаться скрытая вкладка (см. RestoreRibbonTab).
+            if (Ribbon.SelectedTabIndex == FormulaTabIndex)
+                RestoreRibbonTab(1, FormulaTabIndex);
+
+            Ribbon.IsFormulaTabVisible = false;
+        }
+
         // Индексы вкладок в TabControl риббона, в порядке их объявления в
         // RibbonView.axaml:
         //
-        //   0 — Главная, 1 — Вставка, 2 — Разметка, 3 — Ссылки, 4 — Вид,
-        //   5 — Таблица, 6 — Формат, 7 — Расположение, 8 — Оглавление.
+        //   0 — Главная, 1 — Вставка, 2 — Макет, 3 — Ссылки, 4 — Рецензирование,
+        //   5 — Вид, 6 — Таблица, 7 — Формат, 8 — Расположение, 9 — Оглавление,
+        //   10 — Колонтитулы, 11 — Формулы.
         //
         // Числа обязаны совпадать с разметкой знак в знак: TabControl различает
         // вкладки только по месту в списке. Разошлись они однажды так — вкладку
@@ -2030,11 +2172,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // «Формат» и «Расположение» — две половины одного инструмента для
         // плавающего объекта: показываются и гаснут вместе, по одному флагу
         // IsImageTabVisible.
+        //
+        // «Формулы» — тоже контекстная и стоит последней: видна, пока каретка у
+        // формулы. Новая формула вставляется с «Вставки».
         private const int TableTabIndex = 6;
         private const int ImageTabIndex = 7;
         private const int ImagePlacementTabIndex = 8;
         private const int TocTabIndex = 9;
         private const int HeaderFooterTabIndex = 10;
+        private const int FormulaTabIndex = 11;
 
         // Вкладка, активная до автопереключения на «Формат» — восстанавливается
         // при снятии выделения картинки.
@@ -2056,6 +2202,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ImagePlacementTabIndex => Ribbon.IsImageTabVisible,
             TocTabIndex => Ribbon.IsTocTabVisible,
             HeaderFooterTabIndex => Ribbon.IsHeaderFooterTabVisible,
+            FormulaTabIndex => Ribbon.IsFormulaTabVisible,
             _ => index >= 0 && index < TableTabIndex
         };
 
@@ -2363,6 +2510,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (DocumentViewModel is null) return;
 
+            // Поле листа раздела: край идёт за мышью на линейке, лист перекладывается
+            // по отпусканию (OnRulerMarginCommitted).
+            if (Ruler.CurrentSection is not null)
+            {
+                _marginDragMoved = true;
+                return;
+            }
+
             // Фиксируем Auto-колонки всех таблиц до первого изменения поля — по ширине
             // текста до жеста. Без этого ComputeColumnWidths пересчитывает их под новую
             // ширину текстовой зоны, и таблица растягивается или сжимается.
@@ -2514,6 +2669,23 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Жест закончен: дальше полотно ждёт итоговой смены полей.
             DocumentViewModel.HideMarginPreview();
+
+            // Лист раздела со своими полями: поля пишутся в раздел, а не в документ.
+            if (Ruler.CurrentSection is Models.Page.SectionLayout { Page: { } sectionPage })
+            {
+                sectionPage.MarginTopMm = Ruler.MarginTopMm;
+                sectionPage.MarginBottomMm = Ruler.MarginBottomMm;
+                sectionPage.MarginLeftMm = Math.Max(0, marginLeftMm - sectionPage.MarginGutterMm);
+                sectionPage.MarginRightMm = marginRightMm;
+
+                _marginDragStart = null;
+                _marginDragMoved = false;
+
+                DocumentViewModel.RaisePageSettingsChanged();
+                DocumentViewModel.FireParagraphFormatChanged();
+                DocumentViewModel.CommitPageEdit();
+                return;
+            }
 
             var ps = DocumentViewModel.Document.PageSettings;
             double topMm = Ruler.MarginTopMm;
@@ -2778,6 +2950,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertSectionBreak(BreakType t) => DocumentViewModel?.InsertSectionBreak(t);
         public void InsertFootnote() => DocumentViewModel?.InsertFootnote();
         public void InsertEndnote() => DocumentViewModel?.InsertEndnote();
+        public void InsertFormula() => DocumentViewModel?.InsertFormula();
+        public void InsertReadyFormula(string latex) => DocumentViewModel?.InsertReadyFormula(latex);
+        public void InsertFormulaTemplate(string latex) => DocumentViewModel?.InsertFormulaTemplate(latex);
+        public void ShowFormulaHelp() => Views.Dialogs.FormulaHelpWindow.ShowHelp();
+        public void InsertDateTime() => DocumentViewModel?.InsertDateTime();
         public void InsertBookmark(string name) => DocumentViewModel?.InsertBookmark(name);
         public void InsertHyperlink(string url, string? text) => DocumentViewModel?.InsertHyperlink(url, text);
         public void InsertTOC() => DocumentViewModel?.InsertTOC();
@@ -2912,6 +3089,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             => DocumentViewModel?.TableGetCellTextDirection() ?? CellTextDirection.Horizontal;
         public void TableToggleRowHeightExact() => DocumentViewModel?.TableToggleRowHeightExact();
         public bool TableGetRowHeightExact() => DocumentViewModel?.TableGetRowHeightExact() ?? false;
+        public (double ColumnWidthMm, double RowHeightPt)? TableGetCellSize() => DocumentViewModel?.TableGetCellSize();
         public void TableSetCellShadingPattern(string? pattern, string? patternColor)
             => DocumentViewModel?.TableSetCellShadingPattern(pattern, patternColor);
         public (string? Pattern, string? Color) TableGetCellShadingPattern()
@@ -2926,30 +3104,57 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         // ── Макет страницы ────────────────────────────────────────────────
 
-        public void SetPageSize(PaperSize s) => DocumentViewModel?.SetPageSize(s);
-        public void SetPageOrientation(PageOrientation o) => DocumentViewModel?.SetPageOrientation(o);
+        // Команды вкладки «Макет» меняют раздел под кареткой, а в режиме «только
+        // выделенное» — отрезанный под выделение раздел (DocumentViewModel.PageSetup).
+        // Линейка встаёт по листу раздела сама, когда полотно пересоберёт листы; лист
+        // документа — синхронизацией.
+
+        public void SetPageSize(PaperSize s)
+        {
+            DocumentViewModel?.ApplySectionPaperSize(s);
+            if (DocumentViewModel is not null)
+                SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
+        public void SetPageOrientation(PageOrientation o)
+        {
+            DocumentViewModel?.ApplySectionOrientation(o);
+            if (DocumentViewModel is not null)
+                SyncRulerToDocument(DocumentViewModel.Document);
+        }
 
         public void SetPageMargins(double t, double b, double l, double r)
         {
-            DocumentViewModel?.SetPageMargins(t, b, l, r);
+            DocumentViewModel?.ApplySectionMargins(t, b, l, r);
             if (DocumentViewModel is not null)
                 SyncRulerToDocument(DocumentViewModel.Document);
         }
 
         public (double TopMm, double BottomMm, double LeftMm, double RightMm, double GutterMm) GetPageMargins()
         {
-            var margins = DocumentViewModel?.GetPageMargins();
+            var margins = DocumentViewModel?.GetSectionPageMargins();
             return margins ?? (TopMm: 0.0, BottomMm: 0.0, LeftMm: 0.0, RightMm: 0.0, GutterMm: 0.0);
         }
 
         public void SetPageGutter(double gutterMm)
         {
-            DocumentViewModel?.SetPageGutter(gutterMm);
+            DocumentViewModel?.ApplySectionGutter(gutterMm);
             if (DocumentViewModel is not null)
                 SyncRulerToDocument(DocumentViewModel.Document);
         }
 
-        public void SetColumns(int c) => DocumentViewModel?.SetColumns(c);
+        public void SetColumns(int c) => DocumentViewModel?.ApplySectionColumns(c);
+
+        public int GetColumnCount() => DocumentViewModel?.GetSectionColumnCount() ?? 1;
+
+        public bool PageSetupToSelection
+        {
+            get => DocumentViewModel?.PageSetupToSelection ?? false;
+            set
+            {
+                if (DocumentViewModel is not null) DocumentViewModel.PageSetupToSelection = value;
+            }
+        }
 
         // ── Вид ───────────────────────────────────────────────────────────
 

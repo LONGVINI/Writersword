@@ -1206,6 +1206,8 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
 
         private void OnLabelChipDragOver(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             e.DragEffects = e.DataTransfer.Contains(CharacterDragFormats.LabelId)
                 ? DragDropEffects.Move
                 : DragDropEffects.None;
@@ -1214,6 +1216,8 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
 
         private void OnLabelChipDrop(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             e.Handled = true;
 
             if (sender is not Control chip) return;
@@ -1615,6 +1619,8 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
         // плиток между собой идёт вручную, ради призрака под курсором.
         private void OnGalleryDragOver(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             e.DragEffects = e.DataTransfer.Contains(DataFormat.File)
                 ? DragDropEffects.Copy
                 : DragDropEffects.None;
@@ -1624,6 +1630,8 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
 
         private async void OnGalleryDrop(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             e.Handled = true;
 
             if (DataContext is not CharacterBasicsTabViewModel vm) return;
@@ -1743,6 +1751,31 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
 
         // Крестик на чипе набора: набор перестаёт числиться в составе карточки,
         // значения полей при этом остаются.
+        /// <summary>Уровень в заголовке раздела — глубина анкеты у этого персонажа.</summary>
+        private void OnSectionDepthClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is not Control c || c.DataContext is not CharacterDepthOptionViewModel option) return;
+            if (option.IsSelected) return;
+            option.Choose();
+        }
+
+        /// <summary>Вернуть разделу глубину по важности персонажа.</summary>
+        private void OnSectionDepthResetClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is not Control c || c.DataContext is not CharacterAnketaSectionViewModel section) return;
+            section.ResetDepth();
+        }
+
+        /// <summary>«Ещё N полей» под разделом — раскрыть следующий уровень.</summary>
+        private void OnSectionDeeperClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is not Control c || c.DataContext is not CharacterAnketaSectionViewModel section) return;
+            section.ShowDeeper();
+        }
+
         /// <summary>Крестик в заголовке раздела анкеты — отключить её от персонажа.</summary>
         private void OnDetachSectionClick(object? sender, RoutedEventArgs e)
         {

@@ -59,6 +59,11 @@ namespace Writersword.Modules.Characters.Controls
         {
             if (sender is not Slider slider || !slider.IsEnabled) return;
 
+            // Режим сравнения версий: ползунок только показывает значение.
+            // Нажатие уже погашено на корне модуля, но этот обработчик слушает
+            // и погашенные — проверять приходится и здесь.
+            if (Views.CharactersReadOnlyGate.IsReadOnly(slider)) return;
+
             var point = e.GetCurrentPoint(slider);
             if (!point.Properties.IsLeftButtonPressed) return;
 

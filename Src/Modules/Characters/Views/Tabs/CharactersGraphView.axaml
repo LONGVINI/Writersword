@@ -17,12 +17,12 @@
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            VerticalAlignment="Center"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
-                    <Button Content="{x:Static loc:CharactersStrings.Graph_ClearFocus}"
+                    <Button Classes="ro-allow" Content="{x:Static loc:CharactersStrings.Graph_ClearFocus}"
                             Command="{Binding ClearFocusCommand}"
                             FontSize="11" Padding="8,4"
                             IsVisible="{Binding FocusedCharacterId,
                                 Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                    <Button Content="{x:Static loc:CharactersStrings.Graph_ResetView}"
+                    <Button Classes="ro-allow" Content="{x:Static loc:CharactersStrings.Graph_ResetView}"
                             Command="{Binding ResetViewCommand}"
                             FontSize="11" Padding="8,4"/>
                 </StackPanel>

@@ -433,6 +433,14 @@
     <value>Comment</value>
     <comment>Insert tab button</comment>
   </data>
+  <data name="Insert_DateTime" xml:space="preserve">
+    <value>Date &amp; Time</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="Insert_Formula" xml:space="preserve">
+    <value>Equation</value>
+    <comment>Insert tab button</comment>
+  </data>
   <data name="Insert_Footnote" xml:space="preserve">
     <value>Footnote</value>
     <comment>Insert tab button</comment>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using ReactiveUI;
@@ -564,8 +564,30 @@ namespace Writersword.Modules.TextEditor.ViewModels
             PageRuleAction.ShowHeaderFooter => "колонтитулы видны",
             PageRuleAction.RestartNumbering => "счёт с " + (rule.StartNumber ?? 1).ToString(CultureInfo.CurrentCulture),
             PageRuleAction.ManualNumber => "номер «" + rule.ManualText + "»",
+            PageRuleAction.SetText => rule.Texts is null ? "общие колонтитулы" : "свои колонтитулы" + TextsPreview(rule.Texts),
             _ => "вид номера: " + FormatName(rule.Format ?? PageNumberFormat.Arabic)
         };
+
+        /// <summary>Начало своего текста колонтитулов для списка правил: «: Глава 2».</summary>
+        private static string TextsPreview(HeaderFooterTexts? texts)
+        {
+            if (texts is null) return string.Empty;
+
+            foreach (var band in new[] { texts.Header, texts.Footer })
+            {
+                foreach (var slot in new[] { band.Left, band.Center, band.Right })
+                {
+                    string text = slot.Replace(HeaderFooterSettings.PageToken, "#", StringComparison.Ordinal)
+                                      .Replace(HeaderFooterSettings.PagesToken, "#", StringComparison.Ordinal)
+                                      .Replace('\n', ' ').Trim();
+                    if (text.Length == 0) continue;
+                    if (text.Length > 28) text = text.Substring(0, 28).TrimEnd() + "…";
+                    return ": " + text;
+                }
+            }
+
+            return ": пусто";
+        }
 
         /// <summary>Подпись вида номера для списка и ленты.</summary>
         public static string FormatName(PageNumberFormat format) => format switch
@@ -671,7 +693,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 changed = true;
 
                 if (result.NewTemplate is not null)
-                    working.GetBand(decoration.Variant, header).SetSlot(slot, result.NewTemplate);
+                    working.BandFor(decoration, header).SetSlot(slot, result.NewTemplate);
 
                 working.Rules.RemoveAll(r => result.RemovedRuleIds.Contains(r.Id));
                 working.Rules.AddRange(result.AddedRules);
@@ -698,7 +720,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var decoration = EvaluatePage(settings, page);
             if (decoration is null) return new[] { string.Empty, string.Empty, string.Empty };
 
-            var band = settings.GetBand(decoration.Variant, header);
+            var band = settings.BandFor(decoration, header);
             return new[]
             {
                 PageNumbering.RenderForEditing(band.Left, decoration).Text,
@@ -712,7 +734,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             var decoration = GetPageDecoration(page);
             string band = header ? "Верхний колонтитул" : "Нижний колонтитул";
-            string scope = decoration?.Variant switch
+            string scope = decoration?.TextsRuleId is not null
+                ? "страницы со своими колонтитулами (из правила страниц)"
+                : decoration?.Variant switch
             {
                 HeaderFooterVariant.First => "первая страница",
                 HeaderFooterVariant.Even => "все чётные страницы",

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Windows.Input;
 using Avalonia.Threading;
 using ReactiveUI;
@@ -46,6 +46,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             AcceptCommand = ReactiveCommand.Create(() => _host.ExecuteReview(ReviewAction.Accept));
             RejectCommand = ReactiveCommand.Create(() => _host.ExecuteReview(ReviewAction.Reject));
             AcceptAllCommand = ReactiveCommand.Create(() => _host.ExecuteReview(ReviewAction.AcceptAll));
+            NewNoteCommand = ReactiveCommand.Create(() => _host.InsertComment(Models.Document.CommentKind.Note));
+            NewSuggestionCommand = ReactiveCommand.Create(() => _host.InsertComment(Models.Document.CommentKind.Suggestion));
+            NewRequirementCommand = ReactiveCommand.Create(() => _host.InsertComment(Models.Document.CommentKind.Requirement));
             RejectAllCommand = ReactiveCommand.Create(() => _host.ExecuteReview(ReviewAction.RejectAll));
             NextCommand = ReactiveCommand.Create(() => _host.ExecuteReview(ReviewAction.Next));
             PreviousCommand = ReactiveCommand.Create(() => _host.ExecuteReview(ReviewAction.Previous));
@@ -101,6 +104,19 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
                 _host.SetReviewerName(text);
                 _reviewerName = _host.ReviewerName;
+                this.RaisePropertyChanged();
+            }
+        }
+
+        // ── Панель ────────────────────────────────────────────────────────
+
+        /// <summary>Панель рецензии справа от листов открыта.</summary>
+        public bool IsReviewPanelOpen
+        {
+            get => _host.IsReviewPanelVisible;
+            set
+            {
+                if (_host.IsReviewPanelVisible != value) _host.ToggleReviewPanel();
                 this.RaisePropertyChanged();
             }
         }
@@ -184,6 +200,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand AcceptCommand { get; }
         public ICommand RejectCommand { get; }
         public ICommand AcceptAllCommand { get; }
+
+        /// <summary>Оставить примечание, предложение или требование к выделенному месту.</summary>
+        public ICommand NewNoteCommand { get; }
+        public ICommand NewSuggestionCommand { get; }
+        public ICommand NewRequirementCommand { get; }
         public ICommand RejectAllCommand { get; }
         public ICommand NextCommand { get; }
         public ICommand PreviousCommand { get; }
@@ -193,6 +214,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private void OnReviewStateChanged()
         {
             this.RaisePropertyChanged(nameof(IsTrackRevisions));
+            this.RaisePropertyChanged(nameof(IsReviewPanelOpen));
             RaiseViewProperties();
 
             string name = _host.ReviewerName;
@@ -225,7 +247,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// <summary>Сворачивает группы по ширине окна: сначала «Показ», затем «Запись».</summary>
         public void UpdateLayout(double availableWidth)
         {
-            if (availableWidth >= 640)
+            if (availableWidth >= 700)
             {
                 IsRecordGroupExpanded = true;
                 IsViewGroupExpanded = true;
@@ -235,7 +257,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             IsViewGroupExpanded = false;
 
-            if (availableWidth >= 480)
+            if (availableWidth >= 540)
             {
                 IsRecordGroupExpanded = true;
                 IsChangesGroupExpanded = true;

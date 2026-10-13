@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -218,7 +218,7 @@ namespace Writersword.Modules.TextEditor.Services
             var result = new[] { string.Empty, string.Empty, string.Empty };
             if (!decoration.BandsVisible) return result;
 
-            var band = settings.GetBand(decoration.Variant, header);
+            var band = settings.BandFor(decoration, header);
             for (int slot = 0; slot < 3; slot++)
             {
                 string template = band.GetSlot(slot);

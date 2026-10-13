@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -191,6 +191,9 @@ namespace Writersword.Modules.TextEditor.Commands
             doc.ColumnSettings.GapMm = restored.ColumnSettings.GapMm;
             doc.ColumnSettings.ShowSeparator = restored.ColumnSettings.ShowSeparator;
 
+            // Последний раздел сверх листа и колонок: рамка, номера строк, начало счёта.
+            doc.FinalSection = restored.FinalSection?.Clone();
+
             // Свойства рукописи, живущие вне разделов. Снимок их сохранял, а
             // восстановление обходило стороной, и отмена возвращала текст, оставляя
             // на месте шаг табуляции, настройки оглавления, замены и примечания —
@@ -198,6 +201,10 @@ namespace Writersword.Modules.TextEditor.Commands
             doc.DefaultTabStopPt = restored.DefaultTabStopPt;
             doc.CollapseParagraphSpacing = restored.CollapseParagraphSpacing;
             doc.JustifyWithShrinking = restored.JustifyWithShrinking;
+            doc.FootnoteNumberFormat = restored.FootnoteNumberFormat;
+            doc.EndnoteNumberFormat = restored.EndnoteNumberFormat;
+            doc.FootnoteNumberStart = restored.FootnoteNumberStart;
+            doc.EndnoteNumberStart = restored.EndnoteNumberStart;
             doc.TableOfContents = restored.TableOfContents;
             doc.DocumentAutoReplaceRules = restored.DocumentAutoReplaceRules;
 
@@ -209,6 +216,10 @@ namespace Writersword.Modules.TextEditor.Commands
             doc.Annotations.Clear();
             foreach (var annotation in restored.Annotations)
                 doc.Annotations.Add(annotation);
+
+            doc.Comments.Clear();
+            foreach (var comment in restored.Comments)
+                doc.Comments.Add(comment);
 
             if (frameChanged)
             {

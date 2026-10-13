@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text.Json.Serialization;
 
 namespace Writersword.Modules.TextEditor.Models.Inline
@@ -39,6 +39,14 @@ namespace Writersword.Modules.TextEditor.Models.Inline
         /// Записан кодом намеренно: сам символ невидим в редакторе кода.
         /// </summary>
         public const char ObjectPlaceholder = (char)0xFFFC;
+
+        /// <summary>
+        /// Фрагмент следующего абзаца, подклеенный только для показа: знак абзаца между
+        /// ними спрятан правкой (RevisionDisplay.DisplayParagraph). В модели его нет —
+        /// каретка в него не заходит, позиции вёрстки за концом абзаца сводятся к концу.
+        /// </summary>
+        [JsonIgnore]
+        public bool DisplayTail { get; set; }
 
         /// <summary>Является ли run встроенным объектом (картинкой).</summary>
         [JsonIgnore]

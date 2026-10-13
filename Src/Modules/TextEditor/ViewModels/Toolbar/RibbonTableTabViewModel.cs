@@ -1023,6 +1023,27 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             RefreshPaddingState();
             RefreshPatternState();
             RefreshPlacementState();
+            RefreshCellSizeState();
+        }
+
+        /// <summary>
+        /// Ширина столбца и высота строки под кареткой — в поля размеров. Значения
+        /// кладутся мимо сеттеров: сеттеры сразу пишут размер в документ, а здесь
+        /// поля только показывают то, что стоит на листе. Раньше их не перечитывал
+        /// никто, и в любой ячейке стояли начальные 40 мм и 20 пт.
+        /// </summary>
+        private void RefreshCellSizeState()
+        {
+            if (_target.TableGetCellSize() is not { } size) return;
+
+            _columnWidthMm = Math.Clamp(Math.Round((decimal)size.ColumnWidthMm, 2), 5m, 400m);
+            if (size.RowHeightPt > 0)
+                _rowHeightPt = Math.Clamp(Math.Round((decimal)size.RowHeightPt, 2), 6m, 600m);
+
+            this.RaisePropertyChanged(nameof(ColumnWidthMm));
+            this.RaisePropertyChanged(nameof(ColumnWidth));
+            this.RaisePropertyChanged(nameof(RowHeightPt));
+            this.RaisePropertyChanged(nameof(RowHeight));
         }
 
         /// <summary>

@@ -125,17 +125,17 @@ namespace Writersword.Modules.TextEditor.Document
             // Когда compositor показывает стale-кадр во время скролла, старый битмап
             // уже покрывает новую позицию → нет чёрных полос.
             float scrollY = (float)_scrollOffsetY;
-            float overlapPx = viewportPx;
             float docHeightPx = (float)Bounds.Height;
 
             // bitmapTopY — верхняя граница рендерируемой области в пикселях документа.
-            float bitmapTopY = Math.Max(scrollY - overlapPx, 0f);
-            // Нижняя граница не выходит за документ.
-            float bitmapBotY = Math.Min(bitmapTopY + viewportPx + overlapPx * 2f, docHeightPx);
-            // Если у нижней границы документа не хватает места снизу — сдвигаем верх вниз.
-            bitmapTopY = Math.Max(bitmapBotY - viewportPx - overlapPx * 2f, 0f);
-
-            int pixelH = (int)Math.Max(bitmapBotY - bitmapTopY, 1);
+            // Полоса снимка — общий расчёт с фоновой дорисовкой (SnapshotBand): верх на
+            // целом пикселе, иначе строки разных снимков округлялись по-разному.
+            // Во время набора кадр — ровно окно (DocumentCanvas.ScrollSnapshot): запас
+            // сверху и снизу дорисуется после паузы.
+            bool editFrame = RecentContentEdit && AsyncSnapshotAllowed;
+            var (bitmapTopY, pixelH) = editFrame
+                ? EditBand(scrollY, viewportPx, docHeightPx)
+                : SnapshotBand(scrollY, viewportPx, docHeightPx);
             float bitmapTopYInPts = scale > 0f ? bitmapTopY / scale : 0f;
 
             // scrollYInPts нужен только для DrawCaret (рисуется в координатах документа).
@@ -459,14 +459,31 @@ namespace Writersword.Modules.TextEditor.Document
                 using var offscreenSurface = ScreenTextSmoothing.CreateSurface(renderTarget, _snapshotPixelGeometry);
                 using var offscreenOwnCanvas = offscreenSurface is null ? new SKCanvas(renderTarget) : null;
                 var offscreen = offscreenSurface?.Canvas ?? offscreenOwnCanvas!;
-                offscreen.Clear(SKColors.Transparent);
+                var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
+
+                // Кадр набора, в котором поменялся один лист (DocumentCanvas.PartialRender):
+                // битмап хранит прошлый кадр той же полосы, перерисовывается только этот лист.
+                int partialPage = TakePartialPage(
+                    editFrame && mode == EditorViewMode.Page && !SpreadMode && !ReadingRibbon,
+                    renderTarget, bitmapTopY, pixelW, pixelH, zoom, pages.Count);
+                SKRect partialRectPt = default;
+                if (partialPage >= 0)
+                    partialRectPt = PartialPageRectPt(partialPage, pages, canvasWidth);
+
+                if (partialPage < 0)
+                    offscreen.Clear(SKColors.Transparent);
                 offscreen.Save();
                 offscreen.Scale(scale, scale);
                 // Трансляция -bitmapTopYInPts сдвигает координаты документа
                 // так что область [bitmapTopY, bitmapTopY+pixelH] ложится в битмап.
                 offscreen.Translate(0f, -bitmapTopYInPts);
 
-                var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
+                if (partialPage >= 0)
+                {
+                    // Клип по листу; очистка заливает только его.
+                    offscreen.ClipRect(partialRectPt);
+                    offscreen.Clear(SKColors.Transparent);
+                }
 
                 // Текстовое выделение в снимок не попадает: его рисует DrawSelectionOverlay
                 // поверх снимка. Тогда смена выделения (протяжка мышью, Shift+стрелки)
@@ -474,30 +491,68 @@ namespace Writersword.Modules.TextEditor.Document
                 // а не полной перерисовкой всех видимых листов.
                 long perfContentTs = PerfNow();
                 _selectionAsOverlay = true;
+
+                // Кадр набора: проход берёт листы ровно по полосе кадра, без запаса, а
+                // при одном изменённом листе — только по его высоте.
+                if (editFrame)
+                {
+                    t_tightPageRange = true;
+                    if (partialPage >= 0)
+                    {
+                        float bandTopPx = Math.Max(partialRectPt.Top * scale, bitmapTopY);
+                        float bandBotPx = Math.Min(partialRectPt.Bottom * scale, bitmapTopY + pixelH);
+                        t_contentViewTopPx = bandTopPx;
+                        t_contentViewHeightPx = Math.Max(bandBotPx - bandTopPx, 1f);
+                    }
+                    else
+                    {
+                        t_contentViewTopPx = bitmapTopY;
+                        t_contentViewHeightPx = pixelH;
+                    }
+                }
+
+                // Листы, которые этот снимок действительно нарисовал: по ним подложка
+                // решает, где бумагу нужно дорисовать самой (см. RenderPageSkeleton).
+                int snapFirstPage = -1;
+                int snapLastPage = -1;
                 try
                 {
                     if (mode == EditorViewMode.Page || SpreadMode || ReadingRibbon)
                         RenderPageMode(offscreen, layouts, pages, tables, images, canvasHeightPt, canvasWidth, false);
                     else
                         RenderFlowMode(offscreen, mode, layouts, tables, images, canvasHeightPt, canvasWidth, false);
+
+                    PerfTime(partialPage >= 0 ? "r.partial.content" : "r.full.content", perfContentTs);
+
+                    if (partialPage >= 0)
+                    {
+                        // Полоса та же, что у прошлого кадра, — и листы в снимке те же.
+                        snapFirstPage = _partialTargetFirstPage;
+                        snapLastPage = _partialTargetLastPage;
+                    }
+                    else if (mode == EditorViewMode.Page || SpreadMode || ReadingRibbon)
+                    {
+                        var (perfFirstPage, perfLastPage) = GetVisiblePageRange(pages);
+                        snapFirstPage = perfFirstPage;
+                        snapLastPage = perfLastPage;
+                        PerfInfo("pages", $"{perfFirstPage}..{perfLastPage}");
+                    }
                 }
                 finally
                 {
                     _selectionAsOverlay = false;
+                    if (editFrame)
+                    {
+                        t_tightPageRange = false;
+                        t_contentViewTopPx = null;
+                        t_contentViewHeightPx = null;
+                    }
                 }
-                PerfTime("r.full.content", perfContentTs);
+                if (editFrame) PerfCount("r.edit.frame");
 
-                // Листы, которые этот снимок действительно нарисовал: по ним подложка
-                // решает, где бумагу нужно дорисовать самой (см. RenderPageSkeleton).
-                int snapFirstPage = -1;
-                int snapLastPage = -1;
-                if (mode == EditorViewMode.Page || SpreadMode || ReadingRibbon)
-                {
-                    var (perfFirstPage, perfLastPage) = GetVisiblePageRange(pages);
-                    snapFirstPage = perfFirstPage;
-                    snapLastPage = perfLastPage;
-                    PerfInfo("pages", $"{perfFirstPage}..{perfLastPage}");
-                }
+                // Битмап теперь хранит кадр этой полосы целиком — по нему следующий кадр
+                // набора сможет перерисовать один лист.
+                RememberPartialTarget(renderTarget, bitmapTopY, pixelW, pixelH, zoom, snapFirstPage, snapLastPage);
                 PerfInfo("bitmap", $"{pixelW}x{pixelH}");
                 PerfInfo("perRow", _pagesPerRow.ToString());
                 PerfInfo("zoom", Zoom.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
@@ -1228,6 +1283,9 @@ namespace Writersword.Modules.TextEditor.Document
                 }
 
                 RenderPageContent(canvas, layouts, pages, tables, images, firstPage, lastPage, drawCaret);
+
+                // Карточки правок справа от листов (DocumentCanvas.RevisionCards).
+                DrawRevisionCards(canvas, layouts, pages, firstPage, lastPage);
                 return;
             }
 
@@ -1344,6 +1402,10 @@ namespace Writersword.Modules.TextEditor.Document
                 canvas.Restore();
             }
 
+            // Карточки правок — между листами, вне клипа листов (DocumentCanvas.RevisionCards).
+            if (!SpreadMode)
+                DrawRevisionCards(canvas, layouts, pages, firstPage, lastPage);
+
             // Еле заметные номера у нижних внешних углов. Рисуются после содержимого,
             // но до сгиба и света: цифра — часть страницы, а не наклейка поверх книги.
             for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
@@ -1423,10 +1485,15 @@ namespace Writersword.Modules.TextEditor.Document
             // правилу, что и картинки: за текстом значит под ним.
             RenderShapes(canvas, pages, firstPage, lastPage, beforeText: true);
 
+            // Рамка страницы раздела «за текстом» (DocumentCanvas.PageDecor).
+            DrawPageBorders(canvas, layouts, tables, pages, firstPage, lastPage, behind: true);
+
             // Изображения-блоки (рисуются поверх белого листа, в координатах в пунктах).
             // Картинки за текстом (Behind) и блок-картинки (Inline) — рисуются до текста.
             foreach (var ie in images)
             {
+                // Плавающая картинка, спрятанная правкой при этом виде показа, не рисуется.
+                if (FloatingImageHiddenByRevision(ie.Block)) continue;
                 if (ie.PageIndex < firstPage || ie.PageIndex > lastPage) continue;
                 // Картинку в строке рисует рендер текста на своём месте в строке —
                 // здесь она была бы нарисована второй раз, поверх текста.
@@ -1523,6 +1590,9 @@ namespace Writersword.Modules.TextEditor.Document
                 // есть и где он лежит, но что он вне страницы.
                 if (imgOffPage) DrawOffPageHatch(canvas, imgRect);
 
+                // Плавающая картинка, вставленная или удалённая правкой, — с отметкой.
+                DrawFloatingRevisionMark(canvas, ie.Block, imgRect);
+
                 if (hasXform) canvas.Restore();
                 if (imgClip) canvas.Restore();
             }
@@ -1586,6 +1656,19 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
 
+            // Сноски листов: черта и текст у нижнего поля (DocumentCanvas.Notes).
+            RenderNotes(canvas, pages, firstPage, lastPage);
+
+            // Черты между колонками раздела (DocumentCanvas.Columns).
+            DrawColumnRules(canvas, pages, firstPage, lastPage);
+
+            // Рамка страницы и номера строк раздела (DocumentCanvas.PageDecor).
+            DrawPageBorders(canvas, layouts, tables, pages, firstPage, lastPage, behind: false);
+            DrawLineNumbers(canvas, layouts, tables, pages, firstPage, lastPage);
+
+            // Значки примечаний на правом поле (DocumentCanvas.Comments).
+            RenderCommentMarkers(canvas, layouts, pages, firstPage, lastPage);
+
             // Явные разрывы страницы — отметкой, когда показаны непечатаемые знаки.
             if (FormattingMarksVisible)
                 DrawPageBreakMarks(canvas, pages, firstPage, lastPage);
@@ -1596,6 +1679,8 @@ namespace Writersword.Modules.TextEditor.Document
             // Картинки поверх текста (InFront / Square / Tight) — рисуются после текста.
             foreach (var ie in images)
             {
+                // Плавающая картинка, спрятанная правкой при этом виде показа, не рисуется.
+                if (FloatingImageHiddenByRevision(ie.Block)) continue;
                 if (ie.PageIndex < firstPage || ie.PageIndex > lastPage) continue;
                 if (ie.InLine) continue;
                 var wm = ie.Block.WrapMode;
@@ -1694,6 +1779,9 @@ namespace Writersword.Modules.TextEditor.Document
                 // Помечаем красной штриховкой поверх бледной картинки — видно, что объект
                 // есть и где он лежит, но что он вне страницы.
                 if (imgOffPage) DrawOffPageHatch(canvas, imgRect);
+
+                // Плавающая картинка, вставленная или удалённая правкой, — с отметкой.
+                DrawFloatingRevisionMark(canvas, ie.Block, imgRect);
 
                 if (hasXform) canvas.Restore();
                 if (imgClip) canvas.Restore();
@@ -1899,9 +1987,35 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (seg.InlineImageId is not Guid id) return;
 
+            // Знак сноски: цифра шрифтом своего места в тексте, над строкой.
+            if (_noteNumbering.MarkOf(id) is { } noteMark)
+            {
+                SKTextRenderer.DrawNoteMark(canvas, seg, noteMark, segX, baseY);
+                return;
+            }
+
+            // Живое поле: дата, номер страницы — тем текстом, которым сверстано.
+            if (LaidOutFieldText(id) is { } fieldText)
+            {
+                SKTextRenderer.DrawNoteMark(canvas, seg, fieldText, segX, baseY);
+                return;
+            }
+
             var block = FindInlineImage(id);
             if (block is null)
             {
+                // Формула Word: рисуется своими знаками от базовой линии строки,
+                // цветом текста, которым набрана.
+                if (FindInlineFormula(id) is { } formula)
+                {
+                    canvas.Save();
+                    ClipInlineObjectToPage(canvas, baseY - seg.BaselineShiftPt, seg.ObjectHeightPt);
+                    Rendering.Formulas.FormulaRenderer.Draw(
+                        canvas, formula, segX, baseY, seg.Color, SKTextRenderer.ReadingFontScale);
+                    canvas.Restore();
+                    return;
+                }
+
                 // Объект строки может быть и фигурой Word (wps:wsp в wp:inline).
                 DrawInlineShapeSegment(canvas, seg, segX, baseY, id);
                 return;
@@ -1943,6 +2057,9 @@ namespace Writersword.Modules.TextEditor.Document
                         cx, cy);
             }
             DrawInlineImageBody(canvas, block, skImg, left, top, imgW, imgH);
+
+            // Картинка, вставленная или удалённая правкой, — с отметкой правки.
+            DrawInlineRevisionMark(canvas, id, segX, baseY - boxH, boxW, boxH);
         }
 
         /// <summary>
@@ -2822,6 +2939,10 @@ namespace Writersword.Modules.TextEditor.Document
         // укоротить. Ноль поставил бы цифру вплотную к обрезу.
         private const float ListMarkerSheetGuardPt = 4f;
 
+        // Расстояние от колонки текста до черты исправлений на листе: у Word черта
+        // стоит на поле в полудюйме от текста.
+        private const float ChangeBarSheetGapPt = 36f;
+
         /// <summary>
         /// Рисует один параграф (обычный или в ячейке таблицы).
         /// Для ячейки применяет clip-rect.
@@ -2935,6 +3056,25 @@ namespace Writersword.Modules.TextEditor.Document
                     markerHanging -= limit - markerX;
             }
 
+            // Черта исправлений на листе стоит там же, где у Word: на левом поле, в
+            // полудюйме от колонки текста. На узком поле она остаётся на бумаге — у
+            // самого края листа, а не за ним, где её срезал бы клип страницы. Абзац в
+            // ячейке таблицы и текст вне режима страниц берут место черты у рендера.
+            float? changeBarX = null;
+            if (!isCell && DocVm?.ViewMode == EditorViewMode.Page)
+            {
+                List<PageRect> changeBarPages;
+                lock (_renderLock) { changeBarPages = _pages; }
+
+                if (pl.PageIndex >= 0 && pl.PageIndex < changeBarPages.Count)
+                {
+                    float sheetLeftPt = changeBarPages[pl.PageIndex].PadLeftPt;
+                    changeBarX = Math.Max(
+                        absX - ChangeBarSheetGapPt,
+                        sheetLeftPt + ListMarkerSheetGuardPt);
+                }
+            }
+
             SKTextRenderer.RenderParagraphLines(
                 canvas, renderLayout,
                 absX + renderLayout.LeftIndentPt,
@@ -2942,7 +3082,8 @@ namespace Writersword.Modules.TextEditor.Document
                 pl.LineFrom, pl.LineTo,
                 markerText: markerText,
                 markerHangingPt: markerHanging,
-                markerMinGapPt: markerMinGap);
+                markerMinGapPt: markerMinGap,
+                changeBarXPt: changeBarX);
 
             // Непечатаемые знаки поверх текста, под выделением и кареткой.
             if (FormattingMarksVisible)
@@ -3072,7 +3213,7 @@ namespace Writersword.Modules.TextEditor.Document
             double zoom2 = Zoom;
             float viewTopPt = (float)(ContentScrollTopPx / zoom2 * PxToPt);
             float viewBotPt = (float)((ContentScrollTopPx + ContentViewportPx) / zoom2 * PxToPt);
-            float bufferPt = (pages.Count > 0 ? pages[0].HeightPt : 842f) + PageGapPt;
+            float bufferPt = t_tightPageRange ? 0f : (pages.Count > 0 ? pages[0].HeightPt : 842f) + PageGapPt;
             viewTopPt -= bufferPt;
             viewBotPt += bufferPt;
 
@@ -3099,16 +3240,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Страницы рядом: видимость определяется визуальными рядами.
             if (_pagesPerRow > 1)
-            {
-                int cols = _pagesPerRow;
-                float rowH = pages[0].HeightPt + PageGapPt;
-                int lastRowIdx = (pages.Count - 1) / cols;
-                int firstRow = Math.Clamp((int)((viewTopPt - PageGapPt) / rowH), 0, lastRowIdx);
-                int lastRow = Math.Clamp((int)((viewBotPt - PageGapPt) / rowH), firstRow, lastRowIdx);
-                int firstV = firstRow * cols;
-                int lastV = Math.Min(pages.Count - 1, lastRow * cols + cols - 1);
-                return (firstV, lastV);
-            }
+                return VisiblePagesInGrid(pages, viewTopPt, viewBotPt);
 
             int first = 0, last = pages.Count - 1;
             for (int i = 0; i < pages.Count; i++)

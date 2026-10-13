@@ -8,6 +8,13 @@ namespace Writersword.Modules.Characters.Models
     /// </summary>
     public class CharactersModuleData
     {
+        /// <summary>
+        /// Версия устройства данных. 2 — анкеты стали разделами с уровнями
+        /// детализации, жанровые наборы переехали в шаблоны. Сохранения
+        /// первой версии переводятся при загрузке (CharactersDataMigration).
+        /// </summary>
+        public const int CurrentSchemaVersion = 2;
+
         public int SchemaVersion { get; set; } = 1;
 
         /// <summary>
@@ -60,6 +67,13 @@ namespace Writersword.Modules.Characters.Models
         /// и на сами анкеты это не влияет.
         /// </summary>
         public List<string> RecentAnketaIds { get; set; } = new();
+
+        /// <summary>
+        /// Библиотека своих значков проекта — картинки, которые автор принёс
+        /// для анкет, шаблонов и меток. Одна на проект: значок, добавленный в
+        /// одном месте, доступен во всех остальных.
+        /// </summary>
+        public List<CharacterIconEntry> CustomIcons { get; set; } = new();
         public List<CharacterFolder> Folders { get; set; } = new();
 
         /// <summary>

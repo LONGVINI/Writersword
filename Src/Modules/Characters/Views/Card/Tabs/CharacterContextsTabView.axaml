@@ -17,7 +17,7 @@
                 <ItemsControl ItemsSource="{Binding Contexts}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="models:CharacterContext">
-                            <Button Click="OnContextSelectClick"
+                            <Button Classes="ro-allow" Click="OnContextSelectClick"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     HorizontalAlignment="Stretch"

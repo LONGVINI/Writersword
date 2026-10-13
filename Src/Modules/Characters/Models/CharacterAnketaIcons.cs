@@ -59,7 +59,13 @@ namespace Writersword.Modules.Characters.Models
             ("brush", "Творчество", "M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3zm13.71-9.37l-1.34-1.34c-.39-.39-1.02-.39-1.41 0L9 12.25 11.75 15l8.96-8.96c.39-.39.39-1.02 0-1.41z"),
             ("trophy", "Достижения", "M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"),
             ("camera", "Облик", "M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8.2c-1.77 0-3.2 1.43-3.2 3.2s1.43 3.2 3.2 3.2 3.2-1.43 3.2-3.2-1.43-3.2-3.2-3.2z"),
-            ("check", "Итоги", "M9,16.17L4.83,12l-1.42,1.41L9,19 21,7l-1.41,-1.41z")
+            ("check", "Итоги", "M9,16.17L4.83,12l-1.42,1.41L9,19 21,7l-1.41,-1.41z"),
+
+            // Значки, что раньше были только у меток. Набор теперь один на
+            // всё — анкеты, шаблоны, метки, значки полей: то, что подходит
+            // метке, может пригодиться и анкете, и наоборот.
+            ("dot", "Точка", "M12,7 A5,5 0 1 1 11.99,7 Z"),
+            ("cross", "Крестик", "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z")
         };
 
         private static readonly Dictionary<string, string> Paths =
@@ -76,5 +82,16 @@ namespace Writersword.Modules.Characters.Models
         /// <summary>Геометрия по ключу; неизвестный или пустой ключ — книга.</summary>
         public static string GetPathData(string? key) =>
             key != null && Paths.TryGetValue(key, out var path) ? path : Paths[Default];
+
+        /// <summary>Ключ есть во встроенном наборе.</summary>
+        public static bool Contains(string? key) => key != null && Paths.ContainsKey(key);
+
+        /// <summary>Геометрия встроенного значка или null, если ключ не из набора.</summary>
+        public static string? FindPathData(string? key) =>
+            key != null && Paths.TryGetValue(key, out var path) ? path : null;
+
+        /// <summary>Подпись встроенного значка — для подсказки и поиска.</summary>
+        public static string LabelOf(string? key) =>
+            All.FirstOrDefault(i => i.Key == key).Label ?? string.Empty;
     }
 }

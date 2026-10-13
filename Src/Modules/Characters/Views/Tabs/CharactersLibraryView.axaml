@@ -34,13 +34,13 @@
 				<Border Grid.Column="0" Padding="3" CornerRadius="8"
 				        Background="{DynamicResource BgSurfaceBrush}">
 					<StackPanel Orientation="Horizontal" Spacing="2">
-						<Button Classes="part"
+						<Button Classes="part ro-allow"
 						        Classes.active="{Binding IsTab3Active}"
 						        Command="{Binding GoToTemplatesCommand}"
 						        Content="Шаблоны"
 						        behaviours:TooltipBehavior.Tip="Шаблоны"
 						        behaviours:TooltipBehavior.Description="Наборы анкет под проект. Анкеты шаблона проекта получает каждый новый персонаж"/>
-						<Button Classes="part"
+						<Button Classes="part ro-allow"
 						        Classes.active="{Binding IsTab4Active}"
 						        Command="{Binding GoToAnketasCommand}"
 						        Content="Редактор анкет"

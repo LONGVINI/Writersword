@@ -295,6 +295,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Func<CellTextDirection>? TableGetCellTextDirectionDelegate { get; set; }
         public Action? TableToggleRowHeightExactDelegate { get; set; }
         public Func<bool>? TableGetRowHeightExactDelegate { get; set; }
+
+        /// <summary>Ширина столбца (мм) и высота строки (пт) под кареткой — с листа.</summary>
+        public Func<(double ColumnWidthMm, double RowHeightPt)?>? TableGetCellSizeDelegate { get; set; }
         public Action<string, BorderStyle, double, string?>? TableSetCellBorderDelegate { get; set; }
         public Action<double>? TableSetColumnWidthDelegate { get; set; }
         public Action<double>? TableSetRowHeightDelegate { get; set; }
@@ -539,6 +542,20 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             var v = _lastFormatAffected;
             _lastFormatAffected = null;
+            return v;
+        }
+
+        // Абзацы ячеек, затронутые последним форматированием абзаца. Канвас по ним
+        // сбрасывает раскладку только их таблиц: без списка он считал затронутое
+        // неизвестным и сбрасывал раскладку всего документа — на каждое движение
+        // стрелки отступа в ячейке весь документ уходил в пересчёт строк, и отступ
+        // появлялся лишь через секунды.
+        private IReadOnlyList<ParagraphBlock>? _lastFormatCells;
+
+        public IReadOnlyList<ParagraphBlock>? TakeLastFormatCells()
+        {
+            var v = _lastFormatCells;
+            _lastFormatCells = null;
             return v;
         }
 
@@ -1239,6 +1256,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ctx.RightIndentPt = block.Properties.RightIndent ?? 0;
             ctx.HasSpaceBefore = ResolveEffectiveSpaceBefore(block) > 0;
             ctx.HasSpaceAfter = ResolveEffectiveSpaceAfter(block) > 0;
+            ctx.IsAtFormula = HasFormulaNear(block, pvm.SelectionStart, pvm.SelectionEnd);
 
             // Для окна «Эффекты текста»: свойства под кареткой и чем рисовать образец.
             _caretRunProperties = rp;
@@ -3458,6 +3476,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Снимок до/после вставки — для Ctrl+Z.
             BeginEditDelegate?.Invoke("Вставка изображения");
+
+            // Запись исправлений: новая картинка — вставка правкой.
+            MarkNewImageInserted(image);
             var section = _document.Sections[0];
 
             // Картинка «в тексте» — обычный символ в строке под кареткой. Отдельным блоком
@@ -3500,8 +3521,28 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             section.InlineObjects.Add(image);
             para.InsertInlineObject(at, image.Id);
+
+            // Правка картинки в строке — отметка её знака, как у текста; у самой
+            // картинки отметки нет.
+            if (image.Inserted is { } inserted)
+            {
+                Services.RevisionService.MarkInserted(para, at, at + 1, inserted);
+                image.Inserted = null;
+            }
+
             InlineImageInserted?.Invoke(para, at);
             return true;
+        }
+
+        /// <summary>
+        /// Новая картинка при включённой записи исправлений помечается вставленной:
+        /// плавающая — сама, картинка в строке — знаком (InsertImageIntoLine).
+        /// </summary>
+        private void MarkNewImageInserted(ImageBlock image)
+        {
+            if (!_document.TrackRevisions) return;
+            image.Inserted = NewRevisionInfo();
+            RevisionsChanged?.Invoke();
         }
 
         /// <summary>
@@ -3704,6 +3745,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             };
 
             BeginEditDelegate?.Invoke("Вставка изображения");
+
+            // Запись исправлений: новая картинка — вставка правкой.
+            MarkNewImageInserted(image);
             var section = _document.Sections[0];
             // Копия картинки «в тексте» встаёт символом под кареткой, как и оригинал.
             if (!InsertImageIntoLine(section, image))
@@ -3780,6 +3824,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             };
 
             BeginEditDelegate?.Invoke("Вставка изображения");
+
+            // Запись исправлений: новая картинка — вставка правкой.
+            MarkNewImageInserted(image);
             var section = _document.Sections[0];
             if (!InsertImageIntoLine(section, image))
             {
@@ -4144,6 +4191,39 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 var source = FindInlineImageById(sourceId);
                 if (source is null)
                 {
+                    // Живое поле: вставленному знаку — своё поле.
+                    if (FindInlineFieldById(sourceId) is { } sourceField)
+                    {
+                        var fieldCopy = (FieldBlock)DocumentCloner.CloneBlock(sourceField);
+                        fieldCopy.Id = Guid.NewGuid();
+                        _document.Sections[0].InlineObjects.Add(fieldCopy);
+                        cells[i] = new ParagraphBlock.CharCell(cells[i].Ch, cells[i].Props, fieldCopy.Id);
+                        changed = true;
+                        continue;
+                    }
+
+                    // Сноска: вставленному знаку нужна своя сноска со своим текстом.
+                    if (FindInlineNoteById(sourceId) is { } sourceNote)
+                    {
+                        var noteCopy = CloneNoteForPaste(sourceNote);
+                        _document.Sections[0].InlineObjects.Add(noteCopy);
+                        cells[i] = new ParagraphBlock.CharCell(cells[i].Ch, cells[i].Props, noteCopy.Id);
+                        changed = true;
+                        continue;
+                    }
+
+                    // Формула в строке: вставленному абзацу нужна своя копия, как и
+                    // картинке.
+                    if (FindInlineFormulaById(sourceId) is { } sourceFormula)
+                    {
+                        var formulaCopy = (FormulaBlock)DocumentCloner.CloneBlock(sourceFormula);
+                        formulaCopy.Id = Guid.NewGuid();
+                        _document.Sections[0].InlineObjects.Add(formulaCopy);
+                        cells[i] = new ParagraphBlock.CharCell(cells[i].Ch, cells[i].Props, formulaCopy.Id);
+                        changed = true;
+                        continue;
+                    }
+
                     // Объект строки может быть и фигурой Word: копия ей нужна та же.
                     var sourceShape = FindInlineShapeById(sourceId);
                     if (sourceShape is null)
@@ -4181,6 +4261,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// в тексте появляется квадратик, за которым ничего нет и который нельзя ни
         /// выделить как картинку, ни настроить.
         ///
+        /// Объект строки — не только картинка: фигура Word, стоящая среди букв
+        /// (wp:inline с wps:wsp), лежит в том же хранилище и держится на таком же
+        /// символе. Пока проверялась одна картинка, символ фигуры считался пустым и
+        /// убирался при каждом открытии документа, а следом, при сохранении, уходила и
+        /// сама фигура: после импорта она была на листе, после повторного открытия — нет.
+        ///
         /// Такой символ остаётся после правок, где ссылка на объект терялась, а текст
         /// нет: перенос между документами, откат структурной правки, старые файлы.
         /// Возвращает число удалённых символов.
@@ -4198,8 +4284,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 {
                     if (cells[i].Ch != Models.Inline.RunModel.ObjectPlaceholder) continue;
 
-                    // Ссылка есть и картинка на месте — это нормальный объект.
-                    if (cells[i].InlineImageId is Guid id && FindInlineImageById(id) is not null)
+                    // Ссылка есть и объект на месте — картинка, фигура, формула или
+                    // знак сноски в строке.
+                    if (cells[i].InlineImageId is Guid id
+                        && (FindInlineImageById(id) is not null
+                            || FindInlineShapeById(id) is not null
+                            || FindInlineFormulaById(id) is not null
+                            || FindInlineNoteById(id) is not null
+                            || FindInlineFieldById(id) is not null))
                         continue;
 
                     cells.RemoveAt(i);
@@ -4222,6 +4314,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 foreach (var block in section.InlineObjects)
                     if (block is ImageBlock image && image.Id == id)
                         return image;
+            return null;
+        }
+
+        /// <summary>Формула, стоящая в строке текста, по Id.</summary>
+        private FormulaBlock? FindInlineFormulaById(Guid id)
+        {
+            foreach (var section in _document.Sections)
+                foreach (var block in section.InlineObjects)
+                    if (block is FormulaBlock formula && formula.Id == id)
+                        return formula;
             return null;
         }
 
@@ -4542,8 +4644,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
             return count;
         }
         public void InsertSectionBreak(BreakType t) => InsertBlock(new BreakBlock { BreakType = t });
-        public void InsertFootnote() => AddAnnotation(InlineAnnotationType.Footnote);
-        public void InsertEndnote() => AddAnnotation(InlineAnnotationType.Endnote);
         public void InsertBookmark(string name) => AddAnnotation(InlineAnnotationType.Bookmark, bookmarkName: name);
         public void InsertHyperlink(string url, string? text) => AddAnnotation(InlineAnnotationType.Hyperlink, url: url);
         /// <summary>
@@ -5748,7 +5848,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             return count;
         }
-        public void InsertComment(string text) => AddAnnotation(InlineAnnotationType.Comment, content: text);
 
         // ── Таблица ───────────────────────────────────────────────────────
         // Все структурные операции игнорируются в режиме сравнения (read-only):
@@ -5904,6 +6003,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         public bool TableGetRowHeightExact() => TableGetRowHeightExactDelegate?.Invoke() ?? false;
+
+        public (double ColumnWidthMm, double RowHeightPt)? TableGetCellSize() => TableGetCellSizeDelegate?.Invoke();
 
         public void TableSetCellShadingPattern(string? pattern, string? patternColor)
         {
@@ -6234,6 +6335,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (IsReadOnly) return;
             _document.ColumnSettings.ColumnCount = count;
         }
+
+        public int GetColumnCount() => GetSectionColumnCount();
 
         // ── ITextEditorCommandTarget: вид ─────────────────────────────────
 
@@ -6638,6 +6741,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _document.ColumnSettings.ColumnCount = imported.ColumnSettings.ColumnCount;
             _document.ColumnSettings.GapMm = imported.ColumnSettings.GapMm;
             _document.ColumnSettings.ShowSeparator = imported.ColumnSettings.ShowSeparator;
+            _document.FinalSection = imported.FinalSection;
 
             // Правила вёрстки Word переезжают вместе с текстом: без них документ,
             // рассчитанный на схлопнутые интервалы и сжатие пробелов, у нас длиннее.
@@ -7143,6 +7247,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     CursorContextChanged?.Invoke(BuildCursorContext(activeVm));
                 }
 
+                _lastFormatCells = cellParagraphs;
                 ParagraphFormatChanged?.Invoke();
                 return;
             }
@@ -7157,6 +7262,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     CommitEditDelegate?.Invoke();
                 var tempVm = new ParagraphViewModel(TableActiveCellParagraph);
                 CursorContextChanged?.Invoke(BuildCursorContext(tempVm));
+                _lastFormatCells = new[] { TableActiveCellParagraph };
                 ParagraphFormatChanged?.Invoke();
                 return;
             }
@@ -7654,7 +7760,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 && a.TextColor == b.TextColor
                 && a.HighlightColor == b.HighlightColor
                 && a.Language == b.Language
-                && RunProperties.SameRevisions(a, b);
+                && RunProperties.SameMarkup(a, b);
         }
 
         /// <summary>
@@ -7706,7 +7812,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // Проходим с конца чтобы Insert не сдвигал ещё не обработанные индексы.
             for (int i = blocks.Count - 1; i >= 0; i--)
             {
-                if (blocks[i] is not BreakBlock { BreakType: BreakType.Page }) continue;
+                // Разрыв раздела держит якорь так же, как разрыв страницы: Backspace в
+                // начале следующего абзаца убирает разрыв, как у Word.
+                if (blocks[i] is not BreakBlock anchorBreak
+                    || !(anchorBreak.BreakType == BreakType.Page || anchorBreak.IsSectionBreak)) continue;
 
                 // Якорь нужен только если после разрыва вообще нет параграфа
                 // (разрыв в конце документа или за ним стоит не-параграф блок).
@@ -7772,7 +7881,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (_document.Sections.Count == 0) return;
             var blocks = _document.Sections[0].Blocks;
             int anchorIdx = blocks.IndexOf(anchor.Model);
-            if (anchorIdx <= 0 || blocks[anchorIdx - 1] is not BreakBlock { BreakType: BreakType.Page })
+            if (anchorIdx <= 0 || blocks[anchorIdx - 1] is not BreakBlock pageBreak
+                || !(pageBreak.BreakType == BreakType.Page || pageBreak.IsSectionBreak))
             {
                 _log.Warning("[PAGEBREAK] Удаление разрыва перед абзацем: перед блоком {AnchorIdx} разрыва нет", anchorIdx);
                 return;
@@ -8045,7 +8155,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 // Если удаляемый параграф — якорь разрыва страницы, удаляем и сам BreakBlock.
                 int blockIdx = blocks.IndexOf(pvm.Model);
-                if (blockIdx > 0 && blocks[blockIdx - 1] is BreakBlock { BreakType: BreakType.Page })
+                if (blockIdx > 0 && blocks[blockIdx - 1] is BreakBlock anchoredBreak
+                    && (anchoredBreak.BreakType == BreakType.Page || anchoredBreak.IsSectionBreak))
                     blocks.RemoveAt(blockIdx - 1);  // BreakBlock удалён; якорь сместился на -1
 
                 blocks.Remove(pvm.Model);

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
@@ -41,6 +41,16 @@ namespace Writersword.Modules.TextEditor.Services
                 DefaultTabStopPt = source.DefaultTabStopPt,
                 CollapseParagraphSpacing = source.CollapseParagraphSpacing,
                 JustifyWithShrinking = source.JustifyWithShrinking,
+                FootnoteNumberFormat = source.FootnoteNumberFormat,
+                EndnoteNumberFormat = source.EndnoteNumberFormat,
+                FootnoteNumberStart = source.FootnoteNumberStart,
+                EndnoteNumberStart = source.EndnoteNumberStart,
+                FinalSection = source.FinalSection?.Clone(),
+
+                // Запись исправлений — свойство рукописи, как в Word: без неё снимок
+                // для сохранения выключал рецензирование, и после перезапуска правки
+                // снова шли без отметок.
+                TrackRevisions = source.TrackRevisions,
 
                 // Виды чтения, приложенные к рукописи, — копией: снимок сериализуется
                 // вне UI-потока, а живые виды тем временем могут править.
@@ -49,6 +59,7 @@ namespace Writersword.Modules.TextEditor.Services
                 Styles = new List<DocumentStyle>(source.Styles.Count),
                 Sections = new List<SectionModel>(source.Sections.Count),
                 Annotations = new List<InlineAnnotation>(source.Annotations.Count),
+                Comments = new List<CommentModel>(source.Comments.Count),
                 DocumentAutoReplaceRules = CloneAutoReplaceRules(source.DocumentAutoReplaceRules),
                 TableOfContents = CloneTableOfContents(source.TableOfContents),
 
@@ -65,6 +76,9 @@ namespace Writersword.Modules.TextEditor.Services
 
             foreach (var annotation in source.Annotations)
                 clone.Annotations.Add(CloneAnnotation(annotation));
+
+            foreach (var comment in source.Comments)
+                clone.Comments.Add(CloneComment(comment));
 
             return clone;
         }
@@ -234,6 +248,27 @@ namespace Writersword.Modules.TextEditor.Services
         /// нужен и для снимков документа, где Id обязан совпадать. Тому, кто кладёт
         /// копию рядом с оригиналом, Id надо заменить самому.
         /// </summary>
+        /// <summary>Копия примечания со своими абзацами текста.</summary>
+        public static CommentModel CloneComment(CommentModel comment)
+        {
+            var copy = new CommentModel
+            {
+                Id = comment.Id,
+                Author = comment.Author,
+                Initials = comment.Initials,
+                Date = comment.Date,
+                ParentId = comment.ParentId,
+                Done = comment.Done,
+                Kind = comment.Kind,
+                Paragraphs = new List<ParagraphBlock>(comment.Paragraphs.Count)
+            };
+
+            foreach (var paragraph in comment.Paragraphs)
+                copy.Paragraphs.Add(CloneParagraph(paragraph));
+
+            return copy;
+        }
+
         public static BlockModel CloneBlock(BlockModel source)
         {
             switch (source)
@@ -248,6 +283,39 @@ namespace Writersword.Modules.TextEditor.Services
                     return CloneShape(shape);
                 case FloatingTextBlock floatingText:
                     return CloneFloatingText(floatingText);
+                case NoteBlock note:
+                {
+                    var noteClone = new NoteBlock
+                    {
+                        Id = note.Id,
+                        Hash = note.Hash,
+                        Kind = note.Kind,
+                        MarkProperties = note.MarkProperties?.Clone(),
+                        CustomMark = note.CustomMark,
+                        Paragraphs = new List<ParagraphBlock>(note.Paragraphs.Count)
+                    };
+                    foreach (var paragraph in note.Paragraphs)
+                        noteClone.Paragraphs.Add(CloneParagraph(paragraph));
+                    return noteClone;
+                }
+                case FieldBlock field:
+                    return new FieldBlock
+                    {
+                        Id = field.Id,
+                        Hash = field.Hash,
+                        Instruction = field.Instruction,
+                        Result = field.Result
+                    };
+                case FormulaBlock formula:
+                    return new FormulaBlock
+                    {
+                        Id = formula.Id,
+                        Hash = formula.Hash,
+                        Omml = formula.Omml,
+                        FontFamily = formula.FontFamily,
+                        FontSizePt = formula.FontSizePt,
+                        IsDisplay = formula.IsDisplay
+                    };
                 case BreakBlock breakBlock:
                     return new BreakBlock
                     {
@@ -256,7 +324,8 @@ namespace Writersword.Modules.TextEditor.Services
                         BreakType = breakBlock.BreakType,
                         InParagraph = breakBlock.InParagraph,
                         ContinuesParagraph = breakBlock.ContinuesParagraph,
-                        FromColumnBreak = breakBlock.FromColumnBreak
+                        FromColumnBreak = breakBlock.FromColumnBreak,
+                        Section = breakBlock.Section?.Clone()
                     };
                 default:
                     throw new NotSupportedException(
@@ -424,6 +493,8 @@ namespace Writersword.Modules.TextEditor.Services
                 Id = source.Id,
                 Hash = source.Hash,
                 ImageFileName = source.ImageFileName,
+                Inserted = source.Inserted?.Clone(),
+                Deleted = source.Deleted?.Clone(),
                 WidthPt = source.WidthPt,
                 HeightPt = source.HeightPt,
                 LockAspectRatio = source.LockAspectRatio,

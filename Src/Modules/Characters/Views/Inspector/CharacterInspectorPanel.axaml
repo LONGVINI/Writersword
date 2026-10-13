@@ -619,7 +619,7 @@
 				     по той же карточке. Выключателя у края списка нет: пока
 				     панель закрыта, там не остаётся ни кнопки, ни поля. -->
 				<Button Grid.Column="1"
-				        Classes="ghost roundGhost"
+				        Classes="ghost roundGhost ro-allow"
 				        Command="{Binding CloseCommand}"
 				        Width="26" Height="26"
 				        VerticalAlignment="Top"
@@ -645,7 +645,7 @@
 					<Border BorderBrush="{DynamicResource BorderSubtleBrush}"
 					        BorderThickness="0,1,0,0">
 						<StackPanel>
-							<Button Classes="sect" Click="OnToggleSection" Tag="Avatar">
+							<Button Classes="sect ro-allow" Click="OnToggleSection" Tag="Avatar">
 								<StackPanel Orientation="Horizontal" Spacing="7">
 									<Path x:Name="AvatarChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>
 									<TextBlock Text="АВАТАРКА" VerticalAlignment="Center"/>
@@ -881,7 +881,7 @@
 																</ItemsControl.ItemsPanel>
 																<ItemsControl.ItemTemplate>
 																	<DataTemplate x:DataType="quick:CharacterQuickAvatarFolder">
-																		<Button Classes="quickFolderTab"
+																		<Button Classes="quickFolderTab ro-allow"
 																			Click="OnQuickFolderClick"
 																			behaviours:TooltipBehavior.Tip="{Binding Title}">
 																			<!-- Только обложка, без подписи: подписи занимали всю
@@ -995,7 +995,7 @@
 					<Border BorderBrush="{DynamicResource BorderSubtleBrush}"
 					        BorderThickness="0,1,0,0">
 						<StackPanel>
-							<Button Classes="sect" Click="OnToggleSection" Tag="Person">
+							<Button Classes="sect ro-allow" Click="OnToggleSection" Tag="Person">
 								<StackPanel Orientation="Horizontal" Spacing="7">
 									<Path x:Name="PersonChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>
 									<TextBlock Text="ПЕРСОНАЖ" VerticalAlignment="Center"/>
@@ -1037,7 +1037,7 @@
 					<Border BorderBrush="{DynamicResource BorderSubtleBrush}"
 					        BorderThickness="0,1,0,0">
 						<StackPanel>
-							<Button Classes="sect" Click="OnToggleSection" Tag="Color">
+							<Button Classes="sect ro-allow" Click="OnToggleSection" Tag="Color">
 								<StackPanel Orientation="Horizontal" Spacing="7">
 									<Path x:Name="ColorChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>
 									<TextBlock Text="ЦВЕТ" VerticalAlignment="Center"/>
@@ -1115,7 +1115,7 @@
 											        HorizontalAlignment="Stretch"
 											        HorizontalContentAlignment="Center"
 											        Command="{Binding ConfirmRingAllCommand}"/>
-											<Button Grid.Column="1"
+											<Button Classes="ro-allow" Grid.Column="1"
 											        Content="Отмена"
 											        FontSize="11"
 											        Padding="6,3"
@@ -1134,7 +1134,7 @@
 					<Border BorderBrush="{DynamicResource BorderSubtleBrush}"
 					        BorderThickness="0,1,0,0">
 						<StackPanel>
-							<Button Classes="sect" Click="OnToggleSection" Tag="Outline">
+							<Button Classes="sect ro-allow" Click="OnToggleSection" Tag="Outline">
 								<StackPanel Orientation="Horizontal" Spacing="7">
 									<Path x:Name="OutlineChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>
 									<TextBlock Text="КОНТУР И ВИД" VerticalAlignment="Center"/>
@@ -1206,7 +1206,7 @@
 						<StackPanel>
 							<Grid ColumnDefinitions="*,Auto">
 								<Button Grid.Column="0"
-								        Classes="sect"
+								        Classes="sect ro-allow"
 								        Click="OnToggleSection" Tag="Labels">
 									<StackPanel Orientation="Horizontal" Spacing="7">
 										<Path x:Name="LabelsChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>

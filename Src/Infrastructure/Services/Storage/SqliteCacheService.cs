@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
@@ -614,30 +614,13 @@ namespace Writersword.Infrastructure.Services.Storage
         // ── Запись ────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Сохранить кеш проекта.
-        /// Обновляются строки только переданных модулей, строки остальных
-        /// остаются нетронутыми.
-        /// Файл кеша удаляется только через DeleteCache() (при Ctrl+S или закрытии проекта).
+        /// Данные модулей для записи: JSON данных и сессии каждого модуля, у которого
+        /// данные есть.
         /// </summary>
-        /// <param name="projectPath">Путь к .writersword файлу</param>
-        /// <param name="projectId">ID проекта — записывается в метадату для верификации при загрузке</param>
-        /// <param name="customDataDict">Данные модулей: moduleType → data</param>
-        /// <param name="sessionDataDict">Сессионные данные модулей: moduleType → data</param>
-        public async Task SaveCacheAsync(
-            string projectPath,
-            string projectId,
+        private Dictionary<string, (string CustomDataJson, string? SessionDataJson)> PrepareModulesToSave(
             Dictionary<string, object?> customDataDict,
             Dictionary<string, object?> sessionDataDict)
         {
-            var cachePath = GetCachePath(projectPath);
-
-            _logger.LogDebug("Saving cache: {ModulesCount} modules", customDataDict.Count);
-
-            // Сериализация данных модулей и хеширование файла проекта идут ДО взятия
-            // замка. Прежде замок держался на всё это время — секунды на большом
-            // документе, — и другие операции с кешем упирались в таймаут ожидания.
-            // Под замком остаётся только работа с самим файлом базы.
-            // Подготавливаем данные модулей которые нужно записать.
             var modulesToSave = new Dictionary<string, (string CustomDataJson, string? SessionDataJson)>();
 
             foreach (var kvp in customDataDict)
@@ -670,19 +653,23 @@ namespace Writersword.Infrastructure.Services.Storage
                 modulesToSave[moduleType] = (customDataJson, sessionDataJson);
             }
 
-            if (modulesToSave.Count == 0)
-            {
-                _logger.LogDebug("Nothing to save");
-                return;
-            }
+            return modulesToSave;
+        }
 
-            // Хеш файла проекта — для быстрого сравнения при открытии.
-            // Позволяет пропустить загрузку 400 МБ данных до показа диалога восстановления.
-            // Сам файл проекта в этот момент может быть кратковременно занят другой
-            // операцией сохранения (хранилище держит его открытым в RELEASE-режиме) —
-            // несколько попыток с паузой снимают эту гонку без изменения результата
-            // при успехе.
-            string projectFileHash = "";
+        // Хеш файла проекта по его размеру и времени записи. Файл книги с картинками
+        // весит гигабайты, а кеш пишется каждые несколько секунд, пока идёт набор:
+        // хешировать неизменившийся файл заново на каждой записи незачем.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Length, DateTime WriteUtc, string Hash)>
+            _projectHashMemo = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// SHA-256 файла проекта. Пустая строка — файл прочитать не удалось.
+        /// Сам файл в этот момент может быть кратковременно занят другой операцией
+        /// сохранения (хранилище держит его открытым в RELEASE-режиме) — несколько
+        /// попыток с паузой снимают эту гонку без изменения результата при успехе.
+        /// </summary>
+        private string ProjectFileHash(string projectPath)
+        {
             const int hashReadAttempts = 3;
             for (int attempt = 1; attempt <= hashReadAttempts; attempt++)
             {
@@ -693,24 +680,79 @@ namespace Writersword.Infrastructure.Services.Storage
                     // FileShare.ReadWrite — чтобы не блокировать удерживаемый
                     // в RELEASE-режиме дескриптор хранилища.
                     using var fileGate = ProjectFileLock.Acquire(projectPath);
+
+                    var info = new FileInfo(projectPath);
+                    long length = info.Length;
+                    DateTime writeUtc = info.LastWriteTimeUtc;
+
+                    if (_projectHashMemo.TryGetValue(projectPath, out var memo)
+                        && memo.Length == length && memo.WriteUtc == writeUtc)
+                        return memo.Hash;
+
                     using var sha = SHA256.Create();
                     using var fs = new FileStream(
                         projectPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                    projectFileHash = Convert.ToHexString(sha.ComputeHash(fs));
-                    break;
+                    string hash = Convert.ToHexString(sha.ComputeHash(fs));
+
+                    _projectHashMemo[projectPath] = (length, writeUtc, hash);
+                    return hash;
                 }
                 catch (IOException ex) when (attempt < hashReadAttempts)
                 {
                     _logger.LogDebug(ex, "Project file busy, retrying hash computation ({Attempt}/{Total})", attempt, hashReadAttempts);
-                    await Task.Delay(100 * attempt).ConfigureAwait(false);
+                    System.Threading.Thread.Sleep(100 * attempt);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to compute project file hash");
-                    projectFileHash = "";
-                    break;
+                    return "";
                 }
             }
+
+            return "";
+        }
+
+        /// <summary>
+        /// Сохранить кеш проекта.
+        /// Обновляются строки только переданных модулей, строки остальных
+        /// остаются нетронутыми.
+        /// Файл кеша удаляется только через DeleteCache() (при Ctrl+S или закрытии проекта).
+        /// </summary>
+        /// <param name="projectPath">Путь к .writersword файлу</param>
+        /// <param name="projectId">ID проекта — записывается в метадату для верификации при загрузке</param>
+        /// <param name="customDataDict">Данные модулей: moduleType → data</param>
+        /// <param name="sessionDataDict">Сессионные данные модулей: moduleType → data</param>
+        public async Task SaveCacheAsync(
+            string projectPath,
+            string projectId,
+            Dictionary<string, object?> customDataDict,
+            Dictionary<string, object?> sessionDataDict)
+        {
+            var cachePath = GetCachePath(projectPath);
+
+            _logger.LogDebug("Saving cache: {ModulesCount} modules", customDataDict.Count);
+
+            // Сериализация данных модулей и хеширование файла проекта идут ДО взятия
+            // замка. Прежде замок держался на всё это время — секунды на большом
+            // документе, — и другие операции с кешем упирались в таймаут ожидания.
+            // Под замком остаётся только работа с самим файлом базы.
+            // Подготавливаем данные модулей которые нужно записать. Сериализация и
+            // хеш файла проекта — на пуле потоков: запись кеша зовут и с UI-потока
+            // (уход с вкладки), а хеш файла книги с картинками — это гигабайты и
+            // десятки секунд чтения. Прежде всё это шло на UI-потоке до первого
+            // await, и интерфейс замирал на пятнадцать секунд.
+            var modulesToSave = await Task.Run(
+                () => PrepareModulesToSave(customDataDict, sessionDataDict)).ConfigureAwait(false);
+
+            if (modulesToSave.Count == 0)
+            {
+                _logger.LogDebug("Nothing to save");
+                return;
+            }
+
+            // Хеш файла проекта — для быстрого сравнения при открытии.
+            // Позволяет пропустить загрузку 400 МБ данных до показа диалога восстановления.
+            string projectFileHash = await Task.Run(() => ProjectFileHash(projectPath)).ConfigureAwait(false);
 
             var fileLock = GetFileLock(cachePath);
             await fileLock.WaitAsync().ConfigureAwait(false);

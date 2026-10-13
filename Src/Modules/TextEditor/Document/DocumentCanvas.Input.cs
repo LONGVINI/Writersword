@@ -213,6 +213,17 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // ── Карточка правки ───────────────────────────────────────────
+            // Стоит справа от листа (DocumentCanvas.RevisionCards): кнопки принимают или
+            // отклоняют правку, остальная карточка выделяет её в тексте.
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+                && TryRevisionCardPointerPressed(
+                    (float)(pt.X / zoom * PxToPt), (float)(pt.Y / zoom * PxToPt)))
+            {
+                e.Handled = true;
+                return;
+            }
+
             // ── Колонтитул ────────────────────────────────────────────────
             // Вне колонтитулов двойной щелчок по полю листа над текстом или под ним
             // открывает правку колонтитула этого листа; одиночный ставит каретку как
@@ -237,6 +248,35 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (hfMode)
                     hfDoc.EndHeaderFooterBandEdit();
+            }
+
+            // ── Значок примечания ─────────────────────────────────────────
+            // Стоит на правом поле листа; нажатие открывает обсуждение примечания
+            // (DocumentCanvas.Comments). Каретку не ставит.
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+                && DocVm is { } commentDoc
+                && TryHitCommentMarker(xPt, yPt, out var hitComment)
+                && hitComment is not null)
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => commentDoc.RequestCommentThread(hitComment));
+                e.Handled = true;
+                return;
+            }
+
+            // ── Текст сноски ──────────────────────────────────────────────
+            // Каретки в области сносок нет: двойной щелчок по тексту сноски открывает
+            // окно его правки (DocumentCanvas.Notes).
+            if (e.ClickCount == 2
+                && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+                && !IsEditingBlocked
+                && DocVm is { } noteDoc
+                && TryHitNoteText(xPt, yPt, out var hitNote)
+                && hitNote is not null)
+            {
+                // Окно открывается после разбора нажатия, а не посреди него.
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => noteDoc.RequestNoteEdit(hitNote));
+                e.Handled = true;
+                return;
             }
 
             // ── Стрелка свёртки заголовка ─────────────────────────────────
@@ -618,7 +658,29 @@ namespace Writersword.Modules.TextEditor.Document
             if (e.ClickCount >= 2 && pi >= 0 && pi < _layouts.Count)
             {
                 string clickText = GetVmAt(pi)?.PlainText ?? string.Empty;
-                if (e.ClickCount == 2)
+
+                // Двойной щелчок по знаку сноски открывает правку её текста. Каретка
+                // встаёт у знака как при обычном щелчке; окно открывается после разбора
+                // нажатия, а выделение мышью на этом кончается — отпускание кнопки
+                // придёт уже при открытом окне.
+                if (e.ClickCount == 2 && !IsEditingBlocked
+                    && NoteMarkAt(GetVmAt(pi)?.Model, ci) is { } markNote)
+                {
+                    _isSelecting = false;
+
+                    var markDoc = DocVm;
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() => markDoc?.RequestNoteEdit(markNote));
+                }
+                else if (e.ClickCount == 2 && !IsEditingBlocked
+                    && FormulaAt(GetVmAt(pi)?.Model, ci) is { } clickedFormula)
+                {
+                    // Двойной щелчок по формуле открывает окно её правки.
+                    _isSelecting = false;
+
+                    var formulaDoc = DocVm;
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() => formulaDoc?.RequestFormulaEdit(clickedFormula));
+                }
+                else if (e.ClickCount == 2)
                 {
                     var (wordStart, wordEnd) = WordBoundsAt(clickText, ci);
                     if (wordEnd > wordStart)
@@ -759,6 +821,25 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 var (markX, markY) = VisualToLogicalPt(xPt, yPt);
                 UpdateRuleMarkTip(markX, markY);
+            }
+
+            // Поле исправлений (DocumentCanvas.RevisionCards): без нажатой кнопки указатель
+            // подсвечивает выноску и её место в тексте и показывает подсказку над правкой.
+            // Над самой выноской больше разбирать нечего.
+            {
+                var hoverProps = e.GetCurrentPoint(this).Properties;
+                if (!hoverProps.IsLeftButtonPressed && !hoverProps.IsRightButtonPressed)
+                {
+                    if (UpdateMarkupHover(xPt, yPt))
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+                }
+                else
+                {
+                    ClearMarkupHover();
+                }
             }
             // Страницы рядом: во время жеста над объектом маппинг идёт через страницу,
             // где жест начался — заход указателя на соседнюю страницу не даёт скачка
@@ -1983,6 +2064,38 @@ namespace Writersword.Modules.TextEditor.Document
             bool ctrl = e.KeyModifiers == KeyModifiers.Control;
             bool alt = e.KeyModifiers == KeyModifiers.Alt;
 
+            // Alt+= — новая формула, как у Word.
+            if (alt && e.Key is Key.OemPlus or Key.Add && !IsEditingBlocked && DocVm is { } formulaDoc)
+            {
+                formulaDoc.InsertFormula();
+                e.Handled = true;
+                return;
+            }
+
+            // Ctrl+Alt+F — сноска, Ctrl+Alt+D — концевая сноска, как у Word.
+            if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Alt)
+                && e.Key is Key.F or Key.D && !IsEditingBlocked && DocVm is { } noteDoc)
+            {
+                if (e.Key == Key.F) noteDoc.InsertFootnote(); else noteDoc.InsertEndnote();
+                e.Handled = true;
+                return;
+            }
+
+            // Alt+Shift+D — дата, Alt+Shift+T — время, Alt+Shift+P — номер страницы:
+            // живым полем, без окна, как у Word.
+            if (e.KeyModifiers == (KeyModifiers.Alt | KeyModifiers.Shift)
+                && e.Key is Key.D or Key.T or Key.P && !IsEditingBlocked && DocVm is { } fieldDoc)
+            {
+                fieldDoc.InsertQuickField(e.Key switch
+                {
+                    Key.D => Writersword.Modules.TextEditor.Services.LiveFieldKind.Date,
+                    Key.T => Writersword.Modules.TextEditor.Services.LiveFieldKind.Time,
+                    _ => Writersword.Modules.TextEditor.Services.LiveFieldKind.Page
+                });
+                e.Handled = true;
+                return;
+            }
+
             // Tab: навигация по ячейкам
             if (e.Key == Key.Tab && IsInCell(_caretPara))
             {
@@ -2147,6 +2260,7 @@ namespace Writersword.Modules.TextEditor.Document
                     vm.TableGetCellTextDirectionDelegate = QueryTableCellTextDirection;
                     vm.TableToggleRowHeightExactDelegate = ExecuteTableToggleRowHeightExact;
                     vm.TableGetRowHeightExactDelegate = QueryTableRowHeightExact;
+                    vm.TableGetCellSizeDelegate = QueryTableCellSize;
                     vm.TableSetCellVAlignDelegate = ExecuteTableSetCellVAlign;
                     vm.TableSetCellHAlignDelegate = ExecuteTableSetCellHAlign;
                     vm.TableSetCellPaddingDelegate = ExecuteTableSetCellPadding;
@@ -2212,6 +2326,7 @@ namespace Writersword.Modules.TextEditor.Document
                 vm.TableGetCellTextDirectionDelegate = null;
                 vm.TableToggleRowHeightExactDelegate = null;
                 vm.TableGetRowHeightExactDelegate = null;
+                vm.TableGetCellSizeDelegate = null;
                 vm.TableSetCellVAlignDelegate = null;
                 vm.TableSetCellHAlignDelegate = null;
                 vm.TableSetCellPaddingDelegate = null;
@@ -2998,11 +3113,22 @@ namespace Writersword.Modules.TextEditor.Document
                     targetBlock = cell.Cell.Paragraphs[cell.Cell.Paragraphs.Count - 1];
             }
 
-            InvalidateCellLayoutCaches();
-            _cellVmCache.Clear();
             double oldCanvasH = _canvasHeight;
             _caretIndexPending = true;
-            RebuildLayouts();
+
+            // Правка текста в ячейке: таблица перекладывается на месте, листы целиком —
+            // после паузы в наборе (DocumentCanvas.QuickTable). Не вышло (сменилась
+            // высота строки, число абзацев ячейки, таблица на двух листах) — полный путь.
+            if (GetCurrentCell() is { } editedCell && TryQuickTableUpdate(editedCell.Table))
+            {
+                ScheduleDeferredFullRebuild();
+            }
+            else
+            {
+                InvalidateCellLayoutCaches();
+                _cellVmCache.Clear();
+                RebuildLayouts();
+            }
 
             if (Math.Abs(_canvasHeight - oldCanvasH) > 0.5)
                 InvalidateMeasure();
@@ -4247,6 +4373,8 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (IsEditingBlocked) return;
 
+            ScheduleRestoredRevisionFlash();
+
             // Фантомный возврат. Человек прыгнул по ссылке и с тех пор ничего не правил —
             // значит отменять нечего, а вернуться он хочет именно сюда. Первое нажатие
             // возвращает на прежнее место и рукопись не трогает; второе уже обычная
@@ -4372,6 +4500,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _redoOrder.Count, TextUndoStack?.CanRedo ?? false, UndoStack?.CanRedo ?? false, IsEditingBlocked);
 
             if (IsEditingBlocked) return;
+
+            ScheduleRestoredRevisionFlash();
 
             // Симметрично фантомному возврату: Ctrl+Z увёл обратно, Ctrl+Y возвращает
             // туда, откуда увёл. Иначе пара клавиш несимметрична — человек нажимает

@@ -354,6 +354,12 @@
   <data name="Insert_Comment" xml:space="preserve">
     <value>Комментарий</value>
   </data>
+  <data name="Insert_DateTime" xml:space="preserve">
+    <value>Дата и время</value>
+  </data>
+  <data name="Insert_Formula" xml:space="preserve">
+    <value>Формула</value>
+  </data>
   <data name="Insert_Footnote" xml:space="preserve">
     <value>Сноска</value>
   </data>

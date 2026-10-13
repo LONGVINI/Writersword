@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using SkiaSharp;
 using Writersword.Modules.TextEditor.Models.Page;
@@ -78,9 +78,9 @@ namespace Writersword.Modules.TextEditor.Rendering
             var anchors = SlotAnchors(settings, box);
 
             if (drawHeader)
-                DrawBand(canvas, settings.GetBand(decoration.Variant, true), decoration, box, true, font, paint, anchors);
+                DrawBand(canvas, settings.BandFor(decoration, true), decoration, box, true, font, paint, anchors);
             if (drawFooter)
-                DrawBand(canvas, settings.GetBand(decoration.Variant, false), decoration, box, false, font, paint, anchors);
+                DrawBand(canvas, settings.BandFor(decoration, false), decoration, box, false, font, paint, anchors);
         }
 
         /// <summary>Шрифт колонтитулов. Вызывающий освобождает его сам.</summary>

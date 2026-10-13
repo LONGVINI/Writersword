@@ -265,7 +265,8 @@ namespace Writersword.Modules.TextEditor.Document
         /// масштаб, в котором лист стоит на экране.
         /// </summary>
         private readonly record struct PageGeometry(
-            double PageTopY, double PageBotY, double TextTopY, double TextBotY, double Zoom);
+            double PageTopY, double PageBotY, double TextTopY, double TextBotY, double Zoom, bool OwnSheet = false,
+            object? Section = null);
 
         /// <summary>
         /// Все листы, видимые в окне, сверху вниз. Листы приходят от раскладки
@@ -291,22 +292,27 @@ namespace Writersword.Modules.TextEditor.Document
                 return result;
             }
 
-            double pageHeightAtOnePx = MmToPx(_vm.PageHeightMm, 1.0);
-
             foreach (var band in bands)
             {
+                // Лист раздела бывает другого размера и с другими полями (альбомный,
+                // с узкими полями): масштаб и поля берутся у самого листа.
+                double heightMm = band.HeightMm > 0 ? band.HeightMm : _vm.PageHeightMm;
+                double pageHeightAtOnePx = MmToPx(heightMm, 1.0);
                 double zoom = pageHeightAtOnePx > 0.0001 && band.HeightPx > 0
                     ? band.HeightPx / pageHeightAtOnePx
                     : _vm.Zoom;
+
+                double marginTopMm = band.MarginTopMm >= 0 ? band.MarginTopMm : _vm.MarginTopMm;
+                double marginBottomMm = band.MarginBottomMm >= 0 ? band.MarginBottomMm : _vm.MarginBottomMm;
 
                 // Полоса листа — в координатах холста; на линейку её переносит сдвиг
                 // холста в окне за вычетом прокрутки — та же формула, что у одной шкалы.
                 double pTop = _vm.ContentTopOffsetPx + band.TopPx - _vm.ScrollOffsetY;
                 double pBot = pTop + band.HeightPx;
-                double tTop = pTop + MmToPx(_vm.MarginTopMm, zoom);
-                double tBot = pBot - MmToPx(_vm.MarginBottomMm, zoom);
+                double tTop = pTop + MmToPx(marginTopMm, zoom);
+                double tBot = pBot - MmToPx(marginBottomMm, zoom);
 
-                result.Add(new PageGeometry(pTop, pBot, tTop, tBot, zoom));
+                result.Add(new PageGeometry(pTop, pBot, tTop, tBot, zoom, band.OwnSheet, band.Section));
             }
 
             return result;
@@ -324,6 +330,10 @@ namespace Writersword.Modules.TextEditor.Document
 
             foreach (var sheet in ComputePageGeometries())
             {
+                // Тянуть можно поля того листа, что сейчас на линейке: листа документа
+                // или листа раздела под кареткой. Поля другого раздела — у его листа.
+                if (!ReferenceEquals(sheet.Section, _vm.CurrentSection)) continue;
+
                 double toTop = Math.Abs(y - sheet.TextTopY);
                 if (toTop <= MarginHitPx && toTop < bestDistance)
                 {

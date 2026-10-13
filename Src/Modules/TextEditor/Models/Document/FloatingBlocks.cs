@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using Writersword.Modules.TextEditor.Models.Styles;
 
 namespace Writersword.Modules.TextEditor.Models.Document
@@ -456,6 +456,20 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// Полный путь в ZIP: TextEditor/Images/{ImageFileName}.
         /// </summary>
         public string ImageFileName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Плавающая картинка вставлена правкой рецензирования. Картинке в строке это
+        /// не нужно: её правка — отметка знака абзаца, как у текста.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Inline.RevisionInfo? Inserted { get; set; }
+
+        /// <summary>
+        /// Плавающая картинка удалена правкой рецензирования: остаётся на листе с
+        /// отметкой, пока правку не примут или не отклонят.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Inline.RevisionInfo? Deleted { get; set; }
 
         /// <summary>Ширина изображения в пунктах (пользовательски заданная).</summary>
         public double WidthPt { get; set; }

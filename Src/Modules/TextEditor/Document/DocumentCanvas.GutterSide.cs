@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Services;
@@ -30,6 +30,11 @@ namespace Writersword.Modules.TextEditor.Document
     /// Сдвиг действует в режиме страниц, в том числе при выгрузке листов в PDF. В ленте
     /// чтения и в развороте книги листы условные, и переплёта у них нет.
     ///
+    /// Переплёт у каждого раздела свой (поле w:gutter его w:sectPr): лист раздела
+    /// сдвигается на переплёт своего раздела, а не документа. Раньше брался переплёт
+    /// документа на всех листах, и на альбомном листе раздела без переплёта текст
+    /// уезжал влево на чужие 7 мм — к самому краю листа.
+    ///
     /// Исключение — плавающий объект из Word, отсчитанный от края листа или от бокового
     /// поля: край бумаги с переплётом не двигается, и объект от листа стоит на месте,
     /// а от середины поля уходит на половину сдвига. Проход ставит такой объект на
@@ -50,7 +55,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void RememberGutterSides(List<ParaLayout> layouts, int pageCount)
         {
-            _gutterRightHint = BindingGutterPt() > 0f && pageCount > 0
+            _gutterRightHint = GutterAlternates && AnyGutter() && pageCount > 0
                 ? GutterRightPages(layouts, pageCount)
                 : Array.Empty<bool>();
         }
@@ -80,27 +85,45 @@ namespace Writersword.Modules.TextEditor.Document
         private float LayoutGutterCompensationPt(TableFloatPosition? anchor, int pageIndex)
         {
             if (anchor is null) return 0f;
+            if (!GutterAlternates) return 0f;
 
-            float gutterPt = BindingGutterPt();
+            // Раздел листа — по показанной раскладке: проход ставит объект раньше, чем
+            // известны его листы, как и сторону переплёта.
+            float gutterPt = SheetGutterPt(SectionSheetOfPage(pageIndex));
             if (gutterPt <= 0f || !GutterRightHint(pageIndex)) return 0f;
 
             return gutterPt * (1f - anchor.HorizontalTextFollow());
         }
 
         /// <summary>
-        /// Ширина переплёта, который меняет сторону по листам, в пунктах. Ноль —
-        /// переплёта нет, он всегда слева или режим не листовой.
+        /// Переплёт меняет сторону по листам: режим листов и разные колонтитулы чётных и
+        /// нечётных страниц.
         /// </summary>
-        private float BindingGutterPt()
+        private bool GutterAlternates
+            => HeaderFootersDrawable && DocVm?.HeaderFooter?.DifferentOddEven == true;
+
+        /// <summary>
+        /// Переплёт листа, в пунктах: раздела со своим листом или, без него, документа.
+        /// </summary>
+        private float SheetGutterPt(Models.Page.TextEditorPageSettings? sheet)
         {
-            if (!HeaderFootersDrawable) return 0f;
+            var page = SectionSheetsApply ? sheet ?? DocVm?.Document.PageSettings : DocVm?.Document.PageSettings;
+            return page is null || page.MarginGutterMm <= 0 ? 0f : MmToPt(page.MarginGutterMm);
+        }
 
-            var ps = DocVm?.Document.PageSettings;
-            if (ps is null || ps.MarginGutterMm <= 0) return 0f;
+        /// <summary>Переплёт есть хотя бы у документа или у одного из разделов.</summary>
+        private bool AnyGutter()
+        {
+            var document = DocVm?.Document;
+            if (document is null) return false;
+            if (document.PageSettings.MarginGutterMm > 0) return true;
+            if (!SectionSheetsApply || document.Sections.Count == 0) return false;
 
-            if (DocVm?.HeaderFooter?.DifferentOddEven != true) return 0f;
+            foreach (var block in document.Sections[0].Blocks)
+                if (block is BreakBlock { IsSectionBreak: true, Section.Page.MarginGutterMm: > 0 })
+                    return true;
 
-            return MmToPt(ps.MarginGutterMm);
+            return false;
         }
 
         /// <summary>
@@ -134,52 +157,67 @@ namespace Writersword.Modules.TextEditor.Document
             List<ParaLayout> layouts, List<PageRect> pages, List<TableEntry> tables,
             List<ImageEntry> images, List<ShapeEntry> shapes)
         {
-            float gutterPt = BindingGutterPt();
-            if (gutterPt <= 0f || pages.Count == 0)
+            if (!GutterAlternates || !AnyGutter() || pages.Count == 0)
                 return (layouts, pages, tables, images, shapes);
 
             bool[] right = GutterRightPages(layouts, pages.Count);
 
-            bool anyRight = false;
-            foreach (bool isRight in right)
+            // Сдвиг каждого листа — переплёт его раздела.
+            var sheets = SectionSheetsApply
+                ? BuildPageSections(layouts, tables, pages.Count, layout => layout?.Page is not null)
+                : null;
+
+            var shift = new float[pages.Count];
+            bool anyShift = false;
+            for (int p = 0; p < pages.Count; p++)
             {
-                if (isRight) { anyRight = true; break; }
+                if (!right[p]) continue;
+                shift[p] = -SheetGutterPt(sheets?[p].Page);
+                anyShift |= shift[p] != 0f;
             }
-            if (!anyRight) return (layouts, pages, tables, images, shapes);
+            if (!anyShift) return (layouts, pages, tables, images, shapes);
 
-            float shiftPt = -gutterPt;
-
-            bool Shifted(int pageIndex)
-                => pageIndex >= 0 && pageIndex < right.Length && right[pageIndex];
+            float ShiftOf(int pageIndex)
+                => pageIndex >= 0 && pageIndex < shift.Length ? shift[pageIndex] : 0f;
 
             var newPages = new List<PageRect>(pages.Count);
             for (int p = 0; p < pages.Count; p++)
             {
                 var page = pages[p];
-                newPages.Add(right[p]
-                    ? page with { MarginLeftPt = page.MarginLeftPt + shiftPt, GutterShiftPt = shiftPt }
+                newPages.Add(shift[p] != 0f
+                    ? page with { MarginLeftPt = page.MarginLeftPt + shift[p], GutterShiftPt = shift[p] }
                     : page);
             }
 
             var newLayouts = new List<ParaLayout>(layouts.Count);
             foreach (var pl in layouts)
             {
-                newLayouts.Add(Shifted(pl.PageIndex)
-                    ? pl with { AbsXPt = pl.AbsXPt + shiftPt, Cell = pl.Cell?.ShiftedX(shiftPt) }
+                float s = ShiftOf(pl.PageIndex);
+                newLayouts.Add(s != 0f
+                    ? pl with { AbsXPt = pl.AbsXPt + s, Cell = pl.Cell?.ShiftedX(s) }
                     : pl);
             }
 
             var newTables = new List<TableEntry>(tables.Count);
             foreach (var te in tables)
-                newTables.Add(Shifted(te.PageIndex) ? te with { XPt = te.XPt + shiftPt } : te);
+            {
+                float s = ShiftOf(te.PageIndex);
+                newTables.Add(s != 0f ? te with { XPt = te.XPt + s } : te);
+            }
 
             var newImages = new List<ImageEntry>(images.Count);
             foreach (var ie in images)
-                newImages.Add(Shifted(ie.PageIndex) ? ie with { XPt = ie.XPt + shiftPt } : ie);
+            {
+                float s = ShiftOf(ie.PageIndex);
+                newImages.Add(s != 0f ? ie with { XPt = ie.XPt + s } : ie);
+            }
 
             var newShapes = new List<ShapeEntry>(shapes.Count);
             foreach (var se in shapes)
-                newShapes.Add(Shifted(se.PageIndex) ? se with { XPt = se.XPt + shiftPt } : se);
+            {
+                float s = ShiftOf(se.PageIndex);
+                newShapes.Add(s != 0f ? se with { XPt = se.XPt + s } : se);
+            }
 
             return (newLayouts, newPages, newTables, newImages, newShapes);
         }

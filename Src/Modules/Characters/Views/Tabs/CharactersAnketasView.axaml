@@ -44,6 +44,11 @@
 							<TextBlock Text="Из файла…" FontSize="12"/>
 						</StackPanel>
 					</Button>
+					<Button Click="OnGlyphLibraryClick"
+					        behaviours:TooltipBehavior.Tip="Все значки"
+					        behaviours:TooltipBehavior.Description="Окно значков: встроенные и свои картинки проекта — те же, что у анкет, шаблонов и меток">
+						<TextBlock Text="Все значки…" FontSize="12"/>
+					</Button>
 					<Button Click="OnGlyphClearClick" x:Name="GlyphClearButton">
 						<TextBlock Text="Без значка" FontSize="12"/>
 					</Button>
@@ -219,6 +224,70 @@
 		<Style Selector="Border.cell:pointerover Border.cell-grip, Border.cell.selected Border.cell-grip">
 			<Setter Property="Opacity" Value="1"/>
 		</Style>
+		<!-- Уровни детализации: глубже уровня показа — приглушено,
+		     значок уровня у поля — буква К, П или Г. -->
+		<Style Selector="Border.row.beyond, Border.cell.beyond">
+			<Setter Property="Opacity" Value="0.35"/>
+		</Style>
+		<Style Selector="Button.depth-badge">
+			<Setter Property="Width" Value="20"/>
+			<Setter Property="Height" Value="20"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalAlignment" Value="Top"/>
+			<Setter Property="Margin" Value="0,3,0,0"/>
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
+		<Style Selector="Button.depth-badge:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.depth-badge.own">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<!-- Строка меню уровней: значок-полоски, название, пояснение -->
+		<Style Selector="Button.depth-choice">
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+			<Setter Property="Padding" Value="8,6"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.depth-choice:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.depth-choice.selected">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.depth-choice.selected /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+		</Style>
+
+		<!-- Значок анкеты принимает картинку броском: рамка акцентом -->
+		<Style Selector="Button.anketa-icon">
+			<Setter Property="CornerRadius" Value="11"/>
+			<Setter Property="BorderThickness" Value="2"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.anketa-icon.drop">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.anketa-icon.drop /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
 		<Style Selector="Rectangle.empty-frame">
 			<Setter Property="Stroke" Value="{DynamicResource BorderDefaultBrush}"/>
 			<Setter Property="StrokeThickness" Value="1"/>
@@ -357,7 +426,8 @@
 								        behaviours:TooltipBehavior.Description="{Binding Description}">
 									<Grid ColumnDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="7" VerticalAlignment="Center">
 										<controls:AnketaIconBadge Grid.Column="0" Size="16"
-										                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+										                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"
+										                          IconBackground="{Binding IconBackground}" IconBorder="{Binding IconBorder}"/>
 										<TextBlock Grid.Column="1" Classes="sheet-name"
 										           Text="{Binding Name}" FontSize="12"
 										           MaxWidth="180" TextTrimming="CharacterEllipsis"
@@ -366,17 +436,24 @@
 										         VerticalAlignment="Center"
 										         Fill="{DynamicResource AccentDefaultBrush}"
 										         IsVisible="{Binding IsDirty}"/>
-										<Button Grid.Column="3" Classes="sheet-close"
+										<Button Grid.Column="3" Classes="sheet-close ro-allow"
 										        Click="OnCloseSheetClick"
 										        behaviours:TooltipBehavior.Tip="Закрыть лист">
 											<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
 											          Width="7" Height="7" Foreground="{DynamicResource TextPrimaryBrush}"/>
 											<FlyoutBase.AttachedFlyout>
 												<Flyout Placement="BottomEdgeAlignedLeft">
-													<StackPanel Spacing="8" Margin="2">
+													<StackPanel Spacing="8" Margin="2" MaxWidth="320">
 														<TextBlock Text="Сохранить изменения?" FontWeight="SemiBold"/>
+														<!-- Какая анкета и что будет: вопрос всплывает у вкладки,
+														     и без имени непонятно, о каком листе речь. -->
+														<TextBlock FontSize="11" TextWrapping="Wrap"
+														           Foreground="{DynamicResource TextSecondaryBrush}">
+															<Run Text="В анкете «"/><Run Text="{Binding Name}"/><Run Text="» есть несохранённые правки. Сохранённые попадут в карточки персонажей, к которым анкета подключена."/>
+														</TextBlock>
 														<StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
-															<Button Content="Не сохранять" Click="OnCloseDiscardClick"/>
+															<Button Classes="ro-allow" Content="Отмена" Click="OnCloseCancelClick"/>
+															<Button Classes="ro-allow" Content="Не сохранять" Click="OnCloseDiscardClick"/>
 															<Button Classes="primary" Content="Сохранить" Click="OnCloseSaveClick"/>
 														</StackPanel>
 													</StackPanel>
@@ -412,27 +489,33 @@
 											</StackPanel>
 										</Button>
 									</StackPanel>
-									<TextBox
+									<TextBox Classes="ro-allow"
 									         Text="{Binding PickerQuery, Mode=TwoWay}"
 									         PlaceholderText="Поиск анкеты или поля"/>
 									<ScrollViewer MaxHeight="360">
 										<ItemsControl ItemsSource="{Binding PickerItems}">
 											<ItemsControl.ItemTemplate>
 												<DataTemplate x:DataType="vm:AnketaPickItemViewModel">
-													<Button Classes="pick-row" Click="OnPickAnketaClick"
+													<Button Classes="pick-row ro-allow" Click="OnPickAnketaClick"
 													        behaviours:TooltipBehavior.Tip="{Binding Name}"
 													        behaviours:TooltipBehavior.Description="{Binding Description}">
-														<Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="9">
+														<Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="9">
 															<controls:AnketaIconBadge Grid.Column="0" Size="22"
-															                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+															                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"
+															                          IconBackground="{Binding IconBackground}" IconBorder="{Binding IconBorder}"/>
 															<TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
 															           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
 															           Foreground="{DynamicResource TextPrimaryBrush}"/>
-															<PathIcon Grid.Column="2" IsVisible="{Binding IsBuiltIn}"
+															<TextBlock Grid.Column="2" Text="{Binding AudienceLabel}"
+															           IsVisible="{Binding HasAudienceLabel}"
+															           FontSize="10" FontStyle="Italic"
+															           VerticalAlignment="Center"
+															           Foreground="{DynamicResource TextMutedBrush}"/>
+															<PathIcon Grid.Column="3" IsVisible="{Binding IsBuiltIn}"
 															          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"
 															          Width="9" Height="9" VerticalAlignment="Center"
 															          Foreground="{DynamicResource TextMutedBrush}"/>
-															<TextBlock Grid.Column="3" Text="{Binding FieldCount}" FontSize="10"
+															<TextBlock Grid.Column="4" Text="{Binding FieldCount}" FontSize="10"
 															           VerticalAlignment="Center"
 															           Foreground="{DynamicResource TextMutedBrush}"/>
 														</Grid>
@@ -653,6 +736,11 @@
 						<DockPanel>
 							<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Анкета"/>
 							<StackPanel Spacing="3" VerticalAlignment="Center">
+								<Button Classes="RibbonBtn" Margin="1.5" Click="OnIconLibraryClick"
+								        behaviours:TooltipBehavior.Tip="Библиотека значков"
+								        behaviours:TooltipBehavior.Description="Встроенные значки и свои картинки проекта — общие для анкет, шаблонов и меток персонажей. Пополнить, переименовать, убрать лишнее">
+									<PathIcon Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" Width="14" Height="14"/>
+								</Button>
 								<Button Classes="RibbonBtn" Margin="1.5" Click="OnMakeCopyClick"
 								        behaviours:TooltipBehavior.Tip="Своя копия"
 								        behaviours:TooltipBehavior.Description="Отдельная анкета с тем, что сейчас на листе. Так правят встроенные">
@@ -676,11 +764,42 @@
 						</DockPanel>
 					</Border>
 
+					<!-- Уровень: лист показывается так, как его увидит персонаж
+					     с выбранной глубиной. Глубже — приглушено; новые поля
+					     встают на выбранный уровень — анкету собирают слоями. -->
+					<Border Classes="RibbonGroup">
+						<DockPanel>
+							<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Уровень"/>
+							<ItemsControl ItemsSource="{Binding ActiveSheet.PreviewDepthOptions}" VerticalAlignment="Center">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate><UniformGrid Rows="2" Columns="2"/></ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate>
+										<ToggleButton Classes="RibbonToggle" Margin="1.5"
+										              HorizontalAlignment="Stretch"
+										              HorizontalContentAlignment="Left"
+										              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+										              behaviours:TooltipBehavior.Tip="{Binding Label}"
+										              behaviours:TooltipBehavior.Description="{Binding Hint}">
+											<StackPanel Orientation="Horizontal" Spacing="5">
+												<controls:DepthGlyph Level="{Binding GlyphLevel}" Size="11"
+												                     IsVisible="{Binding HasGlyph}"
+												                     VerticalAlignment="Center"/>
+												<TextBlock Text="{Binding Label}" VerticalAlignment="Center"/>
+											</StackPanel>
+										</ToggleButton>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+						</DockPanel>
+					</Border>
+
 					<!-- Просмотр -->
 					<Border Classes="RibbonGroup">
 						<DockPanel>
 							<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Просмотр"/>
-							<Button Classes="RibbonBtnLarge" Click="OnPreviewClick"
+							<Button Classes="RibbonBtnLarge ro-allow" Click="OnPreviewClick"
 							        behaviours:TooltipBehavior.Tip="Превью"
 							        behaviours:TooltipBehavior.Description="Анкета так, как она встанет в карточку персонажа">
 								<StackPanel Spacing="3">
@@ -708,47 +827,23 @@
 						<!-- Шапка: значок, название, описание -->
 						<Border Classes="block-header">
 							<Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-								<Button Grid.Column="0" Classes="ghost" Padding="0" MinHeight="0"
+								<!-- Значок анкеты: щелчок — окно значков с библиотекой
+								     своих картинок и цветом, бросок картинки прямо на
+								     значок — своя картинка в библиотеку и сразу анкете.
+								     Рамка вокруг показывает, что значок примет файл. -->
+								<Button Grid.Column="0" Classes="ghost anketa-icon" Padding="2" MinHeight="0"
 								        VerticalAlignment="Center"
 								        IsEnabled="{Binding IsEditable}"
 								        Click="OnAnketaIconClick"
+								        DragDrop.AllowDrop="True"
+								        DragDrop.DragEnter="OnAnketaIconDragOver"
+								        DragDrop.DragOver="OnAnketaIconDragOver"
+								        DragDrop.DragLeave="OnAnketaIconDragLeave"
+								        DragDrop.Drop="OnAnketaIconDrop"
 								        behaviours:TooltipBehavior.Tip="Значок и цвет анкеты"
-								        behaviours:TooltipBehavior.Description="По ним анкету узнают в шаблонах и в карточке персонажа">
-									<controls:AnketaIconBadge Size="34" Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
-									<FlyoutBase.AttachedFlyout>
-										<Flyout Placement="BottomEdgeAlignedLeft">
-											<StackPanel Width="340" Spacing="8" Margin="2">
-												<ItemsControl ItemsSource="{Binding IconOptions}">
-													<ItemsControl.ItemsPanel>
-														<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-													</ItemsControl.ItemsPanel>
-													<ItemsControl.ItemTemplate>
-														<DataTemplate x:DataType="vm:AnketaIconOptionViewModel">
-															<ToggleButton Classes="swatch" Width="32" Height="32"
-															              IsChecked="{Binding IsSelected, Mode=TwoWay}"
-															              behaviours:TooltipBehavior.Tip="{Binding Label}">
-																<controls:AnketaIconBadge Size="26" Icon="{Binding Key}" IconColor="{Binding IconColor}"/>
-															</ToggleButton>
-														</DataTemplate>
-													</ItemsControl.ItemTemplate>
-												</ItemsControl>
-												<Border Height="1" Background="{DynamicResource BorderDefaultBrush}"/>
-												<ItemsControl ItemsSource="{Binding IconColorOptions}">
-													<ItemsControl.ItemsPanel>
-														<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-													</ItemsControl.ItemsPanel>
-													<ItemsControl.ItemTemplate>
-														<DataTemplate x:DataType="vm:AnketaIconColorOptionViewModel">
-															<ToggleButton Classes="swatch" Width="32" Height="32"
-															              IsChecked="{Binding IsSelected, Mode=TwoWay}">
-																<controls:AnketaIconBadge Size="26" Icon="{Binding Icon}" IconColor="{Binding Hex}"/>
-															</ToggleButton>
-														</DataTemplate>
-													</ItemsControl.ItemTemplate>
-												</ItemsControl>
-											</StackPanel>
-										</Flyout>
-									</FlyoutBase.AttachedFlyout>
+								        behaviours:TooltipBehavior.Description="Щелчок — встроенные и свои значки, свой цвет и градиент. Картинку можно бросить прямо на значок: она встанет в свои значки проекта и сразу анкете">
+									<controls:AnketaIconBadge Size="34" Icon="{Binding Icon}" IconColor="{Binding IconColor}"
+									                          IconBackground="{Binding IconBackground}" IconBorder="{Binding IconBorder}"/>
 								</Button>
 								<StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
 									<TextBox x:Name="SheetNameBox"
@@ -762,6 +857,33 @@
 									         FontSize="11"
 									         Foreground="{DynamicResource TextSecondaryBrush}"
 									         PlaceholderText="Для чего анкета — одной строкой"/>
+									<!-- Для кого анкета: карточка предлагает только подходящие —
+									     группе анкеты группы, персонажу анкеты персонажа. -->
+									<StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+										<TextBlock Text="Для кого" FontSize="11" VerticalAlignment="Center"
+										           Foreground="{DynamicResource TextSecondaryBrush}"/>
+										<ItemsControl ItemsSource="{Binding AudienceOptions}"
+										              IsEnabled="{Binding IsEditable}"
+										              VerticalAlignment="Center">
+											<ItemsControl.ItemsPanel>
+												<ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="3"/></ItemsPanelTemplate>
+											</ItemsControl.ItemsPanel>
+											<ItemsControl.ItemTemplate>
+												<DataTemplate>
+													<ToggleButton Classes="RibbonToggle"
+													              Content="{Binding Label}"
+													              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+													              behaviours:TooltipBehavior.Tip="{Binding Label}"
+													              behaviours:TooltipBehavior.Description="{Binding Hint}"/>
+												</DataTemplate>
+											</ItemsControl.ItemTemplate>
+										</ItemsControl>
+										<TextBlock Text="{Binding LevelsCaption}" FontSize="10"
+										           VerticalAlignment="Center" Margin="8,0,0,0"
+										           Foreground="{DynamicResource TextMutedBrush}"
+										           behaviours:TooltipBehavior.Tip="Поля по уровням"
+										           behaviours:TooltipBehavior.Description="Сколько полей увидит персонаж с такой глубиной анкеты. Уровни накопительные: подробно — это краткое и ещё"/>
+									</StackPanel>
 								</StackPanel>
 							</Grid>
 						</Border>
@@ -795,7 +917,8 @@
 									<DataTemplate x:DataType="vm:AnketaLayoutRowViewModel">
 										<Border Classes="row"
 										        Classes.selected="{Binding IsSelected}"
-										        Classes.drag-source="{Binding IsDragSource}">
+										        Classes.drag-source="{Binding IsDragSource}"
+										        Classes.beyond="{Binding IsBeyondPreview}">
 											<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="4">
 												<Border Grid.Column="0" Classes="row-grip"
 												        IsVisible="{Binding Sheet.IsEditable}"
@@ -810,7 +933,7 @@
 
 												<Panel Grid.Column="1">
 													<!-- Подзаголовок группы -->
-													<Grid ColumnDefinitions="Auto,*" ColumnSpacing="8"
+													<Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8"
 													      IsVisible="{Binding IsGroup}" Margin="2,6,2,2">
 														<TextBox Grid.Column="0"
 														         Text="{Binding Title, Mode=TwoWay}"
@@ -819,7 +942,32 @@
 														         MinWidth="80"
 														         Foreground="{DynamicResource TextSecondaryBrush}"
 														         PlaceholderText="Название группы"/>
-														<Border Grid.Column="1" Height="1" VerticalAlignment="Center"
+														<!-- Уровень группы: одна, две, три полоски — кратко,
+														     подробно, глубоко. Поля под подзаголовком встают на
+														     него, если у них нет своего. Рядом — уровень словом. -->
+														<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+															<ItemsControl ItemsSource="{Binding DepthOptions}"
+															              IsEnabled="{Binding Sheet.IsEditable}"
+															              VerticalAlignment="Center">
+																<ItemsControl.ItemsPanel>
+																	<ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="1"/></ItemsPanelTemplate>
+																</ItemsControl.ItemsPanel>
+																<ItemsControl.ItemTemplate>
+																	<DataTemplate>
+																		<ToggleButton Classes="col-btn"
+																		              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+																		              behaviours:TooltipBehavior.Tip="{Binding Label}"
+																		              behaviours:TooltipBehavior.Description="{Binding Hint}">
+																			<controls:DepthGlyph Level="{Binding GlyphLevel}" Size="11"/>
+																		</ToggleButton>
+																	</DataTemplate>
+																</ItemsControl.ItemTemplate>
+															</ItemsControl>
+															<TextBlock Text="{Binding DepthName}" FontSize="10"
+															           VerticalAlignment="Center"
+															           Foreground="{DynamicResource TextMutedBrush}"/>
+														</StackPanel>
+														<Border Grid.Column="2" Height="1" VerticalAlignment="Center"
 														        Background="{DynamicResource BorderDefaultBrush}"/>
 													</Grid>
 
@@ -834,11 +982,12 @@
 															<DataTemplate x:DataType="vm:AnketaLayoutCellViewModel">
 																<Border Classes="cell"
 																        Classes.selected="{Binding Field.IsSelected}"
-																        Classes.drop="{Binding IsDropTarget}">
+																        Classes.drop="{Binding IsDropTarget}"
+																        Classes.beyond="{Binding Field.IsBeyondPreview}">
 																	<Panel>
 																		<Rectangle Classes="empty-frame" RadiusX="5" RadiusY="5"
 																		           IsVisible="{Binding IsEmpty}"/>
-																		<Grid ColumnDefinitions="Auto,*" ColumnSpacing="2" IsVisible="{Binding HasField}">
+																		<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="2" IsVisible="{Binding HasField}">
 																			<Border Grid.Column="0" Classes="cell-grip"
 																			        IsVisible="{Binding Row.Sheet.IsEditable}"
 																			        PointerPressed="OnCellGripPressed"
@@ -851,6 +1000,46 @@
 																				          Width="9" Height="12"/>
 																			</Border>
 																			<fields:ParameterFieldView Grid.Column="1" DataContext="{Binding Field.Preview}"/>
+																			<!-- Уровень поля — полоски: одна, две, три — кратко,
+																			     подробно, глубоко. Обведены акцентом, когда поле
+																			     задало уровень само, а не взяло у группы. Щелчок —
+																			     меню уровней прямо на листе. -->
+																			<Button Grid.Column="2" Classes="depth-badge"
+																			        Classes.own="{Binding Field.HasOwnDepth}"
+																			        behaviours:TooltipBehavior.Tip="{Binding Field.DepthName}"
+																			        behaviours:TooltipBehavior.Description="{Binding Field.DepthTip}">
+																				<controls:DepthGlyph Level="{Binding Field.EffectiveDepth}" Size="11"/>
+																				<Button.Flyout>
+																					<Flyout Placement="BottomEdgeAlignedRight">
+																						<StackPanel Width="290" Spacing="2" Margin="2"
+																						            IsEnabled="{Binding Row.Sheet.IsEditable}">
+																							<TextBlock Text="Уровень поля" FontSize="11" FontWeight="SemiBold"
+																							           Margin="6,2,6,4"
+																							           Foreground="{DynamicResource TextSecondaryBrush}"/>
+																							<ItemsControl ItemsSource="{Binding Field.DepthOptions}">
+																								<ItemsControl.ItemTemplate>
+																									<DataTemplate>
+																										<Button Classes="depth-choice"
+																										        Classes.selected="{Binding IsSelected}"
+																										        Click="OnDepthChoiceClick">
+																											<Grid ColumnDefinitions="16,*" ColumnSpacing="10">
+																												<controls:DepthGlyph Grid.Column="0" Level="{Binding GlyphLevel}" Size="14"
+																												                     IsVisible="{Binding HasGlyph}"
+																												                     VerticalAlignment="Top" Margin="0,2,0,0"/>
+																												<StackPanel Grid.Column="1" Spacing="1">
+																													<TextBlock Text="{Binding Label}" FontSize="12"/>
+																													<TextBlock Text="{Binding Hint}" FontSize="10" TextWrapping="Wrap"
+																													           Foreground="{DynamicResource TextMutedBrush}"/>
+																												</StackPanel>
+																											</Grid>
+																										</Button>
+																									</DataTemplate>
+																								</ItemsControl.ItemTemplate>
+																							</ItemsControl>
+																						</StackPanel>
+																					</Flyout>
+																				</Button.Flyout>
+																			</Button>
 																		</Grid>
 																	</Panel>
 																</Border>
@@ -925,6 +1114,49 @@
 							</Grid>
 
 							<StackPanel IsEnabled="{Binding Owner.IsEditable}">
+
+								<!-- Уровень детализации -->
+								<Border Classes="ps">
+									<StackPanel>
+										<ToggleButton x:Name="SecDepth" Classes="ps-head" IsChecked="True">
+											<Grid ColumnDefinitions="*,Auto">
+												<TextBlock Text="Уровень"/>
+												<PathIcon Grid.Column="1" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+											</Grid>
+										</ToggleButton>
+										<StackPanel Classes="ps-body" IsVisible="{Binding #SecDepth.IsChecked}">
+											<ItemsControl ItemsSource="{Binding DepthOptions}">
+												<ItemsControl.ItemsPanel>
+													<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+												</ItemsControl.ItemsPanel>
+												<ItemsControl.ItemTemplate>
+													<DataTemplate>
+														<ToggleButton Classes="RibbonToggle" Margin="0,0,3,3"
+														              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+														              behaviours:TooltipBehavior.Tip="{Binding Label}"
+														              behaviours:TooltipBehavior.Description="{Binding Hint}">
+															<StackPanel Orientation="Horizontal" Spacing="5">
+																<controls:DepthGlyph Level="{Binding GlyphLevel}" Size="11"
+																                     IsVisible="{Binding HasGlyph}"
+																                     VerticalAlignment="Center"/>
+																<TextBlock Text="{Binding Label}" VerticalAlignment="Center"/>
+															</StackPanel>
+														</ToggleButton>
+													</DataTemplate>
+												</ItemsControl.ItemTemplate>
+											</ItemsControl>
+											<TextBlock Classes="pl" TextWrapping="Wrap"
+											           Foreground="{DynamicResource TextMutedBrush}">
+												<Run Text="Показывается с уровня"/>
+												<Run Text="{Binding DepthName}" FontWeight="SemiBold"/>
+											</TextBlock>
+											<TextBlock Classes="pl" TextWrapping="Wrap"
+											           FontSize="10"
+											           Foreground="{DynamicResource TextMutedBrush}"
+											           Text="Полоски — уровень детализации: одна — кратко, две — подробно, три — глубоко. Персонаж видит поле, если анкета раскрыта у него на этот уровень или глубже"/>
+										</StackPanel>
+									</StackPanel>
+								</Border>
 
 								<!-- Подпись -->
 								<Border Classes="ps">
@@ -1348,8 +1580,8 @@
 					        BorderBrush="{DynamicResource BorderDefaultBrush}" BorderThickness="0,0,0,1"
 					        Padding="14,8">
 						<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-							<TextBlock Grid.Column="0" Text="Превью" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
-							<Button Grid.Column="2" Click="OnPreviewCloseClick"
+							<TextBlock Grid.Column="0" Text="{Binding ActiveSheet.PreviewCaption}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+							<Button Classes="ro-allow" Grid.Column="2" Click="OnPreviewCloseClick"
 							        behaviours:TooltipBehavior.Tip="Закрыть" behaviours:TooltipBehavior.HotKey="Escape">
 								<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" Width="10" Height="10"/>
 							</Button>
@@ -1360,7 +1592,8 @@
 							<StackPanel Spacing="6">
 								<Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,0,0,4">
 									<controls:AnketaIconBadge Grid.Column="0" Size="22"
-									                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"/>
+									                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"
+									                          IconBackground="{Binding IconBackground}" IconBorder="{Binding IconBorder}"/>
 									<TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="12" FontWeight="SemiBold"
 									           VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
 								</Grid>

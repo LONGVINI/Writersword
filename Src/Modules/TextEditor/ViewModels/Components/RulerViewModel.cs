@@ -109,7 +109,28 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
     /// прокрутки и без сдвига холста внутри окна). Из листов одного ряда берётся
     /// первый — по вертикали они стоят одинаково.
     /// </summary>
-    public readonly record struct RulerPageBand(int PageIndex, double TopPx, double HeightPx);
+    /// <param name="HeightMm">Высота листа, мм; 0 — лист документа.</param>
+    /// <param name="MarginTopMm">Верхнее поле листа, мм; меньше нуля — поле документа.</param>
+    /// <param name="MarginBottomMm">Нижнее поле листа, мм; меньше нуля — поле документа.</param>
+    /// <param name="OwnSheet">
+    /// Лист раздела со своими размером или полями: его поля тянуть с линейки нельзя —
+    /// линейка правит поля документа, а не раздела.
+    /// </param>
+    public readonly record struct RulerPageBand(
+        int PageIndex, double TopPx, double HeightPx,
+        double HeightMm = 0, double MarginTopMm = -1, double MarginBottomMm = -1, bool OwnSheet = false,
+        object? Section = null);
+
+    /// <summary>
+    /// Лист под кареткой для линейки: размер и поля, промежутки между колонками
+    /// (от левого края текста) и раздел, чей это лист (null — лист документа). Поля,
+    /// перетянутые на линейке, уходят в этот раздел.
+    /// </summary>
+    public sealed record RulerSheet(
+        object? Section,
+        double WidthMm, double HeightMm,
+        double MarginLeftMm, double MarginRightMm, double MarginTopMm, double MarginBottomMm,
+        IReadOnlyList<(double FromMm, double ToMm)> ColumnGapsMm);
 
     public sealed class RulerViewModel : ReactiveObject
     {
@@ -754,13 +775,21 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
 
         /// <summary>Начато перетаскивание поля страницы — владелец делает снапшот для Undo.</summary>
         public event Action? MarginDragStarted;
-        public void BeginMarginDrag() => MarginDragStarted?.Invoke();
+        public void BeginMarginDrag()
+        {
+            _marginDragActive = true;
+            MarginDragStarted?.Invoke();
+        }
 
         public event Action<double, double>? MarginChanged;
         public void NotifyMarginChanged() => MarginChanged?.Invoke(MarginLeftMm, MarginRightMm);
 
         public event Action<double, double>? MarginCommitted;
-        public void CommitMarginChange() => MarginCommitted?.Invoke(MarginLeftMm, MarginRightMm);
+        public void CommitMarginChange()
+        {
+            _marginDragActive = false;
+            MarginCommitted?.Invoke(MarginLeftMm, MarginRightMm);
+        }
 
         public event Action<IReadOnlyDictionary<int, double>>? AllColumnWidthsChanged;
         public event Action<IReadOnlyDictionary<int, double>>? AllColumnWidthsChanging;
@@ -812,6 +841,34 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             => Units == RulerUnits.Inches ? 0.125 : 0.1;
 
         // ── Методы ────────────────────────────────────────────────────────
+
+        /// <summary>Раздел, чей лист сейчас на линейке; null — лист документа.</summary>
+        public object? CurrentSection { get; private set; }
+
+        private IReadOnlyList<(double FromMm, double ToMm)> _columnGapsMm = Array.Empty<(double, double)>();
+
+        /// <summary>Промежутки между колонками раздела, мм от левого края текста.</summary>
+        public IReadOnlyList<(double FromMm, double ToMm)> ColumnGapsMm
+        {
+            get => _columnGapsMm;
+            private set => this.RaiseAndSetIfChanged(ref _columnGapsMm, value);
+        }
+
+        /// <summary>
+        /// Линейка показывает лист под кареткой: у раздела бывают свои размер, поля и
+        /// колонки. Во время перетаскивания поля лист не меняется — его ведёт мышь.
+        /// </summary>
+        public void ShowSheet(RulerSheet sheet)
+        {
+            if (_marginDragActive) return;
+
+            CurrentSection = sheet.Section;
+            ColumnGapsMm = sheet.ColumnGapsMm;
+            UpdatePageSettings(sheet.WidthMm, sheet.HeightMm,
+                sheet.MarginLeftMm, sheet.MarginRightMm, sheet.MarginTopMm, sheet.MarginBottomMm);
+        }
+
+        private bool _marginDragActive;
 
         public void UpdatePageSettings(
             double widthMm, double heightMm,

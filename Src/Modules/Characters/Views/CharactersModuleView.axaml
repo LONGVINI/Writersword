@@ -3,6 +3,7 @@
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
              xmlns:views="using:Writersword.Modules.Characters.Views"
              xmlns:avatars="using:Writersword.Modules.Characters.Views.Avatars"
+             xmlns:icons="using:Writersword.Modules.Characters.Views.Icons"
              xmlns:onb="using:Writersword.Modules.Characters.Views.Onboarding"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:ui="using:Writersword.Styles.UserControls"
@@ -56,6 +57,12 @@
 		     панель менеджера шире панели выбора и внутри неё была бы срезана
 		     по краю, а собственный скролл пикера спорил бы с её скроллом. -->
 		<avatars:CharacterAvatarPackManagerOverlay x:Name="AvatarPackManagerOverlayControl" ZIndex="175"/>
+
+		<!-- Окно значков: выбор значка анкете, шаблону, метке и библиотека
+		     своих значков проекта. Выше редактора метки — зовётся и из него, —
+		     но ниже обрезки: обрезка вызывается из окна значков и должна его
+		     перекрывать. -->
+		<icons:IconPickerOverlay x:Name="IconPickerOverlayControl" ZIndex="178"/>
 
 		<avatars:CharacterAvatarCropOverlay x:Name="AvatarCropOverlayControl" ZIndex="180"/>
 
@@ -121,21 +128,21 @@
 				<StackPanel Orientation="Horizontal">
 					<Button Content="{x:Static loc:CharactersStrings.Tab_Characters}"
                             Command="{ReflectionBinding GoToCharactersCommand}"
-                            Classes="tab"
+                            Classes="tab ro-allow"
                             Classes.tab-active="{Binding IsTab0Active}"/>
 					<Button Content="{x:Static loc:CharactersStrings.Tab_Edit}"
                             Command="{ReflectionBinding GoToEditCommand}"
-                            Classes="tab"
+                            Classes="tab ro-allow"
                             Classes.tab-active="{Binding IsTab1Active}"/>
 					<Button Content="{x:Static loc:CharactersStrings.Tab_Relationships}"
                             Command="{ReflectionBinding GoToRelationshipsCommand}"
-                            Classes="tab"
+                            Classes="tab ro-allow"
                             Classes.tab-active="{Binding IsTab2Active}"/>
 					<!-- Анкеты и шаблоны — одна вкладка с переключателем внутри:
 					     шаблон собирается из анкет, и это одна работа. -->
 					<Button Content="Шаблоны и анкеты"
                             Command="{ReflectionBinding GoToLibraryCommand}"
-                            Classes="tab"
+                            Classes="tab ro-allow"
                             Classes.tab-active="{Binding IsLibraryTabActive}"/>
 				</StackPanel>
 			</Border>
@@ -144,6 +151,32 @@
 			     (см. SwitchTab) — тяжёлые «Персонажи» не рвутся при переходе. -->
 			<Panel Grid.Row="1" x:Name="TabContent"/>
 		</Grid>
+
+		<!-- Подсказка режима сравнения: всплывает, когда в режиме только
+		     чтения пытаются что-то поменять, и гаснет сама. -->
+		<Border x:Name="ReadOnlyNotice"
+                ZIndex="300"
+                IsVisible="False"
+                IsHitTestVisible="False"
+                VerticalAlignment="Top"
+                HorizontalAlignment="Center"
+                Margin="0,44,0,0"
+                Padding="14,8"
+                CornerRadius="8"
+                Background="#F0161616"
+                BorderBrush="{DynamicResource AccentDefaultBrush}"
+                BorderThickness="1">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="16" OffsetX="0" OffsetY="4" Opacity="0.35"/>
+			</Border.Effect>
+			<StackPanel Orientation="Horizontal" Spacing="10">
+				<PathIcon Data="M12 17a2 2 0 0 0 2-2 2 2 0 0 0-2-2 2 2 0 0 0-2 2 2 2 0 0 0 2 2m6-9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h1V6a5 5 0 0 1 5-5 5 5 0 0 1 5 5v2h1m-6-5a3 3 0 0 0-3 3v2h6V6a3 3 0 0 0-3-3z"
+				          Width="14" Height="14" Foreground="{DynamicResource AccentDefaultBrush}"
+				          VerticalAlignment="Center"/>
+				<TextBlock Text="Идёт сравнение версий — только просмотр. Править можно после выхода из сравнения"
+				           FontSize="12" Foreground="White" VerticalAlignment="Center"/>
+			</StackPanel>
+		</Border>
 
 		<!-- Тост снизу — появляется при удалении, скрывается по Ctrl+Z или по кнопке -->
 		<Border x:Name="UndoToast"

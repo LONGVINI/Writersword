@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using SkiaSharp;
 using Writersword.Core.Models.Rendering;
@@ -29,7 +29,19 @@ namespace Writersword.Modules.TextEditor.Document
             float Ypt,
             ParagraphBlock? Tail = null,
             bool ContinuesParagraph = false,
-            bool IsColumn = false);
+            bool IsColumn = false,
+            BreakType Kind = BreakType.Page);
+
+        /// <summary>Подпись отметки разрыва раздела — как у Word.</summary>
+        private static string? SectionBreakLabel(BreakType kind) => kind switch
+        {
+            BreakType.SectionNextPage => "Разрыв раздела (со следующей страницы)",
+            BreakType.SectionContinuous => "Разрыв раздела (на текущей странице)",
+            BreakType.SectionEvenPage => "Разрыв раздела (с чётной страницы)",
+            BreakType.SectionOddPage => "Разрыв раздела (с нечётной страницы)",
+            BreakType.SectionNextColumn => "Разрыв раздела (со следующего столбца)",
+            _ => null
+        };
 
         // Подписи отметок разрыва — как у Word.
         private const string PageBreakLabel = "Разрыв страницы";
@@ -471,7 +483,8 @@ namespace Writersword.Modules.TextEditor.Document
                 // Разрыв внутри абзаца отмечен на строке самого абзаца (DrawInlineBreakMark).
                 if (mark.Tail is not null) continue;
 
-                string label = mark.IsColumn ? ColumnBreakLabel : PageBreakLabel;
+                string? sectionLabel = SectionBreakLabel(mark.Kind);
+                string label = sectionLabel ?? (mark.IsColumn ? ColumnBreakLabel : PageBreakLabel);
                 float labelWidth = font.MeasureText(label);
 
                 if (mark.PageIndex < firstPage || mark.PageIndex > lastPage) continue;
@@ -488,15 +501,24 @@ namespace Writersword.Modules.TextEditor.Document
                 float center = (left + right) / 2f;
                 float gap = labelWidth / 2f + 4f;
 
+                // Разрыв раздела у Word — двойной пунктир.
+                float second = sectionLabel is not null ? 2f * onePx : 0f;
+
                 if (right - left > labelWidth + 16f)
                 {
                     canvas.DrawLine(left, y, center - gap, y, line);
                     canvas.DrawLine(center + gap, y, right, y, line);
+                    if (second > 0f)
+                    {
+                        canvas.DrawLine(left, y + second, center - gap, y + second, line);
+                        canvas.DrawLine(center + gap, y + second, right, y + second, line);
+                    }
                     canvas.DrawText(label, center - labelWidth / 2f, y + 2.5f, SKTextAlign.Left, font, textPaint);
                 }
                 else
                 {
                     canvas.DrawLine(left, y, right, y, line);
+                    if (second > 0f) canvas.DrawLine(left, y + second, right, y + second, line);
                 }
             }
         }

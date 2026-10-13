@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Writersword.Modules.TextEditor.Models.Page;
 
@@ -68,7 +68,7 @@ namespace Writersword.Modules.TextEditor.Services
             var result = new HeaderFooterEditResult();
             editedText ??= string.Empty;
 
-            var band = settings.GetBand(decoration.Variant, header);
+            var band = settings.BandFor(decoration, header);
             string template = band.GetSlot(slot);
             var rendered = PageNumbering.RenderForEditing(template, decoration);
 

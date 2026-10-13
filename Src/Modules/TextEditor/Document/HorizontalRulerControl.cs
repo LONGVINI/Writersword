@@ -144,6 +144,19 @@ namespace Writersword.Modules.TextEditor.Document
             canvas.DrawLine((float)textAreaStartPx, 0, (float)textAreaStartPx, h, handlePaint);
             canvas.DrawLine((float)textAreaEndPx, 0, (float)textAreaEndPx, h, handlePaint);
 
+            // Промежутки между колонками раздела — серым, как поля, с границами: так
+            // Word показывает колонки на линейке.
+            foreach (var (fromMm, toMm) in _vm.ColumnGapsMm)
+            {
+                double gapStartPx = textAreaStartPx + MmToPx(fromMm, zoom);
+                double gapEndPx = textAreaStartPx + MmToPx(toMm, zoom);
+                if (gapEndPx - gapStartPx < 0.5) continue;
+
+                canvas.DrawRect((float)gapStartPx, 0, (float)(gapEndPx - gapStartPx), h, marginPaint);
+                canvas.DrawLine((float)gapStartPx, 0, (float)gapStartPx, h, handlePaint);
+                canvas.DrawLine((float)gapEndPx, 0, (float)gapEndPx, h, handlePaint);
+            }
+
             DrawScale(canvas, pageOffsetXPx, pageWidthPx,
                 textAreaStartPx, textAreaEndPx, h, zoom);
 

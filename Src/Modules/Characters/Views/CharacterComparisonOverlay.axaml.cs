@@ -24,11 +24,12 @@ namespace Writersword.Modules.Characters.Views
             DataContext = _model;
         }
 
-        public void ShowFor(IEnumerable<Character> characters)
+        /// <param name="resolveAnketa">Анкета по идентификатору — для глубины полей у каждого персонажа.</param>
+        public void ShowFor(IEnumerable<Character> characters, System.Func<string, CharacterAnketa?>? resolveAnketa = null)
         {
             var list = characters?.ToList() ?? new List<Character>();
 
-            _model.Build(list);
+            _model.Build(list, resolveAnketa);
             _model.Summary = string.Format(
                 CharactersStrings.Compare_Summary, list.Count, _model.Rows.Count);
 

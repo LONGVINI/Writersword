@@ -169,6 +169,21 @@
 					<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
 				</Style>
 
+				<!-- Контекстная вкладка «Формулы» — как у прочих контекстных. -->
+				<Style Selector="TabItem.FormulaContextTab > TextBlock">
+					<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+					<Setter Property="FontWeight" Value="Medium"/>
+				</Style>
+				<Style Selector="TabItem.FormulaContextTab:selected">
+					<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+				<Style Selector="TabItem.FormulaContextTab:selected > TextBlock">
+					<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+				<Style Selector="TabItem.FormulaContextTab:pointerover">
+					<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+
 			</TabControl.Styles>
 
 			<!-- ── Главная ──────────────────────────────────────────────── -->
@@ -337,6 +352,22 @@
 				       IsHitTestVisible="{Binding IsEditingEnabled}"
 				       Opacity="{Binding ContentOpacity}">
 					<tabs:RibbonHeaderFooterTab DataContext="{Binding HeaderFooter}"/>
+				</Panel>
+			</TabItem>
+
+			<!-- ── Формулы (КОНТЕКСТНАЯ) ─────────────────────────────────── -->
+			<!-- Видна, пока каретка стоит у формулы или формула выделена.    -->
+			<!-- Новая формула вставляется с «Вставки», как в Word.           -->
+			<!-- IsFormulaTabVisible управляется из TextEditorViewModel.      -->
+			<TabItem Classes="FormulaContextTab"
+			         IsVisible="{Binding IsFormulaTabVisible}">
+				<TabItem.Header>
+					<TextBlock Text="Формулы"/>
+				</TabItem.Header>
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonFormulaTab DataContext="{Binding Formula}"/>
 				</Panel>
 			</TabItem>
 

@@ -277,6 +277,11 @@ namespace Writersword.Modules.TextEditor.Services
                         foreach (var para in floatingText.Paragraphs)
                             _chunkManager.NormalizeChunks(para);
                         break;
+
+                    case NoteBlock note:
+                        foreach (var para in note.Paragraphs)
+                            _chunkManager.NormalizeChunks(para);
+                        break;
                 }
             }
         }
@@ -399,6 +404,14 @@ namespace Writersword.Modules.TextEditor.Services
                             }
                         }
                     }
+                }
+
+                // Абзацы сноски хранятся в самой сноске целиком: её хеш ниже считается
+                // по всему блоку, чанки только приводятся к норме, как у абзацев.
+                if (block is NoteBlock noteBlock)
+                {
+                    foreach (var notePara in noteBlock.Paragraphs)
+                        _chunkManager.NormalizeChunks(notePara);
                 }
 
                 // Собственные свойства блока — всё, чего нет в чанках: оформление

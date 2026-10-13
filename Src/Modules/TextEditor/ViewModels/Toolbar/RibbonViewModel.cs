@@ -1,4 +1,4 @@
-using ReactiveUI;
+﻿using ReactiveUI;
 using Writersword.Modules.TextEditor.Contracts;
 
 namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
@@ -19,6 +19,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private bool _isImageTabVisible;
         private bool _isTocTabVisible;
         private bool _isHeaderFooterTabVisible;
+        private bool _isFormulaTabVisible;
         private bool _isEditingEnabled = true;
 
         public int SelectedTabIndex
@@ -68,6 +69,16 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         }
 
         /// <summary>
+        /// Управляет видимостью контекстной вкладки «Формулы».
+        /// true — каретка стоит у формулы или формула выделена.
+        /// </summary>
+        public bool IsFormulaTabVisible
+        {
+            get => _isFormulaTabVisible;
+            set => this.RaiseAndSetIfChanged(ref _isFormulaTabVisible, value);
+        }
+
+        /// <summary>
         /// false — режим сравнения версий: содержимое вкладок риббона не принимает
         /// клики и ввод (IsHitTestVisible), но выглядит почти обычно и продолжает
         /// отражать состояние под кареткой. Переключение вкладок остаётся доступным.
@@ -92,6 +103,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public RibbonInsertTabViewModel Insert { get; }
         public RibbonLayoutTabViewModel Layout { get; }
         public RibbonReferencesTabViewModel References { get; }
+
+        /// <summary>
+        /// Контекстная вкладка «Формулы»: конструкции, знаки, готовые формулы и
+        /// справка. Видна, пока каретка у формулы.
+        /// </summary>
+        public RibbonFormulaTabViewModel Formula { get; }
 
         /// <summary>
         /// Вкладка «Рецензирование»: запись исправлений, вид их показа, принятие и
@@ -130,6 +147,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             Insert = new RibbonInsertTabViewModel(target);
             Layout = new RibbonLayoutTabViewModel(target);
             References = new RibbonReferencesTabViewModel(target);
+            Formula = new RibbonFormulaTabViewModel(target);
             Review = new RibbonReviewTabViewModel(reviewHost);
             Appearance = new RibbonAppearanceTabViewModel(viewHost);
             Table = new RibbonTableTabViewModel(target);

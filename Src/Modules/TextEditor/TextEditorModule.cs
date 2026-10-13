@@ -148,7 +148,35 @@ namespace Writersword.Modules.TextEditor
             public string? BaselineJson { get; set; }
             public DeltaCachePayload? InitialDelta { get; set; }
             public int EnvelopeVersion { get; set; }
+
+            /// <summary>Данные модуля, из которых подготовлен документ, — как пришли.</summary>
+            public string? RawData { get; set; }
+
+            /// <summary>
+            /// Данные второй версии режима сравнения, различиями с которой размечен
+            /// документ (TextEditorModule.CompareMarkup). Null — документ без разметки.
+            /// </summary>
+            public object? CompareMarkedAgainst { get; set; }
         }
+
+        // ── Разметка различий в режиме сравнения ──────────────────────────
+        //
+        // В режиме сравнения показанная версия размечается различиями со второй
+        // (Services.CompareMarkup) — пометками рецензирования прямо в модели
+        // документа. Модель с пометками — только вид: данные модуля для сохранения
+        // и кеша — данные показанной версии без пометок, ровно те, из которых она
+        // загружена (_comparePristine). Сохранение из баннера пишет именно их.
+
+        // Данные второй версии, различиями с которой размечен показанный документ.
+        // Null — документ без разметки. Только UI-поток.
+        private object? _compareMarksFor;
+
+        // Данные показанной версии без пометок. Только UI-поток.
+        private string? _comparePristine;
+
+        // Перезагрузка под разметку идёт; пришедший за это время запрос повторит её.
+        private bool _compareReloadRunning;
+        private bool _compareResyncPending;
 
         public override string moduleType => "TextEditor";
         public override object? ViewModel => _viewModel;
@@ -262,6 +290,9 @@ namespace Writersword.Modules.TextEditor
 
             ApplyReadOnlyFromContext();
 
+            // Вид листа — свой у каждой книги, и книгу называет контекст.
+            if (_viewModel is not null) _viewModel.BookKey = BookViewKey();
+
             // Контекст мог прийти после создания вида: закладка ищется по книге,
             // а книгу называет именно он.
             BindReadingBookmark();
@@ -269,6 +300,149 @@ namespace Writersword.Modules.TextEditor
             // Тот же случай и у документа Word, из которого сделан проект: какой
             // документ вливать, известно только по файлу проекта.
             SchedulePendingImport();
+
+            // Режим сравнения включён, выключен или показана другая версия: разметка
+            // различий должна соответствовать тому, что сейчас сравнивается.
+            SyncCompareMarkup();
+        }
+
+        /// <summary>
+        /// Данные этого модуля во второй версии режима сравнения. Null — режим
+        /// выключен или во второй версии модуля нет.
+        /// </summary>
+        private object? CompareOtherModuleData()
+        {
+            var context = Context;
+            if (context is not { IsInCompareMode: true } || context.CompareOtherData is not { } all)
+                return null;
+
+            return all.TryGetValue(moduleType, out var data) && data is not null ? data : null;
+        }
+
+        /// <summary>
+        /// Приводит разметку различий к текущему состоянию режима сравнения: если
+        /// показанный документ размечен не против той версии, против которой
+        /// должен, он перечитывается из своих данных без пометок и размечается
+        /// заново (или остаётся без разметки, если сравнение закончено).
+        /// </summary>
+        private void SyncCompareMarkup()
+        {
+            if (!_documentLoadedFromData || _viewModel?.DocumentViewModel is null) return;
+
+            var desired = CompareOtherModuleData();
+            if (ReferenceEquals(desired, _compareMarksFor)) return;
+
+            if (_compareReloadRunning)
+            {
+                _compareResyncPending = true;
+                return;
+            }
+
+            // Документ без разметки — его текущие данные; с разметкой — данные, из
+            // которых он загружен: правок в режиме сравнения нет.
+            string? pristine = _compareMarksFor is not null
+                ? _comparePristine
+                : GetCustomData() as string;
+
+            if (pristine is null) return;
+
+            _ = ReloadForCompareAsync(pristine);
+        }
+
+        private async System.Threading.Tasks.Task ReloadForCompareAsync(string pristine)
+        {
+            _compareReloadRunning = true;
+            try
+            {
+                // Место в документе запоминается до перезагрузки: ApplyPreparedCustomData
+                // возвращает каретку и прокрутку по сессионному кешу.
+                GetSessionData();
+
+                object? prepared = await System.Threading.Tasks.Task.Run(() => PrepareCustomData(pristine));
+                if (prepared is null) return;
+
+                ApplyPreparedCustomData(prepared);
+
+                // Перезагрузка — показ тех же данных, а не правка.
+                AcceptLoadedState();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "[COMPARE] Reload for compare markup failed");
+            }
+            finally
+            {
+                _compareReloadRunning = false;
+            }
+
+            if (_compareResyncPending)
+            {
+                _compareResyncPending = false;
+                SyncCompareMarkup();
+            }
+        }
+
+        /// <summary>
+        /// Размечает подготовленный документ различиями со второй версией режима
+        /// сравнения. Вызывается на потоке подготовки, после того как базовая линия
+        /// и дельта сняты с документа без пометок.
+        /// </summary>
+        private void ApplyCompareMarkup(PreparedDocumentData prepared)
+        {
+            var other = CompareOtherModuleData();
+            if (other is null || prepared.Document is null) return;
+
+            prepared.CompareMarkedAgainst = other;
+
+            string? otherRaw = other switch
+            {
+                string s when !string.IsNullOrWhiteSpace(s) => s,
+                byte[] b when b.Length > 0 => System.Text.Encoding.UTF8.GetString(b),
+                _ => null
+            };
+
+            // Версии этого модуля совпадают — размечать нечего.
+            if (otherRaw is null || string.Equals(otherRaw, prepared.RawData, StringComparison.Ordinal))
+                return;
+
+            try
+            {
+                var otherDocument = DeserializeModuleDocument(otherRaw);
+                if (otherDocument is null)
+                {
+                    _logger.Warning("[COMPARE] Second version of the document could not be read — shown without markup");
+                    return;
+                }
+
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+                var result = Services.CompareMarkup.Apply(prepared.Document, otherDocument);
+                _logger.Information(
+                    "[COMPARE] Различия с другой версией размечены за {Ms} мс: вставлено {Ins}, удалено {Del}, оформление {Fmt}",
+                    stopwatch.ElapsedMilliseconds, result.InsertedPlaces, result.DeletedPlaces, result.FormatPlaces);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "[COMPARE] Compare markup failed — shown without markup");
+            }
+        }
+
+        /// <summary>Документ из данных модуля (конверт v2/v3 или прежний формат).</summary>
+        private DocumentModel? DeserializeModuleDocument(string raw)
+        {
+            using var envelope = System.Text.Json.JsonDocument.Parse(raw);
+            var root = envelope.RootElement;
+
+            if (root.ValueKind == System.Text.Json.JsonValueKind.Object
+                && root.TryGetProperty("v", out var ver)
+                && ver.ValueKind == System.Text.Json.JsonValueKind.Number
+                && ver.GetInt32() is 2 or 3
+                && root.TryGetProperty("doc", out var docProp)
+                && docProp.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                return _serializer.Deserialize(docProp.GetString() ?? string.Empty);
+            }
+
+            return _serializer.Deserialize(raw);
         }
 
         // Импорт документа, из которого сделан проект, уже запущен. Второй вызов
@@ -341,6 +515,21 @@ namespace Writersword.Modules.TextEditor
         /// файлу. Идентификатор переживает переименование и перенос файла. В режиме
         /// сравнения версий закладка не ведётся: там читают не книгу, а её версию.
         /// </summary>
+        /// <summary>
+        /// Ключ книги для её вида листа (Services.BookViewStore). В отличие от закладки,
+        /// есть и в режиме сравнения: обе версии — одна и та же книга, и вид у неё один.
+        /// </summary>
+        private string? BookViewKey()
+        {
+            var ctx = Context;
+            if (ctx is null) return null;
+
+            var id = ctx.Project?.Id;
+            if (!string.IsNullOrWhiteSpace(id)) return id;
+
+            return string.IsNullOrWhiteSpace(ctx.FilePath) ? null : ctx.FilePath;
+        }
+
         private string? ReadingBookmarkKey()
         {
             var ctx = Context;
@@ -613,6 +802,11 @@ namespace Writersword.Modules.TextEditor
         {
             if (!Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
                 return Avalonia.Threading.Dispatcher.UIThread.Invoke(TakeStateSnapshot);
+
+            // Показан документ с разметкой сравнения: пометки — только вид, данные
+            // модуля — данные показанной версии, из которых она загружена.
+            if (_compareMarksFor is not null && _comparePristine is not null)
+                return _comparePristine;
 
             if (_viewModel?.DocumentViewModel is null)
             {
@@ -1154,6 +1348,15 @@ namespace Writersword.Modules.TextEditor
                     case Models.Document.FloatingTextBlock floatingText:
                         WalkFonts(floatingText.Paragraphs, note);
                         break;
+
+                    case Models.Document.FormulaBlock formula:
+                        note(formula.FontFamily, "Формула");
+                        break;
+
+                    case Models.Document.NoteBlock footnote:
+                        WalkFonts(footnote.Paragraphs, note);
+                        note(footnote.MarkProperties?.FontFamily, "Сноска");
+                        break;
                 }
             }
         }
@@ -1488,6 +1691,12 @@ namespace Writersword.Modules.TextEditor
                                     : System.Text.Json.JsonSerializer.Serialize(_localSettings),
                         });
 
+                        prepared.RawData = raw;
+
+                        // Разметка сравнения — после базовой линии и дельты: они
+                        // снимаются с документа без пометок.
+                        ApplyCompareMarkup(prepared);
+
                         return prepared;
                     }
                 }
@@ -1496,12 +1705,16 @@ namespace Writersword.Modules.TextEditor
                     DocumentModel? legacyDoc = _serializer.Deserialize(raw);
                     if (legacyDoc is not null)
                     {
-                        return new PreparedDocumentData
+                        var legacyPrepared = new PreparedDocumentData
                         {
                             Document = legacyDoc,
                             InitialDelta = _serializer.BuildDeltaPayload(legacyDoc, null),
-                            EnvelopeVersion = envelopeVersion
+                            EnvelopeVersion = envelopeVersion,
+                            RawData = raw
                         };
+
+                        ApplyCompareMarkup(legacyPrepared);
+                        return legacyPrepared;
                     }
                 }
                 _logger.Warning("PrepareCustomData: Deserialize returned null");
@@ -1589,6 +1802,11 @@ namespace Writersword.Modules.TextEditor
 
                 _documentLoadedFromData = true;
 
+                // Разметка сравнения: против чего размечен документ и какие данные
+                // отдавать вместо модели с пометками.
+                _compareMarksFor = p.CompareMarkedAgainst;
+                _comparePristine = p.CompareMarkedAgainst is not null ? p.BaselineJson ?? p.RawData : null;
+
                 _logger.Debug("Document loaded (v{V}), title={Title}", p.EnvelopeVersion, p.Document.Title);
 
                 // Проверка ссылок на файлы картинок — фоном, после загрузки.
@@ -1599,6 +1817,8 @@ namespace Writersword.Modules.TextEditor
                 return;
             }
 
+            _compareMarksFor = null;
+            _comparePristine = null;
             _viewModel.LoadNewDocument(_localSettings);
             ApplyReadOnlyFromContext();
         }
@@ -2150,6 +2370,19 @@ namespace Writersword.Modules.TextEditor
         {
             if (settings is not TextEditorSettings s) return;
             _logger.Debug("ApplyLocalSettings: MonitorSizeInches={V}", s.MonitorSizeInches);
+
+            // Локальные настройки лежат в файле проекта копией на момент записи, и в
+            // этой копии — списки видов, «Мои эффекты» и вид по умолчанию, какими они
+            // были тогда. Это вещи человека, а не рукописи: без переноса из общих
+            // настроек при каждом открытии проекта и каждом переключении версий в
+            // режиме сравнения на экран возвращался старый список видов. Заведённый
+            // позже вид пропадал из списка, лист падал на встроенный вид, а первая же
+            // запись общих настроек сохраняла устаревший список уже для всех книг —
+            // вид «удалялся» насовсем.
+            CarryOverReadingPreferences(_globalSettings, s);
+            CarryOverTextEffectPresets(_globalSettings, s);
+            CarryOverEditorViewPreferences(_globalSettings, s);
+
             _localSettings = s;
             _viewModel?.ApplySettings(s);
             ApplyScriptFontMapToCanvas();
@@ -2409,6 +2642,7 @@ namespace Writersword.Modules.TextEditor
         private TextEditorViewModel CreateAndInitViewModel()
         {
             var vm = new TextEditorViewModel();
+            vm.BookKey = BookViewKey();
             vm.PrintRequested += OnPrintRequested;
             vm.ContentEdited += OnViewModelContentEdited;
             vm.ChangedOutsideHistory += OnViewModelChangedOutsideHistory;

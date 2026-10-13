@@ -1,0 +1,647 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Icons"
+             xmlns:controls="using:Writersword.Modules.Characters.Controls"
+             xmlns:colorControls="using:Writersword.Styles.UserControls"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:icv="using:Writersword.Infrastructure.Converters"
+             x:Class="Writersword.Modules.Characters.Views.Icons.IconPickerOverlay"
+             x:DataType="vm:IconPickerViewModel"
+             IsVisible="False">
+
+	<!-- Окно значков — одно на всю программу. Отсюда значок ставят анкете,
+	     шаблону и метке персонажа, здесь же пополняют библиотеку своих
+	     значков проекта. Встроенный набор тоже общий: что подходит метке,
+	     может пригодиться анкете, и наоборот.
+
+	     Свои картинки добавляются плиткой «+» в конце ряда своих значков
+	     или броском файла прямо в окно — одного или нескольких сразу.
+	     Растр после броска проходит ту же обрезку, что аватарки; вектор
+	     идёт целиком и красится цветом значка.
+
+	     Цвет — быстрые цвета кружками и свой цвет через общий редактор
+	     цвета программы, с градиентами, пипеткой и палитрами. Подложка —
+	     как обычно (бледная), своя (тем же редактором цвета) или
+	     без подложки. Рамка вокруг подложки — нет, цвета значка или своя,
+	     толщина ползунком. Пояснения — в подсказках под курсором.
+
+	     Значки в наборе и превью нарисованы ровно так, как встанут на
+	     место: у анкеты — значком, у шаблона — плиткой в рамке блока. -->
+
+	<UserControl.Styles>
+		<Style Selector="Button.iconTile">
+			<Setter Property="Width" Value="44"/>
+			<Setter Property="Height" Value="44"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Margin" Value="0,0,6,6"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.iconTile:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.iconTile.selected">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="2"/>
+		</Style>
+		<Style Selector="Button.iconTile.selected /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Крестик своего значка — под курсором, в углу плитки -->
+		<Style Selector="Button.tileRemove">
+			<Setter Property="Width" Value="16"/>
+			<Setter Property="Height" Value="16"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="Margin" Value="0,-5,1,0"/>
+			<Setter Property="HorizontalAlignment" Value="Right"/>
+			<Setter Property="VerticalAlignment" Value="Top"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="IsHitTestVisible" Value="False"/>
+			<Setter Property="ZIndex" Value="2"/>
+		</Style>
+		<Style Selector="Panel.ownTile:pointerover Button.tileRemove">
+			<Setter Property="Opacity" Value="1"/>
+			<Setter Property="IsHitTestVisible" Value="True"/>
+		</Style>
+		<Style Selector="Button.tileRemove:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#BB660000"/>
+		</Style>
+
+		<!-- Плитка «+»: добавить свою картинку -->
+		<Style Selector="Rectangle.addFrame">
+			<Setter Property="Stroke" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="StrokeThickness" Value="1"/>
+			<Setter Property="StrokeDashArray" Value="4,3"/>
+		</Style>
+		<Style Selector="Button.addTile">
+			<Setter Property="Width" Value="44"/>
+			<Setter Property="Height" Value="44"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Margin" Value="0,0,6,6"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+			<Setter Property="VerticalContentAlignment" Value="Stretch"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Button.addTile:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.addTile:pointerover Rectangle.addFrame">
+			<Setter Property="Stroke" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Быстрый цвет кружком -->
+		<Style Selector="Button.swatch">
+			<Setter Property="Width" Value="22"/>
+			<Setter Property="Height" Value="22"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Margin" Value="0,0,5,5"/>
+			<Setter Property="CornerRadius" Value="11"/>
+			<Setter Property="BorderThickness" Value="2"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.swatch:pointerover /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.swatch.selected">
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.swatch.selected /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<!-- Что красим: плитки с кружком цвета, выбранная — акцентом -->
+		<Style Selector="Button.target">
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+			<Setter Property="Margin" Value="0,0,6,6"/>
+			<Setter Property="Padding" Value="10,7"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Button.target:pointerover /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.target.selected">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.target.selected /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Особые варианты: кружок-образец и подпись -->
+		<Style Selector="Button.special">
+			<Setter Property="Padding" Value="8,4"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="13"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Button.special:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.special.selected">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.special.selected /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- «Нет»: пустой кружок, перечёркнутый -->
+		<Style Selector="Ellipse.offRing">
+			<Setter Property="Stroke" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="StrokeThickness" Value="1.2"/>
+		</Style>
+		<Style Selector="Line.offSlash">
+			<Setter Property="Stroke" Value="#E57373"/>
+			<Setter Property="StrokeThickness" Value="1.5"/>
+		</Style>
+
+		<!-- Поиск значка: спокойное поле над наборами, без яркой рамки -->
+		<Style Selector="TextBox.iconSearch">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="MinHeight" Value="30"/>
+			<Setter Property="Padding" Value="4,5,6,5"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="TextBox.iconSearch:focus /template/ Border#PART_BorderElement">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+		</Style>
+		<Style Selector="Button.searchClear">
+			<Setter Property="Width" Value="20"/>
+			<Setter Property="Height" Value="20"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Margin" Value="0,0,5,0"/>
+			<Setter Property="CornerRadius" Value="10"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.searchClear:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<Style Selector="TextBlock.section">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.hint">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="TextWrapping" Value="Wrap"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid>
+		<!-- Скрим: затемняет и блокирует модуль. Щелчок не закрывает. -->
+		<Border Background="#F2000000" PointerPressed="OnScrimPressed"/>
+
+		<!-- Картинку можно бросить на всё окно: попасть броском в плитку
+		     в сорок точек тяжело. Рамка по краю показывает, что окно примет. -->
+		<Border x:Name="PickerPanel"
+		        HorizontalAlignment="Center" VerticalAlignment="Center"
+		        Margin="24" MaxHeight="720"
+		        Background="{DynamicResource BgBaseBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1"
+		        CornerRadius="16"
+		        Padding="20"
+		        KeyDown="OnPanelKeyDown"
+		        DragDrop.AllowDrop="True"
+		        DragDrop.DragEnter="OnDragOver"
+		        DragDrop.DragOver="OnDragOver"
+		        DragDrop.DragLeave="OnDragLeave"
+		        DragDrop.Drop="OnDrop">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
+			</Border.Effect>
+
+			<Panel>
+				<!-- Две колонки: слева превью, поиск и наборы значков, справа —
+				     цвет, подложка и рамки. Так всё помещается без прокрутки:
+				     настройки не отнимают высоту у значков. -->
+				<Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="560,Auto"
+				      RowSpacing="14" ColumnSpacing="22">
+
+					<!-- Заголовок -->
+					<Grid Grid.Row="0" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto">
+						<TextBlock Grid.Column="0" Text="{Binding Title}"
+						           FontSize="16" FontWeight="SemiBold"
+						           Foreground="{DynamicResource TextPrimaryBrush}"
+						           VerticalAlignment="Center"/>
+						<Button Classes="ro-allow" Grid.Column="1" Content="✕" Click="OnCancelClick"
+						        Background="Transparent" BorderThickness="0"
+						        Foreground="{DynamicResource TextSecondaryBrush}"
+						        FontSize="14" Padding="6,2"/>
+					</Grid>
+
+					<!-- Превью выбранного — то самое место, куда значок встанет:
+					     шапка блока шаблона (той же ширины, что блок в списке) или
+					     заголовок анкеты и строка списка анкет. Под ним — поиск,
+					     он относится к наборам значков и стоит над ними. -->
+					<Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,Auto,*" RowSpacing="14">
+					<Grid Grid.Row="0" IsVisible="{Binding IsPickMode}">
+						<Panel HorizontalAlignment="Left">
+							<!-- Шаблон: как шапка блока -->
+							<Border Width="404" CornerRadius="10" BorderThickness="2"
+							        BorderBrush="{Binding ColorBrush}"
+							        Background="{DynamicResource BgPanelBrush}">
+								<Border.IsVisible>
+									<MultiBinding Converter="{x:Static BoolConverters.And}">
+										<Binding Path="HasPreviewTitle"/>
+										<Binding Path="IsTileLook"/>
+									</MultiBinding>
+								</Border.IsVisible>
+								<Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="12">
+									<controls:AnketaIconBadge Grid.Column="0" Size="64" Look="Tile"
+									                          VerticalAlignment="Center"
+									                          Icon="{Binding Icon}" IconColor="{Binding Color}"
+									                          IconBackground="{Binding Background}" IconBorder="{Binding Border}"/>
+									<StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Top" Margin="0,2,0,0">
+										<TextBlock Text="{Binding PreviewTitle}"
+										           FontSize="13" FontWeight="Medium"
+										           TextTrimming="CharacterEllipsis"
+										           Foreground="{DynamicResource TextPrimaryBrush}"/>
+										<TextBlock Text="{Binding PreviewDescription}"
+										           IsVisible="{Binding HasPreviewDescription}"
+										           FontSize="11"
+										           TextWrapping="Wrap" MaxLines="2"
+										           TextTrimming="CharacterEllipsis"
+										           Foreground="{DynamicResource TextSecondaryBrush}"/>
+									</StackPanel>
+								</Grid>
+							</Border>
+
+							<!-- Анкета: заголовок листа и строка в списке анкет -->
+							<Border Width="404" CornerRadius="10" Padding="12,10"
+							        BorderThickness="1"
+							        BorderBrush="{DynamicResource BorderSubtleBrush}"
+							        Background="{DynamicResource BgPanelBrush}">
+								<Border.IsVisible>
+									<MultiBinding Converter="{x:Static BoolConverters.And}">
+										<Binding Path="HasPreviewTitle"/>
+										<Binding Path="IsBadgeLook"/>
+									</MultiBinding>
+								</Border.IsVisible>
+								<StackPanel Spacing="10">
+									<Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+										<controls:AnketaIconBadge Grid.Column="0" Size="34"
+										                          Icon="{Binding Icon}" IconColor="{Binding Color}"
+										                          IconBackground="{Binding Background}" IconBorder="{Binding Border}"/>
+										<StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+											<TextBlock Text="{Binding PreviewTitle}"
+											           FontSize="14" FontWeight="SemiBold"
+											           TextTrimming="CharacterEllipsis"
+											           Foreground="{DynamicResource TextPrimaryBrush}"/>
+											<TextBlock Text="{Binding PreviewDescription}"
+											           IsVisible="{Binding HasPreviewDescription}"
+											           FontSize="11" TextTrimming="CharacterEllipsis"
+											           Foreground="{DynamicResource TextSecondaryBrush}"/>
+										</StackPanel>
+									</Grid>
+									<Border Height="1" Background="{DynamicResource BorderSubtleBrush}"/>
+									<Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
+										<controls:AnketaIconBadge Grid.Column="0" Size="22"
+										                          Icon="{Binding Icon}" IconColor="{Binding Color}"
+										                          IconBackground="{Binding Background}" IconBorder="{Binding Border}"/>
+										<TextBlock Grid.Column="1" Text="{Binding PreviewTitle}" FontSize="12"
+										           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+										           Foreground="{DynamicResource TextPrimaryBrush}"/>
+									</Grid>
+								</StackPanel>
+							</Border>
+
+							<!-- Значок без места: метка, значок поля -->
+							<Border Width="64" Height="64" CornerRadius="12"
+							        IsVisible="{Binding HasPlainPreview}"
+							        Background="{DynamicResource BgSurfaceBrush}"
+							        BorderBrush="{DynamicResource BorderSubtleBrush}"
+							        BorderThickness="1">
+								<controls:AnketaIconBadge Size="48" Look="{Binding Look}"
+								                          Icon="{Binding Icon}" IconColor="{Binding Color}"
+								                          IconBackground="{Binding Background}" IconBorder="{Binding Border}"
+								                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+							</Border>
+						</Panel>
+					</Grid>
+
+					<!-- Поиск по наборам: по подписи, по тому, что нарисовано, по имени
+					     своей картинки. Крестик справа очищает. -->
+					<TextBox Grid.Row="1" x:Name="SearchBox" Classes="ro-allow iconSearch"
+					         Text="{Binding Query, Mode=TwoWay}"
+					         PlaceholderText="Найти значок">
+						<TextBox.InnerLeftContent>
+							<PathIcon Data="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+							          Width="13" Height="13" Margin="9,0,2,0"
+							          Foreground="{DynamicResource TextMutedBrush}"/>
+						</TextBox.InnerLeftContent>
+						<TextBox.InnerRightContent>
+							<Button Classes="searchClear ro-allow" Click="OnClearSearchClick"
+							        IsVisible="{Binding HasQuery}"
+							        behaviours:TooltipBehavior.Tip="Очистить поиск">
+								<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+								          Width="8" Height="8"/>
+							</Button>
+						</TextBox.InnerRightContent>
+					</TextBox>
+
+					<!-- Наборы -->
+					<ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+						<StackPanel Spacing="14">
+
+							<!-- Свои значки проекта и плитка «+» в конце ряда -->
+							<StackPanel Spacing="6">
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBlock Grid.Column="0" Classes="section" Text="Свои значки"/>
+									<TextBlock Grid.Column="1" Classes="hint"
+									           Text="Правый щелчок — имя или убрать"
+									           IsVisible="{Binding HasCustom}"/>
+								</Grid>
+								<WrapPanel Orientation="Horizontal">
+									<ItemsControl ItemsSource="{Binding Custom}">
+										<ItemsControl.ItemsPanel>
+											<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+										</ItemsControl.ItemsPanel>
+										<ItemsControl.ItemTemplate>
+											<DataTemplate x:DataType="vm:IconOptionViewModel">
+												<Panel Classes="ownTile" IsVisible="{Binding IsMatch}">
+													<Button Classes="iconTile"
+													        Classes.selected="{Binding IsSelected}"
+													        Click="OnTileClick"
+													        DoubleTapped="OnTileDoubleTapped"
+													        behaviours:TooltipBehavior.Tip="{Binding Label}"
+													        behaviours:TooltipBehavior.Description="Свой значок проекта. Правый щелчок — переименовать или убрать из библиотеки">
+														<controls:AnketaIconBadge Size="32" Icon="{Binding Key}" IconColor="{Binding Color}"
+														                          IconBackground="{Binding Background}" IconBorder="{Binding Border}" Look="{Binding Look}"/>
+														<Button.ContextFlyout>
+															<Flyout Placement="BottomEdgeAlignedLeft" Closed="OnRenameFlyoutClosed">
+																<StackPanel Width="240" Spacing="8" Margin="2">
+																	<TextBlock Text="Имя значка" FontSize="11"
+																	           Foreground="{DynamicResource TextSecondaryBrush}"/>
+																	<TextBox Text="{Binding EditName, Mode=TwoWay}"
+																	         KeyDown="OnRenameKeyDown"/>
+																	<Button Click="OnRemoveClick" HorizontalAlignment="Left"
+																	        behaviours:TooltipBehavior.Tip="Убрать из библиотеки"
+																	        behaviours:TooltipBehavior.Description="Там, где значок уже стоит, он останется">
+																		<TextBlock Text="Убрать из библиотеки" FontSize="12" Foreground="#E57373"/>
+																	</Button>
+																</StackPanel>
+															</Flyout>
+														</Button.ContextFlyout>
+													</Button>
+													<Button Classes="tileRemove" Click="OnRemoveClick"
+													        behaviours:TooltipBehavior.Tip="Убрать из библиотеки"
+													        behaviours:TooltipBehavior.Description="Там, где значок уже стоит, он останется">
+														<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+														          Width="7" Height="7"
+														          Foreground="{DynamicResource TextSecondaryBrush}"/>
+													</Button>
+												</Panel>
+											</DataTemplate>
+										</ItemsControl.ItemTemplate>
+									</ItemsControl>
+
+									<Button Classes="addTile" Click="OnAddClick"
+									        behaviours:TooltipBehavior.Tip="Свой значок"
+									        behaviours:TooltipBehavior.Description="Картинка с диска — PNG, JPG, WebP, GIF, BMP, ICO или SVG. Можно выбрать несколько сразу или просто бросить файлы в это окно. SVG красится цветом значка, растр идёт как есть">
+										<Panel>
+											<Rectangle Classes="addFrame" RadiusX="8" RadiusY="8"/>
+											<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" Width="14" Height="14"
+											          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+										</Panel>
+									</Button>
+								</WrapPanel>
+								<TextBlock Classes="hint" IsVisible="{Binding !HasCustom}"
+								           Text="Своих значков пока нет. Нажмите «+» или бросьте картинку в это окно — она встанет в библиотеку проекта и будет доступна в анкетах, шаблонах и метках персонажей"/>
+							</StackPanel>
+
+							<!-- Встроенные -->
+							<StackPanel Spacing="6">
+								<TextBlock Classes="section" Text="Встроенные"/>
+								<ItemsControl ItemsSource="{Binding BuiltIn}">
+									<ItemsControl.ItemsPanel>
+										<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+									</ItemsControl.ItemsPanel>
+									<ItemsControl.ItemTemplate>
+										<DataTemplate x:DataType="vm:IconOptionViewModel">
+											<Button Classes="iconTile"
+											        Classes.selected="{Binding IsSelected}"
+											        IsVisible="{Binding IsMatch}"
+											        Click="OnTileClick"
+											        DoubleTapped="OnTileDoubleTapped"
+											        behaviours:TooltipBehavior.Tip="{Binding Label}">
+												<controls:AnketaIconBadge Size="32" Icon="{Binding Key}" IconColor="{Binding Color}"
+												                          IconBackground="{Binding Background}" IconBorder="{Binding Border}" Look="{Binding Look}"/>
+											</Button>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+								<TextBlock Classes="hint" IsVisible="{Binding !HasBuiltInMatches}"
+								           Text="Среди встроенных такого нет"/>
+							</StackPanel>
+						</StackPanel>
+					</ScrollViewer>
+					</Grid>
+
+					<!-- Цвета. Сверху — что красим: значок, подложку, рамку значка,
+					     рамку блока шаблона; у каждого кружок того, чем оно окрашено
+					     сейчас. Ниже один на всё ряд: особые варианты (бледная,
+					     без, цвета значка), потом быстрые цвета и «Свой
+					     цвет» — всё действует на выбранное сверху. Толщина рамки —
+					     ползунком, когда красим рамку. -->
+					<ScrollViewer Grid.Row="1" Grid.Column="1" Width="330"
+					              HorizontalScrollBarVisibility="Disabled"
+					              VerticalScrollBarVisibility="Auto"
+					              IsVisible="{Binding AllowColor}">
+						<StackPanel Spacing="12">
+							<TextBlock Classes="section" Text="Что красим"/>
+
+							<ItemsControl ItemsSource="{Binding Targets}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate x:DataType="vm:IconColorTargetViewModel">
+										<Button Classes="target"
+										        Classes.selected="{Binding IsSelected}"
+										        Click="OnColorTargetClick"
+										        behaviours:TooltipBehavior.Tip="{Binding Label}"
+										        behaviours:TooltipBehavior.Description="{Binding Description}">
+											<StackPanel Orientation="Horizontal" Spacing="8">
+												<Panel Width="18" Height="18" VerticalAlignment="Center">
+													<Ellipse Fill="{Binding Brush}" IsVisible="{Binding IsSolid}"/>
+													<Ellipse Fill="{Binding Brush}" Opacity="0.3" IsVisible="{Binding IsPale}"/>
+													<Ellipse Classes="offRing" IsVisible="{Binding IsOff}"/>
+													<Line Classes="offSlash" IsVisible="{Binding IsOff}"
+													      StartPoint="4,14" EndPoint="14,4"/>
+												</Panel>
+												<TextBlock Text="{Binding Label}" FontSize="12" VerticalAlignment="Center"/>
+											</StackPanel>
+										</Button>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+
+							<!-- Особые варианты, отделены чертой от цветов -->
+							<StackPanel Spacing="6" IsVisible="{Binding HasSpecials}">
+								<ItemsControl ItemsSource="{Binding Specials}">
+									<ItemsControl.ItemsPanel>
+										<ItemsPanelTemplate><WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6"/></ItemsPanelTemplate>
+									</ItemsControl.ItemsPanel>
+									<ItemsControl.ItemTemplate>
+										<DataTemplate x:DataType="vm:IconSpecialColorViewModel">
+											<Button Classes="special"
+											        Classes.selected="{Binding IsSelected}"
+											        Click="OnSpecialColorClick"
+											        behaviours:TooltipBehavior.Tip="{Binding Label}"
+											        behaviours:TooltipBehavior.Description="{Binding Description}">
+												<StackPanel Orientation="Horizontal" Spacing="6">
+													<Panel Width="16" Height="16" VerticalAlignment="Center">
+														<Ellipse Fill="{Binding Brush}" Opacity="0.3" IsVisible="{Binding IsPale}"/>
+														<Ellipse Classes="offRing" IsVisible="{Binding IsOff}"/>
+														<Line Classes="offSlash" IsVisible="{Binding IsOff}"
+														      StartPoint="3,13" EndPoint="13,3"/>
+														<Ellipse Fill="{Binding Brush}" IsVisible="{Binding IsSame}"/>
+													</Panel>
+													<TextBlock Text="{Binding Label}" FontSize="12" VerticalAlignment="Center"/>
+												</StackPanel>
+											</Button>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+								<Border Height="1" Margin="0,4,0,0" Background="{DynamicResource BorderSubtleBrush}"/>
+							</StackPanel>
+
+							<!-- Быстрые цвета — одни на всё — и свой цвет -->
+							<ItemsControl ItemsSource="{Binding Palette}" Margin="0,0,0,-5">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate x:DataType="vm:IconColorSwatchViewModel">
+										<Button Classes="swatch"
+										        Classes.selected="{Binding IsSelected}"
+										        Click="OnPaletteSwatchClick"
+										        Background="{Binding Hex, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+
+							<!-- Свой цвет. Кнопка слева горит сама, когда стоит свой цвет, и
+							     гаснет, когда выбран быстрый кружок или особый вариант; щелчок
+							     возвращает свой цвет. Кружок справа — сам свой цвет: щелчок
+							     открывает редактор цвета. Стандартная подсказка редактора
+							     выключена — остаётся только наша. -->
+							<StackPanel Orientation="Horizontal" Spacing="8">
+								<Button Classes="special" Classes.selected="{Binding IsOwnColorSelected}"
+								        Click="OnOwnColorClick"
+								        behaviours:TooltipBehavior.Tip="Использовать свой цвет"
+								        behaviours:TooltipBehavior.Description="Горит, когда стоит свой цвет. Щелчок возвращает его после быстрого кружка, «Бледная» или «Без»">
+									<TextBlock Text="Использовать свой цвет" FontSize="12"/>
+								</Button>
+								<colorControls:ColorPickerButton x:Name="OwnColorPicker" Width="24" Height="24"
+								        VerticalAlignment="Center"
+								        ToolTip.ServiceEnabled="False"
+								        HexColor="{Binding ActiveColor, Mode=TwoWay}"
+								        behaviours:TooltipBehavior.Tip="Свой цвет"
+								        behaviours:TooltipBehavior.Description="Щелчок — выбрать любой цвет и градиент: линейный, круговой, конический, с пипеткой и палитрами. Выбранный сразу ставится тому, что выбрано сверху"/>
+							</StackPanel>
+
+							<!-- Толщина рамки значка -->
+							<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10"
+							      IsVisible="{Binding ShowFrameWidth}">
+								<TextBlock Grid.Column="0" Text="Толщина" FontSize="12" VerticalAlignment="Center"
+								           Foreground="{DynamicResource TextSecondaryBrush}"/>
+								<Slider Grid.Column="1" Minimum="{Binding FrameWidthMin}" Maximum="{Binding FrameWidthMax}"
+								        TickFrequency="1" IsSnapToTickEnabled="True"
+								        Value="{Binding FrameWidth, Mode=TwoWay}"
+								        controls:SliderPointerBehavior.IsEnabled="True"
+								        VerticalAlignment="Center"
+								        behaviours:TooltipBehavior.Tip="Толщина рамки значка"
+								        behaviours:TooltipBehavior.Description="Влево — тоньше, вправо — толще. Если рамки не было, она появится цвета значка"/>
+								<TextBlock Grid.Column="2" Text="{Binding FrameWidth}" FontSize="12" MinWidth="12"
+								           VerticalAlignment="Center" TextAlignment="Right"
+								           Foreground="{DynamicResource TextPrimaryBrush}"/>
+							</Grid>
+						</StackPanel>
+					</ScrollViewer>
+
+					<!-- Низ: подсказка про бросок и кнопки -->
+					<Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+						<TextBlock Grid.Column="0" Classes="hint" VerticalAlignment="Center"
+						           Text="Картинки можно просто бросить в это окно"/>
+						<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+							<Button Classes="ro-allow" Content="Отмена" Click="OnCancelClick"
+							        IsVisible="{Binding IsPickMode}"
+							        FontSize="12" Padding="12,6" CornerRadius="6"
+							        Background="{DynamicResource BgSurfaceBrush}"
+							        Foreground="{DynamicResource TextPrimaryBrush}"
+							        BorderBrush="{DynamicResource BorderDefaultBrush}"
+							        BorderThickness="1"/>
+							<Button Content="Готово" Click="OnOkClick"
+							        FontSize="12" Padding="16,6" CornerRadius="6"
+							        Background="{DynamicResource AccentDefaultBrush}"
+							        Foreground="White"
+							        BorderThickness="0"/>
+						</StackPanel>
+					</Grid>
+				</Grid>
+
+				<!-- Подсветка приёма файла: рамка по краю окна и подпись -->
+				<Border x:Name="DropHint"
+				        IsVisible="False"
+				        IsHitTestVisible="False"
+				        Margin="-20"
+				        CornerRadius="16"
+				        BorderThickness="2"
+				        BorderBrush="{DynamicResource AccentDefaultBrush}"
+				        Background="#22000000">
+					<Border HorizontalAlignment="Center" VerticalAlignment="Center"
+					        Padding="14,8" CornerRadius="8"
+					        Background="{DynamicResource BgBaseBrush}"
+					        BorderBrush="{DynamicResource AccentDefaultBrush}"
+					        BorderThickness="1">
+						<TextBlock Text="Отпустите — картинка встанет в свои значки"
+						           FontSize="12"
+						           Foreground="{DynamicResource TextPrimaryBrush}"/>
+					</Border>
+				</Border>
+			</Panel>
+		</Border>
+	</Grid>
+</UserControl>

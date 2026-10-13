@@ -2612,10 +2612,23 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (_isTransitioning && TopLevel.GetTopLevel(this) is not null)
                 _isTransitioning = false;
+
+            // Кадр по одному листу (DocumentCanvas.PartialRender) — только для правок набора.
+            NoteFullInvalidation(perfCaller);
+
             RefreshImagesInTextSelection();
             _contentDirty = true;
             _caretOnlyRedraw = false;
-            InvalidateVisual();
+
+            _inInvalidateFull = true;
+            try
+            {
+                InvalidateVisual();
+            }
+            finally
+            {
+                _inInvalidateFull = false;
+            }
         }
 
         /// <summary>
@@ -2849,7 +2862,8 @@ namespace Writersword.Modules.TextEditor.Document
             if (DocVm is null) return false;
             var blocks = DocVm.Document.Sections[0].Blocks;
             int idx = blocks.IndexOf(block);
-            return idx > 0 && blocks[idx - 1] is BreakBlock { BreakType: BreakType.Page };
+            return idx > 0 && blocks[idx - 1] is BreakBlock previous
+                && (previous.BreakType == BreakType.Page || previous.IsSectionBreak);
         }
 
         /// <summary>

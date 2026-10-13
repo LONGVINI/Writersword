@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Writersword.Modules.TextEditor.Contracts;
 using Writersword.Modules.TextEditor.Models.Inline;
 
@@ -24,6 +24,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _reviewDocument = docVm;
             docVm.ReviewerName = Settings.ReviewerName ?? string.Empty;
             docVm.RevisionsChanged += OnRevisionsChanged;
+
+            // Панель рецензии и номера страниц боковых панелей — у того же документа.
+            AttachReviewPanel(docVm);
 
             ReviewStateChanged?.Invoke();
         }
@@ -59,5 +62,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public int RevisionCount => DocumentViewModel?.CountRevisions() ?? 0;
 
         public void ExecuteReview(ReviewAction action) => DocumentViewModel?.ExecuteReview(action);
+
+        bool IReviewHost.IsReviewPanelVisible => IsReviewPanelVisible;
+
+        void IReviewHost.ToggleReviewPanel() => ToggleReviewPanel();
+
+        void IReviewHost.InsertComment(Models.Document.CommentKind kind) => DocumentViewModel?.InsertComment(string.Empty, kind);
     }
 }

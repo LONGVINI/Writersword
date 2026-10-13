@@ -661,18 +661,31 @@
 								<!-- Имя и область -->
 								<Border Classes="card">
 									<StackPanel Spacing="10">
-										<Grid ColumnDefinitions="Auto Auto * Auto Auto" ColumnSpacing="6">
+										<Grid ColumnDefinitions="Auto Auto * Auto Auto Auto" ColumnSpacing="6">
 											<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
 												<PathIcon Classes="cardGlyph" Data="M17.63 5.84C17.27 5.33 16.67 5 16 5L5 5.01C3.9 5.01 3 5.9 3 7v10c0 1.1.9 1.99 2 1.99L16 19c.67 0 1.27-.33 1.63-.84L22 12l-4.37-6.16z"/>
 												<TextBlock Classes="FieldLabel" Text="Название"/>
 											</StackPanel>
-											<Button Grid.Column="3" x:Name="DuplicateBtn" Classes="iconAction"
+											<!-- Вид по умолчанию: им открываются книги, для которых свой вид
+											     не выбирали. Закрашенная звезда — выбранный вид уже по умолчанию. -->
+											<Button Grid.Column="3" x:Name="DefaultBtn" Classes="iconAction"
+											        behaviours:TooltipBehavior.Tip="Вид по умолчанию"
+											        behaviours:TooltipBehavior.Description="Этим видом открываются книги, для которых свой вид не выбран. Эта книга тоже переходит на него">
+												<Panel>
+													<PathIcon x:Name="DefaultOffIcon" Width="13" Height="13"
+													          Data="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"/>
+													<PathIcon x:Name="DefaultOnIcon" Width="13" Height="13" IsVisible="False"
+													          Foreground="{DynamicResource AccentDefaultBrush}"
+													          Data="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+												</Panel>
+											</Button>
+											<Button Grid.Column="4" x:Name="DuplicateBtn" Classes="iconAction"
 											        behaviours:TooltipBehavior.Tip="Дублировать вид"
 											        behaviours:TooltipBehavior.Description="Копия под новым именем. Встроенный вид иначе не изменить — его копию править можно">
 												<PathIcon Width="13" Height="13"
 												          Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
 											</Button>
-											<Button Grid.Column="4" x:Name="DeleteBtn" Classes="iconAction danger"
+											<Button Grid.Column="5" x:Name="DeleteBtn" Classes="iconAction danger"
 											        behaviours:TooltipBehavior.Tip="Удалить вид"
 											        behaviours:TooltipBehavior.Description="Убирает вид из обеих областей. Встроенные виды удалить нельзя">
 												<PathIcon Width="13" Height="13"

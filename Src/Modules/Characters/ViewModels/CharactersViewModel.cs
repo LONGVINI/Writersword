@@ -46,17 +46,30 @@ namespace Writersword.Modules.Characters.ViewModels
 
         // Режим сравнения версий (восстановление после несохранённой сессии):
         // данные модуля нельзя изменять, пока пользователь не выбрал версию.
-        // Устанавливается модулем из Context.IsInCompareMode. Сейчас блокирует
-        // перетаскивание карточек в списке.
+        // Читается из контекста напрямую (ReadOnlyProvider): вход в сравнение
+        // и принятие второй версии не всегда сообщают модулю о смене
+        // контекста, и запрет не должен ни опаздывать, ни залипать после
+        // выхода. Без поставщика — значение, выставленное модулем. Запрет на
+        // входе стоит в CharactersReadOnlyGate.
         private bool _isReadOnly;
         public bool IsReadOnly
         {
-            get => _isReadOnly;
+            get => ReadOnlyProvider?.Invoke() ?? _isReadOnly;
             set => this.RaiseAndSetIfChanged(ref _isReadOnly, value);
         }
 
+        /// <summary>Живой признак режима сравнения — из контекста документа.</summary>
+        public Func<bool>? ReadOnlyProvider { get; set; }
+
         public CharactersTrashService Trash => _trash;
         public ICharacterAvatarService? AvatarService => _avatarService;
+
+        /// <summary>
+        /// Библиотека своих значков проекта — общая для анкет, шаблонов и
+        /// меток. Окно значков берёт её отсюда: оно живёт в вью модуля и
+        /// своих зависимостей не получает.
+        /// </summary>
+        public Services.CharacterIconLibrary IconLibrary { get; } = new();
         public ICharacterService CharacterService => _characterService;
 
         // Задаётся из CharactersListView code-behind.
@@ -1290,6 +1303,9 @@ namespace Writersword.Modules.Characters.ViewModels
         /// </summary>
         public Character? GetCharacter(string id) => _characterService.GetById(id);
 
+        /// <summary>Анкета по идентификатору — сравнению нужна глубина её полей.</summary>
+        public CharacterAnketa? GetAnketa(string id) => _anketaService.GetById(id);
+
         public void InitializeFirstLaunch()
         {
             ShowOnboarding = true;
@@ -1300,13 +1316,13 @@ namespace Writersword.Modules.Characters.ViewModels
             ShowOnboarding = false;
             if (completed)
             {
+                // Ответы о том, что пишет автор, превращаются в шаблон
+                // проекта — готовое сочетание разделов под жанр. Новые
+                // персонажи сразу получают его анкеты.
                 var tags = OnboardingViewModel.GetSelectedTags().ToList();
-                var recommended = _anketaService.GetRecommended(tags);
-                foreach (var anketa in recommended.Take(1))
-                {
-                    if (!ActiveTemplateIds.Contains(anketa.Id))
-                        ActiveTemplateIds.Add(anketa.Id);
-                }
+                var templateId = Services.CharacterBuiltInContent.RecommendTemplateId(tags);
+                if (_anketaService.GetTemplateById(templateId) != null)
+                    TemplatesViewModel.SetProjectTemplate(templateId);
                 TemplatesViewModel.Refresh();
             }
             _logger.Information("Onboarding dismissed — can restart via Templates tab");
@@ -1325,7 +1341,8 @@ namespace Writersword.Modules.Characters.ViewModels
             if (IsReadOnly) return;
             var anketas = GetActiveAnketas();
             var character = anketas.Count > 0
-                ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: false)
+                ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: false,
+                    depths: TemplatesViewModel.GetProjectDepths())
                 : _characterService.Create(CharactersStrings.Character_DefaultName);
             character.AvatarRing = ProjectRingsAll;
             AddCharacterToActiveFolderVm(character, isNaming: true);
@@ -1336,7 +1353,8 @@ namespace Writersword.Modules.Characters.ViewModels
             if (IsReadOnly) return;
             var anketas = GetActiveAnketas();
             var character = anketas.Count > 0
-                ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: true)
+                ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: true,
+                    depths: TemplatesViewModel.GetProjectDepths())
                 : _characterService.Create(CharactersStrings.Character_DefaultName);
             character.AvatarRing = ProjectRingsAll;
             AddCharacterToActiveFolderVm(character, isNaming: true);
@@ -2076,7 +2094,8 @@ namespace Writersword.Modules.Characters.ViewModels
             ActiveTagFilters.Clear();
             foreach (var tag in session.ActiveTagFilters) ActiveTagFilters.Add(tag);
             ActiveTemplateIds.Clear();
-            foreach (var id in session.ActiveTemplateIds) ActiveTemplateIds.Add(id);
+            foreach (var id in Services.CharacterBuiltInContent.ExpandLegacyIds(session.ActiveTemplateIds))
+                ActiveTemplateIds.Add(id);
             TemplatesViewModel.Refresh();
             ApplyFilters();
             if (!string.IsNullOrEmpty(session.LastOpenedCharacterId) &&

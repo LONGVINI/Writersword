@@ -1,3 +1,5 @@
+﻿using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
 using Writersword.Modules.TextEditor.Models.Styles;
@@ -96,6 +98,17 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public static ParagraphBlock DisplayParagraph(ParagraphBlock paragraph, RevisionView view)
         {
+            if (view != RevisionView.AllMarkup
+                && IsMarkHidden(paragraph.Properties, view)
+                && Joins.TryGetValue(paragraph, out var joined)
+                && joined.Length > 0)
+                return JoinedParagraph(paragraph, joined, view);
+
+            return WithPreviousFormatting(paragraph, view);
+        }
+
+        private static ParagraphBlock WithPreviousFormatting(ParagraphBlock paragraph, RevisionView view)
+        {
             if (view != RevisionView.Original
                 || paragraph.Properties.FormatChange?.Previous is not { } previous)
                 return paragraph;
@@ -113,6 +126,111 @@ namespace Writersword.Modules.TextEditor.Rendering
                 ListProperties = paragraph.ListProperties,
                 SuppressSpaceBefore = paragraph.SuppressSpaceBefore,
                 SuppressSpaceAfter = paragraph.SuppressSpaceAfter
+            };
+        }
+
+        // Абзацы, к которым при выбранном виде подклеены следующие: знак абзаца между
+        // ними спрятан правкой. И абзацы, ушедшие внутрь предыдущего.
+        private static readonly ConditionalWeakTable<ParagraphBlock, ParagraphBlock[]> Joins = new();
+        private static readonly ConditionalWeakTable<ParagraphBlock, object> Absorbed = new();
+        private static readonly object AbsorbedMark = new();
+
+        /// <summary>
+        /// Размечает склейку абзацев для вида показа: абзац, чей знак спрятан правкой
+        /// (вставленный знак — в «Исходном документе», удалённый — в «Простой разметке»
+        /// и «Без исправлений»), продолжается текстом следующего абзаца, как у Word.
+        /// Склеенный абзац берёт оформление последнего знака — того, что остался.
+        /// Вызывается перед раскладкой при каждой смене вида или текста.
+        /// </summary>
+        public static void PrepareJoins(DocumentModel? document, RevisionView view)
+        {
+            if (document is null) return;
+
+            foreach (var section in document.Sections)
+            {
+                var blocks = section.Blocks;
+                for (int i = 0; i < blocks.Count; i++)
+                {
+                    if (blocks[i] is not ParagraphBlock paragraph) continue;
+
+                    Joins.Remove(paragraph);
+                    Absorbed.Remove(paragraph);
+                }
+            }
+
+            if (view == RevisionView.AllMarkup) return;
+
+            foreach (var section in document.Sections)
+            {
+                var blocks = section.Blocks;
+                for (int i = 0; i < blocks.Count; i++)
+                {
+                    if (blocks[i] is not ParagraphBlock paragraph) continue;
+                    if (Absorbed.TryGetValue(paragraph, out _)) continue;
+                    if (!IsMarkHidden(paragraph.Properties, view)) continue;
+                    if (IsParagraphHidden(paragraph, view)) continue;
+
+                    var chain = new List<ParagraphBlock>();
+                    int j = i + 1;
+                    while (j < blocks.Count && blocks[j] is ParagraphBlock next)
+                    {
+                        chain.Add(next);
+                        Absorbed.AddOrUpdate(next, AbsorbedMark);
+                        if (!IsMarkHidden(next.Properties, view)) break;
+                        j++;
+                    }
+
+                    if (chain.Count > 0) Joins.AddOrUpdate(paragraph, chain.ToArray());
+                }
+            }
+        }
+
+        /// <summary>Абзац ушёл внутрь предыдущего: знак абзаца перед ним спрятан правкой.</summary>
+        public static bool IsAbsorbed(ParagraphBlock paragraph) => Absorbed.TryGetValue(paragraph, out _);
+
+        /// <summary>
+        /// Абзац для показа вместе с подклеенными: свой текст, затем текст следующих
+        /// абзацев (отметкой «только для показа»), оформление — последнего знака абзаца.
+        /// </summary>
+        private static ParagraphBlock JoinedParagraph(ParagraphBlock paragraph, ParagraphBlock[] joined, RevisionView view)
+        {
+            var last = WithPreviousFormatting(joined[^1], view);
+            var own = WithPreviousFormatting(paragraph, view);
+
+            var chunks = new List<TextChunk>(own.Chunks);
+            foreach (var next in joined)
+            {
+                var tail = new TextChunk();
+                tail.Runs.Clear();
+                foreach (var chunk in next.Chunks)
+                {
+                    foreach (var run in chunk.Runs)
+                    {
+                        if (string.IsNullOrEmpty(run.Text)) continue;
+                        tail.Runs.Add(new Models.Inline.RunModel
+                        {
+                            Id = run.Id,
+                            Text = run.Text,
+                            Properties = run.Properties,
+                            InlineImageId = run.InlineImageId,
+                            DisplayTail = true
+                        });
+                    }
+                }
+
+                if (tail.Runs.Count == 0) continue;
+                tail.InvalidateLength();
+                chunks.Add(tail);
+            }
+
+            return new ParagraphBlock
+            {
+                Id = paragraph.Id,
+                Chunks = chunks,
+                Properties = last.Properties,
+                ListProperties = last.ListProperties,
+                SuppressSpaceBefore = own.SuppressSpaceBefore,
+                SuppressSpaceAfter = last.SuppressSpaceAfter
             };
         }
 

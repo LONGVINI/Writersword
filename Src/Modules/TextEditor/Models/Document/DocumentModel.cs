@@ -61,6 +61,15 @@ namespace Writersword.Modules.TextEditor.Models.Document
         public ColumnSettings ColumnSettings { get; set; } = new();
 
         /// <summary>
+        /// Последний раздел документа сверх листа и колонок (их задают PageSettings и
+        /// ColumnSettings): как он начинается, особая первая, рамка, номера строк,
+        /// выравнивание по высоте, счёт страниц, колонки неравной ширины. Null — у
+        /// документа один раздел без этих особенностей.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public SectionLayout? FinalSection { get; set; }
+
+        /// <summary>
         /// Визуальные настройки листа (цвет фона, текста).
         /// Не влияют на экспорт/печать.
         ///
@@ -121,6 +130,26 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// </summary>
         public bool JustifyWithShrinking { get; set; }
 
+        // --- Сноски ---
+
+        /// <summary>
+        /// Чем нумеруются сноски внизу страниц. У Word по умолчанию — цифрами.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public NoteNumberFormat FootnoteNumberFormat { get; set; } = NoteNumberFormat.Decimal;
+
+        /// <summary>
+        /// Чем нумеруются концевые сноски. У Word по умолчанию — строчными римскими
+        /// цифрами.
+        /// </summary>
+        public NoteNumberFormat EndnoteNumberFormat { get; set; } = NoteNumberFormat.LowerRoman;
+
+        /// <summary>Номер первой сноски документа. У Word по умолчанию — 1.</summary>
+        public int FootnoteNumberStart { get; set; } = 1;
+
+        /// <summary>Номер первой концевой сноски документа. У Word по умолчанию — 1.</summary>
+        public int EndnoteNumberStart { get; set; } = 1;
+
         // --- Рецензирование ---
 
         /// <summary>
@@ -161,6 +190,12 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// Хранятся отдельным слоем — могут перекрывать границы параграфов и чанков.
         /// </summary>
         public List<InlineAnnotation> Annotations { get; set; } = new();
+
+        /// <summary>
+        /// Примечания рецензентов. Места в тексте, к которым они относятся, отмечены на
+        /// самих фрагментах текста (RunProperties.CommentIds).
+        /// </summary>
+        public List<CommentModel> Comments { get; set; } = new();
 
         /// <summary>
         /// Оглавления рукописи. Обычно одно, но их может быть несколько — общее в начале

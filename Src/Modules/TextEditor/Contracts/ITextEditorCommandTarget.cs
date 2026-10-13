@@ -220,6 +220,24 @@ namespace Writersword.Modules.TextEditor.Contracts
         void InsertSectionBreak(BreakType breakType);
         void InsertFootnote();
         void InsertEndnote();
+
+        /// <summary>Открывает окно формулы и вставляет формулу в место каретки.</summary>
+        void InsertFormula();
+
+        /// <summary>
+        /// Вставляет готовую формулу (запись LaTeX) в место каретки отдельной строкой,
+        /// без окна — как готовые формулы из списка «Уравнение» у Word.
+        /// </summary>
+        void InsertReadyFormula(string latex);
+
+        /// <summary>Открывает окно новой формулы уже с заготовкой или знаком (запись LaTeX).</summary>
+        void InsertFormulaTemplate(string latex);
+
+        /// <summary>Показывает справку по записи формул.</summary>
+        void ShowFormulaHelp();
+
+        /// <summary>Открывает окно даты и вставляет у каретки дату живым полем.</summary>
+        void InsertDateTime();
         void InsertBookmark(string name);
         void InsertHyperlink(string url, string? displayText);
         void InsertTOC();
@@ -398,6 +416,16 @@ namespace Writersword.Modules.TextEditor.Contracts
         void SetPageGutter(double gutterMm);
         void SetColumns(int count);
 
+        /// <summary>Число колонок раздела под кареткой.</summary>
+        int GetColumnCount();
+
+        /// <summary>
+        /// Размер, ориентация, поля, переплёт и колонки ложатся только на выделенное
+        /// (абзац под кареткой): раздел режется разрывами, как «Применить: к выделенному
+        /// тексту» у Word. Иначе — на весь раздел под кареткой.
+        /// </summary>
+        bool PageSetupToSelection { get; set; }
+
         // ── Вид ───────────────────────────────────────────────────────────
         void SetZoom(double zoom);
         void SetViewMode(EditorViewMode mode);
@@ -575,6 +603,12 @@ namespace Writersword.Modules.TextEditor.Contracts
         void TableToggleRowHeightExact();
         /// <summary>У строки под кареткой точная высота.</summary>
         bool TableGetRowHeightExact();
+
+        /// <summary>
+        /// Ширина столбца (мм) и высота строки (пт) под кареткой — как они стоят на
+        /// листе. Null — каретка не в таблице.
+        /// </summary>
+        (double ColumnWidthMm, double RowHeightPt)? TableGetCellSize();
 
         // ── Узор заливки ячейки ───────────────────────────────────────────
         /// <summary>

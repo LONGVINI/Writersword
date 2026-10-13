@@ -50,6 +50,7 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             BuildScaleCountOptions();
             BuildLabelColorOptions();
             BuildStepRuleOptions();
+            BuildDepthOptions();
         }
 
         /// <summary>
@@ -219,6 +220,91 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         }
 
         public CharacterParameterType Type => _field.Type;
+
+        // ── Уровень детализации ──────────────────────────────────────────
+        //
+        // Уровень поля обычно задаёт подзаголовок группы; поле перебивает его,
+        // когда в «краткой» группе нашлась деталь для главных героев.
+
+        /// <summary>Свой уровень поля. Пусто — как у группы.</summary>
+        public int? Depth
+        {
+            get => _field.Depth;
+            set
+            {
+                var v = value.HasValue ? CharacterDetailLevels.Clamp(value.Value) : (int?)null;
+                if (_field.Depth == v) return;
+                _field.Depth = v;
+                foreach (var option in DepthOptions) option.SetSelectedSilently(option.Value == (v ?? 0));
+                this.RaisePropertyChanged();
+                this.RaisePropertyChanged(nameof(HasOwnDepth));
+                this.RaisePropertyChanged(nameof(DepthTip));
+                NotifyEdited();
+            }
+        }
+
+        /// <summary>Уровень задан самим полем, а не группой.</summary>
+        public bool HasOwnDepth => _field.Depth.HasValue;
+
+        /// <summary>Варианты уровня: как у группы, кратко, подробно, глубоко.</summary>
+        public ObservableCollection<AnketaOptionViewModel<int>> DepthOptions { get; } = new();
+
+        private void BuildDepthOptions()
+        {
+            DepthOptions.Clear();
+            DepthOptions.Add(new AnketaOptionViewModel<int>(0, "Как у группы",
+                "Уровень подзаголовка, под которым стоит поле", !_field.Depth.HasValue, SetDepthOption));
+            foreach (var level in CharacterDetailLevels.All)
+                DepthOptions.Add(new AnketaOptionViewModel<int>(level, CharacterDetailLevels.NameOf(level),
+                    CharacterDetailLevels.HintOf(level), _field.Depth == level, SetDepthOption)
+                {
+                    GlyphLevel = level
+                });
+        }
+
+        private void SetDepthOption(int value) => Depth = value == 0 ? null : value;
+
+        private int _effectiveDepth = CharacterDetailLevels.Brief;
+
+        /// <summary>Уровень, на котором поле показывается: свой или группы. Считает лист.</summary>
+        public int EffectiveDepth
+        {
+            get => _effectiveDepth;
+            internal set
+            {
+                if (_effectiveDepth == value) return;
+                this.RaiseAndSetIfChanged(ref _effectiveDepth, value);
+                this.RaisePropertyChanged(nameof(DepthName));
+                this.RaisePropertyChanged(nameof(DepthTip));
+            }
+        }
+
+        public string DepthName => CharacterDetailLevels.NameOf(_effectiveDepth);
+
+        /// <summary>Подсказка к значку уровня у поля: какой уровень и откуда он взялся.</summary>
+        public string DepthTip => (_field.Depth.HasValue
+                                      ? "Уровень задан самим полем. "
+                                      : "Уровень взят у группы. ")
+                                  + "Щелчок — выбрать другой. " + CharacterDetailLevels.SymbolHint;
+
+        private bool _isBeyondPreview;
+
+        /// <summary>Поле глубже выбранного для показа уровня — на листе оно приглушено.</summary>
+        public bool IsBeyondPreview
+        {
+            get => _isBeyondPreview;
+            internal set => this.RaiseAndSetIfChanged(ref _isBeyondPreview, value);
+        }
+
+        /// <summary>Задать уровень, не записывая правку: новое поле получает уровень, на котором его добавили.</summary>
+        internal void SetDepthSilently(int? depth)
+        {
+            _field.Depth = depth.HasValue ? CharacterDetailLevels.Clamp(depth.Value) : null;
+            foreach (var option in DepthOptions) option.SetSelectedSilently(option.Value == (_field.Depth ?? 0));
+            this.RaisePropertyChanged(nameof(Depth));
+            this.RaisePropertyChanged(nameof(HasOwnDepth));
+            this.RaisePropertyChanged(nameof(DepthTip));
+        }
 
         public string TypeLabel => TypeLabelOf(_field.Type);
 
@@ -788,6 +874,13 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
 
         private void ApplyScaleLabels()
         {
+            // Подписи не правили, а деления стоят на шкале и на её шаге —
+            // точки остаются там, где их поставили. Иначе подписи шкалы
+            // 0–100 на 10, 30, 60, 90 при каждом сохранении съезжали бы на
+            // 1, 2, 3, 4: так портились копии встроенных анкет и всё, что
+            // пришло из файла с подписями не подряд.
+            if (KeepsScalePoints()) return;
+
             var result = new Dictionary<double, string>();
             var labels = CharacterFieldDefinition.SplitStates(_scaleLabels);
 
@@ -803,6 +896,30 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             }
 
             _field.ScalePoints = result;
+        }
+
+        /// <summary>
+        /// Подписи делений не менялись с открытия поля, и каждая точка лежит
+        /// в пределах шкалы на её шаге — раскладывать их заново незачем.
+        /// </summary>
+        private bool KeepsScalePoints()
+        {
+            var points = _field.ScalePoints;
+            if (points == null || points.Count == 0) return false;
+
+            var current = string.Join(", ", points.OrderBy(p => p.Key).Select(p => p.Value));
+            if (!string.Equals(current, _scaleLabels, StringComparison.Ordinal)) return false;
+
+            var step = StepValue > 0 ? StepValue : 1;
+            foreach (var key in points.Keys)
+            {
+                if (key < _field.DefaultMinValue - 0.0001 || key > _field.DefaultMaxValue + 0.0001) return false;
+
+                var steps = (key - _field.DefaultMinValue) / step;
+                if (Math.Abs(steps - Math.Round(steps)) > 0.0001) return false;
+            }
+
+            return true;
         }
 
         // ── Выбор ────────────────────────────────────────────────────────
@@ -1168,6 +1285,14 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
 
         /// <summary>Значок варианта (Path Data); пусто — вариант подписан словом.</summary>
         public string IconPath { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Уровень для значка-полосок (DepthGlyph) у вариантов глубины.
+        /// Меньше нуля — у варианта такого значка нет.
+        /// </summary>
+        public int GlyphLevel { get; init; } = -1;
+
+        public bool HasGlyph => GlyphLevel >= 0;
 
         private bool _isSelected;
         public bool IsSelected

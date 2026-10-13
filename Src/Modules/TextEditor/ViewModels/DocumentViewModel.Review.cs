@@ -1,7 +1,9 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using ReactiveUI;
 using Writersword.Modules.TextEditor.Contracts;
+using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
 using Writersword.Modules.TextEditor.Models.Styles;
 using Writersword.Modules.TextEditor.Services;
@@ -38,6 +40,59 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// по каретке и выделению. False — делать нечего.
         /// </summary>
         public Func<ReviewAction, bool>? ReviewCommandDelegate { get; set; }
+
+        // ── Панель рецензии ───────────────────────────────────────────────
+        // Панель живёт в модели модуля и о листе ничего не знает: перейти к месту,
+        // подсветить его, принять или отклонить правки она просит полотно через эти
+        // делегаты. Ставит их полотно, когда получает документ.
+
+        /// <summary>Выделить плавающую картинку и прокрутить к ней.</summary>
+        public Action<ImageBlock>? GoToReviewImageDelegate { get; set; }
+
+        /// <summary>Подсветить плавающую картинку цветом (ARGB); null — снять подсветку.</summary>
+        public Action<ImageBlock?, uint>? HighlightReviewImageDelegate { get; set; }
+
+        /// <summary>Принять или отклонить правки плавающих картинок одним шагом отмены.</summary>
+        public Action<IReadOnlyList<ImageBlock>, bool>? ResolveImageRevisionsDelegate { get; set; }
+
+        public void GoToReviewImage(ImageBlock image) => GoToReviewImageDelegate?.Invoke(image);
+
+        public void HighlightReviewImage(ImageBlock? image, uint argb) => HighlightReviewImageDelegate?.Invoke(image, argb);
+
+        public void ResolveImageRevisions(IReadOnlyList<ImageBlock> images, bool accept)
+        {
+            if (IsReadOnly || images.Count == 0) return;
+            ResolveImageRevisionsDelegate?.Invoke(images, accept);
+        }
+
+        /// <summary>Выделить место в тексте и прокрутить к нему: абзац, знаки, знак абзаца ли это.</summary>
+        public Action<ParagraphBlock, int, int, bool>? GoToReviewPlaceDelegate { get; set; }
+
+        /// <summary>Подсветить места в тексте цветом (ARGB); null — снять подсветку.</summary>
+        public Action<IReadOnlyList<(ParagraphBlock Paragraph, int From, int To)>?, uint>? HighlightReviewPlacesDelegate { get; set; }
+
+        /// <summary>Принять (true) или отклонить правки одним шагом отмены.</summary>
+        public Action<IReadOnlyList<RevisionService.Hit>, bool>? ResolveRevisionHitsDelegate { get; set; }
+
+        /// <summary>Раскладка пересчитала листы: номера страниц мест могли уехать.</summary>
+        public event Action? PagesRecounted;
+
+        public void RaisePagesRecounted() => PagesRecounted?.Invoke();
+
+        /// <summary>Выделить место пункта рецензии в тексте.</summary>
+        public void GoToReviewPlace(ParagraphBlock paragraph, int from, int to, bool isMark)
+            => GoToReviewPlaceDelegate?.Invoke(paragraph, from, to, isMark);
+
+        /// <summary>Подсветить места пункта рецензии; null — снять.</summary>
+        public void HighlightReviewPlaces(IReadOnlyList<(ParagraphBlock Paragraph, int From, int To)>? places, uint argb)
+            => HighlightReviewPlacesDelegate?.Invoke(places, argb);
+
+        /// <summary>Принять или отклонить правки.</summary>
+        public void ResolveRevisionHits(IReadOnlyList<RevisionService.Hit> hits, bool accept)
+        {
+            if (IsReadOnly || hits.Count == 0) return;
+            ResolveRevisionHitsDelegate?.Invoke(hits, accept);
+        }
 
         /// <summary>
         /// Имя, которым подписываются правки. Пустое — имя пользователя системы,

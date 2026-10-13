@@ -74,6 +74,13 @@ namespace Writersword.Modules.Characters.Models
         // остаются на месте и работают как прежде.
         public List<string> AttachedAnketaIds { get; set; } = new();
 
+        // Глубина подключённых анкет: ключ — анкета, значение — уровень
+        // детализации (CharacterDetailLevels). Главному герою «Внешность»
+        // раскрывается глубоко, прохожему — кратко, а анкета у обоих одна,
+        // и значения сравниваются. Анкеты без записи раскрываются по
+        // важности персонажа. Скрытые уровнем поля значения не теряют.
+        public Dictionary<string, int> AnketaDepths { get; set; } = new();
+
         // ── Контексты (маски) ─────────────────────────────────────────────
         public List<CharacterContext> Contexts { get; set; } = new();
 

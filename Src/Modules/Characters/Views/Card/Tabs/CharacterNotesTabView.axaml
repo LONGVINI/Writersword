@@ -17,7 +17,7 @@
                 <ItemsControl ItemsSource="{Binding Notes}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="models:CharacterNote">
-                            <Button Click="OnNoteSelectClick"
+                            <Button Classes="ro-allow" Click="OnNoteSelectClick"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     HorizontalAlignment="Stretch"

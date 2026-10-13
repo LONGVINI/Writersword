@@ -65,6 +65,7 @@ namespace Writersword.Modules.TextEditor.Views
             WireReadingRibbon();
             WireFocusMode();
             WireHeaderFooterEditor();
+            WireDrawers();
         }
 
         public TextEditorView() : this(new UndoRedoStack()) { }
@@ -804,6 +805,9 @@ namespace Writersword.Modules.TextEditor.Views
                 vm.NotifyPageOffsetChanged(pageOffsetXPx);
             };
 
+            // Лист под кареткой (размер, поля, колонки раздела) → линейка.
+            canvas.RulerSheetChanged = sheet => vm.NotifyRulerSheet(sheet);
+
             // Число страниц и строк → строка состояния и окно статистики. Считает их
             // раскладка: по тексту документа ни то, ни другое не выводится.
             canvas.PaginationChanged = (pageCount, lineCount) =>
@@ -1018,6 +1022,14 @@ namespace Writersword.Modules.TextEditor.Views
                 vm.ApplyReadingLayout();
             };
 
+            // Вид по умолчанию — вид листа при правке для книг, где свой не выбирали.
+            overlay.DefaultThemeId = vm.DefaultEditorThemeId;
+            overlay.DefaultRequested = theme =>
+            {
+                vm.SetDefaultEditorView(theme);
+                overlay.DefaultThemeId = vm.DefaultEditorThemeId;
+            };
+
             try
             {
                 var result = await overlay.ShowAsync(vm.ReadingThemes(), reading.ThemeId, startWithNewTheme);
@@ -1031,6 +1043,7 @@ namespace Writersword.Modules.TextEditor.Views
             finally
             {
                 overlay.ApplyRequested = null;
+                overlay.DefaultRequested = null;
             }
         }
 

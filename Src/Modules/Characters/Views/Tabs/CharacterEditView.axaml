@@ -160,7 +160,7 @@
             <!-- Высота строки берётся из той же вьюмодели, что отдаёт её
                  раскладке: иначе расчёт скролла и нарисованная строка
                  разъедутся, и ползунок снова начнёт плавать. -->
-            <Button Classes="fold-header"
+            <Button Classes="fold-header ro-allow"
                     Height="{Binding RowHeight}"
                     Command="{Binding ToggleExpandCommand}">
                 <!-- Задник нейтральный (BgListBlockBrush) без цветного выделения:
@@ -215,7 +215,7 @@
                  полотно связей в открытой карточке. Обычный щелчок при этом
                  продолжает открывать персонажа: перетаскивание начинается
                  только после сдвига мыши на несколько пикселей. -->
-            <Button Classes="edit-row"
+            <Button Classes="edit-row ro-allow"
                     Height="{Binding RowHeight}"
                     Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
                     CommandParameter="{Binding Id}"
@@ -371,7 +371,7 @@
                         <!-- Полный режим: поле поиска и две кнопки справа от него. -->
                         <Grid ColumnDefinitions="*,Auto,Auto"
                               IsVisible="{Binding IsSidebarFull}">
-                            <TextBox Grid.Column="0"
+                            <TextBox Grid.Column="0" Classes="ro-allow"
                                      x:Name="SidebarSearchBox"
                                      Text="{ReflectionBinding SearchQuery}"
                                      PlaceholderText="{x:Static loc:CharactersStrings.Search_Placeholder}"
@@ -385,7 +385,7 @@
                                      LostFocus="OnSidebarSearchLostFocus"/>
 
                             <!-- Переключение полный/компактный список -->
-                            <Button Grid.Column="1" Classes="side-tool"
+                            <Button Grid.Column="1" Classes="side-tool ro-allow"
                                     Click="OnCompactToggleClick">
                                 <Ellipse Width="12" Height="12"
                                          HorizontalAlignment="Center"
@@ -393,7 +393,7 @@
                             </Button>
 
                             <!-- Скрыть список полностью -->
-                            <Button Grid.Column="2" Classes="side-tool"
+                            <Button Grid.Column="2" Classes="side-tool ro-allow"
                                     Click="OnHideSidebarClick">
                                 <Path Width="16" Height="16"
                                       Data="M10.5,3 L5.5,8 L10.5,13"
@@ -415,7 +415,7 @@
                              значки снова разъезжаются по видимой толщине. -->
                         <UniformGrid Columns="3"
                                      IsVisible="{Binding IsSidebarCompact}">
-                            <Button Classes="side-tool"
+                            <Button Classes="side-tool ro-allow"
                                     Click="OnSidebarSearchClick">
                                 <!-- Окружность радиуса 4 с центром 6.75,6.75 и
                                      ручка от неё под 45 градусов до 13.25:
@@ -428,7 +428,7 @@
                                       StrokeJoin="Round"/>
                             </Button>
 
-                            <Button Classes="side-tool"
+                            <Button Classes="side-tool ro-allow"
                                     Click="OnCompactToggleClick">
                                 <!-- Три полосы дают 12 на 12; поле того же
                                      размера, что у соседей, задаёт Panel. -->
@@ -443,7 +443,7 @@
                                 </Panel>
                             </Button>
 
-                            <Button Classes="side-tool"
+                            <Button Classes="side-tool ro-allow"
                                     Click="OnHideSidebarClick">
                                 <Path Width="16" Height="16"
                                       Data="M10.5,3 L5.5,8 L10.5,13"
@@ -517,7 +517,7 @@
                 IsVisible="{Binding IsSidebarHidden}"
                 ClipToBounds="True"
                 Background="{DynamicResource BgPanelBrush}">
-            <Button Classes="side-tool"
+            <Button Classes="side-tool ro-allow"
                     Click="OnRestoreSidebarClick"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Top"

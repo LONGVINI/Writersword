@@ -281,7 +281,7 @@ namespace Writersword.Modules.TextEditor.Services
                 && a.TextColor == b.TextColor
                 && a.HighlightColor == b.HighlightColor
                 && a.Language == b.Language
-                && RunProperties.SameRevisions(a, b);
+                && RunProperties.SameMarkup(a, b);
         }
     }
 }

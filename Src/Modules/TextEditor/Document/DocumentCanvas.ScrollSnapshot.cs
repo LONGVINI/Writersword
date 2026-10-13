@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 using Writersword.Core.Models.Rendering;
 using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
@@ -71,9 +72,16 @@ namespace Writersword.Modules.TextEditor.Document
                 float pageBottomPt = pageTopPt + pageHeightPt;
                 if (pageBottomPt < viewTopPt || pageTopPt > viewTopPt + viewHeightPt) return false;
 
+                // Снимок покрывает лист, если покрыта его видимая часть. Кадр набора — ровно
+                // окно (EditBand), и лист, уходящий за край окна, весь в него не входит:
+                // проверка по всему листу клала картинку бумаги под каждый видимый лист на
+                // каждом кадре, хотя на экране её всё равно закрывает снимок.
+                float shownTopPt = Math.Max(pageTopPt, viewTopPt);
+                float shownBottomPt = Math.Min(pageBottomPt, viewTopPt + viewHeightPt);
+
                 bool covered = SnapshotUsable
                     && pageIndex >= FirstPage && pageIndex <= LastPage
-                    && pageTopPt >= TopPt && pageBottomPt <= BottomPt;
+                    && shownTopPt >= TopPt - 0.5f && shownBottomPt <= BottomPt + 0.5f;
 
                 return !covered;
             }
@@ -132,22 +140,74 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private new void InvalidateVisual()
         {
-            if (!_caretOnlyRedraw) _fullRenderRequested = true;
+            if (!_caretOnlyRedraw)
+            {
+                _fullRenderRequested = true;
+
+                // Полный кадр, запрошенный мимо InvalidateFull, — правка не набора:
+                // кадр по одному листу её не покажет (DocumentCanvas.PartialRender).
+                if (!_inInvalidateFull) BlockPartial();
+            }
             base.InvalidateVisual();
+        }
+
+        // Последняя правка содержимого (Stopwatch). Пока она свежая, синхронный кадр
+        // рисует только окно, без запаса сверху и снизу, и фоновая дорисовка запаса не
+        // запускается: при трёх листах в ряду запас — это ещё десяток листов, и каждая
+        // буква перерисовывала их все, а фоновая дорисовка держала замок прохода, и
+        // кадр следующей буквы ждал её.
+        private long _lastContentEditTs;
+
+        // Дольше паузы до полной раскладки (TypingRebuildDelay): кадр после неё тоже
+        // узкий, запас дорисуется в фоне следом.
+        private static readonly double RecentEditMs = 1300.0;
+
+        /// <summary>Отмечает правку содержимого: см. <see cref="RecentContentEdit"/>.</summary>
+        private void MarkContentEdit() => Interlocked.Exchange(ref _lastContentEditTs, Stopwatch.GetTimestamp());
+
+        /// <summary>Правка была только что — идёт набор.</summary>
+        private bool RecentContentEdit
+        {
+            get
+            {
+                long ts = Interlocked.Read(ref _lastContentEditTs);
+                return ts != 0 && (Stopwatch.GetTimestamp() - ts) * 1000.0 / Stopwatch.Frequency < RecentEditMs;
+            }
+        }
+
+        // Проход содержимого берёт листы ровно по окну, без запаса в лист сверху и снизу:
+        // кадр набора рисует только то, что видно.
+        [ThreadStatic] private static bool t_tightPageRange;
+
+        /// <summary>
+        /// Полоса кадра во время набора: ровно окно, верх на целом пикселе.
+        /// </summary>
+        private static (float TopPx, int HeightPx) EditBand(float scrollY, float viewportPx, float docHeightPx)
+        {
+            float topY = MathF.Floor(Math.Max(scrollY, 0f));
+            float botY = Math.Min(scrollY + viewportPx, docHeightPx);
+            topY = Math.Min(topY, MathF.Floor(Math.Max(botY - viewportPx, 0f)));
+            return (topY, (int)Math.Max(MathF.Ceiling(botY - topY), 1f));
         }
 
         /// <summary>
         /// Полоса снимка для заданной прокрутки: вьюпорт плюс по экрану сверху и снизу,
-        /// прижатая к границам документа. Тот же расчёт, что в RenderWithSKCanvas.
+        /// прижатая к границам документа. Одна на синхронный рендер и фоновую дорисовку.
+        ///
+        /// Верх полосы стоит на целом пикселе. Прокрутка бывает дробной, и при дробном
+        /// верхе каждая строка внутри снимка округлялась к пикселю от своей дробной
+        /// части: снимок, снятый при одной прокрутке, и кадр после щелчка при другой
+        /// расходились у части строк на пиксель. С целым верхом положение строки в
+        /// снимке зависит только от самого документа.
         /// </summary>
         private static (float TopPx, int HeightPx) SnapshotBand(
             float scrollY, float viewportPx, float docHeightPx)
         {
             float overlapPx = viewportPx;
-            float topY = Math.Max(scrollY - overlapPx, 0f);
+            float topY = MathF.Floor(Math.Max(scrollY - overlapPx, 0f));
             float botY = Math.Min(topY + viewportPx + overlapPx * 2f, docHeightPx);
-            topY = Math.Max(botY - viewportPx - overlapPx * 2f, 0f);
-            return (topY, (int)Math.Max(botY - topY, 1));
+            topY = MathF.Floor(Math.Max(botY - viewportPx - overlapPx * 2f, 0f));
+            return (topY, (int)Math.Max(MathF.Ceiling(botY - topY), 1f));
         }
 
         /// <summary>
@@ -232,6 +292,10 @@ namespace Writersword.Modules.TextEditor.Document
             float scrollY, float viewportPx, float docHeightPx, int pixelW, float scale)
         {
             if (!AsyncSnapshotAllowed) return;
+
+            // Во время набора запас не дорисовывается: дорисовка держала бы замок
+            // прохода, и кадр следующей буквы ждал её. Он придёт после паузы.
+            if (RecentContentEdit) return;
             if (Volatile.Read(ref _bgSnapshotBusy) != 0) return;
 
             float imageTop;

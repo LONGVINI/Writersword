@@ -149,7 +149,8 @@ namespace Writersword.Modules.Characters.Services
             return c;
         }
 
-        public Character CreateFromAnketas(string name, IEnumerable<CharacterAnketa> anketas, bool randomize = false)
+        public Character CreateFromAnketas(string name, IEnumerable<CharacterAnketa> anketas, bool randomize = false,
+            IReadOnlyDictionary<string, int>? depths = null)
         {
             var c = new Character { Id = Guid.NewGuid().ToString(), Name = name };
             var list = anketas.ToList();
@@ -162,6 +163,10 @@ namespace Writersword.Modules.Characters.Services
             // собран — в карточке не было бы чипов, а правки набора до него
             // не доезжали бы.
             c.AttachedAnketaIds = list.Select(a => a.Id).Distinct().ToList();
+
+            // Глубина, заданная шаблоном проекта, едет вместе с анкетами.
+            // Остальные раскрываются по важности персонажа.
+            ApplyDepths(c, depths);
 
             _characters.Add(c);
             _logger.Debug("Character created from anketas: {Id}, params={Count}, rand={R}", c.Id, c.Parameters.Count, randomize);
@@ -272,7 +277,8 @@ namespace Writersword.Modules.Characters.Services
                     Order = p.Order
                 }).ToList(),
                 IsCollective = original.IsCollective,
-                PopulationNote = original.PopulationNote
+                PopulationNote = original.PopulationNote,
+                AnketaDepths = new Dictionary<string, int>(original.AnketaDepths ?? new Dictionary<string, int>())
             };
 
             // Имена копии: первым идёт её собственное имя с пометкой «копия»,
@@ -423,6 +429,7 @@ namespace Writersword.Modules.Characters.Services
             var character = GetById(characterId);
             if (character == null) return 0;
 
+            character.AnketaDepths ??= new Dictionary<string, int>();
             var applied = 0;
 
             foreach (var anketaId in template.AnketaIds)
@@ -433,6 +440,14 @@ namespace Writersword.Modules.Characters.Services
                 if (anketa == null) continue;
 
                 ApplyAnketa(characterId, anketa, false);
+
+                // Глубина из шаблона ставится только тем анкетам, что шаблон
+                // подключил сам: у уже подключённых автор выбрал её раньше.
+                if (template.AnketaDepths != null &&
+                    template.AnketaDepths.TryGetValue(anketaId, out var depth) &&
+                    !character.AnketaDepths.ContainsKey(anketaId))
+                    character.AnketaDepths[anketaId] = CharacterDetailLevels.Clamp(depth);
+
                 applied++;
             }
 
@@ -550,6 +565,45 @@ namespace Writersword.Modules.Characters.Services
             character.Parameters.AddRange(ordered);
         }
 
+        public void SetAnketaDepth(string characterId, string anketaId, int? depth)
+        {
+            if (IsReadOnly)
+            {
+                _logger.Debug("SetAnketaDepth ignored (compare mode): {Id}", characterId);
+                return;
+            }
+
+            var character = GetById(characterId);
+            if (character == null || string.IsNullOrEmpty(anketaId)) return;
+
+            character.AnketaDepths ??= new Dictionary<string, int>();
+
+            // Пусто — вернуть глубину по важности: запись снимается, и анкета
+            // снова раскрывается так, как подсказывает ступень персонажа.
+            var changed = depth.HasValue
+                ? !character.AnketaDepths.TryGetValue(anketaId, out var old) || old != CharacterDetailLevels.Clamp(depth.Value)
+                : character.AnketaDepths.ContainsKey(anketaId);
+
+            if (!changed) return;
+
+            if (depth.HasValue)
+                character.AnketaDepths[anketaId] = CharacterDetailLevels.Clamp(depth.Value);
+            else
+                character.AnketaDepths.Remove(anketaId);
+
+            character.UpdatedAt = DateTime.UtcNow;
+        }
+
+        private static void ApplyDepths(Character character, IReadOnlyDictionary<string, int>? depths)
+        {
+            if (depths == null || depths.Count == 0) return;
+
+            character.AnketaDepths ??= new Dictionary<string, int>();
+            foreach (var anketaId in character.AttachedAnketaIds)
+                if (depths.TryGetValue(anketaId, out var depth))
+                    character.AnketaDepths[anketaId] = CharacterDetailLevels.Clamp(depth);
+        }
+
         public void DetachAnketa(string characterId, string anketaId)
         {
             if (IsReadOnly)
@@ -602,6 +656,7 @@ namespace Writersword.Modules.Characters.Services
 
         public CharactersModuleData GetModuleData() => new()
         {
+            SchemaVersion = CharactersModuleData.CurrentSchemaVersion,
             Characters = _characters.ToList(),
             Labels = _labels.ToList(),
             Relationships = _relationshipService.GetAll().ToList()
@@ -610,6 +665,14 @@ namespace Writersword.Modules.Characters.Services
         public void LoadModuleData(CharactersModuleData data)
         {
             _characters.Clear();
+
+            // Сохранения прежнего устройства переводятся до того, как их
+            // увидит кто-то ещё: модуль следом читает из тех же данных
+            // анкеты шаблона проекта и недавние.
+            var legacy = data.SchemaVersion < CharactersModuleData.CurrentSchemaVersion;
+            data.ActiveTemplateIds = CharacterBuiltInContent.ExpandLegacyIds(data.ActiveTemplateIds);
+            data.RecentAnketaIds = CharacterBuiltInContent.ExpandLegacyIds(data.RecentAnketaIds);
+
             if (data.Characters != null)
             {
                 // Старые сохранения не знают списка имён — собираем его из
@@ -619,6 +682,7 @@ namespace Writersword.Modules.Characters.Services
                 {
                     CharacterNames.Normalize(c);
                     c.AttachedAnketaIds ??= new List<string>();
+                    c.AnketaDepths ??= new Dictionary<string, int>();
 
                     // Значения, созданные до появления идентификатора поля,
                     // получают его из имени: иначе сравнивать карточки между
@@ -633,10 +697,14 @@ namespace Writersword.Modules.Characters.Services
                     // никто мог и не открывать.
                     foreach (var l in c.Labels)
                         CharacterBuiltinLabels.NormalizeBuiltIn(l);
+
+                    if (legacy) MigrateAnketas(c);
                 }
 
                 _characters.AddRange(data.Characters);
             }
+
+            data.SchemaVersion = CharactersModuleData.CurrentSchemaVersion;
 
             LoadLabelRegistry(data);
 
@@ -676,11 +744,55 @@ namespace Writersword.Modules.Characters.Services
                 _labels.Add(CloneAsTemplate(label));
         }
 
+        /// <summary>
+        /// Перевод персонажа из сохранений первой версии.
+        ///
+        /// Прежние жанровые анкеты разошлись по разделам: «Обычный человек»
+        /// стал внешностью, телом, характером и биографией. Персонаж получает
+        /// разделы вместо исчезнувшей анкеты, поля новых разделов, которых у
+        /// него ещё нет, и глубину, при которой видно всё, что он уже
+        /// заполнял: работа автора не должна спрятаться за уровнем.
+        /// </summary>
+        private void MigrateAnketas(Character character)
+        {
+            character.AttachedAnketaIds = CharacterBuiltInContent.ExpandLegacyIds(character.AttachedAnketaIds);
+
+            var added = false;
+            var existingFieldIds = character.Parameters
+                .Select(p => CharacterFieldId.Resolve(p))
+                .Where(id => !string.IsNullOrEmpty(id))
+                .ToHashSet(StringComparer.Ordinal);
+
+            foreach (var anketaId in character.AttachedAnketaIds)
+            {
+                var anketa = _anketaService.GetById(anketaId);
+                if (anketa == null || !anketa.IsBuiltIn) continue;
+
+                // Глубина считается по полям, что были у персонажа до
+                // перевода: новые поля разделов — пустые, ради них уровень
+                // поднимать незачем.
+                if (CharacterDetailLevels.HasLevels(anketa) && !character.AnketaDepths.ContainsKey(anketaId))
+                    character.AnketaDepths[anketaId] = CharacterDetailLevels.CoveringExisting(character, anketa);
+
+                foreach (var parameter in _anketaService.BuildParameters(anketa))
+                {
+                    if (!existingFieldIds.Add(CharacterFieldId.Resolve(parameter))) continue;
+                    character.Parameters.Add(parameter);
+                    added = true;
+                }
+            }
+
+            if (added) ReorderParametersByAnketas(character);
+        }
+
         public Character CreateWithId(Character character)
         {
             var existing = _characters.FirstOrDefault(c => c.Id == character.Id);
             if (existing != null)
                 return existing;
+
+            character.AttachedAnketaIds ??= new List<string>();
+            character.AnketaDepths ??= new Dictionary<string, int>();
 
             _characters.Add(character);
             _logger.Debug("Character restored with original Id: {Id} = '{Name}'", character.Id, character.Name);

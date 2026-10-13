@@ -54,6 +54,22 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
+        /// Вкладка снова совпадает с файлом проекта (правки откатили по Ctrl+Z), а
+        /// кеш остался от состояния с правками. Такой кеш ничего не защищает, но при
+        /// следующем открытии отличается от файла и открывает проект в режиме
+        /// сравнения с версией, которую пользователь сам отменил. Удаляется.
+        /// </summary>
+        private void DropStaleCache(Writersword.ViewModels.DocumentTabViewModel tab, string projectPath)
+        {
+            if (tab.Context?.IsInCompareMode == true) return;
+            if (!_cacheService.HasCache(projectPath)) return;
+
+            _cacheService.DeleteCache(projectPath);
+            tab.ForgetCachedRevisions();
+            _logger.LogInformation("Cache removed: tab matches the project file again {Path}", projectPath);
+        }
+
+        /// <summary>
         /// Запустить фоновое кеширование для проекта.
         /// </summary>
         public void Start(string projectPath, Func<IEnumerable<IModule>> getActiveModules)
@@ -182,6 +198,9 @@ namespace Writersword.Infrastructure.Services.Storage
                 {
                     var modulesList = activeModules.ToList();
                     var decision = tab.DecideCacheWrite(modulesList, out var revisions);
+
+                    if (decision == Writersword.ViewModels.DocumentTabViewModel.CacheWriteDecision.SkipClean)
+                        DropStaleCache(tab, projectPath);
 
                     if (decision == Writersword.ViewModels.DocumentTabViewModel.CacheWriteDecision.SkipClean
                         || decision == Writersword.ViewModels.DocumentTabViewModel.CacheWriteDecision.SkipUnchanged)

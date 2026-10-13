@@ -240,6 +240,16 @@ namespace Writersword.ViewModels
 
                 if (decision == CacheWriteDecision.SkipClean)
                 {
+                    // Правки откатили до сохранённого состояния, а кеш остался от
+                    // состояния с правками: при следующем открытии он открыл бы
+                    // проект в режиме сравнения с отменённой версией.
+                    if (Context?.IsInCompareMode != true && cacheService.HasCache(FilePath!))
+                    {
+                        await Task.Run(() => cacheService.DeleteCache(FilePath!));
+                        ForgetCachedRevisions();
+                        _logger.LogDebug("Stale cache removed, tab matches the project file: {Title}", Title);
+                    }
+
                     _logger.LogDebug("No unsaved changes, cache not needed: {Title}", Title);
                     return;
                 }
@@ -282,7 +292,43 @@ namespace Writersword.ViewModels
 
                 var (untrackedCustom, _) = await Task.Run(() => stateCollector.CollectAllData(untrackedModules));
 
-                var savedProject = await projectService.LoadAsync(FilePath!);
+                // Из файла читаются только данные модулей без отслеживания правок — как
+                // в CacheUpdateService. Прежде здесь загружался весь проект: у книги с
+                // картинками это гигабайты и пятнадцать секунд замершего интерфейса на
+                // каждом уходе с вкладки, где есть хоть одна несохранённая правка.
+                var filePath = FilePath!;
+                var untrackedTypes = untrackedModules.Select(m => m.moduleType).ToList();
+                var savedForUntracked = await Task.Run(
+                    () => cacheService.ReadProjectDataWithoutLock(filePath, untrackedTypes));
+
+                if (savedForUntracked != null)
+                {
+                    bool untrackedDirtyNow = await Task.Run(
+                        () => EvaluateUntrackedDirty(untrackedModules, untrackedCustom, savedForUntracked));
+                    SetUntrackedDirty(untrackedDirtyNow);
+
+                    if (!untrackedDirtyNow && !HasTrackedChanges(activeModules))
+                    {
+                        _logger.LogDebug("No changes, cache not needed: {Title}", Title);
+                        return;
+                    }
+
+                    // Правки есть: модули без отслеживания сравнены с файлом, модули с
+                    // отметками сообщили о правках сами. Сравнивать весь документ с
+                    // файлом ещё раз незачем — кеш пишется.
+                    var (changedCustom, changedSession) = await Task.Run(() => stateCollector.CollectAllData(activeModules));
+
+                    if (changedCustom.Count == 0)
+                        return;
+
+                    await cacheService.SaveCacheAsync(filePath, _project.Id, changedCustom, changedSession);
+                    _logger.LogDebug("Cache saved (unsaved changes): {Title}", Title);
+                    return;
+                }
+
+                // Файл проекта не читается по частям — прежний путь, но загрузка всего
+                // проекта уходит с UI-потока.
+                var savedProject = await Task.Run(() => projectService.LoadAsync(filePath));
 
                 if (savedProject != null)
                 {
@@ -675,6 +721,13 @@ namespace Writersword.ViewModels
             }
 
             return CacheWriteDecision.Write;
+        }
+
+        /// <summary>Кеш удалён: прежние ревизии кеша больше ничего не значат.</summary>
+        public void ForgetCachedRevisions()
+        {
+            lock (_changeLock)
+                _lastCachedRevisions = null;
         }
 
         /// <summary>Запомнить ревизии модулей, с которыми кеш записан.</summary>

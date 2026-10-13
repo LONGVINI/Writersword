@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Writersword.Modules.Characters.ViewModels.Templates;
+using Writersword.Modules.Characters.Views;
 
 namespace Writersword.Modules.Characters.Views.Tabs
 {
@@ -41,6 +42,12 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 if (e.NewValue is true) Vm?.Refresh();
                 else CancelDrag();
             };
+
+            // Щелчок мимо блоков — по пустому месту между ними и под ними —
+            // снимает выбор. Слушаются и разобранные нажатия: кнопки внутри
+            // блоков гасят событие, а решать здесь всё равно по месту щелчка.
+            BlocksScroll.AddHandler(PointerPressedEvent, OnBlocksAreaPressed,
+                Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
 
             _applyResultTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
             _applyResultTimer.Tick += (_, _) =>
@@ -113,8 +120,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
         }
 
         /// <summary>
-        /// Прокрутить к блоку; только что созданному — сразу открыть его
-        /// настройку: новый шаблон почти всегда сразу переименовывают.
+        /// Прокрутить к блоку; только что созданному — сразу поставить курсор
+        /// в его название: новый шаблон почти всегда сразу переименовывают.
         /// </summary>
         private void ShowBlock(TemplateBlockViewModel block, bool openCustomize)
         {
@@ -125,14 +132,35 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 container.BringIntoView();
                 if (!openCustomize) return;
 
-                var image = container.GetVisualDescendants()
-                    .OfType<Button>()
-                    .FirstOrDefault(b => b.Classes.Contains("tpl-image"));
-                if (image != null) OpenCustomize(image, block);
+                var name = container.GetVisualDescendants()
+                    .OfType<TextBox>()
+                    .FirstOrDefault(b => b.Classes.Contains("tpl-name") && b.IsEffectivelyVisible);
+                if (name == null) return;
+
+                name.Focus();
+                name.SelectAll();
             }, DispatcherPriority.Background);
         }
 
         // ── Блок ─────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Щелчок мимо блоков снимает выбор: ни один шаблон не живой. Щелчок
+        /// по полосе прокрутки выбор не трогает — это не «мимо», а прокрутка.
+        /// </summary>
+        private void OnBlocksAreaPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (Vm is not { ActiveBlock: not null } vm) return;
+            if (!e.GetCurrentPoint(BlocksScroll).Properties.IsLeftButtonPressed) return;
+
+            for (var v = e.Source as Visual; v != null && !ReferenceEquals(v, BlocksScroll); v = v.GetVisualParent())
+            {
+                if (v is ScrollBar) return;
+                if (v is Border { Classes: var classes } && classes.Contains("tpl-block")) return;
+            }
+
+            vm.Activate(null);
+        }
 
         /// <summary>Щелчок по блоку делает его выбранным — живым.</summary>
         private void OnBlockPressed(object? sender, PointerPressedEventArgs e)
@@ -142,30 +170,153 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (!block.IsActive) vm.Activate(block);
         }
 
-        private void OnImageClick(object? sender, RoutedEventArgs e)
-        {
-            e.Handled = true;
-            if (sender is not Button button || BlockOf(sender) is not { } block || Vm is not { } vm) return;
-
-            if (!block.IsActive)
-            {
-                vm.Activate(block);
-                return;
-            }
-
-            if (block.CanCustomize) OpenCustomize(button, block);
-        }
-
-        private static void OpenCustomize(Button button, TemplateBlockViewModel block)
-        {
-            block.PrepareCustomize();
-            FlyoutBase.ShowAttachedFlyout(button);
-        }
-
-        private async void OnPickImageClick(object? sender, RoutedEventArgs e)
+        /// <summary>
+        /// Щелчок по картинке шаблона — сразу окно значков: значок, цвет,
+        /// подложка, рамка, свои картинки. У встроенного шаблона выбранное
+        /// достаётся его своей копии — её заводит сама правка.
+        ///
+        /// Своя картинка шаблона закрывает значок. Если в окне значков что-то
+        /// поменяли, картинка убирается: на плитке должно встать ровно то, что
+        /// было в превью.
+        /// </summary>
+        private async void OnImageClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
             if (BlockOf(sender) is not { } block || Vm is not { } vm) return;
+            if (Icons.IconPickerOverlay.Find(this) is not { } picker) return;
+
+            if (!block.IsActive) vm.Activate(block);
+
+            var choice = await picker.PickAsync(new Models.CharacterIconRequest(
+                "Значок шаблона", block.Icon, block.IconColor, AllowColor: true,
+                Background: block.IconBackground,
+                Border: block.IconBorder,
+                Look: Models.CharacterIconLook.Tile,
+                PreviewTitle: block.Name,
+                PreviewDescription: block.Description,
+                BlockFrame: block.FrameColor));
+            if (choice == null) return;
+
+            var hadImage = block.HasImage;
+            var changedId = vm.SetIconAndColor(block.Id, choice.Icon, choice.Color, choice.Background, choice.Border,
+                choice.BlockFrame);
+            if (changedId != null && hadImage) vm.ClearImage(changedId);
+        }
+
+        // ── Название и описание ──────────────────────────────────────────
+        //
+        // Поля прямо в шапке блока. Запись — по Enter или уходу из поля,
+        // одной правкой на оба: у встроенного шаблона каждая правка заводит
+        // копию. Esc возвращает записанное.
+
+        private void OnInlineGotFocus(object? sender, FocusChangedEventArgs e)
+        {
+            if (BlockOf(sender) is not { } block || Vm is not { } vm) return;
+            if (!block.IsActive) vm.Activate(block);
+            block.BeginTextEdit();
+        }
+
+        private void OnInlineLostFocus(object? sender, FocusChangedEventArgs e)
+        {
+            BlockOf(sender)?.CommitTextEdit();
+        }
+
+        private void OnInlineKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (BlockOf(sender) is not { } block) return;
+
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                block.CommitTextEdit();
+                LeaveInline();
+            }
+            else if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                block.CancelTextEdit();
+                LeaveInline();
+            }
+        }
+
+        // У IFocusManager нет ClearFocus: фокус уводится на саму вкладку —
+        // поле перестаёт быть в фокусе, ввод визуально завершён.
+        private void LeaveInline()
+        {
+            Focusable = true;
+            Focus();
+        }
+
+        /// <summary>Библиотека значков проекта — посмотреть, пополнить, убрать лишнее.</summary>
+        private void OnIconLibraryClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            Icons.IconPickerOverlay.Find(this)?.ShowLibrary();
+        }
+
+        // ── Картинка броском ─────────────────────────────────────────────
+        //
+        // Картинку шаблона бросают прямо на плитку картинки. У встроенного
+        // шаблона она достаётся его своей копии: сам он не меняется.
+
+        private void OnImageDragOver(object? sender, DragEventArgs e)
+        {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
+            var accepts = BlockOf(sender) != null && Vm is { CanUseImages: true } && Icons.IconImport.HasFiles(e);
+            e.DragEffects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
+            (sender as Control)?.Classes.Set("drop", accepts);
+            e.Handled = true;
+        }
+
+        private void OnImageDragLeave(object? sender, DragEventArgs e)
+        {
+            (sender as Control)?.Classes.Set("drop", false);
+            e.Handled = true;
+        }
+
+        private async void OnImageDrop(object? sender, DragEventArgs e)
+        {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
+            e.Handled = true;
+            (sender as Control)?.Classes.Set("drop", false);
+            if (BlockOf(sender) is not { } block || Vm is not { CanUseImages: true } vm) return;
+
+            var file = Icons.IconImport.DroppedIconFiles(e)
+                .FirstOrDefault(f => !f.Name.EndsWith(".svg", StringComparison.OrdinalIgnoreCase));
+            if (file == null) return;
+
+            ClosePopupOf(sender);
+
+            try
+            {
+                await using var stream = await file.OpenReadAsync();
+                using var memory = new MemoryStream();
+                await stream.CopyToAsync(memory);
+
+                // Встроенный шаблон не меняется — картинку получает его копия.
+                var targetId = block.Id;
+                if (!block.IsEditable)
+                {
+                    if (vm.DuplicateTemplate(block.Id) is not { } copy) return;
+                    targetId = copy.Id;
+                    ShowBlock(copy, openCustomize: false);
+                }
+
+                await vm.SetImageAsync(targetId, memory.ToArray(), file.Name);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Template image drop failed");
+            }
+        }
+
+        /// <summary>Картинка шаблона из файла — из меню правого щелчка по плитке.</summary>
+        private async void OnPickImageClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (BlockOf(sender) is not { } block || Vm is not { CanUseImages: true } vm) return;
 
             var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
             if (storage == null) return;
@@ -184,7 +335,16 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 using var memory = new MemoryStream();
                 await stream.CopyToAsync(memory);
 
-                await vm.SetImageAsync(block.Id, memory.ToArray(), files[0].Name);
+                // Встроенный шаблон не меняется — картинку получает его копия.
+                var targetId = block.Id;
+                if (!block.IsEditable)
+                {
+                    if (vm.DuplicateTemplate(block.Id) is not { } copy) return;
+                    targetId = copy.Id;
+                    ShowBlock(copy, openCustomize: false);
+                }
+
+                await vm.SetImageAsync(targetId, memory.ToArray(), files[0].Name);
             }
             catch (Exception ex)
             {
@@ -307,6 +467,16 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 Vm?.RemoveAnketa(item.TemplateId, item.Id);
         }
 
+        /// <summary>Строка меню глубины у значка анкеты: уровень встаёт в шаблон, меню закрывается.</summary>
+        private void OnTemplateDepthChoiceClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is not Control control || control.DataContext is not TemplateDepthChoiceViewModel choice) return;
+
+            control.FindLogicalAncestorOfType<Popup>()?.SetCurrentValue(Popup.IsOpenProperty, false);
+            Vm?.SetAnketaDepth(choice.TemplateId, choice.AnketaId, choice.Level == 0 ? null : choice.Level);
+        }
+
         private void OnEditAnketaClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
@@ -338,10 +508,15 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         private DragState? _drag;
 
-        private void BeginGhost(string? icon, string? color, string text)
+        private void BeginGhost(string? icon, string? color, string text,
+            string? background = null, Models.CharacterIconLook look = Models.CharacterIconLook.Badge,
+            string? border = null)
         {
             GhostBadge.Icon = icon;
             GhostBadge.IconColor = color;
+            GhostBadge.IconBackground = background;
+            GhostBadge.IconBorder = border;
+            GhostBadge.Look = look;
             GhostText.Text = text;
             Ghost.IsVisible = true;
         }
@@ -415,7 +590,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
                 drag.Active = true;
                 block.IsDragSource = true;
-                BeginGhost(block.Icon, block.IconColor, block.Name);
+                BeginGhost(block.Icon, block.IconColor, block.Name, block.IconBackground, Models.CharacterIconLook.Tile, block.IconBorder);
             }
 
             MoveGhost(p);
@@ -532,7 +707,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
                 drag.Active = true;
                 item.IsDragSource = true;
-                BeginGhost(item.Icon, item.IconColor, item.Name);
+                BeginGhost(item.Icon, item.IconColor, item.Name, item.IconBackground, border: item.IconBorder);
             }
 
             MoveGhost(p);

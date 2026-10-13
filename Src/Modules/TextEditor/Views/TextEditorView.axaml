@@ -9,9 +9,67 @@
              xmlns:ui="using:Writersword.Styles.UserControls"
              xmlns:dlg="using:Writersword.Modules.TextEditor.Views.Dialogs"
              xmlns:shared="using:Writersword.Modules.TextEditor.Views.Shared"
+             xmlns:toc="using:Writersword.Modules.TextEditor.Views.Toc"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:review="using:Writersword.Modules.TextEditor.Views.Review"
              x:Class="Writersword.Modules.TextEditor.Views.TextEditorView"
              x:DataType="vm:TextEditorViewModel"
              ui:ModalHost.IsHost="True">
+
+	<UserControl.Styles>
+		<!-- Язычок боковой панели: узкая полоска у края рабочей области. -->
+		<Style Selector="Button.DrawerHandle">
+			<Setter Property="Width"           Value="16"/>
+			<Setter Property="Height"          Value="52"/>
+			<Setter Property="MinHeight"       Value="52"/>
+			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="Opacity"         Value="0.55"/>
+			<Setter Property="Background"      Value="#E62D2D30"/>
+			<Setter Property="BorderBrush"     Value="#33FFFFFF"/>
+			<Setter Property="Foreground"      Value="#CFCFCF"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.15"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Button.DrawerHandle:pointerover">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Button.DrawerHandle /template/ ContentPresenter">
+			<Setter Property="Background" Value="#E62D2D30"/>
+		</Style>
+		<Style Selector="Button.DrawerHandle:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#F23A3A3E"/>
+		</Style>
+		<Style Selector="Button.DrawerHandle.Left">
+			<Setter Property="BorderThickness" Value="0 1 1 1"/>
+			<Setter Property="CornerRadius"    Value="0 8 8 0"/>
+		</Style>
+		<Style Selector="Button.DrawerHandle.Left /template/ ContentPresenter">
+			<Setter Property="CornerRadius" Value="0 8 8 0"/>
+		</Style>
+		<Style Selector="Button.DrawerHandle.Right">
+			<Setter Property="BorderThickness" Value="1 1 0 1"/>
+			<Setter Property="CornerRadius"    Value="8 0 0 8"/>
+		</Style>
+		<Style Selector="Button.DrawerHandle.Right /template/ ContentPresenter">
+			<Setter Property="CornerRadius" Value="8 0 0 8"/>
+		</Style>
+
+		<!-- Край панели, за который меняют её ширину. -->
+		<Style Selector="Border.DrawerGrip">
+			<Setter Property="Width"      Value="6"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Cursor"     Value="SizeWestEast"/>
+		</Style>
+		<Style Selector="Border.DrawerGrip:pointerover">
+			<Setter Property="Background" Value="#40007ACC"/>
+		</Style>
+	</UserControl.Styles>
 
 	<Grid RowDefinitions="Auto * Auto">
 
@@ -106,205 +164,296 @@
 			<reading:ReadingRibbonView DataContext="{Binding ReadingRibbon}"/>
 		</ContentControl>
 
-		<!-- Строка 1: Рабочая область — 2×2 сетка как в Word, плюс колонка
-		     справа под вертикальную ленту чтения. -->
-		<Grid Grid.Row="1"
-              RowDefinitions="Auto *"
-              ColumnDefinitions="Auto * Auto"
-              ClipToBounds="True">
+		<!-- Строка 1: рабочая область и боковые панели по её краям — навигатор
+		     слева, рецензия справа. Панели выдвигаются поверх листов, а когда
+		     ширины хватает и на них, и на рукопись, встают рядом с ней: тогда
+		     крайние колонки занимают место панели, и листы сдвигаются, а не
+		     прячутся под ней. Решает это код вида (TextEditorView.Drawers). -->
+		<Grid x:Name="WorkspaceHost"
+		      Grid.Row="1"
+		      ColumnDefinitions="Auto * Auto"
+		      ClipToBounds="True">
 
-			<!-- [0,0] Переключатель типа табуляции — на пересечении линеек, как в Word.
-			     Раньше здесь стоял выключатель привязки к сетке; он убран, потому что
-			     привязка нужна на секунду внутри одного жеста, а не постоянной кнопкой:
-			     теперь она включена всегда, а правая кнопка при перетаскивании её
-			     отпускает. Освободившийся угол занял тот, кому он и принадлежит. -->
-			<doc:TabTypeBoxControl Grid.Row="0" Grid.Column="0"
-			                       DataContext="{Binding Ruler}"
-			                       IsVisible="{Binding IsVisible}"/>
+			<Border x:Name="LeftDockSpacer" Grid.Column="0" Width="0"/>
+			<Border x:Name="RightDockSpacer" Grid.Column="2" Width="0"/>
 
-			<!-- [0,1] Горизонтальная линейка — точно над ScrollViewer -->
-			<doc:HorizontalRulerControl
-                    Grid.Row="0" Grid.Column="1"
-                    DataContext="{Binding Ruler}"
-                    IsVisible="{Binding IsVisible}"
-                    ClipToBounds="True"/>
+			<!-- Рабочая область — 2×2 сетка как в Word, плюс колонка справа под
+			     вертикальную ленту чтения. -->
+			<Grid Grid.Column="1"
+	              RowDefinitions="Auto *"
+	              ColumnDefinitions="Auto * Auto"
+	              ClipToBounds="True">
 
-			<!-- [1,0] Вертикальная линейка — точно слева от ScrollViewer.
-			     Видимость висит на обёртке: у самой линейки DataContext — модель
-			     линейки, а решение принимается по режиму редактора. -->
-			<ContentControl Grid.Row="1" Grid.Column="0"
-			                IsVisible="{Binding IsVerticalRulerVisible}">
-				<doc:VerticalRulerControl
-                        x:Name="VerticalRuler"
-                        DataContext="{Binding Ruler}"
-                        ClipToBounds="True"/>
-			</ContentControl>
+				<!-- [0,0] Переключатель типа табуляции — на пересечении линеек, как в Word.
+				     Раньше здесь стоял выключатель привязки к сетке; он убран, потому что
+				     привязка нужна на секунду внутри одного жеста, а не постоянной кнопкой:
+				     теперь она включена всегда, а правая кнопка при перетаскивании её
+				     отпускает. Освободившийся угол занял тот, кому он и принадлежит. -->
+				<doc:TabTypeBoxControl Grid.Row="0" Grid.Column="0"
+				                       DataContext="{Binding Ruler}"
+				                       IsVisible="{Binding IsVisible}"/>
 
-			<!-- [1,1] Рабочая область: слой фона и ScrollViewer с канвасом.
-			     Фон лежит ОТДЕЛЬНЫМ слоем под прокруткой, а не рисуется канвасом,
-			     и причина простая: канвас прокручивается вместе с рукописью.
-			     Картинка, привязанная к его координатам, растягивается на все
-			     страницы разом; привязанная к видимому окну — дрожит, потому что
-			     канвас перерисовывается не на каждый пиксель прокрутки. Слой не
-			     прокручивается вовсе и потому стоит намертво.
-			     Пока фон не задан, слои скрыты и поле, как раньше, заливает
-			     канвас. -->
-			<Panel Grid.Row="1" Grid.Column="1">
+				<!-- [0,1] Горизонтальная линейка — точно над ScrollViewer -->
+				<doc:HorizontalRulerControl
+	                    Grid.Row="0" Grid.Column="1"
+	                    DataContext="{Binding Ruler}"
+	                    IsVisible="{Binding IsVisible}"
+	                    ClipToBounds="True"/>
 
-				<!-- Цвет поля: под картинкой он виден там, где она не закрывает
-				     окно целиком, и сквозь неё, если она полупрозрачна. -->
-				<Border x:Name="BackdropFillLayer" IsVisible="False"/>
+				<!-- [1,0] Вертикальная линейка — точно слева от ScrollViewer.
+				     Видимость висит на обёртке: у самой линейки DataContext — модель
+				     линейки, а решение принимается по режиму редактора. -->
+				<ContentControl Grid.Row="1" Grid.Column="0"
+				                IsVisible="{Binding IsVerticalRulerVisible}">
+					<doc:VerticalRulerControl
+	                        x:Name="VerticalRuler"
+	                        DataContext="{Binding Ruler}"
+	                        ClipToBounds="True"/>
+				</ContentControl>
 
-				<!-- Сама картинка. Кладётся кистью, а не Image: одной кистью
-				     делаются все четыре способа — заполнить, уместить, растянуть
-				     и замостить. -->
-				<Border x:Name="BackdropImageLayer" IsVisible="False"/>
+				<!-- [1,1] Рабочая область: слой фона и ScrollViewer с канвасом.
+				     Фон лежит ОТДЕЛЬНЫМ слоем под прокруткой, а не рисуется канвасом,
+				     и причина простая: канвас прокручивается вместе с рукописью.
+				     Картинка, привязанная к его координатам, растягивается на все
+				     страницы разом; привязанная к видимому окну — дрожит, потому что
+				     канвас перерисовывается не на каждый пиксель прокрутки. Слой не
+				     прокручивается вовсе и потому стоит намертво.
+				     Пока фон не задан, слои скрыты и поле, как раньше, заливает
+				     канвас. -->
+				<Panel Grid.Row="1" Grid.Column="1">
 
-				<ScrollViewer Name="DocumentScrollViewer"
-	                          HorizontalScrollBarVisibility="Auto"
-	                          VerticalScrollBarVisibility="Auto"
-	                          AllowAutoHide="False"
-	                          Background="Transparent">
+					<!-- Цвет поля: под картинкой он виден там, где она не закрывает
+					     окно целиком, и сквозь неё, если она полупрозрачна. -->
+					<Border x:Name="BackdropFillLayer" IsVisible="False"/>
 
-					<!-- Своих стилей у полос прокрутки здесь нет намеренно: тонкий
-					     скруглённый бегунок без стрелок задан один раз в
-					     Styles/Controls.axaml и одинаков во всей программе.
-					     Прежние правки цвета и ширины расходились с ним, и полосы
-					     стояли то шире дорожки, то со смещением. -->
+					<!-- Сама картинка. Кладётся кистью, а не Image: одной кистью
+					     делаются все четыре способа — заполнить, уместить, растянуть
+					     и замостить. -->
+					<Border x:Name="BackdropImageLayer" IsVisible="False"/>
 
-					<doc:DocumentCanvas x:Name="PageCanvas"
-	                                    HorizontalAlignment="Stretch"
-	                                    DataContext="{Binding DocumentViewModel}"/>
+					<ScrollViewer Name="DocumentScrollViewer"
+		                          HorizontalScrollBarVisibility="Auto"
+		                          VerticalScrollBarVisibility="Auto"
+		                          AllowAutoHide="False"
+		                          Background="Transparent">
 
-				</ScrollViewer>
+						<!-- Своих стилей у полос прокрутки здесь нет намеренно: тонкий
+						     скруглённый бегунок без стрелок задан один раз в
+						     Styles/Controls.axaml и одинаков во всей программе.
+						     Прежние правки цвета и ширины расходились с ним, и полосы
+						     стояли то шире дорожки, то со смещением. -->
 
-				<!-- Правка колонтитула на листе. Слой без фона: щелчки мимо поля
-				     проходят к листу. Поле ставится кодом вида точно на полосу листа
-				     и следует за ней при прокрутке и смене масштаба. -->
-				<Canvas x:Name="HeaderFooterEditLayer" ClipToBounds="True">
-					<shared:HeaderFooterBandEditor x:Name="HeaderFooterEditor" IsVisible="False"/>
-				</Canvas>
-			</Panel>
+						<doc:DocumentCanvas x:Name="PageCanvas"
+		                                    HorizontalAlignment="Stretch"
+		                                    DataContext="{Binding DocumentViewModel}"/>
 
-			<!-- [0..1, 2] Вертикальная лента чтения. Появляется, когда по ширине
-			     на книгу почти ничего не остаётся: горизонтальная полоса в узком
-			     окне отбирает у чтения больше, чем стоит. -->
-			<ContentControl x:Name="ReadingRibbonSideHost"
-			                Grid.Row="0" Grid.RowSpan="2" Grid.Column="2"
-			                IsVisible="False"
-			                ClipToBounds="True"
-			                Width="182">
-				<ContentControl.Transitions>
-					<Transitions>
-						<DoubleTransition Property="Width" Duration="0:0:0.26" Easing="CubicEaseInOut"/>
-						<DoubleTransition Property="Opacity" Duration="0:0:0.26" Easing="CubicEaseInOut"/>
-					</Transitions>
-				</ContentControl.Transitions>
-			</ContentControl>
+					</ScrollViewer>
 
-			<!-- Язычок ленты чтения. Висит у правого верхнего угла — там же, где
-			     кончается сама лента: тянуться за ней в середину экрана незачем,
-			     а внизу и слева лежит книга. Свёрнутая лента оставляет на виду
-			     только его. Форму язычок меняет вместе с лентой: полукруг снизу
-			     у горизонтальной, полукруг слева у вертикальной. -->
-			<Button x:Name="ReadingRibbonTab"
-			        Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
-			        IsVisible="False"
-			        ZIndex="170"
-			        Click="OnReadingRibbonTabClick"
-			        Width="46" Height="20"
-			        Padding="0"
-			        Margin="0 0 18 0"
-			        HorizontalAlignment="Right"
-			        VerticalAlignment="Top"
-			        Background="#E61E1E1E"
-			        BorderBrush="#33FFFFFF"
-			        BorderThickness="1 0 1 1"
-			        CornerRadius="0 0 22 22"
-			        Focusable="False"
-			        Cursor="Hand"
-			        ToolTip.Tip="Лента чтения">
-				<Path x:Name="ReadingRibbonTabArrow"
-				      Data="M 0,0 L 5,5 L 10,0"
-				      Stroke="#CFCFCF"
-				      StrokeThickness="1.6"
-				      StrokeLineCap="Round"
-				      HorizontalAlignment="Center"
-				      VerticalAlignment="Center">
-					<Path.Transitions>
+					<!-- Правка колонтитула на листе. Слой без фона: щелчки мимо поля
+					     проходят к листу. Поле ставится кодом вида точно на полосу листа
+					     и следует за ней при прокрутке и смене масштаба. -->
+					<Canvas x:Name="HeaderFooterEditLayer" ClipToBounds="True">
+						<shared:HeaderFooterBandEditor x:Name="HeaderFooterEditor" IsVisible="False"/>
+					</Canvas>
+				</Panel>
+
+				<!-- [0..1, 2] Вертикальная лента чтения. Появляется, когда по ширине
+				     на книгу почти ничего не остаётся: горизонтальная полоса в узком
+				     окне отбирает у чтения больше, чем стоит. -->
+				<ContentControl x:Name="ReadingRibbonSideHost"
+				                Grid.Row="0" Grid.RowSpan="2" Grid.Column="2"
+				                IsVisible="False"
+				                ClipToBounds="True"
+				                Width="182">
+					<ContentControl.Transitions>
 						<Transitions>
-							<TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.28"/>
+							<DoubleTransition Property="Width" Duration="0:0:0.26" Easing="CubicEaseInOut"/>
+							<DoubleTransition Property="Opacity" Duration="0:0:0.26" Easing="CubicEaseInOut"/>
 						</Transitions>
-					</Path.Transitions>
-				</Path>
-			</Button>
+					</ContentControl.Transitions>
+				</ContentControl>
 
-			<!-- Язычок ленты редактора. Тот же, что у ленты чтения: форма, место у
-			     правого верхнего угла и стрелка, которая разворачивается вместе с
-			     лентой. Движение убранной ленты в программе одно, и учить ему
-			     заново на каждом режиме незачем.
-			     Он и сворачивает ленту в обычной правке, и вызывает её в фокусе:
-			     для человека это одно и то же действие — достать инструменты. -->
-			<Button x:Name="EditorRibbonTab"
-			        Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
-			        IsVisible="False"
-			        ZIndex="171"
-			        Click="OnEditorRibbonTabClick"
-			        Width="46" Height="20"
-			        Padding="0"
-			        Margin="0 0 18 0"
-			        HorizontalAlignment="Right"
-			        VerticalAlignment="Top"
-			        Background="#E61E1E1E"
-			        BorderBrush="#33FFFFFF"
-			        BorderThickness="1 0 1 1"
-			        CornerRadius="0 0 12 12"
-			        Focusable="False"
-			        Cursor="Hand"
-			        ToolTip.Tip="Лента редактора">
-				<Path x:Name="EditorRibbonTabArrow"
-				      Data="M 0,0 L 5,5 L 10,0"
-				      Stroke="#CFCFCF"
-				      StrokeThickness="1.6"
-				      StrokeLineCap="Round"
-				      HorizontalAlignment="Center"
-				      VerticalAlignment="Center">
-					<Path.Transitions>
+				<!-- Язычок ленты чтения. Висит у правого верхнего угла — там же, где
+				     кончается сама лента: тянуться за ней в середину экрана незачем,
+				     а внизу и слева лежит книга. Свёрнутая лента оставляет на виду
+				     только его. Форму язычок меняет вместе с лентой: полукруг снизу
+				     у горизонтальной, полукруг слева у вертикальной. -->
+				<Button x:Name="ReadingRibbonTab"
+				        Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+				        IsVisible="False"
+				        ZIndex="170"
+				        Click="OnReadingRibbonTabClick"
+				        Width="46" Height="20"
+				        Padding="0"
+				        Margin="0 0 18 0"
+				        HorizontalAlignment="Right"
+				        VerticalAlignment="Top"
+				        Background="#E61E1E1E"
+				        BorderBrush="#33FFFFFF"
+				        BorderThickness="1 0 1 1"
+				        CornerRadius="0 0 22 22"
+				        Focusable="False"
+				        Cursor="Hand"
+				        behaviours:TooltipBehavior.Tip="Лента чтения">
+					<Path x:Name="ReadingRibbonTabArrow"
+					      Data="M 0,0 L 5,5 L 10,0"
+					      Stroke="#CFCFCF"
+					      StrokeThickness="1.6"
+					      StrokeLineCap="Round"
+					      HorizontalAlignment="Center"
+					      VerticalAlignment="Center">
+						<Path.Transitions>
+							<Transitions>
+								<TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.28"/>
+							</Transitions>
+						</Path.Transitions>
+					</Path>
+				</Button>
+
+				<!-- Язычок ленты редактора. Тот же, что у ленты чтения: форма, место у
+				     правого верхнего угла и стрелка, которая разворачивается вместе с
+				     лентой. Движение убранной ленты в программе одно, и учить ему
+				     заново на каждом режиме незачем.
+				     Он и сворачивает ленту в обычной правке, и вызывает её в фокусе:
+				     для человека это одно и то же действие — достать инструменты. -->
+				<Button x:Name="EditorRibbonTab"
+				        Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+				        IsVisible="False"
+				        ZIndex="171"
+				        Click="OnEditorRibbonTabClick"
+				        Width="46" Height="20"
+				        Padding="0"
+				        Margin="0 0 18 0"
+				        HorizontalAlignment="Right"
+				        VerticalAlignment="Top"
+				        Background="#E61E1E1E"
+				        BorderBrush="#33FFFFFF"
+				        BorderThickness="1 0 1 1"
+				        CornerRadius="0 0 12 12"
+				        Focusable="False"
+				        Cursor="Hand"
+				        behaviours:TooltipBehavior.Tip="Лента редактора">
+					<Path x:Name="EditorRibbonTabArrow"
+					      Data="M 0,0 L 5,5 L 10,0"
+					      Stroke="#CFCFCF"
+					      StrokeThickness="1.6"
+					      StrokeLineCap="Round"
+					      HorizontalAlignment="Center"
+					      VerticalAlignment="Center">
+						<Path.Transitions>
+							<Transitions>
+								<TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.28"/>
+							</Transitions>
+						</Path.Transitions>
+					</Path>
+				</Button>
+
+				<!-- Всплывающая подсказка номера страницы при перетаскивании ползунка -->
+				<StackPanel x:Name="PageDragTooltip"
+				            Grid.Row="1" Grid.Column="1"
+				            Orientation="Horizontal"
+				            IsVisible="False"
+				            ZIndex="150"
+				            HorizontalAlignment="Right"
+				            VerticalAlignment="Top"
+				            Margin="0,0,16,0"
+				            IsHitTestVisible="False">
+					<Border Background="#E6303030"
+					        BorderBrush="#66FFFFFF"
+					        BorderThickness="1"
+					        CornerRadius="4"
+					        Padding="10,5"
+					        VerticalAlignment="Center">
+						<TextBlock x:Name="PageDragTooltipText"
+						           Foreground="White"
+						           FontSize="12"
+						           FontWeight="SemiBold"
+						           Text="Страница 1 / 1"/>
+					</Border>
+					<!-- Указатель вправо, к ползунку -->
+					<Path Data="M0,0 L7,7 L0,14 Z"
+					      Fill="#E6303030"
+					      VerticalAlignment="Center"
+					      Margin="-1,0,0,0"/>
+				</StackPanel>
+
+			</Grid>
+
+			<!-- Слой боковых панелей. Пустые места слоя указатель не ловят: фона у
+			     слоя нет, и щелчок мимо панелей уходит к листам. -->
+			<Panel x:Name="DrawerLayer"
+			       Grid.Column="0" Grid.ColumnSpan="3"
+			       ZIndex="140">
+
+				<!-- Язычки у краёв: открыть навигатор и рецензию, не уходя к ленте. -->
+				<Button x:Name="NavigatorHandle"
+				        Classes="DrawerHandle Left"
+				        HorizontalAlignment="Left"
+				        VerticalAlignment="Center"
+				        IsVisible="False"
+				        Focusable="False"
+				        behaviours:TooltipBehavior.Tip="Навигатор">
+					<PathIcon Width="10" Height="12"
+					          Data="M3 5h18v2H3zm0 6h12v2H3zm0 6h15v2H3z"/>
+				</Button>
+				<Button x:Name="ReviewHandle"
+				        Classes="DrawerHandle Right"
+				        HorizontalAlignment="Right"
+				        VerticalAlignment="Center"
+				        Margin="0 0 12 0"
+				        IsVisible="False"
+				        Focusable="False"
+				        behaviours:TooltipBehavior.Tip="Рецензия">
+					<PathIcon Width="11" Height="11"
+					          Data="M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM5 19V5h9v14H5zm11 0V5h3v14h-3z"/>
+				</Button>
+
+				<!-- Навигатор -->
+				<Border x:Name="LeftDrawer"
+				        HorizontalAlignment="Left"
+				        VerticalAlignment="Stretch"
+				        Width="280"
+				        IsVisible="False"
+				        Opacity="0">
+					<Border.Transitions>
 						<Transitions>
-							<TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.28"/>
+							<TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22" Easing="CubicEaseOut"/>
+							<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
 						</Transitions>
-					</Path.Transitions>
-				</Path>
-			</Button>
-
-			<!-- Всплывающая подсказка номера страницы при перетаскивании ползунка -->
-			<StackPanel x:Name="PageDragTooltip"
-			            Grid.Row="1" Grid.Column="1"
-			            Orientation="Horizontal"
-			            IsVisible="False"
-			            ZIndex="150"
-			            HorizontalAlignment="Right"
-			            VerticalAlignment="Top"
-			            Margin="0,0,16,0"
-			            IsHitTestVisible="False">
-				<Border Background="#E6303030"
-				        BorderBrush="#66FFFFFF"
-				        BorderThickness="1"
-				        CornerRadius="4"
-				        Padding="10,5"
-				        VerticalAlignment="Center">
-					<TextBlock x:Name="PageDragTooltipText"
-					           Foreground="White"
-					           FontSize="12"
-					           FontWeight="SemiBold"
-					           Text="Страница 1 / 1"/>
+					</Border.Transitions>
+					<Panel>
+						<toc:NavigatorPanel x:Name="NavigatorPanelView"
+						                    DataContext="{Binding Navigator}"/>
+						<Border x:Name="LeftDrawerGrip"
+						        Classes="DrawerGrip"
+						        HorizontalAlignment="Right"/>
+					</Panel>
 				</Border>
-				<!-- Указатель вправо, к ползунку -->
-				<Path Data="M0,0 L7,7 L0,14 Z"
-				      Fill="#E6303030"
-				      VerticalAlignment="Center"
-				      Margin="-1,0,0,0"/>
-			</StackPanel>
+
+				<!-- Рецензия -->
+				<Border x:Name="RightDrawer"
+				        HorizontalAlignment="Right"
+				        VerticalAlignment="Stretch"
+				        Width="380"
+				        IsVisible="False"
+				        Opacity="0"
+				        BorderBrush="{DynamicResource BorderDefaultBrush}"
+				        BorderThickness="1 0 0 0">
+					<Border.Transitions>
+						<Transitions>
+							<TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22" Easing="CubicEaseOut"/>
+							<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+						</Transitions>
+					</Border.Transitions>
+					<Panel>
+						<review:ReviewPanel x:Name="ReviewPanelView"
+						                    DataContext="{Binding ReviewPanel}"/>
+						<Border x:Name="RightDrawerGrip"
+						        Classes="DrawerGrip"
+						        HorizontalAlignment="Left"/>
+					</Panel>
+				</Border>
+			</Panel>
 
 		</Grid>
 

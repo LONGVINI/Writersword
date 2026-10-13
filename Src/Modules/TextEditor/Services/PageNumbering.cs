@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -41,6 +41,12 @@ namespace Writersword.Modules.TextEditor.Services
 
         /// <summary>На листе начинается глава.</summary>
         public bool IsChapterStart { get; init; }
+
+        /// <summary>
+        /// Правило «свой текст колонтитулов», которое действует на листе. Null — лист
+        /// печатает общий шаблон. Полосу листа даёт <see cref="PageNumbering.BandFor"/>.
+        /// </summary>
+        public Guid? TextsRuleId { get; init; }
 
         /// <summary>Текст, который встаёт на место поля номера.</summary>
         public string ShownNumber => ManualText ?? NumberText;
@@ -118,10 +124,12 @@ namespace Writersword.Modules.TextEditor.Services
             bool bandsHidden = false;
             var format = settings.NumberFormat;
             int counter = settings.StartNumber;
+            Guid? textsRule = null;
 
             for (int p = 0; p < pageCount; p++)
             {
                 string? manual = null;
+                Guid? pageTextsRule = null;
 
                 if (rangeRules[p] is { } ranges)
                 {
@@ -136,10 +144,12 @@ namespace Writersword.Modules.TextEditor.Services
                             case PageRuleAction.RestartNumbering: counter = rule.StartNumber ?? 1; break;
                             case PageRuleAction.SetFormat: format = rule.Format ?? format; break;
                             case PageRuleAction.ManualNumber: manual = rule.ManualText; break;
+                            case PageRuleAction.SetText: textsRule = rule.Texts is null ? null : rule.Id; break;
                         }
                     }
                 }
 
+                pageTextsRule = textsRule;
                 bool pageNumberHidden = numberHidden;
                 bool pageBandsHidden = bandsHidden;
                 var pageFormat = format;
@@ -167,6 +177,7 @@ namespace Writersword.Modules.TextEditor.Services
                             case PageRuleAction.RestartNumbering: counter = rule.StartNumber ?? 1; break;
                             case PageRuleAction.SetFormat: pageFormat = rule.Format ?? pageFormat; break;
                             case PageRuleAction.ManualNumber: manual = rule.ManualText; break;
+                            case PageRuleAction.SetText: pageTextsRule = rule.Texts is null ? pageTextsRule : rule.Id; break;
                         }
                     }
                 }
@@ -193,13 +204,33 @@ namespace Writersword.Modules.TextEditor.Services
                     BandsVisible = !pageBandsHidden,
                     Variant = variant,
                     ManualText = manual,
-                    IsChapterStart = chapter
+                    IsChapterStart = chapter,
+                    TextsRuleId = pageTextsRule
                 };
 
                 counter++;
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Полоса колонтитула, которую печатает лист: свой текст правила, если на листе
+        /// оно действует, иначе вариант общего шаблона. Ищется в переданных настройках
+        /// по опознавателю правила — так правка на копии настроек правит копию.
+        /// </summary>
+        public static HeaderFooterBand BandFor(this HeaderFooterSettings settings, PageDecoration decoration, bool header)
+        {
+            if (decoration.TextsRuleId is Guid id
+                && settings.Rules.Find(r => r.Id == id) is { Texts: { } texts })
+            {
+                bool even = decoration.Variant == HeaderFooterVariant.Even;
+                return header
+                    ? (even ? texts.EvenHeader : texts.Header)
+                    : (even ? texts.EvenFooter : texts.Footer);
+            }
+
+            return settings.GetBand(decoration.Variant, header);
         }
 
         /// <summary>Лист, на который указывает правило. -1 — метка потерялась.</summary>

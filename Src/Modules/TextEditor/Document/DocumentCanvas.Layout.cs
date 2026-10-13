@@ -477,6 +477,8 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void QuickInsertParagraphLayout(int insertIdx, ParagraphViewModel newPvm)
         {
+            BlockPartial();
+
             var current = _layouts;
             if (current.Count == 0) { InvalidateMeasure(); return; }
 
@@ -539,7 +541,9 @@ namespace Writersword.Modules.TextEditor.Document
                 _styleResolver = CreateStyleResolver();
             if (_styleResolver is null) return;
 
-            float widthPt = GetCurrentTextWidthPt();
+            // Ширина текста — раздела абзаца: у альбомного раздела или раздела со своими
+            // полями она не та, что у листа документа (DocumentCanvas.Sections).
+            float widthPt = TextWidthForBlock(pvm.Model);
 
             // Обновляем _layouts без замены всего списка.
             // Читаем снимок под lock, строим новый список вне lock, меняем под lock.
@@ -700,6 +704,13 @@ namespace Writersword.Modules.TextEditor.Document
                 // всех абзацев — отсюда тормоза и моргание. Полный layout-pass нужен только
                 // когда высота абзаца реально изменилась (перенос строки), чтобы обновить
                 // скроллбар и сдвинуть последующие абзацы.
+                //
+                // Высота та же — поменялся только лист абзаца: следующий кадр может
+                // перерисовать его один (DocumentCanvas.PartialRender). Иначе строки ниже
+                // съехали, и кадр нужен целиком.
+                if (yShift == 0f && paraPageIdx >= 0) NotePartialPage(paraPageIdx);
+                else BlockPartial();
+
                 if (yShift != 0f)
                     InvalidateMeasure();
                 else
@@ -822,6 +833,57 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void RebuildPageModeConverge()
         {
+            int maxWrapIterations =
+                (_imageDragging || _imageResizing || _imageRotating
+                 || _shapeDragging || _shapeResizing || _shapeRotating
+                 || _tableDragMode != TableDragMode.None
+                 || _partialFromBlock >= 0) ? 1 : 4;
+            const float ConvergedTolPt = 0.5f;
+
+            // Тёплый старт (см. TryWarmWrapStart): проход сразу строит зоны по местам
+            // объектов и абзацев из прошлой раскладки. Набор мало что двигает, и такой
+            // проход обычно сходится сам — вместо первого прохода «вслепую» и ещё двух
+            // уточняющих, каждый из которых раскладывает весь документ.
+            if (maxWrapIterations > 1 && TryWarmWrapStart())
+            {
+                RebuildPageModePass();
+
+                // Зоны тёплого прохода построены по объектам прошлой раскладки. Сошёлся он,
+                // только если набор и места обтекаемых объектов те же: удалённая или
+                // сдвинутая картинка иначе оставила бы текст обтекать её прежнее место.
+                bool warmConverged = WrapAnchorsConverged(ConvergedTolPt)
+                    && SameWrapObjects(
+                        _wrapZoneImagesOverride!, _passImages,
+                        _wrapZoneShapesOverride!, _passShapes, ConvergedTolPt);
+
+                _wrapZoneImagesOverride = _passImages;
+                _wrapZoneShapesOverride = _passShapes;
+
+                if (!warmConverged)
+                {
+                    for (int iter = 0; iter < maxWrapIterations; iter++)
+                    {
+                        (_wrapAnchorIn, _wrapAnchorOut) = (_wrapAnchorOut, _wrapAnchorIn);
+                        _wrapAnchorOut.Clear();
+
+                        RebuildPageModePass();
+
+                        bool converged = WrapAnchorsConverged(ConvergedTolPt)
+                            && FlowFloatsSettled(
+                                _wrapZoneImagesOverride!, _passImages,
+                                _wrapZoneShapesOverride!, _passShapes, ConvergedTolPt);
+
+                        _wrapZoneImagesOverride = _passImages;
+                        _wrapZoneShapesOverride = _passShapes;
+
+                        if (converged) break;
+                    }
+                }
+
+                RememberWarmWrap();
+                return;
+            }
+
             RebuildPageModePass();
 
             var firstPassImages = _passImages;
@@ -849,7 +911,11 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
 
-            if (!hasWrapImages) return;
+            if (!hasWrapImages)
+            {
+                ForgetWarmWrap();
+                return;
+            }
 
             // Итерации до сходимости: якорь каждого абзаца берём из позиции, замеренной
             // прошлым проходом, и повторяем, пока позиции не перестанут двигаться.
@@ -865,13 +931,6 @@ namespace Writersword.Modules.TextEditor.Document
             // Линию таблицы тоже тянут жестом: каждое движение мыши пересобирает
             // раскладку, и полная сходимость на каждом из них делала жест вязким.
             // Итог пересчитывается полностью на отпускании кнопки (FinishTableDrag).
-            int maxWrapIterations =
-                (_imageDragging || _imageResizing || _imageRotating
-                 || _shapeDragging || _shapeResizing || _shapeRotating
-                 || _tableDragMode != TableDragMode.None
-                 || _partialFromBlock >= 0) ? 1 : 4;
-            const float ConvergedTolPt = 0.5f;
-
             for (int iter = 0; iter < maxWrapIterations; iter++)
             {
                 // Выход прошлого прохода становится входом текущего.
@@ -909,6 +968,145 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (converged) break;
             }
+
+            if (maxWrapIterations > 1) RememberWarmWrap();
+            else ForgetWarmWrap();
+        }
+
+        // ── Тёплый старт сходимости обтекания ────────────────────────────
+        // Итог прошлой полной раскладки: где стояли первые строки абзацев и обтекаемые
+        // объекты. Следующая раскладка строит зоны сразу по ним.
+        private Dictionary<ParagraphBlock, float>? _warmWrapAnchors;
+        private List<ImageEntry>? _warmWrapImages;
+        private List<ShapeEntry>? _warmWrapShapes;
+
+        /// <summary>
+        /// Подставляет итог прошлой раскладки как вход прохода. Не подходит, если в нём
+        /// есть обтекаемый объект, замороженный на месте первого прохода (поднятый над
+        /// своим абзацем, FollowsAnchorParagraph): его место считается только от прохода
+        /// «вслепую», и тёплый старт оставил бы его там, где он стоял до правки.
+        /// </summary>
+        private bool TryWarmWrapStart()
+        {
+            if (_warmWrapAnchors is null || _warmWrapImages is null || _warmWrapShapes is null) return false;
+
+            foreach (var entry in _warmWrapImages)
+            {
+                if (entry.InLine) continue;
+                if (entry.Block.WrapMode is not (WrapMode.Square or WrapMode.Tight)) continue;
+                if (entry.Block.AnchorPosition is { VerticalAnchor: TableFloatAnchor.Text }
+                    && !FollowsAnchorParagraph(entry.Block, entry.Block.AnchorPosition))
+                    return false;
+            }
+
+            foreach (var entry in _warmWrapShapes)
+            {
+                if (entry.Block.WrapMode is not (WrapMode.Square or WrapMode.Tight)) continue;
+                if (entry.Block.AnchorPosition is { VerticalAnchor: TableFloatAnchor.Text }
+                    && !FollowsAnchorParagraph(entry.Block, entry.Block.AnchorPosition))
+                    return false;
+            }
+
+            _wrapZoneImagesOverride = _warmWrapImages;
+            _wrapZoneShapesOverride = _warmWrapShapes;
+            _wrapAnchorIn = new Dictionary<ParagraphBlock, float>(_warmWrapAnchors);
+            _wrapAnchorOut = new Dictionary<ParagraphBlock, float>();
+            return true;
+        }
+
+        /// <summary>
+        /// Обтекаемые объекты двух проходов — одни и те же и стоят на тех же местах того
+        /// же размера.
+        /// </summary>
+        private static bool SameWrapObjects(
+            List<ImageEntry> previousImages, List<ImageEntry> images,
+            List<ShapeEntry> previousShapes, List<ShapeEntry> shapes,
+            float tolerancePt)
+        {
+            static bool Wraps(IFloatingObject floating)
+                => floating.WrapMode is WrapMode.Square or WrapMode.Tight;
+
+            static bool Same(int pageA, float xA, float yA, float wA, float hA,
+                             int pageB, float xB, float yB, float wB, float hB, float tol)
+                => pageA == pageB
+                   && Math.Abs(xA - xB) <= tol && Math.Abs(yA - yB) <= tol
+                   && Math.Abs(wA - wB) <= tol && Math.Abs(hA - hB) <= tol;
+
+            int previousImageCount = 0;
+            foreach (var previous in previousImages)
+                if (!previous.InLine && Wraps(previous.Block)) previousImageCount++;
+
+            int imageCount = 0;
+            foreach (var entry in images)
+            {
+                if (entry.InLine || !Wraps(entry.Block)) continue;
+                imageCount++;
+
+                bool found = false;
+                foreach (var previous in previousImages)
+                {
+                    if (!ReferenceEquals(previous.Block, entry.Block)) continue;
+                    if (!Same(previous.PageIndex, previous.XPt, previous.Ypt, previous.WidthPt, previous.HeightPt,
+                              entry.PageIndex, entry.XPt, entry.Ypt, entry.WidthPt, entry.HeightPt, tolerancePt))
+                        return false;
+                    found = true;
+                    break;
+                }
+                if (!found) return false;
+            }
+            if (imageCount != previousImageCount) return false;
+
+            int previousShapeCount = 0;
+            foreach (var previous in previousShapes)
+                if (Wraps(previous.Block)) previousShapeCount++;
+
+            int shapeCount = 0;
+            foreach (var entry in shapes)
+            {
+                if (!Wraps(entry.Block)) continue;
+                shapeCount++;
+
+                bool found = false;
+                foreach (var previous in previousShapes)
+                {
+                    if (!ReferenceEquals(previous.Block, entry.Block)) continue;
+                    if (!Same(previous.PageIndex, previous.XPt, previous.Ypt, previous.WidthPt, previous.HeightPt,
+                              entry.PageIndex, entry.XPt, entry.Ypt, entry.WidthPt, entry.HeightPt, tolerancePt))
+                        return false;
+                    found = true;
+                    break;
+                }
+                if (!found) return false;
+            }
+
+            return shapeCount == previousShapeCount;
+        }
+
+        /// <summary>Каждый замер прохода совпал с поданным якорем.</summary>
+        private bool WrapAnchorsConverged(float tolerancePt)
+        {
+            foreach (var kv in _wrapAnchorOut)
+            {
+                if (!_wrapAnchorIn.TryGetValue(kv.Key, out float prev)
+                    || Math.Abs(prev - kv.Value) > tolerancePt)
+                    return false;
+            }
+
+            return true;
+        }
+
+        private void RememberWarmWrap()
+        {
+            _warmWrapAnchors = new Dictionary<ParagraphBlock, float>(_wrapAnchorOut);
+            _warmWrapImages = _passImages;
+            _warmWrapShapes = _passShapes;
+        }
+
+        private void ForgetWarmWrap()
+        {
+            _warmWrapAnchors = null;
+            _warmWrapImages = null;
+            _warmWrapShapes = null;
         }
 
         /// <summary>
@@ -1174,9 +1372,18 @@ namespace Writersword.Modules.TextEditor.Document
             // если картинка больше не переполняет страницу (или драг завершён) — сбрасывается.
             _imageOverflowPreviewBlock = null;
 
-            float pageWidthPt = GetPageWidthPt();
-            float pageHeightPt = GetPageHeightPt();
-            var (ml, mt, mr, mb) = GetPagePaddingPt();
+            // Разделы документа: у каждого свой лист и поля (DocumentCanvas.Sections).
+            // Проход начинается с листа раздела, в котором стоит его первый блок.
+            var sectionGeometries = BuildSectionGeometries(DocVm!.Document.Sections[0].Blocks);
+            int sectionIndex = SectionIndexOf(sectionGeometries, _partialFromBlock >= 0 ? _partialFromBlock : 0);
+            var startGeometry = sectionGeometries[sectionIndex].Geometry;
+
+            float pageWidthPt = startGeometry.PageWidthPt;
+            float pageHeightPt = startGeometry.PageHeightPt;
+            float ml = startGeometry.LeftPt;
+            float mt = startGeometry.TopPt;
+            float mr = startGeometry.RightPt;
+            float mb = startGeometry.BottomPt;
 
             // Поле листа без колонтитулов. Верх и низ каждого листа уточняются по его
             // колонтитулам (DocumentCanvas.BandReserve): mt и mb ниже — поля того листа,
@@ -1184,11 +1391,49 @@ namespace Writersword.Modules.TextEditor.Document
             float baseMt = mt, baseMb = mb;
             (mt, mb) = PagePaddingForPage(0, baseMt, baseMb);
 
-            float textWidthPt = Math.Max(pageWidthPt - ml - mr, 1f);
+            // Колонки раздела (DocumentCanvas.Columns): текст идёт по колонке с номером
+            // colIndex, textXPt и textWidthPt — её левый край и ширина. Ширина всей
+            // текстовой области раздела — fullTextWidthPt.
+            float[] colOffsets = startGeometry.ColumnOffsetsPt;
+            float[] colWidths = startGeometry.ColumnWidthsPt;
+            bool colSeparator = startGeometry.ColumnSeparator;
+            int colIndex = 0;
+
+            float fullTextWidthPt = Math.Max(pageWidthPt - ml - mr, 1f);
+            float textWidthPt = colWidths[0];
             float canvasWPt = (float)(_canvasWidth * PxToPt);
             float pageXPt = Math.Max((canvasWPt - pageWidthPt) / 2f, 0f);
-            _layoutPageXPt = pageXPt;
-            float textXPt = pageXPt + ml;
+
+            // Запечённый центр — по листу документа: по нему отрисовка досдвигает все
+            // листы на разницу ширины холста, и листы другого размера сдвигаются с ними.
+            _layoutPageXPt = Math.Max((canvasWPt - GetPageWidthPt()) / 2f, 0f);
+            float textXPt = pageXPt + ml + colOffsets[0];
+
+            // Переход к листу следующего раздела. newSheet — раздел начинается с нового
+            // листа: меняются размер листа и все поля; иначе (непрерывный разрыв) — поля
+            // слева и справа сразу, сверху и снизу — со следующего листа.
+            void EnterSection(SectionGeometry geometry, bool newSheet)
+            {
+                if (newSheet)
+                {
+                    pageWidthPt = geometry.PageWidthPt;
+                    pageHeightPt = geometry.PageHeightPt;
+                    pageXPt = Math.Max((canvasWPt - pageWidthPt) / 2f, 0f);
+                }
+
+                ml = geometry.LeftPt;
+                mr = geometry.RightPt;
+                baseMt = geometry.TopPt;
+                baseMb = geometry.BottomPt;
+                fullTextWidthPt = geometry.TextWidthPt;
+
+                colOffsets = geometry.ColumnOffsetsPt;
+                colWidths = geometry.ColumnWidthsPt;
+                colSeparator = geometry.ColumnSeparator;
+                colIndex = 0;
+                textWidthPt = colWidths[0];
+                textXPt = pageXPt + ml + colOffsets[0];
+            }
 
             float pageYPt = PageGapPt;
             float pageBottomPt = pageYPt + pageHeightPt - mb;
@@ -1294,6 +1539,142 @@ namespace Writersword.Modules.TextEditor.Document
             float lastTableRightPt = textXPt;
             float lastTableBotPt = contentYPt;
 
+            // Сноски: их текст встаёт внизу листа и отнимает у него место по ходу
+            // раскладки (DocumentCanvas.Notes). null — сносок в документе нет.
+            var newNoteSlices = new List<NoteSlice>();
+            var newNoteRules = new List<NoteRule>();
+            NoteFlow? noteFlow = BeginNoteFlow(fullTextWidthPt);
+            if (partialPass)
+                SeedPartialNotes(noteFlow, _partialFromPage, newNoteSlices, newNoteRules);
+
+            // Черты между колонками. Частичный проход оставляет черты листов до своего
+            // начала: эти листы он не раскладывает.
+            var newColumnRules = new List<ColumnRule>();
+            if (partialPass)
+            {
+                List<ColumnRule> shownRules;
+                lock (_renderLock) shownRules = _columnRules;
+                foreach (var rule in shownRules)
+                    if (rule.PageIndex < _partialFromPage) newColumnRules.Add(rule);
+            }
+
+            // Ширины, по которым абзацы сверстаны не по листу документа, — для быстрой
+            // перевёрстки при наборе (TextWidthForBlock).
+            var passTextWidths = partialPass
+                ? new Dictionary<BlockModel, float>(_sectionTextWidths)
+                : new Dictionary<BlockModel, float>();
+            float documentTextWidthPt = GetCurrentTextWidthPt();
+
+            // Область колонок на текущем листе: её верх, низ уже заполненных колонок и
+            // записи, с которых она начинается, — для выравнивания колонок по высоте.
+            // colRegionPlain — в области нет разрывов колонки и сносок.
+            float colTopYPt = contentYPt;
+            float colRegionBottomPt = contentYPt;
+            int colRegionLayoutsFrom = newLayouts.Count;
+            int colRegionTablesFrom = newTables.Count;
+            int colRegionImagesFrom = newImages.Count;
+            int colRegionShapesFrom = newShapes.Count;
+            bool colRegionPlain = true;
+
+            // Область колонок начинается там, где сейчас поток: с первой колонки.
+            void OpenColumnRegion()
+            {
+                colIndex = 0;
+                colTopYPt = contentYPt;
+                colRegionBottomPt = contentYPt;
+                colRegionLayoutsFrom = newLayouts.Count;
+                colRegionTablesFrom = newTables.Count;
+                colRegionImagesFrom = newImages.Count;
+                colRegionShapesFrom = newShapes.Count;
+                colRegionPlain = true;
+                textXPt = pageXPt + ml + colOffsets[0];
+                textWidthPt = colWidths[0];
+            }
+
+            // Область колонок кончилась на этом листе: черты между занятыми колонками —
+            // от её верха до bottomPt.
+            void CloseColumnRegion(float bottomPt, int usedColumns)
+            {
+                if (!colSeparator || colOffsets.Length < 2) return;
+
+                int last = Math.Min(usedColumns, colOffsets.Length);
+                for (int c = 1; c < last; c++)
+                {
+                    newColumnRules.Add(new ColumnRule(
+                        pageIdx, ml + ColumnFrames.SeparatorX(colOffsets, colWidths, c),
+                        colTopYPt, bottomPt));
+                }
+            }
+
+            // Переход в следующую колонку того же листа; false — колонка последняя.
+            // Верх колонки — верх области: mt на время колонки отсчитывает его, и всё,
+            // что ставит поток к «верху листа», ставит его к верху колонки.
+            bool NextColumn()
+            {
+                if (colIndex + 1 >= colOffsets.Length) return false;
+
+                colRegionBottomPt = Math.Max(colRegionBottomPt, contentYPt);
+                colIndex++;
+                mt = colTopYPt - pageYPt;
+                contentYPt = colTopYPt;
+                textXPt = pageXPt + ml + colOffsets[colIndex];
+                textWidthPt = colWidths[colIndex];
+                return true;
+            }
+
+            // Новый лист того же раздела: колонки начинаются с его верха.
+            void AdvancePage()
+            {
+                CloseColumnRegion(pageBottomPt, colIndex + 1);
+
+                pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
+                pageBottomPt = pageYPt + pageHeightPt - mb;
+                contentYPt = pageYPt + mt;
+                pageIdx++;
+                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+
+                OpenColumnRegion();
+            }
+
+            // Место кончилось: следующая колонка, из последней — новый лист.
+            void AdvanceFrame()
+            {
+                if (!NextColumn()) AdvancePage();
+            }
+
+            // Раздел в колонках кончается непрерывным разрывом: Word выравнивает его
+            // колонки на этом листе по высоте, и поток идёт под самой длинной из них.
+            void BalanceAndCloseColumns()
+            {
+                if (colOffsets.Length > 1)
+                {
+                    float bottom = Math.Max(colRegionBottomPt, contentYPt);
+                    int used = colIndex + 1;
+
+                    if (colRegionPlain
+                        && newTables.Count == colRegionTablesFrom
+                        && newImages.Count == colRegionImagesFrom
+                        && newShapes.Count == colRegionShapesFrom
+                        && TryBalanceColumns(
+                            newLayouts, colRegionLayoutsFrom, pageIdx,
+                            colTopYPt, pageBottomPt, pageXPt + ml,
+                            colOffsets, colWidths,
+                            out float balancedBottom, out int balancedColumns))
+                    {
+                        bottom = balancedBottom;
+                        used = balancedColumns;
+                        collapseEndYPt = float.NaN;
+                    }
+
+                    CloseColumnRegion(bottom, used);
+                    contentYPt = bottom;
+                }
+
+                // Верх листа — снова его собственный: mt мог отсчитывать верх колонки.
+                mt = newPages[pageIdx].PadTopPt;
+            }
+
             for (int bi = partialPass ? _partialFromBlock : 0; bi < blocks.Count; bi++)
             {
                 // Частичный проход кончается, как только поток ушёл за последний
@@ -1306,7 +1687,104 @@ namespace Writersword.Modules.TextEditor.Document
                 // (DocumentCanvas.HeadingCollapse).
                 if (IsCollapsedBlock(block)) continue;
 
-                if (block is BreakBlock bb && bb.BreakType == BreakType.Page)
+                // Лист мог смениться на прошлом блоке: продолжения сносок встают на
+                // новый лист раньше его содержимого.
+                noteFlow?.EnterPage(pageIdx, pageYPt + mt, contentYPt, ref pageBottomPt);
+
+                // Разрыв раздела на той же странице или со следующей колонки места не
+                // занимает: только отметка при знаках. Следующий раздел на том же листе
+                // меняет поля слева и справа и свои колонки начинает под предыдущим
+                // разделом; лист другого размера Word и при непрерывном разрыве
+                // начинает с новой страницы.
+                if (block is BreakBlock inPlace && inPlace.IsSectionBreak && !inPlace.StartsNewPage)
+                {
+                    newBreakMarks.Add(new PageBreakMark(pageIdx, contentYPt, Kind: inPlace.BreakType));
+
+                    sectionIndex = SectionIndexOf(sectionGeometries, bi + 1);
+                    var inPlaceNext = sectionGeometries[sectionIndex].Geometry;
+                    bool sameSheet = Math.Abs(inPlaceNext.PageWidthPt - pageWidthPt) < 0.5f
+                        && Math.Abs(inPlaceNext.PageHeightPt - pageHeightPt) < 0.5f;
+
+                    // Раздел «со следующей колонки»: при тех же колонках он продолжает
+                    // область колонок со следующей; иначе начинается с нового листа.
+                    if (inPlace.BreakType == BreakType.SectionNextColumn)
+                    {
+                        if (sameSheet
+                            && inPlaceNext.ColumnCount == colOffsets.Length
+                            && colIndex + 1 < colOffsets.Length)
+                        {
+                            colRegionBottomPt = Math.Max(colRegionBottomPt, contentYPt);
+                            int nextColumn = colIndex + 1;
+                            EnterSection(inPlaceNext, newSheet: false);
+                            colIndex = nextColumn;
+                            mt = colTopYPt - pageYPt;
+                            contentYPt = colTopYPt;
+                            textXPt = pageXPt + ml + colOffsets[colIndex];
+                            textWidthPt = colWidths[colIndex];
+                            colRegionPlain = false;
+                            lastTableXPt = textXPt;
+                            continue;
+                        }
+
+                        CloseColumnRegion(Math.Max(colRegionBottomPt, contentYPt), colIndex + 1);
+                        float columnSheetPt = pageHeightPt;
+                        EnterSection(inPlaceNext, newSheet: true);
+                        pageYPt = pageYPt + columnSheetPt + PageGapPt;
+                        (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
+                        pageBottomPt = pageYPt + pageHeightPt - mb;
+                        contentYPt = pageYPt + mt;
+                        pageIdx++;
+                        newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                        OpenColumnRegion();
+                        lastTableXPt = textXPt;
+                        continue;
+                    }
+
+                    BalanceAndCloseColumns();
+
+                    if (sameSheet)
+                    {
+                        EnterSection(inPlaceNext, newSheet: false);
+                        OpenColumnRegion();
+                        lastTableXPt = textXPt;
+                        continue;
+                    }
+
+                    float finishedSheetPt = pageHeightPt;
+                    EnterSection(inPlaceNext, newSheet: true);
+                    pageYPt = pageYPt + finishedSheetPt + PageGapPt;
+                    (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
+                    pageBottomPt = pageYPt + pageHeightPt - mb;
+                    contentYPt = pageYPt + mt;
+                    pageIdx++;
+                    newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                    OpenColumnRegion();
+                    lastTableXPt = textXPt;
+                    continue;
+                }
+
+                // Разрыв колонки в разделе из нескольких колонок ведёт в следующую
+                // колонку; из последней и в разделе из одной колонки — на новый лист.
+                if (block is BreakBlock columnBreak && columnBreak.StartsNewPage
+                    && columnBreak.FromColumnBreak && !columnBreak.IsSectionBreak
+                    && colOffsets.Length > 1)
+                {
+                    ParagraphBlock? columnTail = columnBreak.InParagraph && bi > 0
+                        && blocks[bi - 1] is ParagraphBlock columnTailBlock && !IsCollapsedBlock(columnTailBlock)
+                        ? columnTailBlock
+                        : null;
+
+                    newBreakMarks.Add(new PageBreakMark(
+                        pageIdx, contentYPt, columnTail,
+                        columnBreak.ContinuesParagraph, true, columnBreak.BreakType));
+
+                    colRegionPlain = false;
+                    AdvanceFrame();
+                    lastTableXPt = textXPt;
+                    continue;
+                }
+
+                if (block is BreakBlock bb && bb.StartsNewPage)
                 {
                     // Разрыв внутри абзаца Word отмечается на последней строке куска до
                     // разрыва; если этого куска на листе нет (свёрнут под заголовком или
@@ -1317,20 +1795,47 @@ namespace Writersword.Modules.TextEditor.Document
                         : null;
 
                     newBreakMarks.Add(new PageBreakMark(
-                        pageIdx, contentYPt, breakTail, bb.ContinuesParagraph, bb.FromColumnBreak));
+                        pageIdx, contentYPt, bb.IsSectionBreak ? null : breakTail,
+                        bb.ContinuesParagraph, bb.FromColumnBreak, bb.BreakType));
 
-                    pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                    // Колонки листа кончаются на разрыве: черты — до самой длинной.
+                    CloseColumnRegion(Math.Max(colRegionBottomPt, contentYPt), colIndex + 1);
+
+                    // Разрыв раздела: следующий лист — уже лист нового раздела. Шаг вниз
+                    // считается по высоте законченного листа.
+                    float finishedPagePt = pageHeightPt;
+                    if (bb.IsSectionBreak)
+                    {
+                        sectionIndex = SectionIndexOf(sectionGeometries, bi + 1);
+                        EnterSection(sectionGeometries[sectionIndex].Geometry, newSheet: true);
+                        lastTableXPt = textXPt;
+                    }
+
+                    pageYPt = pageYPt + finishedPagePt + PageGapPt;
                     (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
                     pageBottomPt = pageYPt + pageHeightPt - mb;
                     contentYPt = pageYPt + mt;
                     pageIdx++;
                     newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                    OpenColumnRegion();
+
+                    // Раздел «с чётной» или «с нечётной» страницы: лист не той чётности
+                    // остаётся пустым, как у Word, и раздел начинается со следующего.
+                    if (Rendering.SKTextRenderer.NeedsBlankPageBefore(bb.BreakType, pageIdx + 1))
+                        AdvancePage();
+
+                    lastTableXPt = textXPt;
                     continue;
                 }
 
                 if (block is TableBlock tableBlock)
                 {
                     var tableLayout = GetOrBuildTableLayout(tableBlock, textWidthPt);
+
+                    // С каких записей начинаются абзацы и куски этой таблицы: по ним
+                    // после раскладки таблицы находятся её сноски.
+                    int noteLayoutsFrom = newLayouts.Count;
+                    int noteTablesFrom = newTables.Count;
 
                     // Таблица с обтеканием текстом стоит в своей точке листа и строку в
                     // потоке не занимает: текст следующих абзацев обходит её по зоне
@@ -1349,12 +1854,7 @@ namespace Writersword.Modules.TextEditor.Document
                             && contentYPt + (float)floatPosition.YPt + floatHPt > pageBottomPt
                             && floatHPt <= pageBottomPt - (pageYPt + mt))
                         {
-                            pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                            (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                            pageBottomPt = pageYPt + pageHeightPt - mb;
-                            contentYPt = pageYPt + mt;
-                            pageIdx++;
-                            newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                            AdvanceFrame();
                         }
 
                         var (floatXPt, floatYPt) = FloatingTableOrigin(
@@ -1367,6 +1867,10 @@ namespace Writersword.Modules.TextEditor.Document
                         AddCellParasToLayouts(newLayouts, newTables, tableBlock, tableLayout,
                             floatEntryIdx, floatXPt, floatYPt, pageIdx,
                             0, -1, 0f, -1f);
+
+                        if (noteFlow is not null)
+                            CommitTableNotes(noteFlow, newLayouts, noteLayoutsFrom, newTables, noteTablesFrom,
+                                newPages, pageIdx, contentYPt, ref pageBottomPt);
 
                         // Высоту в потоке таблица не занимает: contentYPt остаётся на месте,
                         // и абзац под таблицей начинается там же, где начался бы без неё.
@@ -1425,12 +1929,48 @@ namespace Writersword.Modules.TextEditor.Document
                     float sliceStartY = contentYPt;
                     bool isFirstSlice = true;
 
+                    // Сноски строк таблицы. Таблица ставит свои сноски после себя
+                    // (CommitTableNotes), но место под них оставляется уже здесь: строка
+                    // со знаком сноски встаёт на лист, только если под ней помещается и
+                    // сноска, — как у абзаца. Учитывается строка, вставшая на лист
+                    // прошлым шагом, — на том листе, где она кончилась.
+                    var tableNoteIds = new HashSet<Guid>();
+                    float tableNotesOnPagePt = 0f;
+                    int tableNotesPage = pageIdx;
+                    float pendingRowNotesPt = 0f;
+
                     for (int ri = 0; ri < tableLayout.Rows.Count; ri++)
                     {
                         var row = tableLayout.Rows[ri];
                         float effectiveH = row.HeightPt - sliceFirstRowOffset;
 
-                        float available = pageBottomPt - contentYPt;
+                        if (pageIdx != tableNotesPage)
+                        {
+                            tableNotesOnPagePt = 0f;
+                            tableNotesPage = pageIdx;
+                        }
+                        tableNotesOnPagePt += pendingRowNotesPt;
+                        pendingRowNotesPt = 0f;
+
+                        float rowNotesPt = 0f;
+                        if (noteFlow is not null)
+                        {
+                            var rowParagraphs = new List<SKTextLayout>();
+                            foreach (var rowCell in row.Cells)
+                                foreach (var cellParagraph in rowCell.Paragraphs)
+                                    if (cellParagraph.Layout is not null) rowParagraphs.Add(cellParagraph.Layout);
+
+                            rowNotesPt = noteFlow.RowNeed(rowParagraphs, tableNoteIds);
+                            if (rowNotesPt > 0f && tableNotesOnPagePt <= 0f && noteFlow.ReservedOn(pageIdx) <= 0f)
+                                rowNotesPt += noteFlow.RuleBandPt;
+
+                            // Сноска выше половины листа рядом со строкой не встанет — она
+                            // продолжится на следующем листе, место под неё не держится.
+                            if (rowNotesPt > fullPageH * 0.5f) rowNotesPt = 0f;
+                        }
+                        pendingRowNotesPt = rowNotesPt;
+
+                        float available = pageBottomPt - contentYPt - tableNotesOnPagePt - rowNotesPt;
 
                         // Под повторённой шапкой строка стоит так же «вверху страницы», как
                         // и без неё: выше шапки ей подняться некуда.
@@ -1597,12 +2137,12 @@ namespace Writersword.Modules.TextEditor.Document
                                     teIdx, tableXPt, sliceStartY, pageIdx,
                                     rowFrom, ri + 1, sliceStartOffset, visibleH);
 
-                                pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                                pageBottomPt = pageYPt + pageHeightPt - mb;
-                                pageIdx++;
-                                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                                AdvanceFrame();
                                 contentYPt = pageYPt + mt;
+
+                                // Следующая колонка стоит правее: продолжение таблицы — в ней.
+                                tableXPt = textXPt
+                                    + (float)tableBlock.ResolveLeftOffsetPt(textWidthPt, tableLayout.TotalWidthPt);
 
                                 // Продолжение таблицы встало вверху новой страницы, где может
                                 // лежать обтекаемая картинка. Проверка перед циклом сделана для
@@ -1644,12 +2184,12 @@ namespace Writersword.Modules.TextEditor.Document
                                         rowFrom, ri, sliceStartOffset, -1f);
                                 }
 
-                                pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                                pageBottomPt = pageYPt + pageHeightPt - mb;
-                                pageIdx++;
-                                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                                AdvanceFrame();
                                 contentYPt = pageYPt + mt;
+
+                                // Следующая колонка стоит правее: продолжение таблицы — в ней.
+                                tableXPt = textXPt
+                                    + (float)tableBlock.ResolveLeftOffsetPt(textWidthPt, tableLayout.TotalWidthPt);
 
                                 // Строка ушла на новую страницу целиком — её новое место
                                 // проверяется на обтекание заново.
@@ -1694,12 +2234,12 @@ namespace Writersword.Modules.TextEditor.Document
                                     sliceStartOffset = sliceFirstRowOffset;
                                     isFirstSlice = false;
                                 }
-                                pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                                pageBottomPt = pageYPt + pageHeightPt - mb;
-                                pageIdx++;
-                                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                                AdvanceFrame();
                                 contentYPt = pageYPt + mt;
+
+                                // Следующая колонка стоит правее: продолжение таблицы — в ней.
+                                tableXPt = textXPt
+                                    + (float)tableBlock.ResolveLeftOffsetPt(textWidthPt, tableLayout.TotalWidthPt);
 
                                 // Перенос без снапа: строка целиком уезжает на новую страницу,
                                 // где её положение так же может попасть под картинку.
@@ -1774,6 +2314,10 @@ namespace Writersword.Modules.TextEditor.Document
                     lastTableXPt = tableXPt;
                     lastTableRightPt = tableXPt + tableLayout.TotalWidthPt;
                     lastTableBotPt = contentYPt; // истинный нижний край таблицы
+
+                    if (noteFlow is not null)
+                        CommitTableNotes(noteFlow, newLayouts, noteLayoutsFrom, newTables, noteTablesFrom,
+                            newPages, pageIdx, contentYPt, ref pageBottomPt);
                     continue;
                 }
 
@@ -1805,12 +2349,7 @@ namespace Writersword.Modules.TextEditor.Document
                         bool shapeAtPageTop = contentYPt <= pageYPt + mt + 0.5f;
                         if (shapeBoxH > pageBottomPt - contentYPt && !shapeAtPageTop)
                         {
-                            pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                            (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                            pageBottomPt = pageYPt + pageHeightPt - mb;
-                            contentYPt = pageYPt + mt;
-                            pageIdx++;
-                            newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                            AdvanceFrame();
 
                             ResolveInlineImageBand(
                                 shapeZoneSource, ref contentYPt, shapeBoxW, shapeBoxH,
@@ -1859,12 +2398,7 @@ namespace Writersword.Modules.TextEditor.Document
                                 && contentYPt + shapeFloatsNeedPt > pageBottomPt
                                 && shapeFloatsNeedPt <= pageBottomPt - (pageYPt + mt))
                             {
-                                pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                                pageBottomPt = pageYPt + pageHeightPt - mb;
-                                contentYPt = pageYPt + mt;
-                                pageIdx++;
-                                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                                AdvanceFrame();
                             }
                         }
 
@@ -1979,12 +2513,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                             if (doTransfer)
                             {
-                                pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                                pageBottomPt = pageYPt + pageHeightPt - mb;
-                                contentYPt = pageYPt + mt;
-                                pageIdx++;
-                                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                                AdvanceFrame();
                                 newInlineTransferred.Add(imageBlock);
 
                                 // На новой странице зоны обтекания другие — полосу
@@ -2039,12 +2568,7 @@ namespace Writersword.Modules.TextEditor.Document
                                     && contentYPt + imageFloatsNeedPt > pageBottomPt
                                     && imageFloatsNeedPt <= pageBottomPt - (pageYPt + mt))
                                 {
-                                    pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                                    (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                                    pageBottomPt = pageYPt + pageHeightPt - mb;
-                                    contentYPt = pageYPt + mt;
-                                    pageIdx++;
-                                    newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                                    AdvanceFrame();
                                 }
                             }
 
@@ -2236,12 +2760,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                     if (breakBefore)
                     {
-                        pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                        (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                        pageBottomPt = pageYPt + pageHeightPt - mb;
-                        contentYPt = pageYPt + mt;
-                        pageIdx++;
-                        newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                        AdvanceFrame();
                     }
                 }
 
@@ -2344,6 +2863,13 @@ namespace Writersword.Modules.TextEditor.Document
                     ? probeLayout
                     : BuildWrappedLayout(pvm, textWidthPt, wrapZones, wrapPages);
 
+                // Абзац сверстан по ширине своей колонки или своего раздела: быстрая
+                // перевёрстка при наборе берёт ту же ширину.
+                if (Math.Abs(textWidthPt - documentTextWidthPt) > 0.05f)
+                    passTextWidths[paraBlock] = textWidthPt;
+                else
+                    passTextWidths.Remove(paraBlock);
+
                 // Якорь перед таблицей: пустой параграф, следующий блок — таблица.
                 // Но если предыдущий блок тоже таблица, это разделитель между двумя
                 // таблицами, и он идёт ветке ниже — якорем ПОСЛЕ верхней. Разница в том,
@@ -2428,6 +2954,13 @@ namespace Writersword.Modules.TextEditor.Document
                 bool paragraphMovedWhole = false;
                 bool lastLinePulled = false;
 
+                // В абзаце стоят знаки сносок: его строки делят лист со своими сносками.
+                bool paraHasNotes = noteFlow is not null && noteFlow.HasMarksIn(paraBlock);
+
+                // Сноски стоят у низа листа под всеми колонками: область с ними колонки
+                // по высоте не выравнивает.
+                if (paraHasNotes) colRegionPlain = false;
+
                 for (int li = 0; li < layout.Lines.Count; li++)
                 {
                     var line = layout.Lines[li];
@@ -2441,7 +2974,16 @@ namespace Writersword.Modules.TextEditor.Document
                     if (li == lineFrom) lineGroupYPt = contentYPt;
                     if (li == 0) firstLineTopPt = contentYPt - line.WrapExtraTopPt;
 
-                    if (contentYPt + line.Height > pageBottomPt
+                    // Строке со знаком сноски нужно место ещё и под начало её сноски:
+                    // без него строка уходит на следующий лист вместе со сноской.
+                    float noteNeedPt = 0f;
+                    if (noteFlow is not null)
+                    {
+                        noteFlow.EnterPage(pageIdx, pageYPt + mt, contentYPt, ref pageBottomPt);
+                        if (paraHasNotes) noteNeedPt = noteFlow.MinNeed(line);
+                    }
+
+                    if (contentYPt + line.Height > pageBottomPt - noteNeedPt
                         && contentYPt > pageYPt + mt)
                     {
                         int linesOnPage = li - lineFrom;
@@ -2471,6 +3013,10 @@ namespace Writersword.Modules.TextEditor.Document
                         {
                             int sliceEnd = moveWholeParagraph ? lineFrom : li - 1;
 
+                            // Сноски переезжающих строк снимаются с этого листа: они
+                            // встанут там, куда встанут строки.
+                            if (paraHasNotes) noteFlow!.Rollback(layout, sliceEnd);
+
                             if (sliceEnd > lineFrom)
                             {
                                 var lastKeptLine = layout.Lines[sliceEnd];
@@ -2484,12 +3030,9 @@ namespace Writersword.Modules.TextEditor.Document
                                     AbsXPt: absXPt, Marker: paraMarker));
                             }
 
-                            pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                            (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                            pageBottomPt = pageYPt + pageHeightPt - mb;
+                            AdvanceFrame();
                             contentYPt = pageYPt + mt + PageContinuationTopPadPt;
-                            pageIdx++;
-                            newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                            absXPt = textXPt;
 
                             lineFrom = sliceEnd;
                             lineGroupYPt = contentYPt;
@@ -2512,12 +3055,8 @@ namespace Writersword.Modules.TextEditor.Document
                                 AbsXPt: absXPt, Marker: paraMarker));
                         }
 
-                        pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                        (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                        pageBottomPt = pageYPt + pageHeightPt - mb;
-                        contentYPt = pageYPt + mt;
-                        pageIdx++;
-                        newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                        AdvanceFrame();
+                        absXPt = textXPt;
 
                         lineFrom = li;
                         // Небольшой отступ чтобы первая строка продолжения не прилипала к верхнему полю.
@@ -2612,17 +3151,24 @@ namespace Writersword.Modules.TextEditor.Document
                             if (contentYPt + line.Height > pageBottomPt
                                 && contentYPt > pageYPt + mt)
                             {
-                                pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
-                                pageBottomPt = pageYPt + pageHeightPt - mb;
+                                AdvanceFrame();
                                 contentYPt = pageYPt + mt + PageContinuationTopPadPt;
-                                pageIdx++;
-                                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                                absXPt = textXPt;
                             }
 
                             lineFrom = li;
                             lineGroupYPt = contentYPt;
                         }
+                    }
+
+                    // Строка встала на свой лист: её сноски встают внизу этого листа.
+                    if (noteFlow is not null)
+                    {
+                        noteFlow.EnterPage(pageIdx, pageYPt + mt, contentYPt, ref pageBottomPt);
+                        if (paraHasNotes)
+                            noteFlow.Commit(
+                                line, pageIdx,
+                                pageBottomPt - (contentYPt + line.Height), ref pageBottomPt);
                     }
 
                     contentYPt += line.Height;
@@ -2642,6 +3188,112 @@ namespace Writersword.Modules.TextEditor.Document
 
                 collapsePrevAfterPt = CollapsibleSpaceAfterPt(layout);
                 collapseEndYPt = contentYPt;
+            }
+
+            // Колонки последнего раздела Word по высоте не выравнивает: черты — до
+            // самой длинной колонки, концевые сноски — под ней на всю ширину текста.
+            if (colOffsets.Length > 1)
+            {
+                float lastColumnsBottomPt = Math.Max(colRegionBottomPt, contentYPt);
+                CloseColumnRegion(lastColumnsBottomPt, colIndex + 1);
+                contentYPt = lastColumnsBottomPt;
+                mt = newPages[pageIdx].PadTopPt;
+
+                colOffsets = new[] { 0f };
+                colWidths = new[] { fullTextWidthPt };
+                colSeparator = false;
+                colIndex = 0;
+                textXPt = pageXPt + ml;
+                textWidthPt = fullTextWidthPt;
+            }
+
+            if (noteFlow is not null && !partialPass)
+            {
+                // Продолжения сносок последнего листа: им нужны свои листы.
+                for (int guard = 0; noteFlow.HasTails && guard < 256; guard++)
+                {
+                    noteFlow.EnterPage(pageIdx, pageYPt + mt, contentYPt, ref pageBottomPt);
+                    if (!noteFlow.HasTails) break;
+
+                    pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                    (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
+                    pageBottomPt = pageYPt + pageHeightPt - mb;
+                    contentYPt = pageYPt + mt;
+                    pageIdx++;
+                    newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                }
+
+                noteFlow.EnterPage(pageIdx, pageYPt + mt, contentYPt, ref pageBottomPt);
+
+                // Концевые сноски — после последнего абзаца документа, под чертой.
+                bool endnoteRuleSet = false;
+                foreach (var endnote in noteFlow.Endnotes)
+                {
+                    var endnoteLayouts = noteFlow.LayoutsOf(endnote);
+
+                    foreach (var endnoteLayout in endnoteLayouts)
+                    {
+                        int endnoteLines = endnoteLayout.Lines.Count;
+                        int endnoteLineFrom = 0;
+                        float endnoteSliceTopPt = float.NaN;
+
+                        for (int li = 0; li < Math.Max(endnoteLines, 1); li++)
+                        {
+                            float endnoteLinePt = endnoteLines == 0 ? FallbackLinePt : endnoteLayout.Lines[li].Height;
+                            float endnoteNeedPt = endnoteLinePt
+                                + (li == 0 ? endnoteLayout.SpaceBeforePt : 0f)
+                                + (endnoteRuleSet ? 0f : noteFlow.RuleBandPt);
+
+                            if (contentYPt + endnoteNeedPt > pageBottomPt && contentYPt > pageYPt + mt)
+                            {
+                                if (li > endnoteLineFrom && !float.IsNaN(endnoteSliceTopPt))
+                                {
+                                    newNoteSlices.Add(new NoteSlice(
+                                        endnote.Note, endnoteLayout, endnoteLineFrom, li, pageIdx,
+                                        endnoteSliceTopPt - pageYPt,
+                                        endnoteSliceTopPt - pageYPt
+                                            + (endnoteLineFrom == 0 ? endnoteLayout.SpaceBeforePt : 0f),
+                                        contentYPt - endnoteSliceTopPt));
+                                }
+
+                                pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                                (mt, mb) = PagePaddingForPage(pageIdx + 1, baseMt, baseMb);
+                                pageBottomPt = pageYPt + pageHeightPt - mb;
+                                contentYPt = pageYPt + mt;
+                                pageIdx++;
+                                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+
+                                endnoteLineFrom = li;
+                                endnoteSliceTopPt = float.NaN;
+                            }
+
+                            if (!endnoteRuleSet)
+                            {
+                                newNoteRules.Add(new NoteRule(
+                                    pageIdx, contentYPt - pageYPt, noteFlow.RuleBandPt,
+                                    Math.Min(NoteFlow.RuleLengthPt, textWidthPt)));
+                                contentYPt += noteFlow.RuleBandPt;
+                                endnoteRuleSet = true;
+                            }
+
+                            if (float.IsNaN(endnoteSliceTopPt)) endnoteSliceTopPt = contentYPt;
+                            if (li == 0) contentYPt += endnoteLayout.SpaceBeforePt;
+                            contentYPt += endnoteLinePt;
+                        }
+
+                        contentYPt += endnoteLayout.SpaceAfterPt;
+
+                        if (!float.IsNaN(endnoteSliceTopPt))
+                        {
+                            newNoteSlices.Add(new NoteSlice(
+                                endnote.Note, endnoteLayout, endnoteLineFrom, endnoteLines, pageIdx,
+                                endnoteSliceTopPt - pageYPt,
+                                endnoteSliceTopPt - pageYPt
+                                    + (endnoteLineFrom == 0 ? endnoteLayout.SpaceBeforePt : 0f),
+                                contentYPt - endnoteSliceTopPt));
+                        }
+                    }
+                }
             }
 
             // Сверка вёрстки с внешним редактором: лист, строки и незанятое место
@@ -2810,11 +3462,9 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Страницы рядом: высота канваса определяется числом визуальных рядов,
             // а не логическим столбиком страниц.
+            // Ряды меряются по самому высокому своему листу (DocumentCanvas.PageGrid).
             if (_pagesPerRow > 1 && newPages.Count > 0)
-            {
-                int rows = (newPages.Count + _pagesPerRow - 1) / _pagesPerRow;
-                newCanvasH = PageGapPt + rows * (newPages[0].HeightPt + PageGapPt);
-            }
+                newCanvasH = BuildPageGrid(newPages, _pagesPerRow, (float)(_canvasWidth * PxToPt), RevisionLaneWidthPtNow, GetPageWidthPt(), MaxPagesPerRow).TotalHeightPt;
 
             // Лента: страницы склеены встык, и холст ровно такой, сколько занимает вся
             // склейка. Ни межстраничных зазоров, ни постраничных полей в этой высоте
@@ -2824,8 +3474,12 @@ namespace Writersword.Modules.TextEditor.Document
             // пагинация оставляет внизу остаток, на который не влезла строка или
             // строка таблицы, и в ленте этот остаток был бы разрывом — таблица,
             // перенесённая на следующий лист, расходилась на два куска.
+            // Области сносок листов: теперь известны и все листы, и всё, что на них встало.
+            if (noteFlow is not null)
+                PlaceNoteAreas(noteFlow, newPages, fullTextWidthPt, newNoteSlices, newNoteRules);
+
             _passRibbonBandHeights = ReadingRibbon && newPages.Count > 0
-                ? BuildRibbonBandHeights(newPages, newLayouts, newTables, newImages, newShapes)
+                ? BuildRibbonBandHeights(newPages, newLayouts, newTables, newImages, newShapes, newNoteSlices)
                 : Array.Empty<float>();
 
             if (_passRibbonBandHeights.Length > 0)
@@ -2835,6 +3489,15 @@ namespace Writersword.Modules.TextEditor.Document
             if (partialPass)
                 newCanvasH = Math.Max(newCanvasH, _canvasHeightPt);
 
+            // Выравнивание раздела по высоте листа (DocumentCanvas.PageDecor): по готовым
+            // листам и сноскам — лист со сносками остаётся как сверстан.
+            if (SectionSheetsApply)
+            {
+                var notePages = new HashSet<int>();
+                foreach (var note in newNoteSlices) notePages.Add(note.PageIndex);
+                newLayouts = AlignSectionPagesVertically(newLayouts, newPages, newTables, newImages, notePages.Contains);
+            }
+
             // Результат прохода: промежуточные проходы сходимости обтекания его только
             // копят, наружу уходит последний. Иначе рендер успевает поймать промежуточный
             // кадр — в первом проходе абзац ещё не знает про картинку и верстается во всю
@@ -2842,6 +3505,8 @@ namespace Writersword.Modules.TextEditor.Document
             _passLayouts = newLayouts;
             _passPages = newPages;
             _passTables = newTables;
+            _passNoteSlices = newNoteSlices;
+            _passNoteRules = newNoteRules;
 
             // Стороны переплёта по этому проходу — для мест плавающих объектов в
             // следующем (см. LayoutGutterCompensationPt).
@@ -2850,6 +3515,8 @@ namespace Writersword.Modules.TextEditor.Document
             _passShapes = newShapes;
             _passInlineTransferred = newInlineTransferred;
             _passBreakMarks = newBreakMarks;
+            _passColumnRules = newColumnRules;
+            _sectionTextWidths = passTextWidths;
             _passCanvasHeightPt = newCanvasH;
 
             if (_publishPassResults) PublishPassResults();
@@ -3209,6 +3876,9 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void PublishPassResults()
         {
+            // Новая раскладка — кадр целиком (DocumentCanvas.PartialRender).
+            BlockPartial();
+
             // Сторона переплёта: проход раскладывает все листы одинаково, а на листах,
             // где переплёт справа, содержимое уезжает влево уже здесь, перед показом.
             var (publishLayouts, publishPages, publishTables, publishImages, publishShapes) =
@@ -3232,8 +3902,11 @@ namespace Writersword.Modules.TextEditor.Document
                 _tables = publishTables;
                 _images = publishImages;
                 _shapes = publishShapes;
+                _noteSlices = _passNoteSlices;
+                _noteRules = _passNoteRules;
                 _inlineTransferredImages = _passInlineTransferred;
                 _breakMarks = _passBreakMarks;
+                _columnRules = _passColumnRules;
                 _canvasHeightPt = _passCanvasHeightPt;
                 _canvasHeight = _passCanvasHeightPt * PtToPx;
             }
@@ -3246,11 +3919,23 @@ namespace Writersword.Modules.TextEditor.Document
             // Уведомление идёт за пределами замка: получатель работает со строкой
             // состояния, и держать на нём замок рендера незачем.
             //
+            // Отметки правок на картинках строк и разделы листов собираются заново по
+            // новой раскладке.
+            _inlineRevisionMarks = null;
+            _pageSections = null;
+            _pageSectionsReady = false;
+            _allPageSections = null;
+            _allPageSectionsReady = false;
+            _rulerPageSections = null;
+
             // Частичный проход числа страниц не знает: строка состояния ждёт полного.
             if (_partialFromBlock < 0)
             {
                 NotifyPagination();
                 LogFirstPagesComposition();
+
+                // Номера страниц в навигаторе и панели рецензии — по готовой раскладке.
+                DocVm?.RaisePagesRecounted();
 
                 // Документ разложен целиком — можно вернуть человека туда, где он был.
                 // Отдельным шагом: сейчас идёт пересборка, и каретку она ещё двигает.
@@ -3657,6 +4342,10 @@ namespace Writersword.Modules.TextEditor.Document
                 _pages = new List<PageRect>();
                 _tables = newTables;
                 _images = newFlowImages;
+
+                // Черновик листов не строит: от сноски в нём виден только знак.
+                _noteSlices = new List<NoteSlice>();
+                _noteRules = new List<NoteRule>();
 
                 _shapes = newFlowShapes;
                 _canvasHeightPt = newCanvasH;

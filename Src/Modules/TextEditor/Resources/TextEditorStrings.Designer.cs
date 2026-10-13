@@ -111,6 +111,8 @@ namespace Writersword.Modules.TextEditor.Resources
         public static string Import_Unsupported => ResourceManager.GetString("Import_Unsupported", _culture)!;
         public static string Insert_Bookmark => ResourceManager.GetString("Insert_Bookmark", _culture)!;
         public static string Insert_Comment => ResourceManager.GetString("Insert_Comment", _culture)!;
+        public static string Insert_DateTime => ResourceManager.GetString("Insert_DateTime", _culture)!;
+        public static string Insert_Formula => ResourceManager.GetString("Insert_Formula", _culture)!;
         public static string Insert_Footnote => ResourceManager.GetString("Insert_Footnote", _culture)!;
         public static string Insert_Hyperlink => ResourceManager.GetString("Insert_Hyperlink", _culture)!;
         public static string Insert_Image => ResourceManager.GetString("Insert_Image", _culture)!;

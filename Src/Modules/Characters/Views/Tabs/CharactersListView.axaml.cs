@@ -174,7 +174,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 .Select(c => c!)
                 .ToList();
 
-            overlay.ShowFor(characters);
+            overlay.ShowFor(characters, vm.GetAnketa);
         }
 
         // Ступень важности папки по кругу: нет, I, II, III. Событие гасится —
@@ -1265,6 +1265,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         private void OnCardImageDragOver(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             var item = CardItemOf(sender);
             var accepts = item != null && e.DataTransfer.Contains(DataFormat.File);
 
@@ -1281,6 +1283,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         private async void OnCardImageDrop(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             e.Handled = true;
 
             var item = CardItemOf(sender);

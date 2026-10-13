@@ -122,12 +122,21 @@ namespace Writersword.Modules.Characters
             locService.LanguageChanged += _onLanguageChanged;
 
             // Контекст мог быть установлен до создания вьюмодели — применяем
-            // read-only режима сравнения сейчас.
+            // read-only режима сравнения сейчас. Признак ещё и читается из
+            // контекста на каждом шаге: вход в сравнение не всегда сообщает
+            // модулю о смене контекста, а запрет от этого зависеть не должен.
             _viewModel.IsReadOnly = Context?.IsInCompareMode == true;
+            _viewModel.ReadOnlyProvider = IsInCompareMode;
+            _viewModel.IconLibrary.IsReadOnlyProvider = IsInCompareMode;
+            if (_anketaService is CharacterAnketaService anketas) anketas.IsReadOnlyProvider = IsInCompareMode;
+            if (_relationshipService is RelationshipService relationships) relationships.IsReadOnlyProvider = IsInCompareMode;
 
             base.Initialize();
             _logger.Debug("Initialized");
         }
+
+        /// <summary>Сейчас идёт сравнение версий: данные модуля только для чтения.</summary>
+        private bool IsInCompareMode() => Context?.IsInCompareMode == true;
 
         protected override void OnContextChanged(DocumentContext? context)
         {
@@ -247,6 +256,13 @@ namespace Writersword.Modules.Characters
         /// </summary>
         public async System.Threading.Tasks.Task<int> EmbedExternalAssetsAsync()
         {
+            // Укладка пишет в проект — в режиме сравнения версий нельзя.
+            if (IsInCompareMode())
+            {
+                _logger.Debug("EmbedExternalAssets ignored (compare mode)");
+                return 0;
+            }
+
             var map = new Dictionary<string, string>(StringComparer.Ordinal);
 
             // Список снимается целиком до первой укладки: она пишет в архив, а
@@ -300,9 +316,36 @@ namespace Writersword.Modules.Characters
 
         public IReadOnlyList<HotKey> GetHotKeys() => new CharactersMetadata().GetHotKeys();
 
+        // Клавиши модуля, которые меняют данные. В режиме сравнения версий
+        // они молчат; переходы по вкладкам и виду остаются.
+        private static readonly HashSet<string> EditingHotKeys = new(StringComparer.Ordinal)
+        {
+            "characters.create",
+            "characters.create_randomized",
+            "characters.create_collective",
+            "characters.save",
+            "characters.delete",
+            "characters.duplicate",
+            "characters.add_parameter_numeric",
+            "characters.add_parameter_text",
+            "characters.add_parameter_statelist",
+            "characters.add_parameter_boolean",
+            "characters.add_context",
+            "characters.add_relationship",
+            "characters.add_note",
+            "characters.add_timeline_event",
+            "characters.randomize_parameters"
+        };
+
         public void ExecuteHotKey(string id)
         {
             if (_viewModel == null) return;
+
+            if (_viewModel.IsReadOnly && EditingHotKeys.Contains(id))
+            {
+                _logger.Debug("Hotkey {Id} ignored (compare mode)", id);
+                return;
+            }
 
             switch (id)
             {
@@ -462,6 +505,7 @@ namespace Writersword.Modules.Characters
                 data.Templates = as_.GetCustomTemplates().ToList();
                 data.RecentAnketaIds = as_.GetRecentAnketaIds().ToList();
             }
+            data.CustomIcons = _viewModel?.IconLibrary.GetForSave() ?? new List<CharacterIconEntry>();
             data.Preview = GetPreviews().ToList();
             // Verbose вместо Debug: вызывается фоновым аутосейвом каждые несколько
             // секунд и при штатном уровне лога только засоряет вывод.
@@ -554,6 +598,7 @@ namespace Writersword.Modules.Characters
                         _viewModel.ActiveTemplateIds.Add(id);
 
                     _viewModel.TemplatesViewModel.ProjectTemplateId = moduleData.ProjectTemplateId;
+                    _viewModel.IconLibrary.Load(moduleData.CustomIcons);
 
                     _viewModel.CancelLoad();
                     _viewModel.RefreshAll();

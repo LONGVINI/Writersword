@@ -1,0 +1,596 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:review="using:Writersword.Modules.TextEditor.ViewModels.Review"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             x:Class="Writersword.Modules.TextEditor.Views.Review.ReviewPanel"
+             x:DataType="review:ReviewPanelViewModel">
+
+	<!--
+	    Панель рецензии: правки и обсуждения примечаний карточками, как уведомления,
+	    по главам. Карточка сразу говорит, что сделано, показывает отрывок текста с
+	    самим изменением (убранное — красным зачёркнутым, добавленное — зелёным),
+	    кто, когда и где, и даёт решить её на месте. Высоту по щелчку карточка не
+	    меняет: щелчок ведёт к месту в тексте, наведение подсвечивает его на листе.
+	    Стрелки вверх и вниз ходят по карточкам, Enter возвращает к месту,
+	    Ctrl+Z отменяет решение, не уходя из панели.
+	-->
+
+	<UserControl.Styles>
+		<Style Selector="TextBlock.PanelTitle">
+			<Setter Property="FontSize"   Value="13"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+
+		<Style Selector="TextBlock.Muted">
+			<Setter Property="FontSize"   Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+
+		<!-- Кнопка-значок шапки и низа. -->
+		<Style Selector="Button.Icon">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Width"           Value="28"/>
+			<Setter Property="Height"          Value="28"/>
+			<Setter Property="MinHeight"       Value="28"/>
+			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		</Style>
+		<Style Selector="Button.Icon /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.Icon:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<!-- Отбор по виду: сегменты одной полосы. -->
+		<Style Selector="ToggleButton.Seg">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding"         Value="8 5"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="HorizontalAlignment"        Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.Seg /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="ToggleButton.Seg:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.Seg:checked /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.Seg:checked">
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+
+		<!-- Закрытые обсуждения: маленький переключатель-капсула. -->
+		<Style Selector="ToggleButton.Pill">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Padding"         Value="8 0"/>
+			<Setter Property="Height"          Value="28"/>
+			<Setter Property="MinHeight"       Value="28"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="FontSize"        Value="11"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.Pill /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="ToggleButton.Pill:checked /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.Pill:not(:checked)">
+			<Setter Property="Opacity" Value="0.55"/>
+		</Style>
+
+		<!-- Карточка. -->
+		<Style Selector="Border.Card">
+			<Setter Property="Background"      Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="8"/>
+			<Setter Property="Margin"          Value="10 0 10 6"/>
+			<Setter Property="Padding"         Value="12 10"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Background"  Duration="0:0:0.12"/>
+					<BrushTransition Property="BorderBrush" Duration="0:0:0.12"/>
+					<DoubleTransition Property="Opacity"    Duration="0:0:0.15"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Border.Card:pointerover">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Border.Card.selected" x:DataType="review:ReviewItemViewModel">
+			<Setter Property="BorderBrush" Value="{Binding KindBrush}"/>
+		</Style>
+		<Style Selector="Border.Card.done">
+			<Setter Property="Opacity" Value="0.62"/>
+		</Style>
+
+		<!-- Кнопки решения в карточке. -->
+		<Style Selector="Button.Act">
+			<Setter Property="Height"          Value="26"/>
+			<Setter Property="MinHeight"       Value="26"/>
+			<Setter Property="Padding"         Value="9 0"/>
+			<Setter Property="FontSize"        Value="11.5"/>
+			<Setter Property="CornerRadius"    Value="13"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.Act /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.Act:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.Act.Accept">
+			<Setter Property="BorderBrush" Value="#705CCB86"/>
+			<Setter Property="Foreground"  Value="#8EDDAE"/>
+		</Style>
+		<Style Selector="Button.Act.Accept /template/ ContentPresenter">
+			<Setter Property="Background" Value="#1F5CCB86"/>
+		</Style>
+		<Style Selector="Button.Act.Accept:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#405CCB86"/>
+		</Style>
+		<Style Selector="Button.Act.Reject:pointerover">
+			<Setter Property="BorderBrush" Value="#80F07A72"/>
+			<Setter Property="Foreground"  Value="#F49A92"/>
+		</Style>
+		<Style Selector="Button.Act.Reject:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#1CF07A72"/>
+		</Style>
+		<Style Selector="Button.Act.Round">
+			<Setter Property="Width"   Value="26"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		</Style>
+
+		<!-- Кнопки низа панели. -->
+		<Style Selector="Button.Small">
+			<Setter Property="Height"       Value="26"/>
+			<Setter Property="MinHeight"    Value="26"/>
+			<Setter Property="Padding"      Value="10 0"/>
+			<Setter Property="FontSize"     Value="11"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="Cursor"       Value="Hand"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Border Background="{DynamicResource BgSurfaceBrush}">
+		<Grid RowDefinitions="Auto Auto Auto Auto * Auto">
+
+			<!-- Шапка -->
+			<Grid Grid.Row="0" ColumnDefinitions="* Auto" Margin="14 10 8 8">
+				<StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+					<TextBlock Classes="PanelTitle" Text="Рецензия" VerticalAlignment="Center"/>
+					<TextBlock Classes="Muted" Text="{Binding OpenCountText}" VerticalAlignment="Center"/>
+				</StackPanel>
+				<Button Grid.Column="1" Classes="Icon"
+				        Command="{Binding CloseCommand}"
+				        behaviours:TooltipBehavior.Tip="Закрыть панель">
+					<PathIcon Width="11" Height="11"
+					          Foreground="{DynamicResource TextMutedBrush}"
+					          Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+				</Button>
+			</Grid>
+
+			<!-- Отбор по виду -->
+			<Border Grid.Row="1" Margin="12 0 12 8" Padding="3"
+			        CornerRadius="8"
+			        Background="{DynamicResource BgBaseBrush}">
+				<Grid ColumnDefinitions="* * *" ColumnSpacing="3">
+					<ToggleButton Grid.Column="0" Classes="Seg" IsChecked="{Binding IsFilterAll, Mode=TwoWay}">
+						<TextBlock FontSize="12" Text="Все"/>
+					</ToggleButton>
+					<ToggleButton Grid.Column="1" Classes="Seg" IsChecked="{Binding IsFilterRevisions, Mode=TwoWay}">
+						<StackPanel Orientation="Horizontal" Spacing="6">
+							<TextBlock FontSize="12" Text="Правки"/>
+							<TextBlock FontSize="12" Opacity="0.6" Text="{Binding RevisionCount}"/>
+						</StackPanel>
+					</ToggleButton>
+					<ToggleButton Grid.Column="2" Classes="Seg" IsChecked="{Binding IsFilterComments, Mode=TwoWay}">
+						<StackPanel Orientation="Horizontal" Spacing="6">
+							<TextBlock FontSize="12" Text="Обсуждения"/>
+							<TextBlock FontSize="12" Opacity="0.6" Text="{Binding CommentCount}"/>
+						</StackPanel>
+					</ToggleButton>
+				</Grid>
+			</Border>
+
+			<!-- Поиск, автор, закрытые -->
+			<Grid Grid.Row="2" ColumnDefinitions="* Auto Auto" ColumnSpacing="6" Margin="12 0 12 10">
+				<TextBox Grid.Column="0"
+				         x:Name="SearchBox"
+				         FontSize="12"
+				         Padding="8 5"
+				         CornerRadius="6"
+				         PlaceholderText="Найти в рецензии"
+				         Text="{Binding SearchText, Mode=TwoWay}"/>
+				<ComboBox Grid.Column="1"
+				          MinWidth="104"
+				          MaxWidth="150"
+				          FontSize="12"
+				          ItemsSource="{Binding Authors}"
+				          SelectedItem="{Binding SelectedAuthor, Mode=TwoWay}"
+				          behaviours:TooltipBehavior.Tip="Чьи правки и примечания показывать"/>
+				<ToggleButton Grid.Column="2"
+				              Classes="Pill"
+				              IsVisible="{Binding HasClosed}"
+				              IsChecked="{Binding ShowClosed, Mode=TwoWay}"
+				              behaviours:TooltipBehavior.Tip="Показывать закрытые обсуждения">
+					<TextBlock Text="{Binding ShowClosedText}"/>
+				</ToggleButton>
+			</Grid>
+
+			<!-- Вид обсуждения: примечания, предложения, требования — каждый можно спрятать -->
+			<WrapPanel Grid.Row="3"
+			           Margin="12 0 12 10"
+			           Orientation="Horizontal"
+			           IsVisible="{Binding ShowKindFilter}">
+				<ToggleButton Classes="Pill" Margin="0 0 6 0"
+				              IsChecked="{Binding ShowNotes, Mode=TwoWay}"
+				              behaviours:TooltipBehavior.Tip="Показывать примечания">
+					<StackPanel Orientation="Horizontal" Spacing="6">
+						<Border Width="7" Height="7" CornerRadius="4" Background="#E0A33A" VerticalAlignment="Center"/>
+						<TextBlock Text="Примечания" VerticalAlignment="Center"/>
+						<TextBlock Opacity="0.6" Text="{Binding NoteCount}" VerticalAlignment="Center"/>
+					</StackPanel>
+				</ToggleButton>
+				<ToggleButton Classes="Pill" Margin="0 0 6 0"
+				              IsChecked="{Binding ShowSuggestions, Mode=TwoWay}"
+				              behaviours:TooltipBehavior.Tip="Показывать предложения">
+					<StackPanel Orientation="Horizontal" Spacing="6">
+						<Border Width="7" Height="7" CornerRadius="4" Background="#3FB58A" VerticalAlignment="Center"/>
+						<TextBlock Text="Предложения" VerticalAlignment="Center"/>
+						<TextBlock Opacity="0.6" Text="{Binding SuggestionCount}" VerticalAlignment="Center"/>
+					</StackPanel>
+				</ToggleButton>
+				<ToggleButton Classes="Pill"
+				              IsChecked="{Binding ShowRequirements, Mode=TwoWay}"
+				              behaviours:TooltipBehavior.Tip="Показывать требования">
+					<StackPanel Orientation="Horizontal" Spacing="6">
+						<Border Width="7" Height="7" CornerRadius="4" Background="#E5605A" VerticalAlignment="Center"/>
+						<TextBlock Text="Требования" VerticalAlignment="Center"/>
+						<TextBlock Opacity="0.6" Text="{Binding RequirementCount}" VerticalAlignment="Center"/>
+					</StackPanel>
+				</ToggleButton>
+			</WrapPanel>
+
+			<!-- Карточки -->
+			<Border Grid.Row="4"
+			        BorderBrush="{DynamicResource BorderDefaultBrush}"
+			        BorderThickness="0 1 0 0">
+				<Panel>
+					<ScrollViewer x:Name="RowsScroll"
+					              HorizontalScrollBarVisibility="Disabled"
+					              VerticalScrollBarVisibility="Auto">
+						<ItemsControl x:Name="RowsList"
+						              Focusable="True"
+						              Padding="0 2 0 10"
+						              ItemsSource="{Binding Rows}">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate>
+									<VirtualizingStackPanel/>
+								</ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+
+							<ItemsControl.DataTemplates>
+
+								<!-- Заголовок главы -->
+								<DataTemplate DataType="review:ReviewGroupRow">
+									<Grid ColumnDefinitions="* Auto" Margin="16 12 16 6">
+										<TextBlock Grid.Column="0"
+										           FontSize="11"
+										           FontWeight="SemiBold"
+										           Foreground="{DynamicResource TextMutedBrush}"
+										           TextTrimming="CharacterEllipsis"
+										           Text="{Binding Title}"
+										           behaviours:TooltipBehavior.Tip="{Binding Title}"/>
+										<TextBlock Grid.Column="1"
+										           Margin="8 0 0 0"
+										           FontSize="11"
+										           Foreground="{DynamicResource TextMutedBrush}"
+										           Text="{Binding PageText}"/>
+									</Grid>
+								</DataTemplate>
+
+								<!-- Карточка правки или примечания -->
+								<DataTemplate DataType="review:ReviewItemViewModel">
+									<Border Classes="Card"
+									        Classes.selected="{Binding IsSelected}"
+									        Classes.done="{Binding IsDone}">
+											<StackPanel Spacing="8">
+
+												<!-- Что сделано и когда -->
+												<Grid ColumnDefinitions="Auto * Auto">
+													<Border Width="22" Height="22"
+													        CornerRadius="6"
+													        VerticalAlignment="Center"
+													        Background="{Binding KindSoftBrush}">
+														<Viewbox Width="14" Height="14">
+															<Canvas Width="24" Height="24">
+																<Path Data="{Binding Icon}"
+																      Stroke="{Binding KindBrush}"
+																      StrokeThickness="2.3"
+																      StrokeLineCap="Round"
+																      StrokeJoin="Round"/>
+															</Canvas>
+														</Viewbox>
+													</Border>
+													<TextBlock Grid.Column="1"
+													           Margin="8 0 8 0"
+													           FontSize="12"
+													           FontWeight="SemiBold"
+													           VerticalAlignment="Center"
+													           TextTrimming="CharacterEllipsis"
+													           Foreground="{Binding KindBrush}"
+													           Text="{Binding KindLabel}"/>
+													<TextBlock Grid.Column="2"
+													           Classes="Muted"
+													           VerticalAlignment="Center"
+													           Text="{Binding When}"/>
+												</Grid>
+
+												<!-- Отрывок с самим изменением -->
+												<TextBlock IsVisible="{Binding HasSnippet}"
+												           FontSize="12.5"
+												           LineHeight="19"
+												           TextWrapping="Wrap"
+												           MaxLines="5"
+												           TextTrimming="CharacterEllipsis"
+												           Foreground="{DynamicResource TextSecondaryBrush}">
+													<Run Text="{Binding ContextBefore}"/><Run Text="{Binding Removed}"
+													     Foreground="{Binding RemovedForegroundBrush}"
+													     Background="{Binding RemovedBackgroundBrush}"
+													     TextDecorations="Strikethrough"/><Run Text="{Binding Gap}"/><Run Text="{Binding Added}"
+													     FontWeight="SemiBold"
+													     Foreground="{Binding AddedForegroundBrush}"
+													     Background="{Binding AddedBackgroundBrush}"/><Run Text="{Binding Marked}"
+													     Foreground="{Binding MarkedForeground}"
+													     Background="{Binding MarkedBackground}"
+													     TextDecorations="{Binding MarkedDecorations}"/><Run Text="{Binding ContextAfter}"/>
+												</TextBlock>
+
+												<!-- Оформление: было / стало -->
+												<Border IsVisible="{Binding HasDiff}"
+												        Background="{DynamicResource BgBaseBrush}"
+												        CornerRadius="6"
+												        Padding="10 6">
+													<Grid ColumnDefinitions="Auto *" RowDefinitions="Auto Auto" ColumnSpacing="10" RowSpacing="3">
+														<TextBlock Grid.Row="0" Grid.Column="0" Classes="Muted" Text="было"/>
+														<TextBlock Grid.Row="0" Grid.Column="1" FontSize="12" TextWrapping="Wrap"
+														           Foreground="{DynamicResource TextSecondaryBrush}"
+														           Text="{Binding BeforeText}"/>
+														<TextBlock Grid.Row="1" Grid.Column="0" Classes="Muted" Text="стало"/>
+														<TextBlock Grid.Row="1" Grid.Column="1" FontSize="12" TextWrapping="Wrap"
+														           Foreground="{DynamicResource TextPrimaryBrush}"
+														           Text="{Binding AfterText}"/>
+													</Grid>
+												</Border>
+
+												<!-- Текст примечания -->
+												<TextBlock IsVisible="{Binding HasCommentText}"
+												           FontSize="12.5"
+												           LineHeight="19"
+												           TextWrapping="Wrap"
+												           Foreground="{DynamicResource TextPrimaryBrush}"
+												           Text="{Binding CommentText}"/>
+
+												<!-- Ответы -->
+												<ItemsControl IsVisible="{Binding HasReplies}"
+												              ItemsSource="{Binding Replies}">
+													<ItemsControl.ItemTemplate>
+														<DataTemplate DataType="review:ReviewReplyViewModel">
+															<Grid ColumnDefinitions="Auto *" Margin="0 2 0 4">
+																<Border Width="18" Height="18" CornerRadius="9"
+																        VerticalAlignment="Top"
+																        Margin="0 1 0 0"
+																        Background="{Binding AvatarBrush}">
+																	<TextBlock Text="{Binding Initials}"
+																	           FontSize="7.5" FontWeight="SemiBold"
+																	           Foreground="White"
+																	           HorizontalAlignment="Center"
+																	           VerticalAlignment="Center"/>
+																</Border>
+																<StackPanel Grid.Column="1" Margin="8 0 0 0" Spacing="1">
+																	<StackPanel Orientation="Horizontal" Spacing="6">
+																		<TextBlock FontSize="11" FontWeight="SemiBold"
+																		           Foreground="{DynamicResource TextPrimaryBrush}"
+																		           Text="{Binding Author}"/>
+																		<TextBlock Classes="Muted" Text="{Binding When}"/>
+																	</StackPanel>
+																	<TextBlock FontSize="12" TextWrapping="Wrap"
+																	           Foreground="{DynamicResource TextPrimaryBrush}"
+																	           Text="{Binding Text}"/>
+																</StackPanel>
+															</Grid>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+
+												<!-- Кто, где и решение -->
+												<Grid ColumnDefinitions="Auto * Auto">
+													<Border Width="18" Height="18" CornerRadius="9"
+													        VerticalAlignment="Center"
+													        Background="{Binding AvatarBrush}">
+														<TextBlock Text="{Binding Initials}"
+														           FontSize="7.5" FontWeight="SemiBold"
+														           Foreground="White"
+														           HorizontalAlignment="Center"
+														           VerticalAlignment="Center"/>
+													</Border>
+													<TextBlock Grid.Column="1"
+													           Margin="7 0 8 0"
+													           FontSize="11"
+													           VerticalAlignment="Center"
+													           TextTrimming="CharacterEllipsis"
+													           Foreground="{DynamicResource TextMutedBrush}">
+														<Run Text="{Binding Author}"/><Run Text="  "/><Run Text="{Binding PageText}"/>
+													</TextBlock>
+
+													<!-- Правка: принять или отклонить -->
+													<StackPanel Grid.Column="2"
+													            Orientation="Horizontal"
+													            Spacing="6"
+													            IsVisible="{Binding IsRevision}">
+														<Button Classes="Act Accept"
+														        Command="{Binding AcceptCommand}"
+														        behaviours:TooltipBehavior.Tip="Принять правку">
+															<StackPanel Orientation="Horizontal" Spacing="5">
+																<Viewbox Width="11" Height="11" VerticalAlignment="Center">
+																	<Canvas Width="24" Height="24">
+																		<Path Data="M5 12.5l4.5 4.5L19 7.5" Stroke="#8EDDAE"
+																		      StrokeThickness="3" StrokeLineCap="Round" StrokeJoin="Round"/>
+																	</Canvas>
+																</Viewbox>
+																<TextBlock Text="Принять" VerticalAlignment="Center"/>
+															</StackPanel>
+														</Button>
+														<Button Classes="Act Reject"
+														        Command="{Binding RejectCommand}"
+														        behaviours:TooltipBehavior.Tip="Отклонить правку">
+															<TextBlock Text="Отклонить" VerticalAlignment="Center"/>
+														</Button>
+													</StackPanel>
+
+													<!-- Примечание: ответить, закрыть, удалить -->
+													<StackPanel Grid.Column="2"
+													            Orientation="Horizontal"
+													            Spacing="6"
+													            IsVisible="{Binding IsComment}">
+														<Button Classes="Act"
+														        Command="{Binding StartReplyCommand}"
+														        Content="Ответить"/>
+														<Button Classes="Act"
+														        Command="{Binding ToggleDoneCommand}"
+														        Content="{Binding DoneButtonText}"/>
+														<Button Classes="Act Round"
+														        Command="{Binding CycleKindCommand}"
+														        behaviours:TooltipBehavior.Tip="{Binding CycleKindTip}">
+															<Viewbox Width="12" Height="12">
+																<Canvas Width="24" Height="24">
+																	<Path Data="M4 12a8 8 0 0 1 13.7-5.6M20 4v4h-4M20 12a8 8 0 0 1-13.7 5.6M4 20v-4h4"
+																	      Stroke="{DynamicResource TextMutedBrush}"
+																	      StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round"/>
+																</Canvas>
+															</Viewbox>
+														</Button>
+														<Button Classes="Act Reject Round"
+														        Command="{Binding DeleteCommand}"
+														        behaviours:TooltipBehavior.Tip="Удалить обсуждение">
+															<Viewbox Width="12" Height="12">
+																<Canvas Width="24" Height="24">
+																	<Path Data="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"
+																	      Stroke="{DynamicResource TextMutedBrush}"
+																	      StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round"/>
+																</Canvas>
+															</Viewbox>
+														</Button>
+													</StackPanel>
+												</Grid>
+
+												<!-- Ответ -->
+												<StackPanel IsVisible="{Binding IsReplying}" Spacing="6">
+													<TextBox Classes="ReplyBox"
+													         FontSize="12"
+													         Padding="8 5"
+													         CornerRadius="6"
+													         TextWrapping="Wrap"
+													         AcceptsReturn="False"
+													         PlaceholderText="Ответ… Enter — отправить"
+													         Text="{Binding ReplyText, Mode=TwoWay}"/>
+													<StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+														<Button Classes="Act"
+														        Command="{Binding StartReplyCommand}"
+														        Content="Отмена"/>
+														<Button Classes="Act Accept"
+														        Command="{Binding ReplyCommand}"
+														        Content="Отправить"/>
+													</StackPanel>
+												</StackPanel>
+											</StackPanel>
+									</Border>
+								</DataTemplate>
+							</ItemsControl.DataTemplates>
+						</ItemsControl>
+					</ScrollViewer>
+
+					<!-- Пусто -->
+					<TextBlock Margin="16 16"
+					           FontSize="12"
+					           TextWrapping="Wrap"
+					           VerticalAlignment="Top"
+					           IsVisible="{Binding IsEmpty}"
+					           Foreground="{DynamicResource TextMutedBrush}"
+					           Text="{Binding EmptyText}"/>
+				</Panel>
+			</Border>
+
+			<!-- Низ: ход по карточкам и все видимые правки разом -->
+			<Border Grid.Row="5"
+			        Background="{DynamicResource BgPanelBrush}"
+			        BorderBrush="{DynamicResource BorderDefaultBrush}"
+			        BorderThickness="0 1 0 0"
+			        Padding="10 6">
+				<Grid ColumnDefinitions="Auto Auto Auto * Auto Auto" ColumnSpacing="4">
+					<Button Grid.Column="0" Classes="Icon"
+					        Command="{Binding PreviousCommand}"
+					        behaviours:TooltipBehavior.Tip="Предыдущая (↑)">
+						<PathIcon Width="12" Height="12" Data="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+					</Button>
+					<TextBlock Grid.Column="1" Classes="Muted"
+					           MinWidth="44"
+					           TextAlignment="Center"
+					           VerticalAlignment="Center"
+					           Text="{Binding PositionText}"/>
+					<Button Grid.Column="2" Classes="Icon"
+					        Command="{Binding NextCommand}"
+					        behaviours:TooltipBehavior.Tip="Следующая (↓)">
+						<PathIcon Width="12" Height="12" Data="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+					</Button>
+
+					<Button Grid.Column="4" Classes="Small"
+					        IsEnabled="{Binding HasVisibleRevisions}"
+					        Command="{Binding AcceptVisibleCommand}"
+					        behaviours:TooltipBehavior.Tip="Принять все правки, которые сейчас в списке. Ctrl+Z вернёт">
+						<StackPanel Orientation="Horizontal" Spacing="5">
+							<Viewbox Width="11" Height="11" VerticalAlignment="Center">
+								<Canvas Width="24" Height="24">
+									<Path Data="M5 12.5l4.5 4.5L19 7.5" Stroke="#5CCB86"
+									      StrokeThickness="3" StrokeLineCap="Round" StrokeJoin="Round"/>
+								</Canvas>
+							</Viewbox>
+							<TextBlock Text="Принять все" VerticalAlignment="Center"/>
+						</StackPanel>
+					</Button>
+					<Button Grid.Column="5" Classes="Small"
+					        IsEnabled="{Binding HasVisibleRevisions}"
+					        Command="{Binding RejectVisibleCommand}"
+					        behaviours:TooltipBehavior.Tip="Отклонить все правки, которые сейчас в списке. Ctrl+Z вернёт">
+						<TextBlock Text="Отклонить все" VerticalAlignment="Center"/>
+					</Button>
+				</Grid>
+			</Border>
+		</Grid>
+	</Border>
+</UserControl>

@@ -159,6 +159,19 @@ namespace Writersword.Modules.Characters.Services
                 _hashCache.Remove(avatarRef);
         }
 
+        /// <summary>
+        /// Режим сравнения версий: служба картинок ничего не пишет — ни в
+        /// проект, ни в библиотеку, ни в папки и недавние. Читать можно всё:
+        /// без этого нечего было бы показывать. Последний рубеж — какой бы
+        /// путь ни привёл к записи.
+        /// </summary>
+        private bool WritesBlocked(string operation)
+        {
+            if (_context?.IsInCompareMode != true) return false;
+            _logger.Debug("{Operation} ignored (compare mode)", operation);
+            return true;
+        }
+
         public void SetContext(DocumentContext? context)
         {
             _context = context;
@@ -201,6 +214,7 @@ namespace Writersword.Modules.Characters.Services
         private async Task<string?> SaveToProjectAsync(byte[] imageData, string suggestedName, string[] allowedExtensions)
         {
             if (_context == null) { _logger.Warning("SaveToProjectAsync: no context"); return null; }
+            if (WritesBlocked("SaveToProject")) return null;
             var ext = Path.GetExtension(suggestedName).ToLowerInvariant();
             if (!allowedExtensions.Contains(ext)) return null;
             var uniqueName = GetUniqueProjectName(suggestedName);
@@ -225,6 +239,7 @@ namespace Writersword.Modules.Characters.Services
 
         public async Task<string?> SaveToLibraryAsync(byte[] imageData, string suggestedName)
         {
+            if (WritesBlocked("SaveToLibrary")) return null;
             try
             {
                 Directory.CreateDirectory(LibraryPath);
@@ -243,6 +258,7 @@ namespace Writersword.Modules.Characters.Services
         public async Task<string?> SaveToPackAsync(byte[] imageData, string suggestedName, string packId)
         {
             if (string.IsNullOrEmpty(packId)) return null;
+            if (WritesBlocked("SaveToPack")) return null;
 
             var ext = Path.GetExtension(suggestedName).ToLowerInvariant();
             if (!AllowedExtensions.Contains(ext)) return null;
@@ -541,6 +557,7 @@ namespace Writersword.Modules.Characters.Services
         {
             var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
             if (string.IsNullOrEmpty(baseRef)) return avatarRef;
+            if (WritesBlocked("EnsureInProject")) return avatarRef;
             if (TravelsWithProject(baseRef)) return avatarRef;
             if (_context == null) return avatarRef;
 
@@ -1045,6 +1062,7 @@ namespace Writersword.Modules.Characters.Services
         {
             var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
             if (string.IsNullOrEmpty(baseRef)) return;
+            if (WritesBlocked("DeleteAvatar")) return;
             EvictCachedBytes(baseRef);
             try
             {
@@ -1202,6 +1220,8 @@ namespace Writersword.Modules.Characters.Services
 
         public void SetPackOrder(IReadOnlyList<string> packIds)
         {
+            if (WritesBlocked("SetPackOrder")) return;
+
             // Повторы выкидываются здесь, а не при чтении: список приходит из
             // окна, где папку могли перетащить туда и обратно, а разложение по
             // порядку берёт первое вхождение и второе всё равно не увидит.
@@ -1375,6 +1395,7 @@ namespace Writersword.Modules.Characters.Services
         private void WriteLocalPackMeta(CharacterAvatarPackInfo pack)
         {
             if (_context == null || string.IsNullOrEmpty(pack.Id)) return;
+            if (WritesBlocked("WriteLocalPackMeta")) return;
             try
             {
                 var json = JsonSerializer.Serialize(
@@ -1458,6 +1479,8 @@ namespace Writersword.Modules.Characters.Services
 
         public CharacterAvatarPackInfo? CreatePack(string name, CharacterAvatarPackScope scope)
         {
+            if (WritesBlocked("CreatePack")) return null;
+
             if (scope == CharacterAvatarPackScope.Global)
                 return CreateUserPack(name);
 
@@ -1481,6 +1504,8 @@ namespace Writersword.Modules.Characters.Services
 
         public void DeleteUserPack(string packId)
         {
+            if (WritesBlocked("DeleteUserPack")) return;
+
             var dir = Path.Combine(UserPacksPath, packId);
             if (Directory.Exists(dir))
                 try { Directory.Delete(dir, recursive: true); }
@@ -1490,6 +1515,8 @@ namespace Writersword.Modules.Characters.Services
         public void UpdatePackMeta(
             string packId, CharacterAvatarPackScope scope, string? name, string? iconFileName)
         {
+            if (WritesBlocked("UpdatePackMeta")) return;
+
             // Библиотека — не папка, а склад несгруппированных картинок:
             // ни имени, ни обложки у неё нет.
             if (string.IsNullOrEmpty(packId) || packId == LibraryPackId) return;
@@ -1572,6 +1599,7 @@ namespace Writersword.Modules.Characters.Services
             string packId, CharacterAvatarPackScope scope, IReadOnlyList<string> fileNames)
         {
             if (string.IsNullOrEmpty(packId)) return;
+            if (WritesBlocked("SetPackItemOrder")) return;
 
             var order = fileNames?.ToList() ?? new List<string>();
 
@@ -1623,6 +1651,7 @@ namespace Writersword.Modules.Characters.Services
         public void DeletePack(string packId, CharacterAvatarPackScope scope)
         {
             if (string.IsNullOrEmpty(packId) || packId == LibraryPackId) return;
+            if (WritesBlocked("DeletePack")) return;
 
             ForgetPackOrder(packId);
 
@@ -1738,6 +1767,7 @@ namespace Writersword.Modules.Characters.Services
             string packId, CharacterAvatarPackScope targetScope)
         {
             if (string.IsNullOrEmpty(packId) || packId == LibraryPackId) return null;
+            if (WritesBlocked("CopyOrMovePack")) return null;
 
             var source = GetAllPacks().FirstOrDefault(p => p.Id == packId);
             if (source == null) return null;
@@ -1805,6 +1835,7 @@ namespace Writersword.Modules.Characters.Services
             string packId, CharacterAvatarPackScope targetScope)
         {
             if (string.IsNullOrEmpty(packId) || packId == LibraryPackId) return null;
+            if (WritesBlocked("CopyOrMovePack")) return null;
 
             var source = GetAllPacks().FirstOrDefault(p => p.Id == packId);
             if (source == null || !source.IsEditable) return null;
@@ -1887,6 +1918,8 @@ namespace Writersword.Modules.Characters.Services
 
         public async Task MoveAvatarToPackAsync(string avatarRef, string targetPackId)
         {
+            if (WritesBlocked("MoveAvatarToPack")) return;
+
             var bytes = LoadAvatarBytes(avatarRef);
             if (bytes == null) return;
             var fileName = ExtractFileName(avatarRef);
@@ -1941,6 +1974,8 @@ namespace Writersword.Modules.Characters.Services
 
         public async Task<CharacterAvatarPackInfo?> ImportPackFromZipAsync(string zipPath)
         {
+            if (WritesBlocked("ImportPack")) return null;
+
             try
             {
                 var tempId = Guid.NewGuid().ToString("N")[..8];
@@ -2042,6 +2077,8 @@ namespace Writersword.Modules.Characters.Services
 
         public void AddRecentAvatar(string? avatarRef)
         {
+            if (WritesBlocked("AddRecentAvatar")) return;
+
             if (string.IsNullOrEmpty(avatarRef)) return;
             var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
             if (string.IsNullOrEmpty(baseRef)) return;
@@ -2068,6 +2105,8 @@ namespace Writersword.Modules.Characters.Services
 
         public void RemoveRecentAvatar(string? avatarRef)
         {
+            if (WritesBlocked("RemoveRecentAvatar")) return;
+
             if (string.IsNullOrEmpty(avatarRef)) return;
             var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
             if (string.IsNullOrEmpty(baseRef)) return;
@@ -2089,6 +2128,8 @@ namespace Writersword.Modules.Characters.Services
         /// </summary>
         public void RestoreRecentAvatar(string? avatarRef, string? beforeRef)
         {
+            if (WritesBlocked("RestoreRecentAvatar")) return;
+
             if (string.IsNullOrEmpty(avatarRef)) return;
             var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
             if (string.IsNullOrEmpty(baseRef)) return;
@@ -2126,6 +2167,8 @@ namespace Writersword.Modules.Characters.Services
 
         public void ClearRecentAvatars()
         {
+            if (WritesBlocked("ClearRecentAvatars")) return;
+
             var data = LoadRecents();
             if (data.Entries.Count == 0) return;
             data.Entries.Clear();

@@ -192,7 +192,7 @@
                 Padding="8,6">
             <Grid ColumnDefinitions="*,Auto,Auto,Auto">
 
-                <TextBox Grid.Column="0"
+                <TextBox Classes="ro-allow" Grid.Column="0"
                          x:Name="SearchTextBox"
                          Text="{ReflectionBinding SearchQuery}"
                          PlaceholderText="{x:Static loc:CharactersStrings.Search_Placeholder}"
@@ -222,7 +222,7 @@
 
                 <!-- Сравнение показанных: фильтр и поиск уже сделали выбор,
                      второй механизм выделения заводить незачем. -->
-                <Button Grid.Column="3"
+                <Button Classes="ro-allow" Grid.Column="3"
                         Content="{x:Static loc:CharactersStrings.Compare_Button}"
                         Click="OnCompareClick"
                         Margin="4,0,0,0" Padding="8,4"
@@ -234,7 +234,7 @@
                         behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Compare_Hint}"/>
 
                 <!-- выбор режима отображения: список / размеры плиток -->
-                <ComboBox Grid.Column="2"
+                <ComboBox Grid.Column="2" Classes="ro-allow"
                           SelectedIndex="{ReflectionBinding ViewModeIndex}"
                           Margin="4,0,0,0"
                           Padding="7,4"
@@ -343,7 +343,7 @@
                                                                               LeftPreferredWidth="260"
                                                                               RightPreferredWidth="210">
                                                     <Panel Margin="0,0,12,0" ClipToBounds="True">
-                                                        <Button Classes="flat"
+                                                        <Button Classes="flat ro-allow"
                                                                 Command="{Binding SelectOrRenameCommand}"
                                                                 Background="Transparent" BorderThickness="0"
                                                                 Padding="0" VerticalAlignment="Center"
@@ -450,7 +450,7 @@
                                                                MinWidth="20"
                                                                TextAlignment="Center"/>
                                                     <Button Grid.Column="3"
-                                                            Classes="folder-hdr-btn"
+                                                            Classes="folder-hdr-btn ro-allow"
                                                             Command="{Binding ToggleExpandCommand}"
                                                             Padding="6,4" Margin="0,0,4,0">
                                                         <TextBlock Text="{Binding IsExpanded, Converter={x:Static conv:BoolToCollapseArrowConverter.Instance}}"
@@ -870,7 +870,7 @@
                                                                           Height="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
                                                                           Foreground="White"/>
                                                             </Button>
-                                                            <Button Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
+                                                            <Button Classes="ro-allow" Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
                                                                     CommandParameter="{Binding Id}"
                                                                     Padding="4,3"
                                                                     Background="#88000000"
@@ -933,7 +933,7 @@
 
             <Border Grid.Column="1"
                     x:Name="InspectorSplit"
-                    Classes="inspectorSplit"
+                    Classes="inspectorSplit ro-allow"
                     Width="{Binding IsInspectorOpen, Converter={x:Static conv:BoolToSplitWidthConverter.Instance}}"
                     PointerPressed="OnInspectorSplitPressed"
                     PointerMoved="OnInspectorSplitMoved"

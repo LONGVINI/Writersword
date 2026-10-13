@@ -1,0 +1,220 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:controls="using:Writersword.Styles.UserControls"
+             xmlns:dialogs="using:Writersword.Modules.TextEditor.Views.Dialogs"
+             x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonFormulaTab"
+             x:DataType="vm:RibbonFormulaTabViewModel">
+
+	<UserControl.Styles>
+
+		<Style Selector="Button.RibbonBtn">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4"/>
+			<Setter Property="MinWidth"                   Value="26"/>
+			<Setter Property="MinHeight"                  Value="26"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="Button.RibbonBtnLarge">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4 2"/>
+			<Setter Property="MinWidth"                   Value="40"/>
+			<!-- 56 — общая для всех вкладок высота тела группы: столько занимают
+			     два ряда кнопок по 26 в группах «Шрифт» и «Абзац» на «Главной». -->
+			<Setter Property="MinHeight"                  Value="56"/>
+			<Setter Property="VerticalAlignment"          Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="SplitButton.RibbonSplit">
+			<Setter Property="Background"        Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"       Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"   Value="1"/>
+			<Setter Property="CornerRadius"      Value="3"/>
+			<Setter Property="Padding"           Value="4 4 2 4"/>
+			<Setter Property="MinWidth"          Value="26"/>
+			<Setter Property="MinHeight"         Value="26"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"            Value="Hand"/>
+		</Style>
+		<Style Selector="SplitButton.RibbonSplit:pointerover">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="SplitButton.RibbonSplit:pressed">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="Border.RibbonGroup">
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Padding"         Value="6 4 6 0"/>
+			<Setter Property="Margin"          Value="2 3"/>
+		</Style>
+
+		<Style Selector="Border.RibbonGroupCollapsed">
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Padding"         Value="2 4 2 0"/>
+			<Setter Property="Margin"          Value="2 3"/>
+		</Style>
+
+		<Style Selector="Grid.RibbonGroupLabelGrid">
+			<Setter Property="Margin" Value="0 3 0 2"/>
+		</Style>
+
+		<Style Selector="TextBlock.RibbonGroupLabel">
+			<Setter Property="FontSize"            Value="10"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="TextAlignment"       Value="Center"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
+		</Style>
+
+	</UserControl.Styles>
+
+	<!--
+	    Вкладка «Формулы». Галереи конструкций и наборы знаков строятся кодом
+	    (Views/Dialogs/FormulaTiles.cs): их кнопки показывают формулы, нарисованные
+	    тем же набором, что лист. Заготовка или знак открывают окно формулы уже с
+	    ними; готовая формула вставляется сразу.
+	-->
+	<controls:RibbonScrollContainer x:Name="ScrollContainer">
+		<controls:RibbonScrollContainer.RibbonContent>
+			<StackPanel Orientation="Horizontal">
+
+				<!-- ═══════════════════════════════════════════════════════
+                     ФОРМУЛА
+                     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Формула"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<Button Command="{Binding InsertFormulaCommand}"
+                                    Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="Новая формула (Alt+=)">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M18 4H6v2l6.5 6L6 18v2h12v-3h-7l5-5-5-5h7z" Width="20" Height="20"/>
+									<TextBlock Text="Новая" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+							<Button Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="Готовые формулы">
+								<Button.Flyout>
+									<Flyout Placement="BottomEdgeAlignedLeft">
+										<dialogs:FormulaReadyPanel Command="{Binding InsertReadyFormulaCommand}"
+										                           NewFormulaCommand="{Binding InsertFormulaCommand}"/>
+									</Flyout>
+								</Button.Flyout>
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M3 5h18v2H3V5zm0 6h12v2H3v-2zm0 6h18v2H3v-2zm15-6l3 2-3 2v-4z" Width="20" Height="20"/>
+									<TextBlock Text="Готовые ▾" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+                     КОНСТРУКЦИИ
+                     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Конструкции"/>
+						</Grid>
+						<dialogs:FormulaStructuresStrip VerticalAlignment="Top"
+						                                Height="56"
+						                                Command="{Binding InsertTemplateCommand}"/>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+                     СИМВОЛЫ
+                     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Символы"/>
+						</Grid>
+						<dialogs:FormulaSymbolsStrip VerticalAlignment="Top"
+						                             Height="56"
+						                             Command="{Binding InsertTemplateCommand}"/>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+                     СПРАВКА
+                     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Справка"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<Button Command="{Binding ShowHelpCommand}"
+                                    Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="Как записывать формулы: степени, дроби, корни, скобки, матрицы, знаки">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" Width="20" Height="20"/>
+									<TextBlock Text="Как вводить" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+			</StackPanel>
+		</controls:RibbonScrollContainer.RibbonContent>
+	</controls:RibbonScrollContainer>
+
+</UserControl>

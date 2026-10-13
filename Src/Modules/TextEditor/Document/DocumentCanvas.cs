@@ -416,7 +416,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (pageWidthPt <= 1f) { _pagesPerRow = 1; return; }
 
             float availablePt = (float)(_canvasWidth * PxToPt);
-            float stepPt = pageWidthPt + PageGapPt * 2f;
+            float stepPt = pageWidthPt + PageGapPt * 2f + RevisionLaneWidthPtNow;
 
             // Последней странице ряда зазор справа не нужен — добавляем его к доступной
             // ширине, иначе ряд из ровно N страниц не считался бы влезающим.
@@ -440,25 +440,12 @@ namespace Writersword.Modules.TextEditor.Document
             if (_pagesPerRow <= 1 || pages.Count == 0) return (0f, 0f);
             if (pageIdx < 0 || pageIdx >= pages.Count) return (0f, 0f);
 
-            int cols = _pagesPerRow;
-            int row = pageIdx / cols;
-            int col = pageIdx % cols;
+            // Место листа — по сетке рядов (DocumentCanvas.PageGrid): листы разделов
+            // бывают разного размера, и каждый ряд и каждый лист в нём меряются своими.
+            var grid = GetPageGrid(pages);
             var pg = pages[pageIdx];
 
-            float canvasWPt = (float)(_canvasWidth * PxToPt);
-            float gapX = PageGapPt * 2f;
-
-            // Центрируем КАЖДЫЙ ряд по числу страниц именно в нём. По ширине полного ряда
-            // неполный последний прижимался бы влево: две страницы из трёх — и они уже
-            // не по центру, а одна-единственная висит слева.
-            int inThisRow = Math.Max(1, Math.Min(cols, pages.Count - row * cols));
-            float totalW = inThisRow * pg.WidthPt + (inThisRow - 1) * gapX;
-            float marginX = Math.Max((canvasWPt - totalW) / 2f, 0f);
-
-            float visX = marginX + col * (pg.WidthPt + gapX);
-            float visY = PageGapPt + row * (pg.HeightPt + PageGapPt);
-
-            return (visX - pg.PadLeftPt, visY - pg.Ypt);
+            return (grid.VisXPt[pageIdx] - pg.PadLeftPt, grid.VisYPt[pageIdx] - pg.Ypt);
         }
 
         // ── Лента ─────────────────────────────────────────────────────────
@@ -504,7 +491,8 @@ namespace Writersword.Modules.TextEditor.Document
             List<ParaLayout> layouts,
             List<TableEntry> tables,
             List<ImageEntry> images,
-            List<ShapeEntry> shapes)
+            List<ShapeEntry> shapes,
+            List<NoteSlice> noteSlices)
         {
             var bottoms = new float[pages.Count];
             for (int i = 0; i < pages.Count; i++)
@@ -536,6 +524,13 @@ namespace Writersword.Modules.TextEditor.Document
 
             foreach (var se in shapes)
                 Mark(se.PageIndex, RotatedBottomPt(se.Ypt, se.WidthPt, se.HeightPt, se.Block.RotationDeg));
+
+            // Сноски листа стоят у его нижнего поля: полоса листа со сносками доходит до них.
+            foreach (var slice in noteSlices)
+            {
+                if (slice.PageIndex < 0 || slice.PageIndex >= pages.Count) continue;
+                Mark(slice.PageIndex, pages[slice.PageIndex].Ypt + slice.TopInPagePt + slice.HeightPt);
+            }
 
             var bands = new float[pages.Count];
             for (int i = 0; i < pages.Count; i++)
@@ -936,6 +931,10 @@ namespace Writersword.Modules.TextEditor.Document
         {
             _cellLayoutCache.Clear();
             _tableLayoutCache.Clear();
+
+            // Раскладки сносок сбрасываются здесь же: всё, что обесценивает раскладки
+            // ячеек (стили, вид исправлений, размер листа), обесценивает и их.
+            _noteLayoutCache.Clear();
         }
 
         // Сброс раскладки одной таблицы. Нужен жестам мыши: линию таблицы тянут десятками
@@ -1188,7 +1187,20 @@ namespace Writersword.Modules.TextEditor.Document
         // Вёрстка строки спрашивает габарит встроенной картинки у канваса:
         // сам рендер текста документа не видит.
         private void WireInlineImageSizeResolver()
-            => _renderer.InlineImageSize = GetInlineImageSize;
+        {
+            _renderer.InlineImageSize = GetInlineImageSize;
+            _renderer.InlineObjectDescent = GetInlineObjectDescent;
+
+            // Знак сноски — тоже объект строки, но со своим текстом: номер сноски
+            // вёрстка строки спрашивает у канваса (DocumentCanvas.Notes).
+            _renderer.InlineNoteMark = GetInlineNoteMark;
+
+            // Подсветка мест примечаний — цветом их авторов (DocumentCanvas.Comments).
+            _renderer.CommentHighlight = GetCommentHighlight;
+
+            // Живые поля: дата, номер страницы (DocumentCanvas.Fields).
+            _renderer.InlineFieldText = GetInlineFieldText;
+        }
         private StyleResolver? _styleResolver;
 
         /// <summary>
@@ -1790,6 +1802,7 @@ namespace Writersword.Modules.TextEditor.Document
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             _isTransitioning = false;
+            _attachedToTree = true;
 
             // Дренируем битмапы и снимки, накопившиеся пока view была detached.
             // RenderWithSKCanvas тоже дренирует, но он вызывается только когда
@@ -1841,6 +1854,11 @@ namespace Writersword.Modules.TextEditor.Document
             Dispatcher.UIThread.Post(
                 RestoreDetachedViewState,
                 DispatcherPriority.Loaded);
+
+            // Прогрев, оборванный снятием с экрана, продолжается; страж следит, чтобы
+            // раскладка догнала документ (DocumentCanvas.WarmupGuard).
+            ResumeInterruptedWarmup();
+            if (DocVm is not null) ArmWarmupGuard();
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -1850,6 +1868,7 @@ namespace Writersword.Modules.TextEditor.Document
             // запоминает его и для себя — на случай, если его прикрепят снова.
             RememberDetachedViewState();
             FlushViewStateChanged();
+            _attachedToTree = false;
 
             _isTransitioning = true;
             if (ReferenceEquals(FocusedInstance, this)) FocusedInstance = null;
@@ -1881,8 +1900,10 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.BlocksChangedWithoutParagraphs -= OnBlocksChangedWithoutParagraphs;
                 _docVm.ZoomAnimationRequested -= OnZoomAnimationRequested;
                 _docVm.HeadingCollapseChanged -= OnHeadingCollapseChanged;
+                _docVm.CommentsChanged -= OnCommentsChanged;
                 _docVm.RevisionViewChanged -= OnRevisionViewChanged;
                 _docVm.ReviewCommandDelegate = null;
+                UnwireReviewPanel(_docVm);
                 _docVm.StylesChanged -= OnStylesChanged;
                 _docVm.TocPageNumbersStale -= OnTocPageNumbersStale;
                 _docVm.BeginFontPreviewDelegate = null;
@@ -1914,8 +1935,9 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Останавливаем прогрев кеша раскладки: его проходы перепланируют себя
             // через диспетчер и без остановки продолжали бы шейпить отцепленную вьюху.
-            // При повторном прикреплении measure перезапустит прогрев с того же места —
+            // При повторном прикреплении прогрев продолжится с того же места —
             // уже зашейпленные абзацы лежат в кеше и повторно не обрабатываются.
+            NoteWarmupInterrupted("полотно снято с экрана");
             SetWarmupActive(false);
 
             // Не диспозим bitmap и снимок напрямую — render-тред (compositor) может
@@ -2071,6 +2093,14 @@ namespace Writersword.Modules.TextEditor.Document
 
             float lastRowTopPt = float.NaN;
 
+            // Лист каретки: в ряду из листов разного размера шкала идёт по нему.
+            int caretPage = -1;
+            lock (_renderLock)
+            {
+                if (_caretPara >= 0 && _caretPara < _layouts.Count)
+                    caretPage = _layouts[_caretPara].PageIndex;
+            }
+
             for (int i = 0; i < pages.Count; i++)
             {
                 var (_, dy) = PageVisualDelta(i, pages);
@@ -2081,20 +2111,46 @@ namespace Writersword.Modules.TextEditor.Document
                 float topPt = pages[i].Ypt + dy;
                 float heightPt = pages[i].HeightPt;
 
-                // Второй и следующие листы того же ряда — та же полоса.
-                if (!float.IsNaN(lastRowTopPt) && Math.Abs(topPt - lastRowTopPt) < 0.5f) continue;
+                // Ряд узнаётся по своему верху: лист ниже ряда стоит по его середине,
+                // и его собственный верх ниже, чем у соседей.
+                float rowTopPt = VisualRowTopPt(i, pages, topPt);
+
+                // Второй и следующие листы того же ряда — та же полоса. Лист каретки
+                // заменяет в ней первый лист ряда.
+                if (!float.IsNaN(lastRowTopPt) && Math.Abs(rowTopPt - lastRowTopPt) < 0.5f)
+                {
+                    if (i == caretPage && result.Count > 0)
+                        result[^1] = RulerBandOf(i, topPt, heightPt, scale);
+                    continue;
+                }
 
                 if (topPt + heightPt < viewTopPt) continue;
 
                 // Ряды идут сверху вниз: первый же ряд ниже окна значит, что ниже
                 // видимых листов больше нет.
-                if (topPt > viewBotPt) break;
+                if (rowTopPt > viewBotPt) break;
 
-                lastRowTopPt = topPt;
-                result.Add(new Writersword.Modules.TextEditor.ViewModels.Components.RulerPageBand(i, topPt * scale, heightPt * scale));
+                lastRowTopPt = rowTopPt;
+                result.Add(RulerBandOf(i, topPt, heightPt, scale));
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Полоса листа для вертикальной линейки. Лист раздела со своим листом и полями —
+        /// линейке его размер и поля.
+        /// </summary>
+        private Writersword.Modules.TextEditor.ViewModels.Components.RulerPageBand RulerBandOf(
+            int pageIndex, float topPt, float heightPt, double scale)
+        {
+            var sheet = SectionSheetOfPage(pageIndex);
+            return sheet is { } own
+                ? new Writersword.Modules.TextEditor.ViewModels.Components.RulerPageBand(
+                    pageIndex, topPt * scale, heightPt * scale,
+                    heightPt * 25.4 / 72.0, own.MarginTopMm, own.MarginBottomMm, OwnSheet: true,
+                    Section: SectionInfoOfPage(pageIndex)?.Layout)
+                : new Writersword.Modules.TextEditor.ViewModels.Components.RulerPageBand(pageIndex, topPt * scale, heightPt * scale);
         }
 
         /// <summary>
@@ -2187,7 +2243,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // Листы, уведённые разворотом за пределы холста, на экране не стоят.
                 if (dy >= SpreadHiddenOffsetPt * 0.5f) continue;
 
-                float visTopPt = pages[i].Ypt + dy;
+                float visTopPt = VisualRowTopPt(i, pages, pages[i].Ypt + dy);
                 if (visTopPt > viewTopPt + 1f) continue;
 
                 // Строго больше: из листов одного ряда остаётся первый по порядку.
@@ -2230,7 +2286,15 @@ namespace Writersword.Modules.TextEditor.Document
                 ? pages[pageIdx].GutterShiftPt
                 : 0f;
 
-            return (_layoutPageXPt + dxPt + gutterShiftPt) * PtToPx * Zoom
+            // Левый край — у самого листа каретки. Лист раздела другой ширины стоит по
+            // центру холста своей шириной, левее или правее листа документа: от края
+            // листа документа линейка уезжала на половину разницы ширин и по ней было
+            // не попасть ни в поле, ни в отступ.
+            float pageLeftPt = pageIdx >= 0 && pageIdx < pages.Count
+                ? pages[pageIdx].PadLeftPt
+                : _layoutPageXPt;
+
+            return (pageLeftPt + dxPt + gutterShiftPt) * PtToPx * Zoom
                    - (_parentScrollViewer?.Offset.X ?? 0);
         }
 
@@ -2241,6 +2305,9 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void NotifyPageOffsetX()
         {
+            // Лист под кареткой — линейке: у раздела бывают свои размер, поля и колонки.
+            NotifyRulerSheet();
+
             double pageOffsetXPx = CaretPageOffsetXPx();
             if (Math.Abs(pageOffsetXPx - _lastPageOffsetXPx) <= 0.01) return;
 
@@ -2303,8 +2370,10 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.BlocksChangedWithoutParagraphs -= OnBlocksChangedWithoutParagraphs;
                 _docVm.ZoomAnimationRequested -= OnZoomAnimationRequested;
                 _docVm.HeadingCollapseChanged -= OnHeadingCollapseChanged;
+                _docVm.CommentsChanged -= OnCommentsChanged;
                 _docVm.RevisionViewChanged -= OnRevisionViewChanged;
                 _docVm.ReviewCommandDelegate = null;
+                UnwireReviewPanel(_docVm);
                 _docVm.StylesChanged -= OnStylesChanged;
                 _docVm.TocPageNumbersStale -= OnTocPageNumbersStale;
                 _docVm.BeginFontPreviewDelegate = null;
@@ -2355,6 +2424,9 @@ namespace Writersword.Modules.TextEditor.Document
                 _styleResolver = CreateStyleResolver();
                 _lastZoom = DocVm.Zoom;
                 WireDocVmSubscriptions();
+
+                // Новый документ: страж следит, чтобы его раскладка была построена.
+                if (_attachedToTree) ArmWarmupGuard();
             }
 
             InvalidateMeasure();
@@ -2388,6 +2460,7 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.BlocksChangedWithoutParagraphs -= OnBlocksChangedWithoutParagraphs;
             DocVm.ZoomAnimationRequested -= OnZoomAnimationRequested;
             DocVm.HeadingCollapseChanged -= OnHeadingCollapseChanged;
+            DocVm.CommentsChanged -= OnCommentsChanged;
 
             DocVm.ReadingSettingsChanged -= ApplyReadingSettings;
             DocVm.ReadingSettingsChanged += ApplyReadingSettings;
@@ -2407,9 +2480,11 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.BlocksChangedWithoutParagraphs += OnBlocksChangedWithoutParagraphs;
             DocVm.ZoomAnimationRequested += OnZoomAnimationRequested;
             DocVm.HeadingCollapseChanged += OnHeadingCollapseChanged;
+            DocVm.CommentsChanged += OnCommentsChanged;
             DocVm.RevisionViewChanged -= OnRevisionViewChanged;
             DocVm.RevisionViewChanged += OnRevisionViewChanged;
             DocVm.ReviewCommandDelegate = ExecuteReviewCommand;
+            WireReviewPanel(DocVm);
             DocVm.BeginFontPreviewDelegate = BeginFontPreviewSession;
             DocVm.PreviewFontFamilyDelegate = PreviewFontFamilySession;
             DocVm.EndFontPreviewDelegate = EndFontPreviewSession;
@@ -2993,6 +3068,15 @@ namespace Writersword.Modules.TextEditor.Document
 
             _selectedImage = null;
 
+            // Под записью исправлений картинка в строке не исчезает, а помечается
+            // удалённой — как текст. Иначе её нечем было бы вернуть из рецензии.
+            if (TryTrackedImageDelete(img))
+            {
+                ImageSelectionChanged?.Invoke(false);
+                InvalidateFull();
+                return;
+            }
+
             if (!TryOperationalRemoveImage(img, "Удаление изображения"))
             {
                 BeginEdit("Удаление изображения");
@@ -3451,7 +3535,15 @@ namespace Writersword.Modules.TextEditor.Document
             // переиспользуются при RebuildLayouts. Это убирает полный пересбор всего документа
             // через Skia на каждый коммит форматирования.
             var affected = DocVm?.TakeLastFormatAffected();
-            if (affected is { Count: > 0 })
+            var affectedCells = DocVm?.TakeLastFormatCells();
+            var affectedTables = new HashSet<TableBlock>();
+            if (affectedCells is { Count: > 0 } && TablesOfCellParagraphs(affectedCells, affectedTables))
+            {
+                // Форматирование абзацев ячеек: сбрасываются раскладки только их таблиц.
+                foreach (var table in affectedTables)
+                    InvalidateTableLayout(table);
+            }
+            else if (affected is { Count: > 0 })
             {
                 foreach (var pvm in affected)
                     _layoutCache.Remove(pvm);
@@ -3721,6 +3813,14 @@ namespace Writersword.Modules.TextEditor.Document
         // ── Дебаунс пересчёта ─────────────────────────────────────────────
         private void ScheduleRebuild(int dirtyParaIdx)
         {
+            // Абзац уже переложен быстрым путём: полная раскладка листов может подождать
+            // паузы в наборе (TypingRebuildDelay).
+            bool quickUpdated = false;
+
+            // Правка содержимого: кадры ближайшее время рисуются узкой полосой
+            // (DocumentCanvas.ScrollSnapshot, RecentContentEdit).
+            MarkContentEdit();
+
             if (DocVm?.IsBulkRebuilding != true)
             {
                 ParagraphViewModel? dirtyPvm = null;
@@ -3733,7 +3833,10 @@ namespace Writersword.Modules.TextEditor.Document
                     if (sliceCount == 1)
                     {
                         // Быстрый путь для редактирования: обновляем только один параграф.
+                        long perfQuickTs = PerfNow();
                         QuickUpdateParagraphLayout(dirtyPvm);
+                        PerfTime("ui.quick", perfQuickTs);
+                        quickUpdated = true;
                     }
                     else if (sliceCount == 0 && DocVm.HasCollapsedHeadings != true && _collapsedBlocks is null)
                     {
@@ -3758,7 +3861,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             InvalidateFull();
 
-            Dispatcher.UIThread.Post(() =>
+            Action runRebuild = () =>
             {
                 if (cts.IsCancellationRequested) return;
 
@@ -3825,7 +3928,51 @@ namespace Writersword.Modules.TextEditor.Document
                 // Нужно при Enter: ResetCaret вызывается до rebuild, каретка вне _layouts
                 ScrollToCaret();
 
-            }, DispatcherPriority.Background);
+            };
+
+            // Набор: абзац уже переложен и стоит на месте, строки ниже сдвинуты на его
+            // прирост. Полная раскладка всех листов (на большой книге — сотни
+            // миллисекунд на потоке интерфейса) ждёт паузы в наборе, а не идёт после
+            // каждой буквы: иначе каждое нажатие держало окно на время раскладки всего
+            // документа, и набор провисал. Переход к разрыву и возврат каретки после
+            // отмены ждут готовой раскладки — у них полная идёт сразу, как прежде.
+            if (quickUpdated && _pendingFocusBlock is null && _pendingCaretRestore is null)
+            {
+                _typingRebuild = runRebuild;
+                _typingRebuildTimer ??= CreateTypingRebuildTimer();
+                _typingRebuildTimer.Stop();
+                _typingRebuildTimer.Start();
+                return;
+            }
+
+            _typingRebuildTimer?.Stop();
+            _typingRebuild = null;
+
+            // Абзац быстрым путём не переложен — кадр по одному листу не годится.
+            if (!quickUpdated) BlockPartial();
+
+            Dispatcher.UIThread.Post(runRebuild, DispatcherPriority.Background);
+        }
+
+        // Пауза в наборе, после которой листы раскладываются заново целиком. Паузы
+        // между словами короче — при трёхстах миллисекундах раскладка всего документа
+        // вставала посреди набора примерно раз в секунду и держала окно.
+        private static readonly TimeSpan TypingRebuildDelay = TimeSpan.FromMilliseconds(800);
+
+        private DispatcherTimer? _typingRebuildTimer;
+        private Action? _typingRebuild;
+
+        private DispatcherTimer CreateTypingRebuildTimer()
+        {
+            var timer = new DispatcherTimer { Interval = TypingRebuildDelay };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                var run = _typingRebuild;
+                _typingRebuild = null;
+                run?.Invoke();
+            };
+            return timer;
         }
 
         /// <summary>
@@ -3933,8 +4080,18 @@ namespace Writersword.Modules.TextEditor.Document
             if (DocVm?.ViewMode == EditorViewMode.Page)
             {
                 // В режиме страниц рядом ширина канваса вмещает все колонки с зазорами.
-                double pagesWPt = GetPageWidthPt() * _pagesPerRow
-                    + PageGapPt * 2.0 * (_pagesPerRow - 1);
+                // Полоса карточек правок (DocumentCanvas.RevisionCards): справа от каждого
+                // листа в ряду, а у одного листа — с обеих сторон, чтобы лист остался
+                // по центру.
+                //
+                // Ряд набирается по ширине листа документа (DocumentCanvas.PageGrid), и
+                // широкий лист раздела в ряду с другими лишнего места не просит. Ширина
+                // самого широкого листа нужна только как предел для ряда из него одного.
+                double lanesPt = RevisionLaneWidthPtNow * (_pagesPerRow > 1 ? _pagesPerRow : 2);
+                double rowPt = GetPageWidthPt() * _pagesPerRow
+                    + PageGapPt * 2.0 * (_pagesPerRow - 1)
+                    + lanesPt;
+                double pagesWPt = Math.Max(rowPt, WidestPageWidthPt() + lanesPt);
                 visualW = Math.Max(availW,
                     pagesWPt * PtToPx * zoom + PageGapPt * PtToPx * 4);
             }
@@ -4149,11 +4306,11 @@ namespace Writersword.Modules.TextEditor.Document
             var paragraphs = DocVm.Paragraphs;
             if (paragraphs.Count < WarmupColdThreshold) return false;
 
-            float widthPt = GetCurrentTextWidthPt();
             int uncached = 0;
             foreach (var pvm in paragraphs)
             {
-                if (!IsLayoutCacheEntryValid(pvm, widthPt))
+                // Ширина — раздела абзаца (DocumentCanvas.Sections), как в раскладке листов.
+                if (!IsLayoutCacheEntryValid(pvm, TextWidthForBlock(pvm.Model)))
                 {
                     uncached++;
                     if (uncached >= WarmupColdThreshold)
@@ -4180,6 +4337,8 @@ namespace Writersword.Modules.TextEditor.Document
 
             SetWarmupActive(true);
             _warmupStartedTs = System.Diagnostics.Stopwatch.GetTimestamp();
+            _warmupInterrupted = false;
+            ArmWarmupGuard();
             // Один раз перед прогревом выставляем тексты маркеров списков (и чиним битые позиции),
             // чтобы раскладка учла ширину цифры уже в кэше. Раньше это делалось каждый проход.
             ApplyListMarkerTexts();
@@ -4330,6 +4489,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (DocVm is null)
             {
+                NoteWarmupInterrupted("документ снят с полотна");
                 SetWarmupActive(false);
                 return;
             }
@@ -4339,9 +4499,12 @@ namespace Writersword.Modules.TextEditor.Document
             // Прогрев замирает и продолжается с того же места, когда канвас покажут.
             if (!IsEffectivelyVisible)
             {
+                NoteWarmupHidden();
                 DispatcherTimer.RunOnce(PumpLayoutWarmup, HiddenWarmupPollInterval, WarmupPassPriority);
                 return;
             }
+
+            NoteWarmupVisible();
 
             if (_styleResolver is null)
                 _styleResolver = CreateStyleResolver();
@@ -4351,7 +4514,6 @@ namespace Writersword.Modules.TextEditor.Document
             // установки прогрев зависел бы от того, чей проход отрисовки был последним.
             PushReadingTextOverrides();
 
-            float widthPt = GetCurrentTextWidthPt();
             var passStopwatch = System.Diagnostics.Stopwatch.StartNew();
             bool allShaped = true;
 
@@ -4363,6 +4525,8 @@ namespace Writersword.Modules.TextEditor.Document
                 // Проверка идентична GetOrBuildLayout: запись с устаревшим текстом
                 // или другой шириной будет перешейплена — такой абзац не пропускаем,
                 // иначе вся перевёрстка свалилась бы в финальный синхронный проход.
+                // Ширина — раздела абзаца (DocumentCanvas.Sections), как в раскладке листов.
+                float widthPt = TextWidthForBlock(pvm.Model);
                 if (IsLayoutCacheEntryValid(pvm, widthPt)) continue;
 
                 GetOrBuildLayout(pvm, widthPt);
@@ -4427,6 +4591,8 @@ namespace Writersword.Modules.TextEditor.Document
                     _layouts = new List<ParaLayout>();
                     _pages = new List<PageRect>();
                     _tables = new List<TableEntry>();
+                    _noteSlices = new List<NoteSlice>();
+                    _noteRules = new List<NoteRule>();
                     _canvasHeightPt = emptyH;
                     _canvasHeight = emptyH * PtToPx;
                 }
@@ -4443,6 +4609,13 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (_styleResolver is null)
                 _styleResolver = CreateStyleResolver();
+
+            // Номера сносок — до любой вёрстки абзацев, в том числе до прогрева кеша:
+            // знак сноски занимает в строке ширину своего номера.
+            RefreshNoteNumbering();
+
+            // Живые поля (дата, номер страницы) — там же: их текст занимает место в строке.
+            RefreshLiveFields();
 
             // Размер листа чтения и отпечаток вёрстки чтения освежаются ДО ворот
             // прогрева. Отпечаток может обесценить кеш раскладок, и решение о том,
@@ -4541,6 +4714,10 @@ namespace Writersword.Modules.TextEditor.Document
             // Книга сменила число страниц — номера в оглавлениях устарели
             // (DocumentCanvas.Toc).
             NotifyTocPageCount(_pages.Count);
+
+            // Номера страниц в полях сверяются с листами, на которые поля встали
+            // (DocumentCanvas.Fields).
+            UpdatePageFieldValues();
         }
 
 
@@ -4852,6 +5029,27 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         /// <summary>
+        /// Формула в строке текста по её Id. Живёт там же, где картинки строки, —
+        /// в InlineObjects раздела; run абзаца хранит только ссылку.
+        /// </summary>
+        private FormulaBlock? FindInlineFormula(Guid id)
+        {
+            var document = DocVm?.Document;
+            if (document is null) return null;
+
+            foreach (var section in document.Sections)
+            {
+                foreach (var block in section.InlineObjects)
+                {
+                    if (block is FormulaBlock formula && formula.Id == id)
+                        return formula;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Фигура, встроенная в строку текста, по её Id. Живёт там же, где картинки
         /// строки, — в InlineObjects раздела; run абзаца хранит только ссылку.
         /// </summary>
@@ -5110,10 +5308,31 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Фигура в строке — такой же объект строки, как картинка.
             var shape = FindInlineShape(id);
-            if (shape is null) return null;
+            if (shape is not null)
+            {
+                var (shapeW, shapeH) = ReadingShapeSize(shape);
+                return FloatingObjectBox.Of(shape, shapeW, shapeH);
+            }
 
-            var (shapeW, shapeH) = ReadingShapeSize(shape);
-            return FloatingObjectBox.Of(shape, shapeW, shapeH);
+            // Формула: ширина и полная высота вместе с частью под базовой линией
+            // (сама эта часть — GetInlineObjectDescent).
+            var formula = FindInlineFormula(id);
+            if (formula is null) return null;
+
+            var metrics = Rendering.Formulas.FormulaRenderer.Measure(formula, SKTextRenderer.ReadingFontScale);
+            return (metrics.WidthPt, metrics.HeightPt);
+        }
+
+        /// <summary>
+        /// Спуск встроенного объекта под базовую линию, в пунктах. Картинка и фигура
+        /// стоят на линии целиком; у формулы под неё уходят знаменатель и нижние индексы.
+        /// </summary>
+        private float GetInlineObjectDescent(Guid id)
+        {
+            var formula = FindInlineFormula(id);
+            return formula is null
+                ? 0f
+                : Rendering.Formulas.FormulaRenderer.Measure(formula, SKTextRenderer.ReadingFontScale).DescentPt;
         }
 
         /// <summary>

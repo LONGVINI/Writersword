@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Windows.Input;
 using ReactiveUI;
+using Writersword.Core.Models.Print;
 using Writersword.Modules.TextEditor.Contracts;
+using Writersword.Modules.TextEditor.Models.Document;
 
 namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 {
@@ -37,6 +39,35 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             get => _currentColumnCount;
             set => this.RaiseAndSetIfChanged(ref _currentColumnCount, value);
+        }
+
+        // ── К чему применяются параметры страницы ─────────────────────────
+        // Как «Применить» в окне параметров страницы Word: ко всему разделу под
+        // кареткой или только к выделенному — тогда раздел режется разрывами, и
+        // новые размер, ориентацию, поля и колонки получает только выделенный кусок.
+
+        /// <summary>Параметры страницы — только выделенному (абзацу под кареткой).</summary>
+        public bool ApplyToSelection
+        {
+            get => _target.PageSetupToSelection;
+            set
+            {
+                if (_target.PageSetupToSelection == value) return;
+                _target.PageSetupToSelection = value;
+                this.RaisePropertyChanged(nameof(ApplyToSelection));
+                this.RaisePropertyChanged(nameof(ApplyToSection));
+            }
+        }
+
+        /// <summary>Параметры страницы — всему разделу под кареткой.</summary>
+        public bool ApplyToSection
+        {
+            get => !_target.PageSetupToSelection;
+            set
+            {
+                if (value) ApplyToSelection = false;
+                else this.RaisePropertyChanged(nameof(ApplyToSection));
+            }
         }
 
         // ── Поля страницы и переплёт ──────────────────────────────────────
@@ -115,11 +146,15 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         }
 
         /// <summary>
-        /// Перечитывает поля и переплёт из документа. Зовётся при открытии меню «Поля»:
-        /// поля могли поменять линейкой или импортом, пока меню было закрыто.
+        /// Перечитывает поля и переплёт раздела под кареткой. Зовётся при открытии меню
+        /// «Поля»: поля могли поменять линейкой или импортом, пока меню было закрыто, а
+        /// каретка — уйти в другой раздел.
         /// </summary>
         public void RefreshPageMargins()
         {
+            this.RaisePropertyChanged(nameof(ApplyToSelection));
+            this.RaisePropertyChanged(nameof(ApplyToSection));
+
             var (top, bottom, left, right, gutter) = _target.GetPageMargins();
 
             _syncingMargins = true;
@@ -154,21 +189,30 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             _target = target;
 
-            SetSizeA4Command = ReactiveCommand.Create(() => { });
-            SetSizeA3Command = ReactiveCommand.Create(() => { });
-            SetSizeA5Command = ReactiveCommand.Create(() => { });
-            SetSizeLetterCommand = ReactiveCommand.Create(() => { });
-            SetOrientationPortraitCommand = ReactiveCommand.Create(() => { });
-            SetOrientationLandscapeCommand = ReactiveCommand.Create(() => { });
-            SetMarginsCommand = ReactiveCommand.Create(() => { });
+            SetSizeA4Command = ReactiveCommand.Create(() => _target.SetPageSize(PaperSize.A4));
+            SetSizeA3Command = ReactiveCommand.Create(() => _target.SetPageSize(PaperSize.A3));
+            SetSizeA5Command = ReactiveCommand.Create(() => _target.SetPageSize(PaperSize.A5));
+            SetSizeLetterCommand = ReactiveCommand.Create(() => _target.SetPageSize(PaperSize.Letter));
+            SetOrientationPortraitCommand = ReactiveCommand.Create(() => _target.SetPageOrientation(PageOrientation.Portrait));
+            SetOrientationLandscapeCommand = ReactiveCommand.Create(() => _target.SetPageOrientation(PageOrientation.Landscape));
+            SetMarginsCommand = ReactiveCommand.Create(RefreshPageMargins);
 
-            Set1ColumnCommand = ReactiveCommand.Create(() => CurrentColumnCount = 1);
-            Set2ColumnsCommand = ReactiveCommand.Create(() => CurrentColumnCount = 2);
-            Set3ColumnsCommand = ReactiveCommand.Create(() => CurrentColumnCount = 3);
+            Set1ColumnCommand = ReactiveCommand.Create(() => SetColumns(1));
+            Set2ColumnsCommand = ReactiveCommand.Create(() => SetColumns(2));
+            Set3ColumnsCommand = ReactiveCommand.Create(() => SetColumns(3));
 
-            InsertPageBreakCommand = ReactiveCommand.Create(() => { });
-            InsertSectionBreakCommand = ReactiveCommand.Create(() => { });
+            InsertPageBreakCommand = ReactiveCommand.Create(() => _target.InsertPageBreak());
+            InsertSectionBreakCommand = ReactiveCommand.Create(() => _target.InsertSectionBreak(BreakType.SectionNextPage));
         }
+
+        private void SetColumns(int count)
+        {
+            _target.SetColumns(count);
+            CurrentColumnCount = _target.GetColumnCount();
+        }
+
+        /// <summary>Колонки раздела под кареткой — для переключателей группы «Колонки».</summary>
+        public void RefreshColumns() => CurrentColumnCount = _target.GetColumnCount();
 
         public void UpdateLayout(double availableWidth)
         {

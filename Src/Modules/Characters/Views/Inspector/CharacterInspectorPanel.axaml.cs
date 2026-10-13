@@ -231,6 +231,8 @@ namespace Writersword.Modules.Characters.Views.Inspector
 
         private void OnPanelDragOver(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             var accepts = e.DataTransfer.Contains(DataFormat.File) && HasTarget();
             e.DragEffects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
             ShowDropHint(accepts);
@@ -245,6 +247,8 @@ namespace Writersword.Modules.Characters.Views.Inspector
 
         private async void OnPanelDrop(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             e.Handled = true;
             ShowDropHint(false);
 

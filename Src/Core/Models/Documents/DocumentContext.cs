@@ -20,6 +20,21 @@ namespace Writersword.Core.Services
         /// <summary>Режим просмотра без редактирования (для сравнения версий)</summary>
         public bool IsInCompareMode { get; set; }
 
+        /// <summary>
+        /// Данные модулей второй версии в режиме сравнения — той, что сейчас не
+        /// показана. Ключ — moduleType, значение — данные модуля в том же виде, в
+        /// каком они лежат в файле проекта или в кеше.
+        /// <para>
+        /// По ним модуль размечает показанную версию так же, как рецензирование:
+        /// что есть только в ней — вставлено, что было только во второй — удалено.
+        /// Разметка — только вид: данные модуля для сохранения остаются данными
+        /// показанной версии без единой пометки.
+        /// </para>
+        /// Null — сравнивать не с чем (режим сравнения выключен или вторая версия
+        /// не передана).
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyDictionary<string, object?>? CompareOtherData { get; set; }
+
         /// <summary>Проект, к которому относится документ</summary>
         public ProjectFile Project { get; set; }
 
@@ -40,6 +55,7 @@ namespace Writersword.Core.Services
             Project = project;
             FilePath = filePath;
             IsInCompareMode = false;
+            CompareOtherData = null;
             FileStorage = null;
         }
 

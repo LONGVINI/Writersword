@@ -14,6 +14,7 @@ using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.ViewModels.Avatars;
 using Writersword.Src.Modules.Characters.Resources;
+using Writersword.Modules.Characters.Views;
 
 namespace Writersword.Modules.Characters.Views.Avatars
 {
@@ -270,6 +271,8 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
         private void OnPickerDragOver(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             var accepts = e.DataTransfer.Contains(DataFormat.File);
             e.DragEffects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
             SetDropTarget(accepts);
@@ -284,6 +287,8 @@ namespace Writersword.Modules.Characters.Views.Avatars
 
         private async void OnPickerDrop(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             e.Handled = true;
             SetDropTarget(false);
 

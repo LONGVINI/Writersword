@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text.Json.Serialization;
 
 namespace Writersword.Modules.TextEditor.Models.Document
@@ -17,7 +17,13 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// <summary>Разрыв раздела — новый раздел начинается со следующей страницы.</summary>
         SectionNextPage = 3,
         /// <summary>Разрыв раздела — новый раздел начинается на той же странице (непрерывный).</summary>
-        SectionContinuous = 4
+        SectionContinuous = 4,
+        /// <summary>Разрыв раздела — новый раздел начинается со следующей чётной страницы.</summary>
+        SectionEvenPage = 5,
+        /// <summary>Разрыв раздела — новый раздел начинается со следующей нечётной страницы.</summary>
+        SectionOddPage = 6,
+        /// <summary>Разрыв раздела — новый раздел начинается со следующей колонки.</summary>
+        SectionNextColumn = 7
     }
 
     /// <summary>
@@ -30,12 +36,16 @@ namespace Writersword.Modules.TextEditor.Models.Document
         Image = 2,
         Shape = 3,
         FloatingText = 4,
-        Break = 5
+        Break = 5,
+        Formula = 6,
+        Note = 7,
+        Field = 8
     }
 
     /// <summary>
     /// Базовый класс для всех блоков документа.
-    /// Блок — единица потока документа: параграф, таблица, изображение, фигура или разрыв.
+    /// Блок — единица потока документа: параграф, таблица, изображение, фигура, разрыв,
+    /// формула в строке или сноска.
     /// Каждый блок имеет стабильный Id для дельта-кеша.
     /// </summary>
     [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
@@ -45,6 +55,9 @@ namespace Writersword.Modules.TextEditor.Models.Document
     [JsonDerivedType(typeof(ShapeBlock), typeDiscriminator: "shape")]
     [JsonDerivedType(typeof(FloatingTextBlock), typeDiscriminator: "floatingText")]
     [JsonDerivedType(typeof(BreakBlock), typeDiscriminator: "break")]
+    [JsonDerivedType(typeof(FormulaBlock), typeDiscriminator: "formula")]
+    [JsonDerivedType(typeof(NoteBlock), typeDiscriminator: "note")]
+    [JsonDerivedType(typeof(FieldBlock), typeDiscriminator: "field")]
     public abstract class BlockModel
     {
         /// <summary>
@@ -101,5 +114,25 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public bool FromColumnBreak { get; set; }
+
+        /// <summary>
+        /// Раздел, который этим разрывом кончается: лист, поля, колонки, рамка и прочее —
+        /// как w:sectPr у последнего абзаца раздела в Word. Тип разрыва
+        /// (<see cref="BreakType"/>) — то, как начинается следующий раздел. Null — разрыв
+        /// раздела без своих параметров (вставлен в редакторе): раздел живёт по
+        /// параметрам документа.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Page.SectionLayout? Section { get; set; }
+
+        /// <summary>Разрыв раздела любого вида.</summary>
+        [JsonIgnore]
+        public bool IsSectionBreak => BreakType is BreakType.SectionNextPage or BreakType.SectionContinuous
+            or BreakType.SectionEvenPage or BreakType.SectionOddPage or BreakType.SectionNextColumn;
+
+        /// <summary>За разрывом текст идёт с нового листа: разрыв страницы или раздела со следующей, чётной, нечётной страницы.</summary>
+        [JsonIgnore]
+        public bool StartsNewPage => BreakType is BreakType.Page or BreakType.SectionNextPage
+            or BreakType.SectionEvenPage or BreakType.SectionOddPage;
     }
 }

@@ -190,7 +190,7 @@
 					           FontSize="16" FontWeight="SemiBold"
 					           Foreground="{DynamicResource TextPrimaryBrush}"
 					           VerticalAlignment="Center"/>
-					<Button Grid.Column="1" Content="✕"
+					<Button Classes="ro-allow" Grid.Column="1" Content="✕"
 					        Click="OnCancelClick"
 					        Background="Transparent" BorderThickness="0"
 					        Foreground="{DynamicResource TextSecondaryBrush}"
@@ -223,12 +223,12 @@
 								<Border x:Name="SegThumb" Classes="segThumb" IsVisible="False"/>
 
 								<StackPanel x:Name="SegButtons" Orientation="Horizontal" Spacing="2">
-									<Button x:Name="ModeCircleButton" Classes="seg"
+									<Button x:Name="ModeCircleButton" Classes="seg ro-allow"
 									        Content="Кадр кружка"
 									        Click="OnModeCircleClick"
 									        behaviours:TooltipBehavior.Tip="Кадр для кружка"
 									        behaviours:TooltipBehavior.Description="Квадрат. Из него берут картинку кружок на карточке и мелкая плитка в списках"/>
-									<Button x:Name="ModeStripButton" Classes="seg"
+									<Button x:Name="ModeStripButton" Classes="seg ro-allow"
 									        Content="Кадр полоски"
 									        Click="OnModeStripClick"
 									        behaviours:TooltipBehavior.Tip="Кадр для полоски"
@@ -415,7 +415,7 @@
 
 							     Линии только подсказка кадрирующему: в ссылку
 							     они не уезжают и на картинке не остаются. -->
-							<Button Grid.Column="5" x:Name="GuidesButton" Classes="iconBtn"
+							<Button Grid.Column="5" x:Name="GuidesButton" Classes="iconBtn ro-allow"
 							        Click="OnGuidesClick"
 							        VerticalAlignment="Center"
 							        behaviours:TooltipBehavior.Tip="Направляющие"
@@ -710,7 +710,7 @@
 					           Text="Тяните картинку мышью, колесо меняет масштаб"
 					           FontSize="11" VerticalAlignment="Center"
 					           Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<Button Grid.Column="1" Content="Отмена"
+					<Button Classes="ro-allow" Grid.Column="1" Content="Отмена"
 					        Click="OnCancelClick" Padding="14,6"/>
 					<Button Grid.Column="2" Content="Готово"
 					        Click="OnApplyClick" Padding="14,6"

@@ -35,7 +35,14 @@ namespace Writersword.Modules.Characters.ViewModels.Comparison
         /// <summary>Строка-итог: сколько карточек и сколько общих полей.</summary>
         public string Summary { get => _summary; set => this.RaiseAndSetIfChanged(ref _summary, value); }
 
-        public void Build(IEnumerable<Character> characters)
+        /// <summary>Подпись клетки, где поле у персонажа не раскрыто уровнем анкеты.</summary>
+        public const string NotRevealedText = "не раскрыто";
+
+        /// <param name="resolveAnketa">
+        /// Анкета по идентификатору — чтобы знать глубину её полей. Без неё
+        /// все значения считаются раскрытыми, как до появления уровней.
+        /// </param>
+        public void Build(IEnumerable<Character> characters, Func<string, CharacterAnketa?>? resolveAnketa = null)
         {
             Columns.Clear();
             Rows.Clear();
@@ -43,6 +50,16 @@ namespace Writersword.Modules.Characters.ViewModels.Comparison
             var list = characters?.ToList() ?? new List<Character>();
             foreach (var character in list)
                 Columns.Add(new CharacterComparisonColumn(character.Name, character.Color));
+
+            // Персонажи сравниваются на разной глубине: у главного героя
+            // «Внешность» раскрыта глубоко, у прохожего — кратко. Поле, до
+            // которого у персонажа анкета не раскрыта, — не пустое, а не
+            // раскрытое: автор не забыл его заполнить, а решил не углубляться.
+            var hiddenByCharacter = list.ToDictionary(
+                c => c.Id,
+                c => resolveAnketa != null
+                    ? CharacterDetailLevels.HiddenFieldIds(c, resolveAnketa)
+                    : new HashSet<string>(StringComparer.Ordinal));
 
             // Поле попадает в таблицу, только если оно есть у всех выбранных:
             // столбец с прочерками у половины карточек ничего не сравнивает,
@@ -58,11 +75,20 @@ namespace Writersword.Modules.Characters.ViewModels.Comparison
 
             foreach (var fieldId in shared)
             {
+                // Поле, не раскрытое ни у кого, в таблице ничего не сравнивает.
+                if (list.All(c => hiddenByCharacter[c.Id].Contains(fieldId))) continue;
+
                 var first = list[0].Parameters.First(p => CharacterFieldId.Resolve(p) == fieldId);
                 var row = new CharacterComparisonRow(first.Name);
 
                 foreach (var character in list)
                 {
+                    if (hiddenByCharacter[character.Id].Contains(fieldId))
+                    {
+                        row.Cells.Add(new CharacterComparisonCell(NotRevealedText, isRevealed: false));
+                        continue;
+                    }
+
                     var parameter = character.Parameters
                         .First(p => CharacterFieldId.Resolve(p) == fieldId);
 
@@ -70,9 +96,11 @@ namespace Writersword.Modules.Characters.ViewModels.Comparison
                 }
 
                 // Одинаковые значения по всей строке отмечаются: именно они
-                // и означают, что персонажи неразличимы в этом.
-                var distinct = row.Cells.Select(c => c.Text).Distinct().Count();
-                row.AllSame = distinct <= 1 && row.Cells.Count > 1;
+                // и означают, что персонажи неразличимы в этом. Сравниваются
+                // только раскрытые: «не раскрыто» у двоих — не совпадение.
+                var revealed = row.Cells.Where(c => c.IsRevealed).ToList();
+                var distinct = revealed.Select(c => c.Text).Distinct().Count();
+                row.AllSame = distinct <= 1 && revealed.Count > 1;
 
                 Rows.Add(row);
             }
@@ -191,6 +219,18 @@ namespace Writersword.Modules.Characters.ViewModels.Comparison
         public string Text { get; }
         public double Width => CharacterComparisonViewModel.ColumnWidth;
 
-        public CharacterComparisonCell(string text) => Text = text;
+        /// <summary>
+        /// Поле раскрыто уровнем анкеты. Нераскрытое — не пустое значение,
+        /// а решение автора не углубляться: показывается иначе.
+        /// </summary>
+        public bool IsRevealed { get; }
+
+        public bool IsNotRevealed => !IsRevealed;
+
+        public CharacterComparisonCell(string text, bool isRevealed = true)
+        {
+            Text = text;
+            IsRevealed = isRevealed;
+        }
     }
 }

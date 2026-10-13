@@ -36,6 +36,8 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
 
         private void OnCanvasDragOver(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             e.DragEffects = e.DataTransfer.Contains(CharacterDragFormats.CharacterId)
                 ? DragDropEffects.Link
                 : DragDropEffects.None;
@@ -44,6 +46,8 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
 
         private void OnCanvasDrop(object? sender, DragEventArgs e)
         {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
             var id = e.DataTransfer.TryGetValue(CharacterDragFormats.CharacterId);
             if (string.IsNullOrEmpty(id)) return;
 

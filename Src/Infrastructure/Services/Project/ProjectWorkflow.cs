@@ -91,6 +91,11 @@ namespace Writersword.Infrastructure.Services.Project
                 ProjectFile? project = null;
                 RecoveryDialogResult recoveryChoice = RecoveryDialogResult.None;
 
+                // Данные модулей сохранённой версии, когда проект открывается в режиме
+                // сравнения: показана версия из кеша, а модули размечают её различиями
+                // с сохранённой (DocumentContext.CompareOtherData).
+                Dictionary<string, object?>? compareOtherData = null;
+
                 if (initializeWorkspace && _cacheService.HasCache(filePath))
                 {
                     // Быстрая проверка через хеш файла проекта из метаданных кеша.
@@ -160,6 +165,10 @@ namespace Writersword.Infrastructure.Services.Project
                                 dataIsSame = await Task.Run(
                                     () => _comparisonService.AreDataEqual(cacheForCompare, savedForCompare));
                                 Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: сравнение версий");
+
+                                // Вторая версия для разметки различий — данные тех же
+                                // модулей, что лежат в кеше: остальные не менялись.
+                                if (!dataIsSame) compareOtherData = savedRelevantOnOpen;
                             }
                             if (dataIsSame) project = savedProject;
                             _logger.LogDebug("Full data comparison: {Result}", dataIsSame ? "SAME" : "DIFFERENT");
@@ -255,6 +264,7 @@ namespace Writersword.Infrastructure.Services.Project
                             SaveDate = saveDate
                         };
 
+                        tabVM.Context.CompareOtherData = compareOtherData;
                         tabVM.Context.IsInCompareMode = true;
 
                         // Открыта версия из автосохранения, отличная от файла: несохранённые
@@ -275,6 +285,7 @@ namespace Writersword.Infrastructure.Services.Project
                 else
                 {
                     tabVM.RecoveryBanner = null;
+                    tabVM.Context.CompareOtherData = null;
                     tabVM.Context.IsInCompareMode = false;
                 }
 
@@ -326,6 +337,11 @@ namespace Writersword.Infrastructure.Services.Project
                 ProjectFile? project = null;
                 RecoveryDialogResult recoveryChoice = RecoveryDialogResult.None;
 
+                // Данные модулей сохранённой версии, когда проект открывается в режиме
+                // сравнения: показана версия из кеша, а модули размечают её различиями
+                // с сохранённой (DocumentContext.CompareOtherData).
+                Dictionary<string, object?>? compareOtherData = null;
+
                 if (_cacheService.HasCache(filePath))
                 {
                     var cacheDate = await Task.Run(() => _cacheService.GetCacheDate(filePath));
@@ -371,6 +387,10 @@ namespace Writersword.Infrastructure.Services.Project
                                 () => _comparisonService.AreDataEqual(cacheForCompare, savedForCompare));
                             Writersword.Infrastructure.Diagnostics.SwitchProfiler.Mark("инициализация: сравнение версий");
                             _logger.LogDebug("Data comparison: {Comparison}", dataIsSame ? "SAME" : "DIFFERENT");
+
+                            // Вторая версия для разметки различий — данные тех же модулей,
+                            // что лежат в кеше: остальные не менялись.
+                            if (!dataIsSame) compareOtherData = savedRelevantOnOpen;
                         }
 
                         if (dataIsSame)
@@ -452,6 +472,7 @@ namespace Writersword.Infrastructure.Services.Project
                             SaveDate = saveDate
                         };
 
+                        capturedTab.Context.CompareOtherData = compareOtherData;
                         capturedTab.Context.IsInCompareMode = true;
 
                         // Открыта версия из автосохранения, отличная от файла: несохранённые
@@ -472,6 +493,7 @@ namespace Writersword.Infrastructure.Services.Project
                 else
                 {
                     tab.RecoveryBanner = null;
+                    tab.Context.CompareOtherData = null;
                     tab.Context.IsInCompareMode = false;
                 }
 
@@ -763,10 +785,15 @@ namespace Writersword.Infrastructure.Services.Project
 
                 RecoveryBannerViewModel? banner = null;
 
-                async Task ShowVersion(bool showOther)
+                async Task ShowVersion(bool showOther, bool markDifferences = true)
                 {
                     var project = tab.GetProject();
                     project.ModulesData = new Dictionary<string, object?>(showOther ? otherData : ownData);
+
+                    // Показанная версия размечается различиями со второй. При выходе
+                    // из сравнения разметка не нужна.
+                    tab.Context.CompareOtherData = markDifferences ? (showOther ? ownData : otherData) : null;
+
                     await ReloadModulesFromProject(tab);
 
                     if (banner != null)
@@ -778,10 +805,11 @@ namespace Writersword.Infrastructure.Services.Project
 
                 async Task ExitCompare()
                 {
-                    await ShowVersion(false);
+                    await ShowVersion(false, markDifferences: false);
 
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
+                        tab.Context.CompareOtherData = null;
                         tab.Context.IsInCompareMode = false;
                         tab.RecoveryBanner = null;
                     });
@@ -810,6 +838,7 @@ namespace Writersword.Infrastructure.Services.Project
 
                         await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                         {
+                            tab.Context.CompareOtherData = null;
                             tab.Context.IsInCompareMode = false;
                             tab.RecoveryBanner = null;
                         });
@@ -826,6 +855,11 @@ namespace Writersword.Infrastructure.Services.Project
                         {
                             _compareSaveAllowed.Remove(filePath);
                         }
+
+                        // Сравнение закончено: модули снимают режим только для чтения и
+                        // разметку различий. Сохранение выше записало данные версии без
+                        // пометок — разметка в данные модулей не попадает.
+                        tab.Workspace?.RefreshModulesFromContext();
 
                         onExit?.Invoke();
                         _logger.LogInformation("Compare mode: second version adopted into {Path}", filePath);
@@ -844,9 +878,14 @@ namespace Writersword.Infrastructure.Services.Project
 
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                 {
+                    tab.Context.CompareOtherData = otherData;
                     tab.Context.IsInCompareMode = true;
                     tab.RecoveryBanner = banner;
                 });
+
+                // Модули переходят в режим только для чтения и размечают показанную
+                // (свою) версию различиями со второй.
+                tab.Workspace?.RefreshModulesFromContext();
 
                 _logger.LogInformation("Compare mode entered for {Path} against {Label}", filePath, otherLabel);
                 return true;
@@ -873,6 +912,9 @@ namespace Writersword.Infrastructure.Services.Project
 
                 if (result == MessageBoxResult.Yes)
                 {
+                    // Сравнение заканчивается: перечитанные модули размечать не надо.
+                    capturedTab.Context.CompareOtherData = null;
+
                     if (capturedTab.RecoveryBanner?.IsViewingCache == true)
                     {
                         capturedTab.Context.CloseStorage();
@@ -904,6 +946,7 @@ namespace Writersword.Infrastructure.Services.Project
 
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
+                        capturedTab.Context.CompareOtherData = null;
                         capturedTab.Context.IsInCompareMode = false;
                         capturedTab.RecoveryBanner = null;
                         _logger.LogDebug("CompareMode disabled, RecoveryBanner hidden");
@@ -968,6 +1011,7 @@ namespace Writersword.Infrastructure.Services.Project
 
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
+                        capturedTab.Context.CompareOtherData = null;
                         capturedTab.Context.IsInCompareMode = false;
                         capturedTab.RecoveryBanner = null;
                         _logger.LogDebug("CompareMode disabled, RecoveryBanner hidden");
@@ -1019,6 +1063,10 @@ namespace Writersword.Infrastructure.Services.Project
                 }
                 _compareSessionCache[currentSessionKey] = currentSessions;
 
+                // Данные показанной сейчас версии: после переключения она становится
+                // второй, и модули размечают новую показанную версию различиями с ней.
+                var shownData = new Dictionary<string, object?>(capturedTab.GetProject().ModulesData);
+
                 capturedTab.Context.CloseStorage();
 
                 try
@@ -1035,7 +1083,10 @@ namespace Writersword.Infrastructure.Services.Project
                     }
 
                     if (project != null)
+                    {
                         capturedTab.UpdateProject(project);
+                        capturedTab.Context.CompareOtherData = shownData;
+                    }
                 }
                 finally
                 {

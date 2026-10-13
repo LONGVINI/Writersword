@@ -42,11 +42,41 @@ namespace Writersword.Modules.Characters.Views
         // список папок имеет смысл только когда есть и то и другое.
         private bool _attachedToTree;
 
+        // Режим сравнения версий: модуль только для чтения.
+        private readonly CharactersReadOnlyGate _readOnlyGate;
+        private DispatcherTimer? _readOnlyNoticeTimer;
+
+        /// <summary>Запрет правок модуля — для всплывающих окошек, открытых от его элементов.</summary>
+        internal CharactersReadOnlyGate ReadOnlyGate => _readOnlyGate;
+
         public CharactersModuleView()
         {
             InitializeComponent();
+            _readOnlyGate = CharactersReadOnlyGate.Install(this);
             Loaded += OnLoaded;
             DataContextChanged += OnDataContextChanged;
+        }
+
+        /// <summary>
+        /// Показать на пару секунд, что идёт сравнение версий и править
+        /// нельзя. Повторная попытка продлевает показ, а не мигает.
+        /// </summary>
+        public void ShowReadOnlyNotice()
+        {
+            ReadOnlyNotice.IsVisible = true;
+
+            if (_readOnlyNoticeTimer == null)
+            {
+                _readOnlyNoticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+                _readOnlyNoticeTimer.Tick += (_, _) =>
+                {
+                    _readOnlyNoticeTimer?.Stop();
+                    ReadOnlyNotice.IsVisible = false;
+                };
+            }
+
+            _readOnlyNoticeTimer.Stop();
+            _readOnlyNoticeTimer.Start();
         }
 
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -371,6 +401,22 @@ namespace Writersword.Modules.Characters.Views
             // чтобы не было двойной обработки (TextBox тоже умеет Ctrl+Z).
             if (DataContext is CharactersViewModel vm)
             {
+                // Режим сравнения версий: отмена и повтор — тоже правки.
+                // Клавиши, кроме перехода по полям, дальше разбирает запрет
+                // на корне модуля; здесь, на окне, они ловятся раньше него.
+                if (vm.IsReadOnly)
+                {
+                    var ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+                    var inside = e.Source is Visual source &&
+                                 ReferenceEquals(source.FindAncestorOfType<CharactersModuleView>(includeSelf: true), this);
+                    if (inside && ctrl && e.Key is Key.Z or Key.Y)
+                    {
+                        e.Handled = true;
+                        ShowReadOnlyNotice();
+                    }
+                    return;
+                }
+
                 // В редакторе анкет своя история у каждого листа: правки
                 // персонажа отсюда не отменяются.
                 if (vm.IsTab4Active)

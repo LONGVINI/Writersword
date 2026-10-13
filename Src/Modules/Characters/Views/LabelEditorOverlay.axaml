@@ -133,7 +133,7 @@
 						           FontSize="16" FontWeight="SemiBold"
 						           Foreground="{DynamicResource TextPrimaryBrush}"
 						           VerticalAlignment="Center"/>
-						<Button Grid.Column="1" Content="✕" Click="OnCancelClick"
+						<Button Classes="ro-allow" Grid.Column="1" Content="✕" Click="OnCancelClick"
 						        Background="Transparent" BorderThickness="0"
 						        Foreground="{DynamicResource TextSecondaryBrush}"
 						        FontSize="14" Padding="6,2"/>
@@ -256,6 +256,19 @@
 									</DataTemplate>
 								</ItemsControl.ItemTemplate>
 							</ItemsControl>
+
+							<!-- Все значки: общий набор программы и свои картинки
+							     проекта — те же, что у анкет и шаблонов. Здесь в ряду
+							     только самые ходовые для меток. -->
+							<Button Classes="iconOpt"
+							        Margin="0,0,6,6"
+							        Click="OnAllIconsClick"
+							        behaviours:TooltipBehavior.Tip="Все значки"
+							        behaviours:TooltipBehavior.Description="Встроенные значки программы и свои картинки проекта — общие для меток, анкет и шаблонов">
+								<PathIcon Width="16" Height="16"
+								          Foreground="{DynamicResource TextSecondaryBrush}"
+								          Data="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+							</Button>
 						</WrapPanel>
 					</StackPanel>
 
@@ -299,7 +312,7 @@
 					     а занимали они треть окна и создавали ощущение, что
 					     метку надо настраивать. -->
 					<StackPanel Spacing="8">
-						<Button Classes="moreToggle" Click="OnToggleMoreClick">
+						<Button Classes="moreToggle ro-allow" Click="OnToggleMoreClick">
 							<StackPanel Orientation="Horizontal" Spacing="6">
 								<Path x:Name="MoreChev" Classes="moreChev" Data="M2,1 L5,4 L2,7"/>
 								<TextBlock Text="Ещё" FontSize="12" VerticalAlignment="Center"/>
@@ -333,7 +346,7 @@
 					</StackPanel>
 
 					<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-						<Button Content="Отмена" Click="OnCancelClick"
+						<Button Classes="ro-allow" Content="Отмена" Click="OnCancelClick"
 						        FontSize="12" Padding="12,6" CornerRadius="6"
 						        Background="{DynamicResource BgSurfaceBrush}"
 						        Foreground="{DynamicResource TextPrimaryBrush}"

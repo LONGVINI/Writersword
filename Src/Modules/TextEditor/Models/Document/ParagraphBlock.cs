@@ -653,7 +653,7 @@ namespace Writersword.Modules.TextEditor.Models.Document
             if (ReferenceEquals(a, b)) return true;
 
             return Models.Inline.RunProperties.SameFormatting(a, b)
-                && Models.Inline.RunProperties.SameRevisions(a, b);
+                && Models.Inline.RunProperties.SameMarkup(a, b);
         }
 
         /// <summary>

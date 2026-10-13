@@ -109,6 +109,48 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public Func<Guid, (float WidthPt, float HeightPt)?>? InlineImageSize { get; set; }
 
+        /// <summary>
+        /// Спуск встроенного объекта под базовую линию по его Id, в pt. Картинка и
+        /// фигура стоят на базовой линии целиком, и спуска у них нет; у формулы под
+        /// линию уходят знаменатель дроби и нижние индексы. Устанавливается канвасом.
+        /// null — объектов со спуском в документе нет.
+        /// </summary>
+        public Func<Guid, float>? InlineObjectDescent { get; set; }
+
+        /// <summary>
+        /// Знак сноски по Id объекта строки: номер, которым она помечена в тексте.
+        /// null — объект с этим Id не сноска. Устанавливается канвасом: номера сносок
+        /// считаются по всему документу, и сам рендер абзаца их не знает.
+        /// </summary>
+        public Func<Guid, string?>? InlineNoteMark { get; set; }
+
+        /// <summary>
+        /// Текст живого поля по Id объекта строки (дата, номер страницы). null —
+        /// объект с этим Id не поле. Устанавливается канвасом: значение поля зависит
+        /// от времени и от листа, на котором поле встало.
+        /// </summary>
+        public Func<Guid, string?>? InlineFieldText { get; set; }
+
+        /// <summary>
+        /// Сдвиг над базовой линией, которым помечен текст живого поля среди объектов
+        /// строки: ничтожный, на листе его не видно, но по нему вёрстка строки считает
+        /// поле знаками текста, а не картинкой (см. <see cref="IsRaisedMark"/>).
+        /// </summary>
+        private const float TextObjectLiftPt = 0.0001f;
+
+        /// <summary>
+        /// Заливка текста, к которому оставлены примечания, по их Id: цвет в виде
+        /// #RRGGBB или null — не подсвечивать. Устанавливается канвасом: авторы
+        /// примечаний живут в документе, а не в абзаце.
+        /// </summary>
+        public Func<IReadOnlyList<Guid>, string?>? CommentHighlight { get; set; }
+
+        /// <summary>Кегль знака сноски и верхнего индекса относительно кегля текста.</summary>
+        public const float NoteMarkScale = 0.65f;
+
+        /// <summary>Подъём знака сноски и верхнего индекса над базовой линией, в кеглях текста.</summary>
+        public const float NoteMarkRaiseEm = 0.34f;
+
         /// <summary>Цвет перемещённого текста при «Всех исправлениях» — зелёный, как у Word.</summary>
         private static readonly SKColor MovedTextColor = new(0x00, 0x80, 0x00);
 
@@ -380,7 +422,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                 HasBidiText = rightToLeft || BidiResolver.HasRightToLeft(para.GetPlainText())
             };
 
-            var tokens = CollectTokens(para, styleName, styles, InlineImageSize);
+            var tokens = CollectTokens(
+                para, styleName, styles, InlineImageSize, InlineObjectDescent, InlineNoteMark, CommentHighlight,
+                InlineFieldText);
 
             // Пустой абзац рисуется шрифтом своего стиля. Запасной Times New Roman 14
             // давал пустой строке чужую высоту, и пустые строки между блоками текста
@@ -1443,10 +1487,24 @@ namespace Writersword.Modules.TextEditor.Rendering
             });
         }
 
+        /// <summary>Черта над сносками листа печати, в координатах листа.</summary>
+        /// <param name="PageIndex">Лист.</param>
+        /// <param name="XPt">Левый конец черты.</param>
+        /// <param name="YPt">Высота, на которой идёт черта.</param>
+        /// <param name="LengthPt">Длина черты.</param>
+        public readonly record struct PageNoteRule(int PageIndex, float XPt, float YPt, float LengthPt);
+
+        /// <param name="notes">
+        /// Номера сносок документа. С ними текст сносок встаёт внизу своих листов,
+        /// концевые сноски — после последнего абзаца. null — сноски не верстаются.
+        /// </param>
+        /// <param name="noteRules">Сюда складываются черты над сносками листов.</param>
         public SKPageLayout BuildPageLayout(
             DocumentModel document,
             PrintPageSettings pageSettings,
-            StyleResolver styles)
+            StyleResolver styles,
+            Services.NoteNumbering? notes = null,
+            List<PageNoteRule>? noteRules = null)
         {
             float pageWidthPt = MmToPt(pageSettings.GetPhysicalWidthMm());
             float pageHeightPt = MmToPt(pageSettings.GetPhysicalHeightMm());
@@ -1455,12 +1513,227 @@ namespace Writersword.Modules.TextEditor.Rendering
             float textWidthPt = MmToPt(pageSettings.GetTextWidthMm());
             float textHeightPt = MmToPt(pageSettings.GetTextHeightMm());
 
+            // Разделы: у каждого свой лист и поля, последний — лист печати (как у
+            // полотна, DocumentCanvas.Sections). Раскладка начинается с листа первого.
+            var printSheet = new PrintSheet(pageWidthPt, pageHeightPt, marginLeftPt, marginTopPt, textWidthPt, textHeightPt);
+            var sectionSheets = BuildPrintSectionSheets(document, printSheet);
+            int sectionSheet = 0;
+
+            // Параметры разделов по их номерам — для рамки страницы, номеров строк и
+            // выравнивания по высоте листа (RenderPage). Лист помнит раздел, в котором
+            // он начат.
+            var sectionLayouts = PrintSectionLayouts(document);
+
+            SKPageContent CreateSectionPage(
+                float widthPt, float heightPt, float leftPt, float topPt, float textWPt, float textHPt)
+            {
+                var page = CreatePage(widthPt, heightPt, leftPt, topPt, textWPt, textHPt);
+                int index = Math.Clamp(sectionSheet, 0, Math.Max(sectionLayouts.Count - 1, 0));
+                PrintPageSections.AddOrUpdate(page, new PrintPageSection
+                {
+                    Index = index,
+                    Layout = sectionLayouts.Count > 0 ? sectionLayouts[index] : null
+                });
+                return page;
+            }
+
+            // Колонки раздела (как у полотна, DocumentCanvas.Columns): текст идёт по
+            // колонке colIndex, textWidthPt — её ширина; sectionTextWidthPt — ширина всей
+            // текстовой области раздела. Область колонок листа начинается на высоте
+            // colTopY от верха текстовой области.
+            float sectionTextWidthPt = textWidthPt;
+            float[] colOffsets = { 0f };
+            float[] colWidths = { textWidthPt };
+            bool colSeparator = false;
+            int colIndex = 0;
+            float colTopY = 0f;
+            float colRegionBottomY = 0f;
+            int colRegionParasFrom = 0;
+            int colRegionTablesFrom = 0;
+            bool colRegionPlain = true;
+
+            void UseSheet(PrintSheet sheet)
+            {
+                pageWidthPt = sheet.PageWidthPt;
+                pageHeightPt = sheet.PageHeightPt;
+                marginLeftPt = sheet.MarginLeftPt;
+                marginTopPt = sheet.MarginTopPt;
+                textWidthPt = sheet.TextWidthPt;
+                sectionTextWidthPt = sheet.TextWidthPt;
+                textHeightPt = sheet.TextHeightPt;
+            }
+
+            void UseColumns(Models.Page.SectionColumns? columns)
+            {
+                (colOffsets, colWidths) = ColumnFrames.Compute(columns, sectionTextWidthPt);
+                colSeparator = columns is { Separator: true } && colOffsets.Length > 1;
+                colIndex = 0;
+                textWidthPt = colWidths[0];
+            }
+
+            if (sectionSheets.Count > 0)
+            {
+                UseSheet(sectionSheets[0].Sheet);
+                UseColumns(sectionSheets[0].Columns);
+            }
+
             var pageLayout = new SKPageLayout();
-            var currentPage = CreatePage(pageWidthPt, pageHeightPt,
+            var currentPage = CreateSectionPage(pageWidthPt, pageHeightPt,
                                          marginLeftPt, marginTopPt,
-                                         textWidthPt, textHeightPt);
+                                         sectionTextWidthPt, textHeightPt);
             float currentY = 0f;
             int paraIndex = 0;
+
+            // Сдвиг колонки, по которой идёт текст, от левого края текстовой области
+            // листа: раздел после непрерывного разрыва мог сменить поля на том же листе.
+            float FlowX() => marginLeftPt - currentPage.MarginLeftPt + colOffsets[colIndex];
+
+            void AddFlowParagraph(SKPageParagraph paragraph)
+            {
+                currentPage.Paragraphs.Add(paragraph);
+                SetPrintOffset(paragraph, FlowX());
+            }
+
+            // Область колонок начинается там, где сейчас поток: с первой колонки.
+            void OpenColumnRegion()
+            {
+                colIndex = 0;
+                colTopY = currentY;
+                colRegionBottomY = currentY;
+                colRegionParasFrom = currentPage.Paragraphs.Count;
+                colRegionTablesFrom = currentPage.Tables.Count;
+                colRegionPlain = true;
+                textWidthPt = colWidths[0];
+            }
+
+            // Область колонок кончилась на этом листе: черты между занятыми колонками.
+            void CloseColumnRegion(float bottomY, int usedColumns)
+            {
+                if (!colSeparator || colOffsets.Length < 2) return;
+
+                int last = Math.Min(usedColumns, colOffsets.Length);
+                for (int c = 1; c < last; c++)
+                {
+                    AddPrintColumnRule(currentPage,
+                        marginLeftPt - currentPage.MarginLeftPt + ColumnFrames.SeparatorX(colOffsets, colWidths, c),
+                        colTopY, bottomY);
+                }
+            }
+
+            bool NextColumn()
+            {
+                if (colIndex + 1 >= colOffsets.Length) return false;
+
+                colRegionBottomY = Math.Max(colRegionBottomY, currentY);
+                colIndex++;
+                currentY = colTopY;
+                textWidthPt = colWidths[colIndex];
+                return true;
+            }
+
+            // Место кончилось: следующая колонка, из последней — новый лист.
+            void AdvanceFrame()
+            {
+                if (NextColumn()) return;
+
+                CloseColumnRegion(textHeightPt, colIndex + 1);
+                pageLayout.Pages.Add(currentPage);
+                currentPage = CreateSectionPage(pageWidthPt, pageHeightPt,
+                                         marginLeftPt, marginTopPt,
+                                         sectionTextWidthPt, textHeightPt);
+                currentY = 0f;
+                OpenColumnRegion();
+            }
+
+            // Раздел в колонках кончается непрерывным разрывом: колонки листа
+            // выравниваются по высоте, поток идёт под самой длинной.
+            void BalanceAndCloseColumns()
+            {
+                if (colOffsets.Length < 2) return;
+
+                float bottom = Math.Max(colRegionBottomY, currentY);
+                int used = colIndex + 1;
+
+                if (colRegionPlain && currentPage.Tables.Count == colRegionTablesFrom
+                    && currentPage.Paragraphs.Count > colRegionParasFrom)
+                {
+                    float leftX = marginLeftPt - currentPage.MarginLeftPt;
+                    var slices = new List<ColumnFrames.ColumnSlice>();
+                    for (int pi = colRegionParasFrom; pi < currentPage.Paragraphs.Count; pi++)
+                    {
+                        var piece = currentPage.Paragraphs[pi];
+                        float linesPt = 0f;
+                        for (int li = piece.LineFrom; li < piece.LineTo && li < piece.Layout.Lines.Count; li++)
+                            linesPt += piece.Layout.Lines[li].Height;
+                        if (piece.LineTo >= piece.Layout.Lines.Count) linesPt += piece.Layout.SpaceAfterPt;
+
+                        slices.Add(new ColumnFrames.ColumnSlice(
+                            piece.ParagraphIndex, piece, piece.Layout,
+                            piece.Y, linesPt, piece.LineFrom, piece.LineTo, PrintOffsetOf(piece), 0));
+                    }
+
+                    if (ColumnFrames.TryBalance(
+                            slices, colTopY, textHeightPt, leftX, colOffsets, colWidths,
+                            out var balanced, out float balancedBottom, out int balancedColumns))
+                    {
+                        currentPage.Paragraphs.RemoveRange(colRegionParasFrom, currentPage.Paragraphs.Count - colRegionParasFrom);
+                        foreach (var slice in balanced)
+                        {
+                            var source = (SKPageParagraph)slice.Source;
+                            var moved = new SKPageParagraph
+                            {
+                                Layout = source.Layout,
+                                Y = slice.Ypt,
+                                LineFrom = slice.LineFrom,
+                                LineTo = slice.LineTo,
+                                ParagraphIndex = source.ParagraphIndex
+                            };
+                            currentPage.Paragraphs.Add(moved);
+                            SetPrintOffset(moved, slice.XPt);
+                        }
+
+                        bottom = balancedBottom;
+                        used = balancedColumns;
+                    }
+                }
+
+                CloseColumnRegion(bottom, used);
+                currentY = bottom;
+            }
+
+            // Сноски: их текст встаёт внизу листа и отнимает у него место по ходу
+            // раскладки — тем же счётом, что на листах редактора (NoteFlow).
+            NoteFlow? noteFlow = null;
+            if (notes is { HasNotes: true })
+            {
+                float noteRuleBandPt = NoteLayout.RuleBandPt(this, sectionTextWidthPt, styles, 14f);
+                noteFlow = new NoteFlow(
+                    notes,
+                    reference =>
+                    {
+                        var noteLayouts = new List<SKTextLayout>(reference.Note.Paragraphs.Count);
+                        for (int ni = 0; ni < reference.Note.Paragraphs.Count; ni++)
+                            noteLayouts.Add(NoteLayout.Build(this, reference.Note, ni, reference.Mark, sectionTextWidthPt, styles));
+                        return noteLayouts;
+                    },
+                    noteRuleBandPt,
+                    noteRuleBandPt);
+            }
+
+            // Низ места под текст на текущем листе: высота текстовой области без
+            // того, что на этом листе уже отдано сноскам.
+            int notePageIdx = -1;
+            float pageLimitPt = textHeightPt;
+
+            void EnterNotePage()
+            {
+                int index = pageLayout.Pages.Count;
+                if (index == notePageIdx) return;
+
+                notePageIdx = index;
+                pageLimitPt = textHeightPt;
+                noteFlow?.EnterPage(index, 0f, currentY, ref pageLimitPt);
+            }
 
             foreach (var section in document.Sections)
             {
@@ -1472,19 +1745,124 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // Абзац, целиком спрятанный правкой при этом виде, на лист не идёт;
                     // его номер в потоке сохраняется.
                     if (block is ParagraphBlock revisionHidden
-                        && RevisionDisplay.IsParagraphHidden(revisionHidden, styles.RevisionView))
+                        && (RevisionDisplay.IsParagraphHidden(revisionHidden, styles.RevisionView)
+                            || RevisionDisplay.IsAbsorbed(revisionHidden)))
                     {
                         paraIndex++;
                         continue;
                     }
 
-                    if (block is BreakBlock bb && bb.BreakType == BreakType.Page)
+                    // Непрерывный разрыв раздела: колонки раздела выравниваются по
+                    // высоте, следующий раздел на том же листе меняет поля слева и справа
+                    // и свои колонки начинает под ними; лист другого размера начинается с
+                    // новой страницы, как у Word. Раздел «со следующей колонки» при тех же
+                    // колонках идёт в следующую колонку, иначе — с новой страницы.
+                    if (block is BreakBlock inPlace && inPlace.IsSectionBreak && !inPlace.StartsNewPage)
                     {
+                        sectionSheet = PrintSectionIndexOf(sectionSheets, bi + 1);
+                        var nextSheet = sectionSheets[sectionSheet].Sheet;
+                        var nextColumns = sectionSheets[sectionSheet].Columns;
+                        bool sameSheet = Math.Abs(nextSheet.PageWidthPt - pageWidthPt) < 0.5f
+                            && Math.Abs(nextSheet.PageHeightPt - pageHeightPt) < 0.5f;
+
+                        if (inPlace.BreakType == BreakType.SectionNextColumn)
+                        {
+                            float nextTextWidthPt = nextSheet.TextWidthPt;
+                            int nextCount = ColumnFrames.Compute(nextColumns, nextTextWidthPt).Offsets.Length;
+
+                            if (sameSheet && nextCount == colOffsets.Length && colIndex + 1 < colOffsets.Length)
+                            {
+                                colRegionBottomY = Math.Max(colRegionBottomY, currentY);
+                                int nextColumn = colIndex + 1;
+                                marginLeftPt = nextSheet.MarginLeftPt;
+                                sectionTextWidthPt = nextTextWidthPt;
+                                UseColumns(nextColumns);
+                                colIndex = nextColumn;
+                                currentY = colTopY;
+                                textWidthPt = colWidths[colIndex];
+                                colRegionPlain = false;
+                            }
+                            else
+                            {
+                                CloseColumnRegion(Math.Max(colRegionBottomY, currentY), colIndex + 1);
+                                pageLayout.Pages.Add(currentPage);
+                                UseSheet(nextSheet);
+                                UseColumns(nextColumns);
+                                currentPage = CreateSectionPage(pageWidthPt, pageHeightPt,
+                                                         marginLeftPt, marginTopPt,
+                                                         sectionTextWidthPt, textHeightPt);
+                                currentY = 0f;
+                                OpenColumnRegion();
+                            }
+
+                            paraIndex++;
+                            continue;
+                        }
+
+                        BalanceAndCloseColumns();
+
+                        if (sameSheet)
+                        {
+                            marginLeftPt = nextSheet.MarginLeftPt;
+                            sectionTextWidthPt = nextSheet.TextWidthPt;
+                            UseColumns(nextColumns);
+                        }
+                        else
+                        {
+                            pageLayout.Pages.Add(currentPage);
+                            UseSheet(nextSheet);
+                            UseColumns(nextColumns);
+                            currentPage = CreateSectionPage(pageWidthPt, pageHeightPt,
+                                                     marginLeftPt, marginTopPt,
+                                                     sectionTextWidthPt, textHeightPt);
+                            currentY = 0f;
+                        }
+
+                        OpenColumnRegion();
+                        paraIndex++;
+                        continue;
+                    }
+
+                    // Разрыв колонки в разделе из нескольких колонок: следующая колонка,
+                    // из последней — новый лист.
+                    if (block is BreakBlock columnBreak && columnBreak.StartsNewPage
+                        && columnBreak.FromColumnBreak && !columnBreak.IsSectionBreak
+                        && colOffsets.Length > 1)
+                    {
+                        colRegionPlain = false;
+                        AdvanceFrame();
+                        continue;
+                    }
+
+                    if (block is BreakBlock bb && bb.StartsNewPage)
+                    {
+                        CloseColumnRegion(Math.Max(colRegionBottomY, currentY), colIndex + 1);
                         pageLayout.Pages.Add(currentPage);
-                        currentPage = CreatePage(pageWidthPt, pageHeightPt,
+
+                        // Разрыв раздела: новый лист — уже лист следующего раздела.
+                        if (bb.IsSectionBreak)
+                        {
+                            sectionSheet = PrintSectionIndexOf(sectionSheets, bi + 1);
+                            UseSheet(sectionSheets[sectionSheet].Sheet);
+                            UseColumns(sectionSheets[sectionSheet].Columns);
+                        }
+
+                        currentPage = CreateSectionPage(pageWidthPt, pageHeightPt,
                                                  marginLeftPt, marginTopPt,
-                                                 textWidthPt, textHeightPt);
+                                                 sectionTextWidthPt, textHeightPt);
                         currentY = 0f;
+
+                        // Раздел «с чётной» или «с нечётной» страницы: если новый лист не
+                        // той чётности, Word оставляет пустой лист и начинает со следующего.
+                        if (NeedsBlankPageBefore(bb.BreakType, pageLayout.Pages.Count + 1))
+                        {
+                            pageLayout.Pages.Add(currentPage);
+                            currentPage = CreateSectionPage(pageWidthPt, pageHeightPt,
+                                                     marginLeftPt, marginTopPt,
+                                                     sectionTextWidthPt, textHeightPt);
+                        }
+
+                        OpenColumnRegion();
                         continue;
                     }
 
@@ -1522,7 +1900,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                             float afterH = (ri == tableLayout.Rows.Count - 1) ? 0f : breakLabelH;
                             float available = textHeightPt - currentY - reservedH - afterH;
 
-                            if (effectiveH > available && currentY > 0)
+                            if (effectiveH > available && currentY > colTopY + 0.01f)
                             {
                                 if (byCell && available > 5f)
                                 {
@@ -1533,7 +1911,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                                     {
                                         Layout = tableLayout,
                                         Y = tableSliceStartY,
-                                        LeftIndentPt = leftIndentPt,
+                                        LeftIndentPt = leftIndentPt + FlowX(),
                                         RowFrom = rowFrom,
                                         RowTo = ri + 1,
                                         HeaderRowIndex = isFirstSlice ? -1 : (repeatHeader ? 0 : -1),
@@ -1546,10 +1924,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                                         FirstRowContentOffsetPt = sliceFirstRowOffset
                                     });
 
-                                    pageLayout.Pages.Add(currentPage);
-                                    currentPage = CreatePage(pageWidthPt, pageHeightPt, marginLeftPt, marginTopPt, textWidthPt, textHeightPt);
-                                    currentY = contLabelH + (repeatHeader ? headerH : 0f);
-                                    tableSliceStartY = 0f;
+                                    AdvanceFrame();
+                                    currentY = colTopY + contLabelH + (repeatHeader ? headerH : 0f);
+                                    tableSliceStartY = colTopY;
                                     rowFrom = ri;
                                     sliceFirstRowOffset = nextOffset;
                                     sliceStartOffset = nextOffset;
@@ -1565,7 +1942,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                                         {
                                             Layout = tableLayout,
                                             Y = tableSliceStartY,
-                                            LeftIndentPt = leftIndentPt,
+                                            LeftIndentPt = leftIndentPt + FlowX(),
                                             RowFrom = rowFrom,
                                             RowTo = ri,
                                             HeaderRowIndex = isFirstSlice ? -1 : (repeatHeader ? 0 : -1),
@@ -1577,10 +1954,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                                             FirstRowContentOffsetPt = sliceStartOffset
                                         });
                                     }
-                                    pageLayout.Pages.Add(currentPage);
-                                    currentPage = CreatePage(pageWidthPt, pageHeightPt, marginLeftPt, marginTopPt, textWidthPt, textHeightPt);
-                                    currentY = contLabelH + (repeatHeader ? headerH : 0f);
-                                    tableSliceStartY = 0f;
+                                    AdvanceFrame();
+                                    currentY = colTopY + contLabelH + (repeatHeader ? headerH : 0f);
+                                    tableSliceStartY = colTopY;
                                     rowFrom = ri;
                                     sliceFirstRowOffset = 0f;
                                     sliceStartOffset = 0f;
@@ -1602,7 +1978,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                             {
                                 Layout = tableLayout,
                                 Y = tableSliceStartY,
-                                LeftIndentPt = leftIndentPt,
+                                LeftIndentPt = leftIndentPt + FlowX(),
                                 RowFrom = rowFrom,
                                 RowTo = -1,
                                 HeaderRowIndex = isFirstSlice ? -1 : (repeatHeader ? 0 : -1),
@@ -1719,18 +2095,27 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                     int lineFrom = 0;
                     float sliceStartY = currentY;
+                    bool paraHasNotes = noteFlow is not null && noteFlow.HasMarksIn(para);
+
+                    // Сноски стоят у низа листа под всеми колонками: такую область
+                    // колонки по высоте не выравнивают.
+                    if (paraHasNotes) colRegionPlain = false;
 
                     for (int li = 0; li < layout.Lines.Count; li++)
                     {
                         var line = layout.Lines[li];
                         bool isLastLine = li == layout.Lines.Count - 1;
 
-                        if (currentY + line.Height > textHeightPt
-                            && (currentPage.Paragraphs.Count > 0 || li > lineFrom))
+                        // Строке со знаком сноски нужно место ещё и под начало её сноски.
+                        EnterNotePage();
+                        float noteNeedPt = paraHasNotes ? noteFlow!.MinNeed(line) : 0f;
+
+                        if (currentY + line.Height > pageLimitPt - noteNeedPt
+                            && (currentY > colTopY + 0.01f || li > lineFrom))
                         {
                             if (li > lineFrom)
                             {
-                                currentPage.Paragraphs.Add(new SKPageParagraph
+                                AddFlowParagraph(new SKPageParagraph
                                 {
                                     Layout = layout,
                                     Y = sliceStartY,
@@ -1740,14 +2125,17 @@ namespace Writersword.Modules.TextEditor.Rendering
                                 });
                             }
 
-                            pageLayout.Pages.Add(currentPage);
-                            currentPage = CreatePage(pageWidthPt, pageHeightPt,
-                                                     marginLeftPt, marginTopPt,
-                                                     textWidthPt, textHeightPt);
-                            currentY = 0f;
+                            AdvanceFrame();
                             lineFrom = li;
                             sliceStartY = currentY;
                         }
+
+                        // Строка встала на свой лист: её сноски встают внизу этого листа.
+                        EnterNotePage();
+                        if (paraHasNotes)
+                            noteFlow!.Commit(
+                                line, notePageIdx,
+                                pageLimitPt - (currentY + line.Height), ref pageLimitPt);
 
                         currentY += line.Height;
 
@@ -1769,7 +2157,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                         }
                     }
 
-                    currentPage.Paragraphs.Add(new SKPageParagraph
+                    AddFlowParagraph(new SKPageParagraph
                     {
                         Layout = layout,
                         Y = sliceStartY,
@@ -1782,8 +2170,170 @@ namespace Writersword.Modules.TextEditor.Rendering
                 }
             }
 
-            if (currentPage.Paragraphs.Count > 0 || currentPage.Tables.Count > 0 || pageLayout.Pages.Count == 0)
+            // Колонки последнего раздела по высоте не выравниваются: черты — до самой
+            // длинной колонки, концевые сноски — под ней на всю ширину текста.
+            if (colOffsets.Length > 1)
+            {
+                float lastColumnsBottomY = Math.Max(colRegionBottomY, currentY);
+                CloseColumnRegion(lastColumnsBottomY, colIndex + 1);
+                currentY = lastColumnsBottomY;
+                colOffsets = new[] { 0f };
+                colWidths = new[] { sectionTextWidthPt };
+                colSeparator = false;
+                colIndex = 0;
+                textWidthPt = sectionTextWidthPt;
+            }
+
+            if (noteFlow is not null)
+            {
+                void NewNotePage()
+                {
+                    pageLayout.Pages.Add(currentPage);
+                    currentPage = CreateSectionPage(pageWidthPt, pageHeightPt,
+                                             marginLeftPt, marginTopPt,
+                                             sectionTextWidthPt, textHeightPt);
+                    currentY = 0f;
+                }
+
+                // Сноски из таблиц: раскладка таблиц печати листы делит сама, и их
+                // сноски встают за таблицами — на последнем листе, в оставшееся место.
+                foreach (var reference in noteFlow.Footnotes)
+                {
+                    if (noteFlow.IsPlaced(reference.Note.Id)) continue;
+
+                    EnterNotePage();
+                    float freePt = Math.Max(0f, pageLimitPt - currentY);
+                    float beforePt = freePt;
+                    noteFlow.CommitAt(reference, notePageIdx, ref freePt);
+                    pageLimitPt -= beforePt - freePt;
+                }
+
+                // Продолжения сносок последнего листа: им нужны свои листы.
+                for (int guard = 0; noteFlow.HasTails && guard < 256; guard++)
+                {
+                    EnterNotePage();
+                    if (!noteFlow.HasTails) break;
+                    NewNotePage();
+                }
+
+                EnterNotePage();
+
+                // Концевые сноски — после последнего абзаца документа, под чертой.
+                bool endnoteRuleSet = false;
+                foreach (var endnote in noteFlow.Endnotes)
+                {
+                    foreach (var endnoteLayout in noteFlow.LayoutsOf(endnote))
+                    {
+                        int endnoteLines = endnoteLayout.Lines.Count;
+                        int endnoteLineFrom = 0;
+                        float endnoteSliceY = float.NaN;
+
+                        for (int li = 0; li < Math.Max(endnoteLines, 1); li++)
+                        {
+                            float linePt = endnoteLines == 0 ? noteFlow.EmptyLinePt : endnoteLayout.Lines[li].Height;
+                            float needPt = linePt
+                                + (li == 0 ? endnoteLayout.SpaceBeforePt : 0f)
+                                + (endnoteRuleSet ? 0f : noteFlow.RuleBandPt);
+
+                            if (currentY + needPt > pageLimitPt && currentY > 0f)
+                            {
+                                if (li > endnoteLineFrom && !float.IsNaN(endnoteSliceY))
+                                {
+                                    currentPage.Paragraphs.Add(new SKPageParagraph
+                                    {
+                                        Layout = endnoteLayout,
+                                        Y = endnoteSliceY,
+                                        LineFrom = endnoteLineFrom,
+                                        LineTo = li,
+                                        ParagraphIndex = -1
+                                    });
+                                }
+
+                                NewNotePage();
+                                EnterNotePage();
+                                endnoteLineFrom = li;
+                                endnoteSliceY = float.NaN;
+                            }
+
+                            if (!endnoteRuleSet)
+                            {
+                                noteRules?.Add(new PageNoteRule(
+                                    pageLayout.Pages.Count,
+                                    marginLeftPt,
+                                    marginTopPt + currentY + noteFlow.RuleBandPt * NoteFlow.RulePositionShare,
+                                    Math.Min(NoteFlow.RuleLengthPt, textWidthPt)));
+                                currentY += noteFlow.RuleBandPt;
+                                endnoteRuleSet = true;
+                            }
+
+                            if (li == 0) currentY += endnoteLayout.SpaceBeforePt;
+                            if (float.IsNaN(endnoteSliceY)) endnoteSliceY = currentY;
+                            currentY += linePt;
+                        }
+
+                        currentY += endnoteLayout.SpaceAfterPt;
+
+                        if (!float.IsNaN(endnoteSliceY) && endnoteLines > 0)
+                        {
+                            currentPage.Paragraphs.Add(new SKPageParagraph
+                            {
+                                Layout = endnoteLayout,
+                                Y = endnoteSliceY,
+                                LineFrom = endnoteLineFrom,
+                                LineTo = endnoteLines,
+                                ParagraphIndex = -1
+                            });
+                        }
+                    }
+                }
+            }
+
+            var noteAreas = noteFlow?.BuildAreas();
+            bool currentPageHasNotes = false;
+            if (noteAreas is not null)
+            {
+                foreach (var area in noteAreas)
+                    if (area.PageIndex == pageLayout.Pages.Count) { currentPageHasNotes = true; break; }
+            }
+
+            if (currentPage.Paragraphs.Count > 0 || currentPage.Tables.Count > 0 || pageLayout.Pages.Count == 0
+                || currentPageHasNotes)
                 pageLayout.Pages.Add(currentPage);
+
+            // Области сносок прижаты к низу текстовой области своих листов: сверху
+            // черта, под ней сноски. Абзацы сносок рисует тот же проход, что и текст.
+            if (noteAreas is not null)
+            {
+                foreach (var area in noteAreas)
+                {
+                    if (area.PageIndex < 0 || area.PageIndex >= pageLayout.Pages.Count) continue;
+
+                    var notePage = pageLayout.Pages[area.PageIndex];
+                    float areaTopPt = textHeightPt - area.HeightPt;
+
+                    noteRules?.Add(new PageNoteRule(
+                        area.PageIndex,
+                        marginLeftPt,
+                        marginTopPt + areaTopPt + area.RuleBandPt * NoteFlow.RulePositionShare,
+                        area.Continued ? textWidthPt : Math.Min(NoteFlow.RuleLengthPt, textWidthPt)));
+
+                    foreach (var piece in area.Pieces)
+                    {
+                        if (piece.LineTo <= piece.LineFrom) continue;
+
+                        notePage.Paragraphs.Add(new SKPageParagraph
+                        {
+                            Layout = piece.Layout,
+                            Y = areaTopPt + piece.TextOffsetPt,
+                            LineFrom = piece.LineFrom,
+                            LineTo = piece.LineTo,
+                            ParagraphIndex = -1
+                        });
+                    }
+                }
+            }
+
+            FinishPrintSections(pageLayout, noteAreas);
 
             return pageLayout;
         }
@@ -1804,13 +2354,20 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             canvas.Clear(SKColors.White);
 
+            // Рамка страницы раздела «за текстом».
+            RenderPrintPageBorders(canvas, page, behind: true);
+
             // Плавающие объекты за текстом и в потоке — под ним.
             RenderPageFloats(canvas, page, beforeText: true);
 
+            // Выравнивание раздела по высоте листа: текст листа опущен целиком.
+            float pageShiftPt = PrintShiftOf(page);
+
             foreach (var para in page.Paragraphs)
             {
-                float paraX = page.MarginLeftPt + para.Layout.LeftIndentPt;
-                float paraY = page.MarginTopPt + para.Y;
+                float paraOffsetPt = PrintOffsetOf(para);
+                float paraX = page.MarginLeftPt + paraOffsetPt + para.Layout.LeftIndentPt;
+                float paraY = page.MarginTopPt + para.Y + (para.ParagraphIndex >= 0 ? pageShiftPt : 0f);
 
                 if (selectionParaIndex == para.ParagraphIndex && selectionFrom < selectionTo)
                 {
@@ -1824,7 +2381,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     {
                         if (r.LineIndex < para.LineFrom || r.LineIndex >= para.LineTo) continue;
                         canvas.DrawRect(
-                            r.Rect.Left + page.MarginLeftPt,
+                            r.Rect.Left + page.MarginLeftPt + paraOffsetPt,
                             r.Rect.Top - yBase + paraY,
                             r.Rect.Width,
                             r.Rect.Height,
@@ -1874,13 +2431,20 @@ namespace Writersword.Modules.TextEditor.Rendering
                         StrokeWidth = 1.5f,
                         IsAntialias = false
                     };
-                    float cx = page.MarginLeftPt + caret.X;
+                    float cx = page.MarginLeftPt + paraOffsetPt + caret.X;
                     float cy = paraY + (caret.Y - yBase);
                     canvas.DrawLine(cx, cy, cx, cy + caret.Height, caretPaint);
                 }
             }
 
             RenderPageTables(canvas, page);
+
+            // Черты между колонками раздела.
+            RenderPrintColumnRules(canvas, page);
+
+            // Рамка страницы поверх текста и номера строк раздела.
+            RenderPrintPageBorders(canvas, page, behind: false);
+            RenderPrintLineNumbers(canvas, page);
 
             // Плавающие объекты поверх текста — последними, как на экране.
             RenderPageFloats(canvas, page, beforeText: false);
@@ -3105,11 +3669,122 @@ namespace Writersword.Modules.TextEditor.Rendering
             };
         }
 
+        /// <summary>
+        /// Сегмент знака сноски. Шрифт берётся по тем же правилам, что у текста:
+        /// стиль абзаца, поверх него символьный стиль, поверх — оформление самого знака.
+        /// Ширина — по цифрам знака, высота над базовой линией — подъём шрифта знака;
+        /// положительный сдвиг от базовой линии отличает знак сноски от прочих объектов
+        /// строки (у картинки сдвига нет, у формулы он отрицательный — её спуск).
+        /// </summary>
+        private static SKRunSegment BuildNoteMarkFormat(
+            RunModel run,
+            string markText,
+            Guid noteId,
+            int globalIndex,
+            StyleResolver styles,
+            string styleFontFamily,
+            float styleFontSize,
+            bool styleBold,
+            bool styleItalic,
+            bool raised = true)
+        {
+            var props = RevisionDisplay.DisplayProperties(run.Properties, styles.RevisionView);
+            bool hidden = RevisionDisplay.IsRunHidden(run.Properties, styles.RevisionView)
+                || (props?.IsHidden == true && !styles.ShowHiddenText);
+
+            string family = styleFontFamily;
+            float size = styleFontSize;
+            bool styleAddsBold = false;
+            bool styleAddsItalic = false;
+            string? colorCode = null;
+
+            if (!string.IsNullOrEmpty(props?.StyleName))
+            {
+                family = styles.FindFontFamily(props!.StyleName) ?? family;
+                size = styles.FindFontSize(props.StyleName) ?? size;
+                styleAddsBold = styles.AnyBold(props.StyleName);
+                styleAddsItalic = styles.AnyItalic(props.StyleName);
+                colorCode = styles.FindTextColor(props.StyleName);
+            }
+
+            if (!string.IsNullOrEmpty(props?.FontFamily)) family = props!.FontFamily!;
+            if (props?.FontSize.HasValue == true) size = (float)props.FontSize!.Value;
+
+            family = ResolveReadingFamily(family);
+            size = ScaleReadingFont(size);
+
+            bool bold = props?.IsBold ?? (styleAddsBold || styleBold);
+            bool italic = props?.IsItalic ?? (styleAddsItalic || styleItalic);
+            colorCode = props?.TextColor ?? colorCode;
+
+            // Знак в правке рецензирования рисуется цветом её автора, как текст.
+            if (RevisionDisplay.ShowsMarkup(styles.RevisionView)
+                && (run.Properties?.Deleted ?? run.Properties?.Inserted) is { } revision)
+            {
+                colorCode = (revision.IsMove ? MovedTextColor : styles.AuthorColor(revision.Author))
+                    .ToString();
+            }
+
+            float markSize = raised ? size * NoteMarkScale : size;
+            var font = GetOrCreateFont(GetOrCreateTypeface(family, bold, italic), markSize);
+            font.GetFontMetrics(out var metrics);
+
+            return new SKRunSegment
+            {
+                FontFamily = family,
+                FontSizePt = markSize,
+                IsBold = bold,
+                IsItalic = italic,
+                Color = ParseColor(colorCode),
+                ColorCode = colorCode,
+                GlobalCharOffset = globalIndex,
+                InlineImageId = noteId,
+                ObjectWidthPt = hidden ? 0f : font.MeasureText(markText),
+                ObjectHeightPt = hidden ? 0f : Math.Abs(metrics.Ascent),
+                BaselineShiftPt = raised ? size * NoteMarkRaiseEm : TextObjectLiftPt,
+                IsHidden = hidden,
+                IsRevision = run.Properties?.HasRevision == true
+            };
+        }
+
+        /// <summary>
+        /// Знак сноски среди объектов строки: поднят над базовой линией. Высоту строки
+        /// он задаёт шрифтом, как надстрочный текст, а не габаритом, как картинка.
+        /// </summary>
+        private static bool IsRaisedMark(SKRunSegment seg)
+            => seg.IsInlineObject && seg.BaselineShiftPt > 0f;
+
+        /// <summary>
+        /// Рисует знак сноски на месте его сегмента: шрифтом, кеглем и цветом сегмента,
+        /// поднятым над базовой линией строки на сдвиг сегмента.
+        /// </summary>
+        public static void DrawNoteMark(
+            SKCanvas canvas, SKRunSegment seg, string markText, float segX, float baseY)
+        {
+            if (seg.IsHidden || string.IsNullOrEmpty(markText)) return;
+
+            var font = GetOrCreateFont(
+                GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic), seg.FontSizePt);
+
+            using var paint = new SKPaint
+            {
+                Color = ApplyReadingInk(seg.Color),
+                IsAntialias = true,
+                Style = SKPaintStyle.Fill
+            };
+
+            canvas.DrawText(markText, segX, baseY - seg.BaselineShiftPt, SKTextAlign.Left, font, paint);
+        }
+
         private static List<(string Char, SKRunSegment Format, int GlobalIndex)> CollectTokens(
             ParagraphBlock para,
             string? styleName,
             StyleResolver styles,
-            Func<Guid, (float WidthPt, float HeightPt)?>? inlineImageSize = null)
+            Func<Guid, (float WidthPt, float HeightPt)?>? inlineImageSize = null,
+            Func<Guid, float>? inlineObjectDescent = null,
+            Func<Guid, string?>? inlineNoteMark = null,
+            Func<IReadOnlyList<Guid>, string?>? commentHighlight = null,
+            Func<Guid, string?>? inlineFieldText = null)
         {
             var tokens = new List<(string, SKRunSegment, int)>();
             int globalIndex = 0;
@@ -3133,11 +3808,46 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // раздела, а run хранит только ссылку.
                     if (run.InlineImageId is Guid inlineId)
                     {
+                        // Знак сноски: объект строки, набранный шрифтом своего места в
+                        // тексте, верхним индексом. Для строки он то же, что надстрочная
+                        // цифра: тот же кегль, тот же подъём, та же высота строки.
+                        if (inlineNoteMark?.Invoke(inlineId) is { } noteMark)
+                        {
+                            tokens.Add((RunModel.ObjectPlaceholder.ToString(),
+                                BuildNoteMarkFormat(
+                                    run, noteMark, inlineId, globalIndex, styles,
+                                    styleFontFamily, styleFontSize, styleBold, styleItalic),
+                                globalIndex));
+                            globalIndex++;
+                            continue;
+                        }
+
+                        // Живое поле (дата, номер страницы): текст значения шрифтом
+                        // своего места, на базовой линии, как обычные буквы.
+                        if (inlineFieldText?.Invoke(inlineId) is { } fieldText)
+                        {
+                            tokens.Add((RunModel.ObjectPlaceholder.ToString(),
+                                BuildNoteMarkFormat(
+                                    run, fieldText, inlineId, globalIndex, styles,
+                                    styleFontFamily, styleFontSize, styleBold, styleItalic,
+                                    raised: false),
+                                globalIndex));
+                            globalIndex++;
+                            continue;
+                        }
+
                         var size = inlineImageSize?.Invoke(inlineId);
 
                         // Объект, спрятанный правкой (вставленный — в исходном документе,
                         // удалённый — без исправлений), не рисуется и места не занимает.
                         bool objectHidden = RevisionDisplay.IsRunHidden(run.Properties, styles.RevisionView);
+
+                        // Часть объекта под базовой линией (у формулы): габарит объекта
+                        // опущен на неё — так же, как опущенный текст, отрицательным
+                        // сдвигом от базовой линии. Высота объекта при этом полная.
+                        float objectDescentPt = objectHidden || size is null
+                            ? 0f
+                            : Math.Max(0f, inlineObjectDescent?.Invoke(inlineId) ?? 0f);
 
                         var objectFormat = new SKRunSegment
                         {
@@ -3148,6 +3858,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                             InlineImageId = inlineId,
                             ObjectWidthPt = objectHidden ? 0f : size?.WidthPt ?? 0f,
                             ObjectHeightPt = objectHidden ? 0f : size?.HeightPt ?? 0f,
+                            BaselineShiftPt = -objectDescentPt,
                             IsHidden = objectHidden,
                             IsRevision = run.Properties?.HasRevision == true
                         };
@@ -3164,6 +3875,15 @@ namespace Writersword.Modules.TextEditor.Rendering
                     bool isRevision = revisionProps?.HasRevision == true;
 
                     var p = RevisionDisplay.DisplayProperties(run.Properties, styles.RevisionView);
+
+                    // Текст, к которому оставлено примечание, при «Всех исправлениях»
+                    // подсвечен цветом автора примечания, как у Word. Своя заливка
+                    // фрагмента сильнее подсветки.
+                    string? segHighlightCode = p?.HighlightColor;
+                    if (segHighlightCode is null
+                        && run.Properties?.CommentIds is { Count: > 0 } commentIds
+                        && RevisionDisplay.ShowsMarkup(styles.RevisionView))
+                        segHighlightCode = commentHighlight?.Invoke(commentIds);
 
                     // Символьный стиль — слой между стилем абзаца и собственным
                     // форматированием фрагмента. Порядок силы такой: абзац даёт основу,
@@ -3228,8 +3948,8 @@ namespace Writersword.Modules.TextEditor.Rendering
                     float baselineShift = 0f;
                     if (p?.IsSuperscript == true)
                     {
-                        segFontSize = resolvedSize * 0.65f;
-                        baselineShift = resolvedSize * 0.34f;
+                        segFontSize = resolvedSize * NoteMarkScale;
+                        baselineShift = resolvedSize * NoteMarkRaiseEm;
                     }
                     else if (p?.IsSubscript == true)
                     {
@@ -3326,9 +4046,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                         CharBorderStyle = (int)(p?.CharBorderStyle ?? default),
                         Effects = effects,
                         Color = ParseColor(segColorCode),
-                        HighlightColor = ParseHighlight(p?.HighlightColor),
+                        HighlightColor = ParseHighlight(segHighlightCode),
                         ColorCode = segColorCode,
-                        HighlightCode = p?.HighlightColor,
+                        HighlightCode = segHighlightCode,
                         GlobalCharOffset = globalIndex
                     };
 
@@ -3372,9 +4092,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                             CharBorderStyle = (int)(p?.CharBorderStyle ?? default),
                             Effects = effects,
                             Color = ParseColor(segColorCode),
-                            HighlightColor = ParseHighlight(p?.HighlightColor),
+                            HighlightColor = ParseHighlight(segHighlightCode),
                             ColorCode = segColorCode,
-                            HighlightCode = p?.HighlightColor,
+                            HighlightCode = segHighlightCode,
                             GlobalCharOffset = globalIndex
                         }
                         : null;
@@ -3382,10 +4102,26 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // Получаем typeface один раз на run для проверки глифов.
                     var typeface = GetOrCreateTypeface(resolvedFamily, resolvedBold, resolvedItalic);
 
-                    foreach (char ch in run.Text)
+                    // Иероглифы рядом с каной — японский текст: они берут японскую
+                    // гарнитуру, а не китайскую (подстановка по письменности).
+                    string runText = run.Text;
+                    bool runHasKana = HasKana(runText);
+
+                    // Начертание предыдущего знака-эмодзи: соединитель, селектор вида и
+                    // оттенок кожи идут тем же шрифтом, иначе составной эмодзи распался бы.
+                    SKRunSegment? emojiFormat = null;
+
+                    for (int ci = 0; ci < runText.Length; ci++)
                     {
+                        char ch = runText[ci];
                         SKRunSegment charFormat = format;
                         char drawCh = ch;
+
+                        // Пара суррогатов — один знак вне основной плоскости Юникода
+                        // (эмодзи, математические буквы, редкие иероглифы). Он проверяется
+                        // и подставляется целиком, а не половинками.
+                        bool surrogatePair = char.IsHighSurrogate(ch) && ci + 1 < runText.Length
+                            && char.IsLowSurrogate(runText[ci + 1]);
 
                         // Замена регистра — знак в знак: длина текста не меняется, и каретка,
                         // выделение и поиск продолжают считать по буквам рукописи.
@@ -3421,15 +4157,40 @@ namespace Writersword.Modules.TextEditor.Rendering
                         // а MatchCharacter для них может вернуть Marlett/Wingdings.
                         // Неразрывный дефис и мягкий перенос рисуются дефисом самой
                         // гарнитуры (или не рисуются вовсе) — подменять им шрифт незачем.
-                        if (!char.IsSurrogate(drawCh) && drawCh >= '\u0080'
+                        int scalar = surrogatePair ? char.ConvertToUtf32(ch, runText[ci + 1]) : drawCh;
+
+                        // Соединитель эмодзи, селектор вида и оттенок кожи — следом за
+                        // эмодзи тем же шрифтом.
+                        if (emojiFormat is not null && IsEmojiJoiner(scalar))
+                        {
+                            charFormat = emojiFormat;
+                        }
+                        else if ((surrogatePair || !char.IsSurrogate(drawCh)) && scalar >= 0x80
                             && drawCh != '\u2011' && drawCh != '\u00AD')
                         {
-                            int codepoint = drawCh;
-                            if (typeface.GetGlyph(codepoint) == 0)
+                            int codepoint = scalar;
+
+                            // Знак с цветным видом по умолчанию или с селектором цветного
+                            // вида (U+FE0F) рисуется шрифтом эмодзи, как у Word, — даже если
+                            // монохромный знак есть в гарнитуре текста.
+                            bool asEmoji = WantsEmojiPresentation(codepoint, runText, ci + (surrogatePair ? 2 : 1));
+
+                            if (asEmoji || typeface.GetGlyph(codepoint) == 0)
                             {
-                                string? fallbackFamily = FindFallbackFamily(codepoint, styles);
+                                string? fallbackFamily = asEmoji ? FindEmojiFamily(codepoint) : null;
                                 bool fallbackBold = resolvedBold;
                                 bool fallbackItalic = resolvedItalic;
+
+                                if (fallbackFamily is null)
+                                    fallbackFamily = FindFallbackFamily(codepoint, styles);
+
+                                // Письменности, для которых у текста своей гарнитуры нет
+                                // (иероглифы, хангыль, тайский, деванагари, грузинский…),
+                                // Word набирает системным шрифтом этой письменности. Так и
+                                // здесь — независимо от настройки подстановки букв, которая
+                                // касается латиницы, кириллицы и греческого.
+                                if (fallbackFamily is null)
+                                    fallbackFamily = FindScriptFallback(codepoint, runHasKana);
 
                                 if (fallbackFamily is null
                                     && FindSymbolFallback(codepoint, resolvedFamily, resolvedBold, resolvedItalic) is { } symbol)
@@ -3473,13 +4234,29 @@ namespace Writersword.Modules.TextEditor.Rendering
                                         CharBorderStyle = (int)(p?.CharBorderStyle ?? default),
                                         Effects = effects,
                                         Color = ParseColor(segColorCode),
-                                        HighlightColor = ParseHighlight(p?.HighlightColor),
+                                        HighlightColor = ParseHighlight(segHighlightCode),
                                         ColorCode = segColorCode,
-                                        HighlightCode = p?.HighlightColor,
+                                        HighlightCode = segHighlightCode,
                                         GlobalCharOffset = globalIndex
                                     };
                                 }
                             }
+                        }
+
+                        if (!IsEmojiJoiner(scalar))
+                            emojiFormat = IsEmojiFamily(charFormat.FontFamily) ? charFormat : null;
+
+                        if (surrogatePair)
+                        {
+                            // Пара — один знак: вся ширина и рисунок у первой половины,
+                            // вторая — пустая позиция нулевой ширины. Счёт позиций каретки
+                            // по-прежнему идёт по UTF-16, как во всём редакторе.
+                            tokens.Add((new string(new[] { drawCh, runText[ci + 1] }), charFormat, globalIndex));
+                            globalIndex++;
+                            tokens.Add((string.Empty, charFormat, globalIndex));
+                            globalIndex++;
+                            ci++;
+                            continue;
                         }
 
                         tokens.Add((drawCh.ToString(), charFormat, globalIndex));
@@ -3488,6 +4265,28 @@ namespace Writersword.Modules.TextEditor.Rendering
                 }
 
                 chunk.InvalidateLength();
+            }
+
+            // Подклеенный для показа текст следующего абзаца (знак абзаца спрятан
+            // правкой) в модели не живёт: его позиции сводятся к концу своего абзаца,
+            // и каретка за конец абзаца не уходит.
+            int ownLength = 0;
+            bool anyTail = false;
+            foreach (var chunk in para.Chunks)
+                foreach (var run in chunk.Runs)
+                {
+                    if (run.DisplayTail) { anyTail = true; continue; }
+                    ownLength += run.InlineImageId.HasValue ? 1 : run.Text?.Length ?? 0;
+                }
+
+            if (anyTail)
+            {
+                for (int t = 0; t < tokens.Count; t++)
+                {
+                    if (tokens[t].Item3 <= ownLength) continue;
+                    var (text, tokenFormat, _) = tokens[t];
+                    tokens[t] = (text, tokenFormat, ownLength);
+                }
             }
 
             return tokens;
@@ -3637,8 +4436,13 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 float ascent = Math.Abs(m.Ascent);
                 float descent = Math.Abs(m.Descent);
-                if (format.IsInlineObject && format.ObjectHeightPt > ascent)
-                    ascent = format.ObjectHeightPt;
+                if (format.IsInlineObject && !IsRaisedMark(format))
+                {
+                    // Объект над базовой линией и под ней (спуск — отрицательный сдвиг).
+                    float objectTop = format.ObjectHeightPt + format.BaselineShiftPt;
+                    if (objectTop > ascent) ascent = objectTop;
+                    if (-format.BaselineShiftPt > descent) descent = -format.BaselineShiftPt;
+                }
 
                 return lineSpacing.ResolveProbe(ascent, descent, Math.Abs(m.Leading));
             }
@@ -3879,9 +4683,23 @@ namespace Writersword.Modules.TextEditor.Rendering
                         return extraTop;
                     }
 
-                    // Ни один промежуток не годится — строка уходит под нижний край
-                    // препятствия и проверяется заново: ниже может лежать следующее.
+                    // Ни один промежуток не годится — строка уходит ниже препятствия и
+                    // проверяется заново: ниже может лежать следующее.
+                    //
+                    // Опускается она целыми шагами своей высоты, как у Word: строка,
+                    // которой нет места сбоку от объекта, встаёт не вплотную под его
+                    // нижний край, а на первое место своей сетки строк, где объект её
+                    // уже не задевает. Под картинкой высотой 70 пт строка высотой
+                    // 13,8 пт начинается в 82,8 пт от верха абзаца (шесть шагов), а не
+                    // в 70 — иначе весь текст ниже расходится с Word на долю строки.
+                    // Полпункта — тот же допуск, с которым выше проверяется касание.
                     float nextExtraTop = pushBottom - yTop + 0.5f;
+                    if (lineHPt > 0.5f)
+                    {
+                        float stepsToClear = (float)Math.Ceiling((pushBottom - 0.5f - yTop) / lineHPt);
+                        if (stepsToClear >= 1f)
+                            nextExtraTop = stepsToClear * lineHPt;
+                    }
                     if (nextExtraTop <= extraTop) break;
 
                     // Вытеснение не переходит границу листа. Если под объектом до низа
@@ -4303,43 +5121,86 @@ namespace Writersword.Modules.TextEditor.Rendering
                     AppendTab(carryFormat, carryIdx);
             }
 
-            // Сколько строка может ужаться за счёт пробелов: пятая часть их ширины. Так
-            // Word 2013 и новее верстает абзацы по ширине — слово, которому не хватает
-            // пары пунктов, остаётся в строке, а пробелы в ней становятся уже. Только
-            // для строк без обтекания: в полосах рядом с объектом место считается
-            // отрезками, и сжимать там нечего.
-            float JustifyShrinkAllowance()
+            // Пробелы строки на отрезке, где сейчас идёт набор: их общая ширина и
+            // отдельно ширина пробела, которым строка кончается, — он стоит перед словом,
+            // которое к ней примеряют.
+            //
+            // Считаются пробелы только своего отрезка: строка, разорванная объектом,
+            // упирается в край того отрезка, где сейчас идёт набор, и пробелы по другую
+            // сторону объекта ему места не добавляют.
+            float LineSpacesPt(out float trailingGapPt)
             {
-                if (!layout.AllowsJustifyShrink || hasZones) return 0f;
-
+                trailingGapPt = 0f;
                 float spacesPt = 0f;
-                foreach (var seg in currentLine.Segments)
+                bool atLineEnd = true;
+
+                for (int segIndex = currentLine.Segments.Count - 1; segIndex >= 0; segIndex--)
                 {
-                    if (seg.IsTabJump || seg.IsInlineObject || seg.Text.Length == 0) continue;
-                    if (seg.Text[0] == ' ') spacesPt += seg.Width;
+                    var seg = currentLine.Segments[segIndex];
+                    if (seg.Text.Length == 0) continue;
+
+                    bool isSpace = !seg.IsTabJump && !seg.IsInlineObject
+                        && seg.WrapFragmentIndex == fragIdx && seg.Text[0] == ' ';
+                    if (!isSpace)
+                    {
+                        atLineEnd = false;
+                        continue;
+                    }
+
+                    spacesPt += seg.Width;
+                    if (atLineEnd) trailingGapPt += seg.Width;
                 }
 
-                return spacesPt * MaxJustifyShrink;
+                return spacesPt;
             }
 
-            // Слово, за которым в тексте идёт пробел, Word примеряет к строке вместе с этим
-            // пробелом: хвостовой пробел тоже входит в число сжимаемых, хоть и не рисуется.
-            // Без него строке «…три величины, которые» не хватало пункта, и слово уходило
-            // вниз, а у Word оставалось.
-            void FlushWord(float followingSpacePt = 0f)
+            // Сколько слову разрешено не уместиться в строку, чтобы сжатие пробелов его
+            // всё же втянуло. Так Word 2013 и новее верстает абзацы по ширине: слово,
+            // которому не хватает нескольких пунктов, остаётся в строке, а пробелы в ней
+            // становятся уже. Правил два, и оба подобраны по разбивке Word.
+            //
+            // Первое — предел сжатия: пробел ужимается не больше чем на четверть
+            // (MaxJustifyShrink). «…маркер, который рисуется» входит при сжатии на
+            // 22,6 %, «…одна и та же строка занимает | разную» при 29,7 % уже нет.
+            //
+            // Второе — сравнение с тем, что будет, если слово перенести: тогда строку
+            // придётся растянуть. Слово остаётся, пока сжатие каждого пробела не больше
+            // половины растяжки, которой стоил бы перенос (JustifyShrinkToStretch).
+            // Длинное слово оставляет после себя большую дыру, и ради него строка
+            // сжимается охотно; короткое уходит вниз почти даром. У Word «…ровно так
+            // же, как это сделал | бы» при нехватке 6,8 пт переносится (сжатие 0,62 пт
+            // на пробел против растяжки 1,04), а «…исходником. Шрифт с» при нехватке
+            // 2,8 пт остаётся (0,25 против 0,56).
+            //
+            // Абзац с обтеканием сжимается так же, и строка сбоку от объекта тоже:
+            // «…неровно, и буквы» в полосе рядом с картинкой входит при нехватке 4 пт.
+            //
+            // spacesPt — пробелы строки вместе с пробелом перед словом, gapBeforePt —
+            // сам этот пробел. Число пробелов берётся их шириной: в строке одного кегля
+            // это одно и то же.
+            float WordShrinkAllowance(float spacesPt, float gapBeforePt)
+            {
+                if (!layout.AllowsJustifyShrink || spacesPt <= 0f) return 0f;
+
+                float maxShrinkPt = spacesPt * MaxJustifyShrink;
+
+                // Перед словом нет пробела либо других пробелов в строке нет: при
+                // переносе слова растягивать было бы нечего, и сравнивать не с чем.
+                float otherSpacesPt = spacesPt - gapBeforePt;
+                if (gapBeforePt <= 0f || otherSpacesPt <= 0f) return maxShrinkPt;
+
+                // Нехватка x сжимает каждый пробел на x / spaces, а перенос слова
+                // растягивает оставшиеся на (word + gap − x) / otherSpaces. Условие
+                // «сжатие ≤ доля растяжки» относительно x:
+                float balancedPt = JustifyShrinkToStretch * spacesPt * (wordWidth + gapBeforePt)
+                    / (otherSpacesPt + JustifyShrinkToStretch * spacesPt);
+
+                return Math.Min(maxShrinkPt, balancedPt);
+            }
+
+            void FlushWord()
             {
                 if (wordBuffer.Count == 0) return;
-
-                float trailingShrinkPt = layout.AllowsJustifyShrink && !hasZones
-                    ? followingSpacePt * MaxJustifyShrink
-                    : 0f;
-
-                // Сжатием пробелов Word втягивает в строку слово, которому не хватает
-                // меньше половины его собственной ширины. Короткое слово, вылезающее за край
-                // больше чем наполовину, уходит на следующую строку, даже если пробелов в
-                // строке хватило бы: у Word «…будто вспыхнули | по краям» при запасе в 7,8 пт
-                // и нехватке в 6,6 пт, а «положение каждой» с нехваткой 7,9 пт остаётся.
-                float wordShrinkCapPt = wordWidth * MaxJustifyShrinkWordShare;
 
                 float wordProbeHPt = hasZones ? WordProbeHeight(wordBuffer) : lineProbeHPt;
                 float wordRequiredPt = hasZones
@@ -4390,13 +5251,8 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                     if (sameSpot)
                     {
-                        float allowanceWithSpacePt = Math.Min(
-                            JustifyShrinkAllowance()
-                                + (layout.AllowsJustifyShrink && !hasZones
-                                    ? droppedSpaceWidth * MaxJustifyShrink
-                                    : 0f)
-                                + trailingShrinkPt,
-                            wordShrinkCapPt);
+                        float allowanceWithSpacePt = WordShrinkAllowance(
+                            LineSpacesPt(out _) + droppedSpaceWidth, droppedSpaceWidth);
 
                         if (currentW + droppedSpaceWidth + wordWidth <= fragEndW + allowanceWithSpacePt)
                         {
@@ -4414,7 +5270,8 @@ namespace Writersword.Modules.TextEditor.Rendering
                     droppedSpaceLine = null;
                 }
 
-                float shrinkAllowancePt = Math.Min(JustifyShrinkAllowance() + trailingShrinkPt, wordShrinkCapPt);
+                float lineSpacesPt = LineSpacesPt(out float gapBeforeWordPt);
+                float shrinkAllowancePt = WordShrinkAllowance(lineSpacesPt, gapBeforeWordPt);
 
                 if (currentW + wordWidth <= fragEndW + shrinkAllowancePt
                     || currentLine.Segments.Count == 0 && wordWidth <= fragEndW)
@@ -4439,7 +5296,11 @@ namespace Writersword.Modules.TextEditor.Rendering
                 foreach (var (ch, format, globalIdx) in wordBuffer)
                 {
                     float charWidth = MeasureChar(ch, format);
-                    if (currentW + charWidth > fragEndW && currentLine.Segments.Count > 0
+
+                    // Пустая позиция — вторая половина пары суррогатов: строка между
+                    // половинами знака не рвётся.
+                    if (ch.Length > 0
+                        && currentW + charWidth > fragEndW && currentLine.Segments.Count > 0
                         && !AdvanceFragment())
                     {
                         StartNewLine(globalIdx, wordProbeHPt, wordRequiredPt);
@@ -4588,7 +5449,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 else if (ch == " ")
                 {
                     float spaceWidth = MeasureChar(ch, format);
-                    FlushWord(spaceWidth);
+                    FlushWord();
 
                     // Пробел на границе отрезка не переносит текст за объект: он просто
                     // не рисуется, как хвостовой пробел в конце строки. Слово за ним
@@ -4963,11 +5824,21 @@ namespace Writersword.Modules.TextEditor.Rendering
             {
                 if (candidate.IsHidden && anyVisible) continue;
 
+                // Знак сноски — знак текста: высоту строки он задаёт своим шрифтом.
+                if (IsRaisedMark(candidate))
+                {
+                    lineHasGlyphs = true;
+                    continue;
+                }
+
                 if (candidate.IsInlineObject)
                 {
                     lineHasObject = true;
-                    if (candidate.ObjectHeightPt > maxObjectHeightPt)
-                        maxObjectHeightPt = candidate.ObjectHeightPt;
+
+                    // Высота объекта над базовой линией: без части, опущенной под неё.
+                    float objectTopPt = candidate.ObjectHeightPt + candidate.BaselineShiftPt;
+                    if (objectTopPt > maxObjectHeightPt)
+                        maxObjectHeightPt = objectTopPt;
                     continue;
                 }
 
@@ -5001,7 +5872,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 if (!lineHasObject) return true;
                 if (objectsOnlyHeight) return false;
                 if (!lineHasGlyphs) return true;
-                return !seg.IsInlineObject && HasGlyphs(seg);
+                return IsRaisedMark(seg) || (!seg.IsInlineObject && HasGlyphs(seg));
             }
 
             foreach (var seg in line.Segments)
@@ -5046,8 +5917,17 @@ namespace Writersword.Modules.TextEditor.Rendering
                 // Картинка в строке стоит на базовой линии и поднимает высоту строки
                 // под себя — как крупный глиф. Иначе строка осталась бы высотой в
                 // шрифт, а картинка налезла бы на соседние строки.
-                if (seg.IsInlineObject && seg.ObjectHeightPt > ascent)
-                    ascent = seg.ObjectHeightPt;
+                if (seg.IsInlineObject && !IsRaisedMark(seg))
+                {
+                    // Объект со спуском (формула) опущен под базовую линию на свой
+                    // спуск: над линией остаётся его высота без этой части, а спуск
+                    // раздвигает строку вниз, как выносной элемент буквы.
+                    float objectTop = seg.ObjectHeightPt + seg.BaselineShiftPt;
+                    if (objectTop > ascent) ascent = objectTop;
+
+                    float objectBottom = -seg.BaselineShiftPt;
+                    if (objectBottom > descent) descent = objectBottom;
+                }
 
                 if (ascent > top) top = ascent;
 
@@ -5064,7 +5944,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 // Текст, поднятый или опущенный от базовой линии (индексы, w:position),
                 // раздвигает строку, как у Word: поднятый — вверх, опущенный — вниз.
                 // Иначе он налезал бы на соседние строки.
-                if (!seg.IsInlineObject && fontCounts && seg.BaselineShiftPt != 0f)
+                if ((!seg.IsInlineObject || IsRaisedMark(seg)) && fontCounts && seg.BaselineShiftPt != 0f)
                 {
                     top += seg.BaselineShiftPt;
                     descent -= seg.BaselineShiftPt;
@@ -5076,6 +5956,9 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 seg.GlyphMetrics = BuildGlyphMetrics(seg, font);
             }
+
+            // Деванагари, тайский, составные эмодзи — ширины по набору HarfBuzz.
+            ApplyLeftToRightShapedAdvances(line);
 
             // Знаки разного кегля по высоте строки (w:textAlignment): мелкие встают не на
             // общую базовую линию, а верхом к верху строки, серединой к её середине или
@@ -5271,6 +6154,545 @@ namespace Writersword.Modules.TextEditor.Rendering
                 if (info.Cluster >= (uint)text.Length) return false;
             }
 
+            return true;
+        }
+
+        // Сдвиг куска текста или таблицы листа печати от левого края текстовой области:
+        // колонка раздела или поля раздела после непрерывного разрыва. Записи листа
+        // (SKPageParagraph) живут в Core и своего X не несут — сдвиг хранится рядом и
+        // живёт, пока жива запись.
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SKPageParagraph, System.Runtime.CompilerServices.StrongBox<float>> PrintOffsets = new();
+
+        // Черты между колонками листа печати: X от левого края текстовой области, верх и
+        // низ — от её верха.
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SKPageContent, List<(float X, float Top, float Bottom)>> PrintColumnRules = new();
+
+        private static void SetPrintOffset(SKPageParagraph paragraph, float offsetPt)
+        {
+            if (Math.Abs(offsetPt) < 0.01f)
+            {
+                PrintOffsets.Remove(paragraph);
+                return;
+            }
+
+            PrintOffsets.AddOrUpdate(paragraph, new System.Runtime.CompilerServices.StrongBox<float>(offsetPt));
+        }
+
+        /// <summary>Сдвиг куска от левого края текстовой области листа, пт.</summary>
+        public static float PrintOffsetOf(SKPageParagraph paragraph)
+            => PrintOffsets.TryGetValue(paragraph, out var box) ? box.Value : 0f;
+
+        private static void AddPrintColumnRule(SKPageContent page, float xPt, float topPt, float bottomPt)
+        {
+            if (bottomPt - topPt < 1f) return;
+            PrintColumnRules.GetOrCreateValue(page).Add((xPt, topPt, bottomPt));
+        }
+
+        /// <summary>Черты между колонками листа печати — тонкой линией, как у Word.</summary>
+        private static void RenderPrintColumnRules(SKCanvas canvas, SKPageContent page)
+        {
+            if (!PrintColumnRules.TryGetValue(page, out var rules) || rules.Count == 0) return;
+
+            using var paint = new SKPaint
+            {
+                Color = SKColors.Black,
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = 0.5f
+            };
+
+            foreach (var (x, top, bottom) in rules)
+            {
+                float lineX = page.MarginLeftPt + x;
+                canvas.DrawLine(lineX, page.MarginTopPt + top, lineX, page.MarginTopPt + bottom, paint);
+            }
+        }
+
+        // ── Раздел листа печати: рамка, номера строк, выравнивание по высоте ──
+
+        /// <summary>Раздел, в котором начат лист печати, и что из него следует для листа.</summary>
+        private sealed class PrintPageSection
+        {
+            public int Index { get; init; }
+            public Models.Page.SectionLayout? Layout { get; init; }
+
+            /// <summary>Первый лист своего раздела.</summary>
+            public bool First { get; set; }
+
+            /// <summary>Сдвиг текста листа вниз при выравнивании раздела по высоте, пт.</summary>
+            public float ShiftPt { get; set; }
+        }
+
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SKPageContent, PrintPageSection> PrintPageSections = new();
+
+        private const float PrintLineNumberDistancePt = 18f;
+        private const float PrintLineNumberFontSizePt = 9f;
+
+        /// <summary>Параметры разделов по порядку; последний — раздел документа.</summary>
+        private static List<Models.Page.SectionLayout?> PrintSectionLayouts(DocumentModel document)
+        {
+            var result = new List<Models.Page.SectionLayout?>();
+            if (document.Sections.Count == 0) return result;
+
+            foreach (var block in document.Sections[0].Blocks)
+                if (block is BreakBlock { IsSectionBreak: true } sectionBreak)
+                    result.Add(sectionBreak.Section);
+
+            result.Add(document.FinalSection);
+            return result;
+        }
+
+        /// <summary>
+        /// Первые листы разделов и выравнивание по высоте: по центру или по низу текст
+        /// листа опускается в месте под текст. Листы с таблицами, плавающими объектами и
+        /// сносками остаются как сверстаны — как и на полотне.
+        /// </summary>
+        private static void FinishPrintSections(SKPageLayout pageLayout, List<NoteArea>? noteAreas)
+        {
+            var notePages = new HashSet<int>();
+            if (noteAreas is not null)
+                foreach (var area in noteAreas) notePages.Add(area.PageIndex);
+
+            int previous = -1;
+            for (int p = 0; p < pageLayout.Pages.Count; p++)
+            {
+                var page = pageLayout.Pages[p];
+                if (!PrintPageSections.TryGetValue(page, out var info)) continue;
+
+                info.First = info.Index != previous;
+                previous = info.Index;
+
+                var align = info.Layout?.VerticalAlignment ?? Models.Page.SectionVerticalAlignment.Top;
+                if (align is not (Models.Page.SectionVerticalAlignment.Center or Models.Page.SectionVerticalAlignment.Bottom))
+                    continue;
+                if (notePages.Contains(p) || page.Tables.Count > 0 || page.Floats.Count > 0 || page.Paragraphs.Count == 0)
+                    continue;
+
+                float top = float.MaxValue, bottom = float.MinValue;
+                foreach (var para in page.Paragraphs)
+                {
+                    float height = 0f;
+                    for (int li = para.LineFrom; li < para.LineTo && li < para.Layout.Lines.Count; li++)
+                        height += para.Layout.Lines[li].Height;
+                    top = Math.Min(top, para.Y);
+                    bottom = Math.Max(bottom, para.Y + height);
+                }
+
+                float free = page.TextHeightPt - (bottom - top);
+                if (free <= 0.5f) continue;
+
+                float wanted = align == Models.Page.SectionVerticalAlignment.Center ? free / 2f : free;
+                info.ShiftPt = wanted - top;
+            }
+
+            PrepareLineNumbers(pageLayout);
+        }
+
+        private static float PrintShiftOf(SKPageContent page)
+            => PrintPageSections.TryGetValue(page, out var info) ? info.ShiftPt : 0f;
+
+        /// <summary>
+        /// Переплёт листа печати, мм, если лист начат в разделе со своим листом; null —
+        /// лист документа и его переплёт.
+        /// </summary>
+        public static double? PrintSheetGutterMm(SKPageContent page)
+            => PrintPageSections.TryGetValue(page, out var info) ? info.Layout?.Page?.MarginGutterMm : null;
+
+        /// <summary>Рамка страницы раздела на листе печати.</summary>
+        private static void RenderPrintPageBorders(SKCanvas canvas, SKPageContent page, bool behind)
+        {
+            if (!PrintPageSections.TryGetValue(page, out var info)) return;
+            if (info.Layout?.PageBorders is not { } borders || borders.Behind != behind) return;
+
+            bool show = borders.Display switch
+            {
+                Models.Page.PageBorderDisplay.FirstPage => info.First,
+                Models.Page.PageBorderDisplay.NotFirstPage => !info.First,
+                _ => true
+            };
+            if (!show) return;
+
+            float left = 0f, top = 0f, right = page.PageWidthPt, bottom = page.PageHeightPt;
+            if (!borders.FromPageEdge)
+            {
+                left = page.MarginLeftPt;
+                top = page.MarginTopPt;
+                right = page.MarginLeftPt + page.TextWidthPt;
+                bottom = page.MarginTopPt + page.TextHeightPt;
+            }
+
+            void Side(Models.Page.PageBorderSide? side, bool horizontal, bool atStart)
+            {
+                if (side is null) return;
+                float space = (float)side.SpacePt;
+                float inwardSign = borders.FromPageEdge ? 1f : -1f;
+
+                if (horizontal)
+                {
+                    float y = atStart ? top + space * inwardSign : bottom - space * inwardSign;
+                    PageBorderPainter.DrawSide(canvas, side, left, y, right, y, true, atStart == borders.FromPageEdge);
+                }
+                else
+                {
+                    float x = atStart ? left + space * inwardSign : right - space * inwardSign;
+                    PageBorderPainter.DrawSide(canvas, side, x, top, x, bottom, false, atStart == borders.FromPageEdge);
+                }
+            }
+
+            Side(borders.Top, true, true);
+            Side(borders.Bottom, true, false);
+            Side(borders.Left, false, true);
+            Side(borders.Right, false, false);
+        }
+
+        /// <summary>Номера строк раздела на листе печати — у левого края текста, на базовой линии.</summary>
+        private static void RenderPrintLineNumbers(SKCanvas canvas, SKPageContent page)
+        {
+            if (!PrintPageSections.TryGetValue(page, out var info)) return;
+            if (info.Layout?.LineNumbering is not { } numbering) return;
+
+            int counter = PrintLineCounterStart(page, info, numbering);
+            int countBy = Math.Max(numbering.CountBy, 1);
+            float distance = numbering.DistanceMm > 0 ? MmToPt(numbering.DistanceMm) : PrintLineNumberDistancePt;
+            float shift = info.ShiftPt;
+
+            using var font = new SKFont(ResolveTypeface("Times New Roman", false, false), PrintLineNumberFontSizePt);
+            using var paint = new SKPaint { IsAntialias = true, Color = new SKColor(0x40, 0x40, 0x40) };
+
+            foreach (var para in page.Paragraphs)
+            {
+                if (para.ParagraphIndex < 0) continue;
+
+                float yBase = para.LineFrom < para.Layout.Lines.Count ? para.Layout.Lines[para.LineFrom].Y : 0f;
+                float left = page.MarginLeftPt + PrintOffsetOf(para);
+                for (int li = para.LineFrom; li < para.LineTo && li < para.Layout.Lines.Count; li++)
+                {
+                    counter++;
+                    if (counter % countBy != 0) continue;
+
+                    var line = para.Layout.Lines[li];
+                    float baseline = page.MarginTopPt + para.Y + shift + (line.Y - yBase) + line.Baseline;
+                    string text = counter.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    canvas.DrawText(text, left - distance - font.MeasureText(text), baseline, SKTextAlign.Left, font, paint);
+                }
+            }
+        }
+
+        // Счёт номеров строк, с которого начинается лист: расставляется по всем листам
+        // после раскладки (PrepareLineNumbers) — лист печатается отдельно от соседей.
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SKPageContent, System.Runtime.CompilerServices.StrongBox<int>> PrintLineCounters = new();
+
+        private static int PrintLineCounterStart(SKPageContent page, PrintPageSection info, Models.Page.SectionLineNumbering numbering)
+        {
+            return PrintLineCounters.TryGetValue(page, out var box) ? box.Value : Math.Max(numbering.Start, 1) - 1;
+        }
+
+        /// <summary>
+        /// Расставляет счёт номеров строк по листам заранее: сколько строк потока стоит
+        /// на каждом листе раздела до него. Нужен, потому что лист печатается отдельно.
+        /// </summary>
+        private static void PrepareLineNumbers(SKPageLayout pageLayout)
+        {
+            int counter = 0;
+            int section = -1;
+            bool previousNumbered = false;
+
+            foreach (var page in pageLayout.Pages)
+            {
+                if (!PrintPageSections.TryGetValue(page, out var info)) continue;
+                var numbering = info.Layout?.LineNumbering;
+
+                if (numbering is null)
+                {
+                    previousNumbered = false;
+                    section = info.Index;
+                    continue;
+                }
+
+                if (info.Index != section)
+                {
+                    if (!(numbering.Restart == Models.Page.LineNumberRestart.Continuous && previousNumbered))
+                        counter = Math.Max(numbering.Start, 1) - 1;
+                }
+                else if (numbering.Restart == Models.Page.LineNumberRestart.NewPage)
+                {
+                    counter = Math.Max(numbering.Start, 1) - 1;
+                }
+
+                section = info.Index;
+                previousNumbered = true;
+                PrintLineCounters.AddOrUpdate(page, new System.Runtime.CompilerServices.StrongBox<int>(counter));
+
+                foreach (var para in page.Paragraphs)
+                {
+                    if (para.ParagraphIndex < 0) continue;
+                    counter += Math.Max(0, Math.Min(para.LineTo, para.Layout.Lines.Count) - para.LineFrom);
+                }
+            }
+        }
+
+        /// <summary>Лист раздела в печати: размер, поля слева и сверху, размер текстовой области, пт.</summary>
+        private readonly record struct PrintSheet(
+            float PageWidthPt, float PageHeightPt,
+            float MarginLeftPt, float MarginTopPt,
+            float TextWidthPt, float TextHeightPt);
+
+        /// <summary>
+        /// Листы разделов для печати: с какого блока начинается каждый раздел, его лист
+        /// и колонки. Последний раздел — лист печати (параметры страницы документа с
+        /// местом под колонтитулы).
+        /// </summary>
+        private static List<(int FirstBlock, PrintSheet Sheet, Models.Page.SectionColumns Columns)> BuildPrintSectionSheets(DocumentModel document, PrintSheet final)
+        {
+            var sheets = new List<(int, PrintSheet, Models.Page.SectionColumns)>();
+            if (document.Sections.Count == 0) return sheets;
+
+            var blocks = document.Sections[0].Blocks;
+            int start = 0;
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                if (blocks[i] is not BreakBlock { IsSectionBreak: true } sectionBreak) continue;
+
+                var page = sectionBreak.Section?.Page;
+                var sheet = final;
+                if (page is not null)
+                {
+                    sheet = new PrintSheet(
+                        MmToPt(page.GetPhysicalWidthMm()),
+                        MmToPt(page.GetPhysicalHeightMm()),
+                        MmToPt(page.MarginLeftMm + page.MarginGutterMm),
+                        MmToPt(page.MarginTopMm),
+                        MmToPt(page.GetTextWidthMm()),
+                        MmToPt(page.GetTextHeightMm()));
+                }
+
+                sheets.Add((start, sheet, ColumnFrames.ColumnsOf(document, sectionBreak)));
+                start = i + 1;
+            }
+
+            sheets.Add((start, final, ColumnFrames.FinalColumns(document)));
+            return sheets;
+        }
+
+        private static int PrintSectionIndexOf(List<(int FirstBlock, PrintSheet Sheet, Models.Page.SectionColumns Columns)> sheets, int blockIndex)
+        {
+            int index = 0;
+            for (int s = 1; s < sheets.Count; s++)
+            {
+                if (sheets[s].FirstBlock > blockIndex) break;
+                index = s;
+            }
+            return index;
+        }
+
+        /// <summary>
+        /// Нужен ли пустой лист перед разделом, который начинается с чётной или нечётной
+        /// страницы: номер листа, на который пришёл бы раздел, не той чётности.
+        /// </summary>
+        public static bool NeedsBlankPageBefore(BreakType type, int pageNumber) => type switch
+        {
+            BreakType.SectionEvenPage => pageNumber % 2 != 0,
+            BreakType.SectionOddPage => pageNumber % 2 == 0,
+            _ => false
+        };
+
+        /// <summary>
+        /// Текст слева направо, которому нужен набор HarfBuzz: индийские письменности,
+        /// тайский, лаосский, тибетский, бирманский, кхмерский, монгольский, хангыль
+        /// из чамо и составные эмодзи (с соединителем нулевой ширины).
+        /// </summary>
+        private static bool NeedsLeftToRightShaping(string text)
+        {
+            foreach (char c in text)
+            {
+                if (c < '\u0900') continue;
+                if (c is >= '\u0900' and <= '\u0DFF'
+                    or >= '\u0E00' and <= '\u0EFF'
+                    or >= '\u0F00' and <= '\u109F'
+                    or >= '\u1100' and <= '\u11FF'
+                    or >= '\u1780' and <= '\u18AF'
+                    or >= '\uA960' and <= '\uA97F'
+                    or >= '\uD7B0' and <= '\uD7FF'
+                    or '\u200D')
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Набирает текст слева направо HarfBuzz. false — набрать нечем: у гарнитуры
+        /// нет файла или в ней нет какого-то знака.
+        /// </summary>
+        private static bool TryShapeLeftToRight(
+            SKTypeface typeface,
+            string text,
+            out HarfBuzzSharp.GlyphInfo[] infos,
+            out HarfBuzzSharp.GlyphPosition[] positions,
+            out int unitsPerEm)
+        {
+            infos = Array.Empty<HarfBuzzSharp.GlyphInfo>();
+            positions = Array.Empty<HarfBuzzSharp.GlyphPosition>();
+            unitsPerEm = 0;
+
+            if (string.IsNullOrEmpty(text)) return false;
+
+            lock (_harfBuzzLock)
+            {
+                var entry = GetHarfBuzzFont(typeface);
+                if (entry is null) return false;
+
+                using var buffer = new HarfBuzzSharp.Buffer();
+                buffer.AddUtf16(text);
+                buffer.Direction = HarfBuzzSharp.Direction.LeftToRight;
+                buffer.GuessSegmentProperties();
+                entry.Font.Shape(buffer);
+
+                infos = buffer.GlyphInfos;
+                positions = buffer.GlyphPositions;
+                unitsPerEm = entry.UnitsPerEm;
+            }
+
+            if (infos.Length == 0 || positions.Length != infos.Length || unitsPerEm <= 0) return false;
+
+            foreach (var info in infos)
+            {
+                if (info.Cluster >= (uint)text.Length) return false;
+
+                // Невидимые знаки (соединитель эмодзи, селекторы вида) HarfBuzz отдаёт
+                // нулевым глифом: их не рисуют. Нулевой глиф на месте буквы — знака в
+                // шрифте нет, набирать нечем.
+                if (info.Codepoint == 0 && !IsDefaultIgnorable(text, (int)info.Cluster)) return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>Знак, который не рисуется: соединители, селекторы вида, метки направления.</summary>
+        private static bool IsDefaultIgnorable(string text, int index)
+        {
+            char c = text[index];
+            return c is '\u00AD' or '\u034F' or '\u061C' or '\u115F' or '\u1160' or '\u3164' or '\uFEFF'
+                or >= '\u200B' and <= '\u200F'
+                or >= '\u202A' and <= '\u202E'
+                or >= '\u2060' and <= '\u206F'
+                or >= '\uFE00' and <= '\uFE0F'
+                || (char.IsHighSurrogate(c) && index + 1 < text.Length
+                    && char.ConvertToUtf32(c, text[index + 1]) is >= 0xE0000 and <= 0xE0FFF);
+        }
+
+        /// <summary>
+        /// Ширины знаков сегментов строки, набранных HarfBuzz слева направо: кластер
+        /// (слог деванагари, связка, составной эмодзи) занимает ширину своего набора,
+        /// а не сумму ширин отдельных знаков. Иначе внутри слова, где буквы сливаются в
+        /// связку, оставалась щель. Ширина кластера — первому знаку, остальные нулевые;
+        /// сегменты правее сдвигаются на разницу.
+        /// </summary>
+        private static void ApplyLeftToRightShapedAdvances(SKLineLayout line)
+        {
+            float shift = 0f;
+
+            foreach (var seg in line.Segments)
+            {
+                if (Math.Abs(shift) > 0.0001f) seg.X += shift;
+
+                if (seg.IsInlineObject || seg.IsHidden || seg.IsTabJump || seg.IsLineBreak || seg.IsRightToLeft) continue;
+                if (seg.Text.Length == 0 || seg.GlyphMetrics.Length != seg.Text.Length) continue;
+                if (!NeedsLeftToRightShaping(seg.Text)) continue;
+
+                var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
+                var font = GetOrCreateFont(typeface, seg.FontSizePt);
+                if (!TryShapeLeftToRight(font.Typeface, seg.Text, out var infos, out var positions, out int unitsPerEm))
+                    continue;
+
+                float unitScale = font.Size / unitsPerEm;
+                var advances = new float[seg.Text.Length];
+                var starts = new bool[seg.Text.Length];
+                for (int i = 0; i < infos.Length; i++)
+                {
+                    int cluster = (int)infos[i].Cluster;
+                    advances[cluster] += positions[i].XAdvance * unitScale;
+                    starts[cluster] = true;
+                }
+
+                var metrics = seg.GlyphMetrics;
+                var rebuilt = new SKGlyphMetrics[metrics.Length];
+                float x = 0f;
+                for (int k = 0; k < metrics.Length; k++)
+                {
+                    float width = starts[k] ? advances[k] * seg.HorizontalScale + seg.CharacterSpacingPt : 0f;
+                    rebuilt[k] = new SKGlyphMetrics { CharIndex = metrics[k].CharIndex, X = x, Width = width };
+                    x += width;
+                }
+
+                shift += x - seg.Width;
+                seg.GlyphMetrics = rebuilt;
+                seg.Width = x;
+            }
+
+            if (Math.Abs(shift) > 0.0001f) line.TextWidth += shift;
+        }
+
+        /// <summary>
+        /// Рисует сегмент слева направо набором HarfBuzz. Каждый кластер (слог,
+        /// лигатура, составной эмодзи) встаёт на место своего первого знака из вёрстки —
+        /// буквы совпадают с кареткой и выделением, а пробел, растянутый выравниванием,
+        /// не растягивает слово. false — набрать нечем, сегмент рисуется как обычно.
+        /// </summary>
+        private static bool DrawShapedLeftToRight(
+            SKCanvas canvas, SKRunSegment seg, float x, float baseY, SKFont font, SKPaint paint)
+        {
+            if (!TryShapeLeftToRight(font.Typeface, seg.Text, out var infos, out var positions, out int unitsPerEm))
+                return false;
+
+            int count = infos.Length;
+            float unitScale = font.Size / unitsPerEm;
+            float scaleX = font.ScaleX > 0f ? font.ScaleX : 1f;
+
+            var glyphs = new List<ushort>(count);
+            var points = new List<SKPoint>(count);
+            var metrics = seg.GlyphMetrics;
+            bool placed = metrics.Length == seg.Text.Length;
+
+            int currentCluster = -1;
+            float clusterLeft = 0f;
+            float clusterPen = 0f;
+            float pen = 0f;
+
+            for (int i = 0; i < count; i++)
+            {
+                int cluster = (int)infos[i].Cluster;
+                if (cluster != currentCluster)
+                {
+                    currentCluster = cluster;
+                    clusterPen = 0f;
+                    clusterLeft = placed ? metrics[cluster].X : pen;
+                }
+
+                // Невидимый знак (нулевой глиф) не рисуется, но место набора за ним идёт.
+                if (infos[i].Codepoint != 0)
+                {
+                    glyphs.Add((ushort)infos[i].Codepoint);
+                    points.Add(new SKPoint(
+                        x + clusterLeft + clusterPen + positions[i].XOffset * unitScale * scaleX,
+                        baseY - positions[i].YOffset * unitScale));
+                }
+
+                float advance = positions[i].XAdvance * unitScale * scaleX;
+                clusterPen += advance;
+                pen += advance;
+            }
+
+            if (glyphs.Count == 0) return true;
+
+            using var builder = new SKTextBlobBuilder();
+            var run = builder.AllocatePositionedRun(font, glyphs.Count);
+            run.SetGlyphs(glyphs.ToArray());
+            run.SetPositions(points.ToArray());
+
+            using var blob = builder.Build();
+            if (blob is null) return false;
+
+            canvas.DrawText(blob, 0f, 0f, paint);
             return true;
         }
 
@@ -6018,18 +7440,19 @@ namespace Writersword.Modules.TextEditor.Rendering
         private const float MaxSpaceStretch = 0f;
 
         /// <summary>
-        /// Предел сжатия пробелов при выравнивании по ширине: пятая часть их ширины,
-        /// как у Word 2013 и новее.
+        /// Предел сжатия пробелов при выравнивании по ширине: четверть их ширины.
+        /// Подобрано по разбивке Word 2013 и новее: строки со сжатием до 22,6 % у него
+        /// есть, со сжатием 29,7 % и больше — нет.
         /// </summary>
-        private const float MaxJustifyShrink = 0.2f;
+        private const float MaxJustifyShrink = 0.25f;
 
         /// <summary>
-        /// Какую долю своей ширины слово может не уместить в строку, чтобы сжатие
-        /// пробелов его всё же втянуло. Подобрано по разбивке Word на строках, где
-        /// решает именно это: короткие слова («по», «не») с нехваткой больше половины
-        /// длины Word переносит, длинные с той же нехваткой оставляет.
+        /// Во сколько раз сжатие пробела «дороже» его растяжки, когда решается, оставить
+        /// слово в строке или перенести: слово остаётся, пока сжатие каждого пробела не
+        /// больше этой доли растяжки, которой стоил бы перенос. Подобрано по разбивке
+        /// Word: при отношении 0,45 слово у него остаётся, при 0,59 — уходит вниз.
         /// </summary>
-        private const float MaxJustifyShrinkWordShare = 0.5f;
+        private const float JustifyShrinkToStretch = 0.5f;
 
         /// <summary>
         /// Кегль строчных букв в «малых прописных» относительно кегля текста.
@@ -6085,7 +7508,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             // Перенос строки и мягкий перенос места в строке не занимают: первый стоит
             // в её конце, второй виден только там, где по нему разорвано слово, — и
             // тогда его ширину даёт дефис (ShowTrailingSoftHyphen).
-            if (ch == "\n" || ch == SoftHyphen) return 0f;
+            if (ch.Length == 0 || ch == "\n" || ch == SoftHyphen) return 0f;
 
             // Неразрывный дефис шириной обычного — им он и рисуется.
             if (ch == NonBreakingHyphen) ch = "-";
@@ -6849,6 +8272,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                 DrawRightToLeftText(canvas, seg, x, baseY, font, paint);
                 return;
             }
+
+            // Письменности, где знаки меняют вид и место по соседям (деванагари и другие
+            // индийские, тайский, кхмерский, тибетский), и составные эмодзи набираются
+            // HarfBuzz, как у Word: иначе огласовки и лигатуры встают не на свои места.
+            if (!seg.IsInlineObject && seg.Text.Length > 0 && NeedsLeftToRightShaping(seg.Text)
+                && DrawShapedLeftToRight(canvas, seg, x, baseY, font, paint))
+                return;
             if ((Math.Abs(seg.CharacterSpacingPt) < 0.0001f && !seg.UsesGlyphPositions)
                 || seg.IsInlineObject
                 || seg.GlyphMetrics.Length != seg.Text.Length)
@@ -7108,13 +8538,26 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (layout.ChangeBarColor is not SKColor color) return;
             if (!LineHasRevision(layout, lineIndex)) return;
 
+            // Черта не тоньше одного пикселя экрана и стоит на целом пикселе. Залитый
+            // прямоугольник шириной в пункт при уменьшенном масштабе выходил уже
+            // пикселя и, попав между центрами двух соседних, не закрашивал ни одного:
+            // правки на листе есть, а черты у них нет.
+            float scale = CanvasScale(canvas);
+            float widthPt = Math.Max(1f / scale, ChangeBarWidthPt);
+
             using var paint = new SKPaint
             {
                 Color = color,
-                IsAntialias = false,
-                Style = SKPaintStyle.Fill
+                StrokeWidth = widthPt,
+                IsStroke = true,
+                IsAntialias = false
             };
-            canvas.DrawRect(barX - ChangeBarWidthPt, lineTopY, ChangeBarWidthPt, lineHeight, paint);
+
+            float x = barX - ChangeBarWidthPt / 2f;
+            float xPx = (float)Math.Round(x * scale - 0.5f) + 0.5f;
+            x = xPx / scale;
+
+            canvas.DrawLine(x, lineTopY, x, lineTopY + lineHeight, paint);
         }
 
         /// <summary>
@@ -7232,9 +8675,20 @@ namespace Writersword.Modules.TextEditor.Rendering
             var glyphs = new SKGlyphMetrics[seg.Text.Length];
             float x = 0f;
 
+            // Глифы идут по знакам Юникода, а места — по UTF-16: у пары суррогатов один
+            // глиф на две позиции. Ширина знака — первой позиции, вторая нулевая.
+            int glyphIndex = 0;
+
             for (int i = 0; i < seg.Text.Length; i++)
             {
-                float width = (widths is not null && i < widths.Length) ? widths[i] : 0f;
+                bool lowHalf = i > 0 && char.IsLowSurrogate(seg.Text[i]) && char.IsHighSurrogate(seg.Text[i - 1]);
+
+                float width = 0f;
+                if (!lowHalf)
+                {
+                    width = (widths is not null && glyphIndex < widths.Length) ? widths[glyphIndex] : 0f;
+                    glyphIndex++;
+                }
 
                 // Масштаб по ширине растягивает знак вместе с его местом в строке.
                 width *= seg.HorizontalScale;
@@ -7244,7 +8698,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 width += seg.CharacterSpacingPt;
 
                 // Скрытый текст — нулевой ширины: все его позиции каретки в одной точке.
-                if (seg.IsHidden) width = 0f;
+                if (seg.IsHidden || lowHalf) width = 0f;
 
                 // Перенос строки и невидимый мягкий перенос — тоже нулевой ширины.
                 if (seg.IsLineBreak || (seg.IsSoftHyphen && !seg.SoftHyphenShown)) width = 0f;
@@ -7878,6 +9332,215 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// Такие шрифты отображают ASCII-символы как иконки/стрелки,
         /// поэтому не подходят для текстового фолбэка.
         /// </summary>
+        // ── Подстановка по письменности и эмодзи ─────────────────────────
+
+        /// <summary>Шрифты китайских иероглифов в порядке Word: «Дэнсянь», «SimSun», «YaHei».</summary>
+        private static readonly string[] ChineseFamilies =
+            { "DengXian", "SimSun", "Microsoft YaHei", "Microsoft JhengHei", "MS Gothic", "Yu Gothic" };
+
+        /// <summary>Шрифты японского текста: иероглифы рядом с каной и сама кана.</summary>
+        private static readonly string[] JapaneseFamilies =
+            { "Yu Mincho", "MS Mincho", "Yu Gothic", "Meiryo", "MS Gothic", "DengXian", "SimSun" };
+
+        private static readonly string[] KoreanFamilies = { "Malgun Gothic", "Batang", "Gulim", "Dotum" };
+
+        private static readonly string[] IndicFamilies = { "Nirmala UI", "Mangal", "Kokila", "Aparajita", "Arial Unicode MS" };
+
+        private static readonly string[] GeorgianArmenianFamilies = { "Sylfaen", "Segoe UI", "Arial Unicode MS" };
+
+        /// <summary>
+        /// Письменности, для которых у текста обычно нет своей гарнитуры, и системные
+        /// шрифты Windows, которыми их набирает Word. Диапазоны — блоки Юникода.
+        /// </summary>
+        private static readonly (int From, int To, string[] Families)[] ScriptFallbackRanges =
+        {
+            (0x0530, 0x058F, GeorgianArmenianFamilies),
+            (0x0590, 0x05FF, new[] { "Segoe UI", "Arial", "Times New Roman", "David" }),
+            (0x0600, 0x06FF, new[] { "Segoe UI", "Arial", "Times New Roman", "Tahoma" }),
+            (0x0700, 0x074F, new[] { "Estrangelo Edessa", "Segoe UI Historic" }),
+            (0x0750, 0x077F, new[] { "Segoe UI", "Arial" }),
+            (0x0780, 0x07BF, new[] { "MV Boli" }),
+            (0x07C0, 0x07FF, new[] { "Ebrima" }),
+            (0x08A0, 0x08FF, new[] { "Segoe UI", "Arial" }),
+            (0x0900, 0x097F, new[] { "Nirmala UI", "Mangal", "Kokila", "Aparajita", "Arial Unicode MS" }),
+            (0x0980, 0x09FF, new[] { "Nirmala UI", "Vrinda", "Shonar Bangla" }),
+            (0x0A00, 0x0A7F, new[] { "Nirmala UI", "Raavi" }),
+            (0x0A80, 0x0AFF, new[] { "Nirmala UI", "Shruti" }),
+            (0x0B00, 0x0B7F, new[] { "Nirmala UI", "Kalinga" }),
+            (0x0B80, 0x0BFF, new[] { "Nirmala UI", "Latha" }),
+            (0x0C00, 0x0C7F, new[] { "Nirmala UI", "Gautami" }),
+            (0x0C80, 0x0CFF, new[] { "Nirmala UI", "Tunga" }),
+            (0x0D00, 0x0D7F, new[] { "Nirmala UI", "Kartika" }),
+            (0x0D80, 0x0DFF, new[] { "Nirmala UI", "Iskoola Pota" }),
+            (0x0E00, 0x0E7F, new[] { "Leelawadee UI", "Leelawadee", "Tahoma", "Cordia New" }),
+            (0x0E80, 0x0EFF, new[] { "Leelawadee UI", "Lao UI", "DokChampa" }),
+            (0x0F00, 0x0FFF, new[] { "Microsoft Himalaya" }),
+            (0x1000, 0x109F, new[] { "Myanmar Text" }),
+            (0x10A0, 0x10FF, GeorgianArmenianFamilies),
+            (0x1100, 0x11FF, KoreanFamilies),
+            (0x1200, 0x139F, new[] { "Ebrima", "Nyala" }),
+            (0x13A0, 0x13FF, new[] { "Gadugi", "Plantagenet Cherokee" }),
+            (0x1400, 0x167F, new[] { "Gadugi", "Euphemia" }),
+            (0x1780, 0x17FF, new[] { "Leelawadee UI", "Khmer UI", "DaunPenh" }),
+            (0x1800, 0x18AF, new[] { "Mongolian Baiti" }),
+            (0x19E0, 0x19FF, new[] { "Leelawadee UI", "Khmer UI" }),
+            (0x1C90, 0x1CBF, GeorgianArmenianFamilies),
+            (0x2D00, 0x2D2F, GeorgianArmenianFamilies),
+            (0x2E80, 0x2FDF, ChineseFamilies),
+            (0x3000, 0x303F, ChineseFamilies),
+            (0x3040, 0x30FF, JapaneseFamilies),
+            (0x3100, 0x312F, ChineseFamilies),
+            (0x3130, 0x318F, KoreanFamilies),
+            (0x31F0, 0x31FF, JapaneseFamilies),
+            (0x3200, 0x33FF, ChineseFamilies),
+            (0x3400, 0x4DBF, ChineseFamilies),
+            (0x4E00, 0x9FFF, ChineseFamilies),
+            (0xA000, 0xA4CF, new[] { "Microsoft Yi Baiti" }),
+            (0xA960, 0xA97F, KoreanFamilies),
+            (0xAC00, 0xD7FF, KoreanFamilies),
+            (0xF900, 0xFAFF, ChineseFamilies),
+            (0xFB1D, 0xFB4F, new[] { "Segoe UI", "Arial" }),
+            (0xFB50, 0xFDFF, new[] { "Segoe UI", "Arial", "Times New Roman" }),
+            (0xFE30, 0xFE4F, ChineseFamilies),
+            (0xFE70, 0xFEFF, new[] { "Segoe UI", "Arial", "Times New Roman" }),
+            (0xFF00, 0xFFEF, ChineseFamilies),
+            (0x1D100, 0x1D1FF, new[] { "Segoe UI Symbol", "Noto Music" }),
+            (0x1D400, 0x1D7FF, new[] { "Cambria Math", "Segoe UI Symbol", "STIX Two Math" }),
+            (0x1F100, 0x1F1FF, new[] { "Segoe UI Symbol", "Segoe UI Emoji" }),
+            (0x20000, 0x3134F, new[] { "SimSun-ExtB", "SimSun-ExtG", "MingLiU-ExtB", "Microsoft YaHei" })
+        };
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int Codepoint, bool Japanese), string?>
+            _scriptFallbackCache = new();
+
+        /// <summary>
+        /// Системный шрифт письменности для знака, которого нет в гарнитуре текста:
+        /// иероглифы, кана, хангыль, тайский, деванагари, грузинский и другие. Так их
+        /// набирает Word — у текстовой гарнитуры этих знаков нет, и квадраты на их месте
+        /// ничего человеку не сообщают. Латиница, кириллица и греческий сюда не входят:
+        /// их подмена остаётся под настройкой подстановки (FindFallbackFamily).
+        /// japanese — в куске текста есть кана: иероглифы берут японскую гарнитуру.
+        /// null — письменность не из списка или шрифта для неё в системе нет.
+        /// </summary>
+        private static string? FindScriptFallback(int codepoint, bool japanese)
+        {
+            string[]? families = null;
+            foreach (var (from, to, list) in ScriptFallbackRanges)
+            {
+                if (codepoint < from || codepoint > to) continue;
+                families = list;
+                break;
+            }
+
+            if (families is null) return null;
+
+            bool han = IsHan(codepoint);
+            if (han && japanese) families = JapaneseFamilies;
+
+            return _scriptFallbackCache.GetOrAdd((codepoint, han && japanese), key =>
+            {
+                foreach (var candidate in families)
+                {
+                    var face = GetOrCreateTypeface(candidate, false, false);
+                    if (!string.Equals(face.FamilyName, candidate, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (face.GetGlyph(key.Codepoint) == 0) continue;
+                    return candidate;
+                }
+
+                // Шрифтов Windows нет (другая система) — шрифт письменности ищет сама система.
+                using var match = SKFontManager.Default.MatchCharacter(key.Codepoint);
+                if (match is not null && match.GetGlyph(key.Codepoint) != 0 && !IsDecorationFont(match.FamilyName))
+                    return match.FamilyName;
+
+                return null;
+            });
+        }
+
+        private static bool IsHan(int codepoint)
+            => codepoint is >= 0x3400 and <= 0x4DBF or >= 0x4E00 and <= 0x9FFF or >= 0xF900 and <= 0xFAFF
+                or >= 0x20000 and <= 0x3134F;
+
+        private static bool IsKana(char c) => c is >= '\u3040' and <= '\u30FF' or >= '\u31F0' and <= '\u31FF';
+
+        /// <summary>В тексте есть хирагана или катакана — значит, это японский.</summary>
+        private static bool HasKana(string text)
+        {
+            foreach (char c in text)
+                if (IsKana(c)) return true;
+            return false;
+        }
+
+        /// <summary>Шрифты цветных эмодзи: Windows, macOS, Linux.</summary>
+        private static readonly string[] EmojiFamilies = { "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji" };
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, string?> _emojiFamilyCache = new();
+
+        /// <summary>Шрифт эмодзи, в котором есть этот знак; null — такого шрифта нет.</summary>
+        private static string? FindEmojiFamily(int codepoint)
+        {
+            return _emojiFamilyCache.GetOrAdd(codepoint, cp =>
+            {
+                foreach (var candidate in EmojiFamilies)
+                {
+                    var face = GetOrCreateTypeface(candidate, false, false);
+                    if (!string.Equals(face.FamilyName, candidate, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (face.GetGlyph(cp) == 0) continue;
+                    return candidate;
+                }
+                return null;
+            });
+        }
+
+        private static bool IsEmojiFamily(string? family)
+        {
+            if (string.IsNullOrEmpty(family)) return false;
+            foreach (var candidate in EmojiFamilies)
+                if (string.Equals(candidate, family, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Знак, который идёт следом за эмодзи и рисуется тем же шрифтом: соединитель
+        /// нулевой ширины, селекторы вида, оттенки кожи, теги флагов, обводка клавиши.
+        /// </summary>
+        private static bool IsEmojiJoiner(int codepoint)
+            => codepoint is 0x200D or 0xFE0E or 0xFE0F or 0x20E3
+                or >= 0x1F3FB and <= 0x1F3FF
+                or >= 0xE0020 and <= 0xE007F;
+
+        /// <summary>
+        /// Знак рисуется цветным эмодзи: он из блоков эмодзи, у него цветной вид по
+        /// умолчанию (свойство Emoji_Presentation Юникода) или за ним стоит селектор
+        /// цветного вида U+FE0F. Так решает и Word: ☺ без селектора — чёрный знак, 😀 —
+        /// всегда цветной.
+        /// </summary>
+        private static bool WantsEmojiPresentation(int codepoint, string text, int next)
+        {
+            if (next < text.Length && text[next] == '\uFE0F') return true;
+            if (next < text.Length && text[next] == '\uFE0E') return false;
+
+            if (codepoint >= 0x1F000)
+            {
+                // Буквы и цифры в кружках, математические буквы и прочее вне эмодзи.
+                return codepoint is >= 0x1F004 and <= 0x1FAFF
+                    && !(codepoint is >= 0x1F100 and <= 0x1F1E5);
+            }
+
+            return codepoint switch
+            {
+                0x231A or 0x231B or 0x23F0 or 0x23F3 or 0x25FD or 0x25FE or 0x2614 or 0x2615
+                    or 0x267F or 0x2693 or 0x26A1 or 0x26AA or 0x26AB or 0x26BD or 0x26BE
+                    or 0x26C4 or 0x26C5 or 0x26CE or 0x26D4 or 0x26EA or 0x26F2 or 0x26F3
+                    or 0x26F5 or 0x26FA or 0x26FD or 0x2705 or 0x270A or 0x270B or 0x2728
+                    or 0x274C or 0x274E or 0x2753 or 0x2754 or 0x2755 or 0x2757 or 0x2795
+                    or 0x2796 or 0x2797 or 0x27B0 or 0x27BF or 0x2B1B or 0x2B1C or 0x2B50
+                    or 0x2B55 => true,
+                >= 0x23E9 and <= 0x23EC => true,
+                >= 0x2648 and <= 0x2653 => true,
+                _ => false
+            };
+        }
+
         /// <summary>
         /// Юникодные шрифты знаков, в которых ищется знак, когда система подходящего не
         /// предложила. Порядок — от шрифтов Windows, которыми знаки рисует Word, к
