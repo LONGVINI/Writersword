@@ -607,7 +607,19 @@ namespace Writersword.Modules.TextEditor.Document
         {
             _trackedSnapshotDepth = Math.Max(0, _trackedSnapshotDepth - 1);
             _trackedInner = _trackedSnapshotDepth > 0;
-            CommitEdit();
+
+            // Шаг рецензирования проверяется как шаг рецензирования: без защиты он
+            // законно меняет вид «правки отклонены» (принятие), под защитой — нет.
+            _endingTrackedSnapshot = true;
+            try
+            {
+                CommitEdit();
+            }
+            finally
+            {
+                _endingTrackedSnapshot = false;
+            }
+
             DocVm?.RaiseRevisionsChanged();
         }
 
@@ -843,16 +855,27 @@ namespace Writersword.Modules.TextEditor.Document
 
                 case ReviewAction.AcceptAll:
                 case ReviewAction.RejectAll:
-                    if (IsEditingBlocked) return false;
+                    if (IsEditingBlocked || RevisionResolveLocked()) return false;
                     return ResolveAll(action == ReviewAction.AcceptAll);
 
                 case ReviewAction.Accept:
                 case ReviewAction.Reject:
-                    if (IsEditingBlocked) return false;
+                    if (IsEditingBlocked || RevisionResolveLocked()) return false;
                     return ResolveCurrent(action == ReviewAction.Accept);
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Документ под защитой записи исправлений: правки не принимаются и не
+        /// отклоняются ни кнопкой, ни выноской, ни панелью. Человек узнаёт почему.
+        /// </summary>
+        private bool RevisionResolveLocked()
+        {
+            if (DocVm is not { IsRevisionLocked: true } vm) return false;
+            vm.NotifyRevisionLocked();
+            return true;
         }
 
         private bool ResolveAll(bool accept)
@@ -866,14 +889,24 @@ namespace Writersword.Modules.TextEditor.Document
             BeginTrackedSnapshot(accept ? "Принять все исправления" : "Отклонить все исправления");
             try
             {
-                // Плавающие картинки с правкой — тем же шагом (DocumentCanvas.ReviewPanel).
-                var floatingImages = RevisionService.FloatingImageRevisions(doc);
+                // Плавающие картинки, фигуры и разрывы с правкой — тем же шагом
+                // (DocumentCanvas.ReviewPanel).
+                var markedBlocks = RevisionService.BlockRevisions(doc);
+                var floatingImages = new List<ImageBlock>();
+                var otherBlocks = new List<BlockModel>();
+                foreach (var block in markedBlocks)
+                {
+                    if (block is ImageBlock image) floatingImages.Add(image);
+                    else otherBlocks.Add(block);
+                }
+
                 if (floatingImages.Count > 0) ApplyImageResolution(floatingImages, accept, whole: true);
+                if (otherBlocks.Count > 0) ApplyMarkedBlockResolution(otherBlocks, accept, whole: true);
 
                 var (touched, structureChanged) = RevisionService.Resolve(
                     doc, _ => new RevisionService.Scope(0, int.MaxValue, true), accept);
 
-                if (floatingImages.Count > 0) structureChanged = true;
+                if (markedBlocks.Count > 0) structureChanged = true;
                 RefreshAfterTrackedChange(touched, structureChanged);
                 RestoreCaretAfterResolve(caretParagraph, caretChar);
             }
@@ -918,6 +951,11 @@ namespace Writersword.Modules.TextEditor.Document
                     int to = k == endIndex ? Clamp(ec, 0, length) : length;
                     bool mark = k < endIndex || to >= length;
                     scopes[paragraph] = new RevisionService.Scope(from, to, mark);
+
+                    // Знак сноски в выделении — решаются и правки в её тексте.
+                    foreach (var (_, note) in RevisionService.NotesReferencedIn(doc, paragraph, from, to))
+                        foreach (var noteParagraph in note.Paragraphs)
+                            scopes[noteParagraph] = new RevisionService.Scope(0, noteParagraph.TotalLength, true);
                 }
 
                 scopeOf = paragraph => scopes.TryGetValue(paragraph, out var scope) ? scope : null;
@@ -930,15 +968,32 @@ namespace Writersword.Modules.TextEditor.Document
                 if (paragraph is null) return false;
 
                 if (RevisionService.HitAt(paragraph, _caretChar) is not { } hit)
-                    return GoToRevision(forward: true);
+                {
+                    // Каретка у знака сноски с правками в тексте — решаются они.
+                    if (NoteMarkAt(paragraph, _caretChar) is { } markedNote && RevisionService.NoteHasRevisions(markedNote))
+                    {
+                        var noteParagraphs = new HashSet<ParagraphBlock>(markedNote.Paragraphs, ReferenceEqualityComparer.Instance);
+                        scopeOf = candidate => noteParagraphs.Contains(candidate)
+                            ? new RevisionService.Scope(0, candidate.TotalLength, true)
+                            : null;
+                        caretParagraph = paragraph;
+                        caretChar = _caretChar;
+                    }
+                    else
+                    {
+                        return GoToRevision(forward: true);
+                    }
+                }
+                else
+                {
+                    var scope = hit.IsMark
+                        ? new RevisionService.Scope(hit.To, hit.To, true)
+                        : new RevisionService.Scope(hit.From, hit.To, false);
 
-                var scope = hit.IsMark
-                    ? new RevisionService.Scope(hit.To, hit.To, true)
-                    : new RevisionService.Scope(hit.From, hit.To, false);
-
-                scopeOf = candidate => ReferenceEquals(candidate, paragraph) ? scope : null;
-                caretParagraph = paragraph;
-                caretChar = hit.From;
+                    scopeOf = candidate => ReferenceEquals(candidate, paragraph) ? scope : null;
+                    caretParagraph = paragraph;
+                    caretChar = hit.From;
+                }
             }
 
             BeginTrackedSnapshot(accept ? "Принять исправление" : "Отклонить исправление");
@@ -990,8 +1045,23 @@ namespace Writersword.Modules.TextEditor.Document
 
             var hits = new List<(int ParagraphIndex, RevisionService.Hit Hit)>();
             for (int i = 0; i < order.Count; i++)
-                foreach (var hit in RevisionService.HitsIn(order[i]))
+            {
+                var paragraphHits = RevisionService.HitsIn(order[i]);
+
+                // Сноска с правками в тексте: остановка на её знаке. Каретки в тексте
+                // сносок нет — к их правкам ведёт знак, а «Принять» и «Отклонить» на
+                // выделенном знаке решают правки всей сноски.
+                foreach (var (index, note) in RevisionService.NotesReferencedIn(DocVm.Document, order[i]))
+                {
+                    if (!RevisionService.NoteHasRevisions(note)) continue;
+                    if (paragraphHits.Exists(h => !h.IsMark && h.From <= index && h.To > index)) continue;
+                    paragraphHits.Add(new RevisionService.Hit(order[i], index, index + 1, false));
+                }
+
+                paragraphHits.Sort((a, b) => a.From != b.From ? a.From.CompareTo(b.From) : a.To.CompareTo(b.To));
+                foreach (var hit in paragraphHits)
                     hits.Add((i, hit));
+            }
 
             if (hits.Count == 0) return false;
 

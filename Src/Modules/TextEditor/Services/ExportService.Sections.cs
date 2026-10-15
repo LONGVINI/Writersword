@@ -120,6 +120,35 @@ namespace Writersword.Modules.TextEditor.Services
             return result;
         }
 
+        /// <summary>
+        /// Смена параметров раздела правкой — w:sectPrChange с прежними параметрами,
+        /// последним элементом w:sectPr. Прежние параметры собираются тем же путём, что
+        /// и нынешние; особая первая и счёт страниц правкой не меняются и берутся у
+        /// раздела как есть.
+        /// </summary>
+        private static void AppendSectionChange(
+            W.SectionProperties sectPr, ObjectChange change, SectionLayout? current, SectionStart start, DocxWriteContext ctx)
+        {
+            if (SectionFrame.Parse(change.Previous) is not { } look) return;
+
+            var layout = new SectionLayout
+            {
+                VerticalAlignment = look.VerticalAlignment,
+                PageBorders = look.PageBorders,
+                LineNumbering = look.LineNumbering,
+                TitlePage = current?.TitlePage == true,
+                PageNumberStart = current?.PageNumberStart,
+                PageNumberFormat = current?.PageNumberFormat
+            };
+
+            var previous = BuildSectionLayoutProperties(layout, look.Page, look.Columns, start);
+            var before = new W.PreviousSectionProperties();
+            foreach (var child in previous.ChildElements)
+                before.AppendChild(child.CloneNode(true));
+
+            sectPr.AppendChild(StampRevision(new W.SectionPropertiesChange(before), change.Info, ctx));
+        }
+
         private static W.SectionMarkValues ToOoxml(SectionStart start) => start switch
         {
             SectionStart.Continuous => W.SectionMarkValues.Continuous,

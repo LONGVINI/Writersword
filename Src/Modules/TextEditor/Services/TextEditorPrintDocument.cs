@@ -31,7 +31,13 @@ namespace Writersword.Modules.TextEditor.Services
 
         public TextEditorPrintDocument(DocumentModel document)
         {
-            _document = document ?? throw new ArgumentNullException(nameof(document));
+            ArgumentNullException.ThrowIfNull(document);
+
+            // «Исходный документ» печатается с картинками и фигурами в прежнем виде:
+            // смена вида снимается с копии документа, сам документ не трогается.
+            _document = document.RevisionView == Models.Inline.RevisionView.Original
+                ? ObjectAppearance.WithPreviousAppearance(document) ?? document
+                : document;
             _pageSettings = ConvertPageSettings(document.PageSettings);
             _renderer = new SKTextRenderer();
             // Печать идёт в выбранном виде показа исправлений, как у Word.

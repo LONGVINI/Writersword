@@ -447,7 +447,7 @@ namespace Writersword.Modules.TextEditor.Models.Document
     /// Изображение в документе.
     /// Файл изображения хранится в ZIP по пути TextEditor/Images/{ImageFileName}.
     /// </summary>
-    public sealed class ImageBlock : BlockModel, IFloatingObject
+    public sealed class ImageBlock : BlockModel, IFloatingObject, IAppearanceTracked
     {
         public override BlockType BlockType => BlockType.Image;
 
@@ -470,6 +470,13 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Inline.RevisionInfo? Deleted { get; set; }
+
+        /// <summary>
+        /// Вид картинки сменён правкой рецензирования: сдвинута, изменён размер,
+        /// повёрнута, обрезана. Прежний вид возвращается отклонением.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public ObjectChange? Change { get; set; }
 
         /// <summary>Ширина изображения в пунктах (пользовательски заданная).</summary>
         public double WidthPt { get; set; }
@@ -730,9 +737,30 @@ namespace Writersword.Modules.TextEditor.Models.Document
     /// области своей страницы. Отличие только в содержимом: вместо файла картинки
     /// у неё геометрия, заливка и обводка. Заливка при этом может быть и картинкой.
     /// </summary>
-    public sealed class ShapeBlock : BlockModel, IFloatingObject
+    public sealed class ShapeBlock : BlockModel, IFloatingObject, IAppearanceTracked
     {
         public override BlockType BlockType => BlockType.Shape;
+
+        /// <summary>
+        /// Фигура вставлена правкой рецензирования: при отклонении правки уходит.
+        /// Фигуре в строке это не нужно — её правка в отметке знака, как у текста.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Inline.RevisionInfo? Inserted { get; set; }
+
+        /// <summary>
+        /// Фигура удалена правкой рецензирования: остаётся на листе с отметкой, пока
+        /// правку не примут или не отклонят.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Inline.RevisionInfo? Deleted { get; set; }
+
+        /// <summary>
+        /// Вид фигуры сменён правкой рецензирования: сдвинута, изменён размер,
+        /// заливка, надпись. Прежний вид возвращается отклонением.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public ObjectChange? Change { get; set; }
 
         /// <summary>Вид фигуры. Меняется на лету: геометрия строится по нему при отрисовке.</summary>
         public ShapeType ShapeType { get; set; }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Modules.TextEditor.Models.Document;
 
@@ -16,6 +16,7 @@ namespace Writersword.Modules.TextEditor.Commands
         {
             public ImageState(ImageBlock i)
             {
+                Change = i.Change?.Clone();
                 WidthPt = i.WidthPt;
                 HeightPt = i.HeightPt;
                 OffsetXPt = i.OffsetXPt;
@@ -77,8 +78,14 @@ namespace Writersword.Modules.TextEditor.Commands
             public double WrapPadLeftPt { get; }
             public double WrapPadRightPt { get; }
 
+            /// <summary>Смена вида правкой рецензирования — отменяется и повторяется вместе с видом.</summary>
+
+            public ObjectChange? Change { get; }
+
+
             public void ApplyTo(ImageBlock i)
             {
+                i.Change = Change?.Clone();
                 i.WidthPt = WidthPt;
                 i.HeightPt = HeightPt;
                 i.OffsetXPt = OffsetXPt;
@@ -117,6 +124,25 @@ namespace Writersword.Modules.TextEditor.Commands
         private bool _committed;
 
         public string Description { get; }
+
+        /// <summary>Объект, вид которого меняет шаг.</summary>
+        public BlockModel Target => _image;
+
+        /// <summary>
+        /// Вид «до» шага записью ObjectAppearance — для записи правки вида
+        /// (DocumentCanvas.RevisionGuard).
+        /// </summary>
+        public string BeforeAppearance
+        {
+            get
+            {
+                var current = new ImageState(_image);
+                _before.ApplyTo(_image);
+                string before = Services.ObjectAppearance.Capture(_image);
+                current.ApplyTo(_image);
+                return before;
+            }
+        }
 
         /// <summary>Вызывается после Undo/Redo — канвас пересобирает раскладку.</summary>
         public Action? Changed { get; set; }

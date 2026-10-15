@@ -63,7 +63,7 @@ namespace Writersword.Modules.TextEditor.Document
         // Раскладки абзацев сносок. Ключ — абзац сноски; раскладка годится, пока те же
         // текст, номер и ширина.
         private readonly Dictionary<ParagraphBlock,
-            (string Text, string Mark, float Width, SKTextLayout Layout)> _noteLayoutCache = new();
+            (string Text, string Mark, float Width, int Revisions, SKTextLayout Layout)> _noteLayoutCache = new();
 
         // Сноски на листах: итог последней раскладки и итог идущего прохода.
         private List<NoteSlice> _noteSlices = new();
@@ -195,9 +195,12 @@ namespace Writersword.Modules.TextEditor.Document
                 string mark = NoteLayout.MarkFor(note, i, reference.Mark);
                 string text = paragraph.GetPlainText();
 
+                int revisions = NoteRevisionStamp(paragraph);
+
                 if (_noteLayoutCache.TryGetValue(paragraph, out var cached)
                     && cached.Text == text
                     && cached.Mark == mark
+                    && cached.Revisions == revisions
                     && Math.Abs(cached.Width - widthPt) < 0.1f)
                 {
                     layouts.Add(cached.Layout);
@@ -206,11 +209,28 @@ namespace Writersword.Modules.TextEditor.Document
 
                 var layout = NoteLayout.Build(_renderer, note, i, reference.Mark, widthPt, _styleResolver!);
 
-                _noteLayoutCache[paragraph] = (text, mark, widthPt, layout);
+                _noteLayoutCache[paragraph] = (text, mark, widthPt, revisions, layout);
                 layouts.Add(layout);
             }
 
             return layouts;
+        }
+
+        /// <summary>
+        /// Отпечаток правок абзаца сноски для кеша раскладок: принятая или отклонённая
+        /// правка не меняет текста, но меняет вид — подчёркивание, зачёркивание, цвет.
+        /// Пересборка знаков абзаца даёт новые куски, смена вида показа — новый вид.
+        /// </summary>
+        private int NoteRevisionStamp(ParagraphBlock paragraph)
+        {
+            var props = paragraph.Properties;
+            return HashCode.Combine(
+                paragraph.Chunks.Count > 0 ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(paragraph.Chunks[0]) : 0,
+                paragraph.Chunks.Count,
+                (int)NoteRevisionView(),
+                props.FormatChange is not null,
+                props.MarkInserted is not null,
+                props.MarkDeleted is not null);
         }
 
         /// <summary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -325,11 +325,32 @@ namespace Writersword.Modules.TextEditor.Models.Styles
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public ParagraphProperties? Previous { get; set; }
 
+        /// <summary>
+        /// Правка сменила и список абзаца: абзац стал пунктом, перестал им быть или
+        /// сменил список, уровень, вид номера. Список живёт не в свойствах абзаца, а
+        /// рядом (ParagraphBlock.ListProperties), поэтому прежний хранится отдельно.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool ListChanged { get; set; }
+
+        /// <summary>Список абзаца до правки; null — абзац не был пунктом списка.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Document.ListProperties? PreviousList { get; set; }
+
         /// <summary>Глубокая копия.</summary>
         public ParagraphFormatChange Clone() => new()
         {
             Info = Info.Clone(),
-            Previous = Previous?.WithoutRevisions()
+            Previous = Previous?.WithoutRevisions(),
+            ListChanged = ListChanged,
+            PreviousList = PreviousList?.Clone()
         };
+
+        /// <summary>Один и тот же список: тот же список, уровень и вид номера; оба null — тоже.</summary>
+        public static bool SameList(Document.ListProperties? a, Document.ListProperties? b)
+        {
+            if (a is null || b is null) return a is null && b is null;
+            return a.ListId == b.ListId && a.Level == b.Level && a.MarkerType == b.MarkerType;
+        }
     }
 }

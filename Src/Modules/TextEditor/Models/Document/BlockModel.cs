@@ -83,9 +83,23 @@ namespace Writersword.Modules.TextEditor.Models.Document
     /// Блок-разрыв: страницы, колонки или раздела.
     /// Не содержит текста. Хранится как отдельный блок в потоке документа.
     /// </summary>
-    public sealed class BreakBlock : BlockModel
+    public sealed class BreakBlock : BlockModel, IRevisionMarked
     {
         public override BlockType BlockType => BlockType.Break;
+
+        /// <summary>
+        /// Разрыв вставлен правкой рецензирования (w:br внутри w:ins у Word): при
+        /// отклонении уходит, при принятии становится обычным.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Inline.RevisionInfo? Inserted { get; set; }
+
+        /// <summary>
+        /// Разрыв удалён правкой рецензирования: пока правку не разобрали, он виден
+        /// отметкой, а лист по нему не начинается, — как у Word.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Inline.RevisionInfo? Deleted { get; set; }
 
         /// <summary>Тип разрыва.</summary>
         public BreakType BreakType { get; set; }

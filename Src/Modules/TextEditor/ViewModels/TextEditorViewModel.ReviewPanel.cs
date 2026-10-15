@@ -175,6 +175,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ScheduleReviewRefresh();
         }
 
+        public void ReviewResolveBlocks(IReadOnlyList<BlockModel> blocks, bool accept)
+        {
+            DocumentViewModel?.ResolveBlockRevisions(blocks, accept);
+            ScheduleReviewRefresh();
+        }
+
         public void ReviewResolve(IReadOnlyList<RevisionService.Hit> hits, bool accept)
         {
             DocumentViewModel?.ResolveRevisionHits(hits, accept);

@@ -2217,8 +2217,10 @@ namespace Writersword.Modules.TextEditor.Document
                         // а ячейка таблицы с широким ClipW выигрывала сравнение (xDist = 0).
                         xLeft = pl.AbsXPt;
                         var selLayout = pl.Layout ?? GetOrBuildLayout(pl.Vm, (float)(_canvasWidth * PxToPt));
-                        xRight = pl.AbsXPt + (selLayout.TextAreaWidthPt > 0
-                            ? selLayout.TextAreaWidthPt
+                        // Кусок абзаца в колонке другой ширины — по её ширине.
+                        float sliceAreaPt = SKTextRenderer.SliceAreaWidthPt(selLayout, pl.LineFrom);
+                        xRight = pl.AbsXPt + (sliceAreaPt > 0
+                            ? sliceAreaPt
                             : (selLayout.Lines.Count > 0
                                 ? selLayout.Lines.Max(l => l.Segments.Count > 0
                                     ? l.Segments[^1].X + l.Segments[^1].Width : 0f)

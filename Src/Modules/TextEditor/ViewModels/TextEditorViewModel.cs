@@ -752,6 +752,20 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (doc is not null)
                 doc.ReadingThemes = forDocument.Count > 0 ? forDocument : null;
 
+            // Какие виды уходят из общих настроек — в журнал: пропажа вида иначе
+            // не оставляет следа, и понять, где он потерялся, нельзя.
+            foreach (var old in Settings.ReadingThemes)
+            {
+                bool kept = false;
+                foreach (var theme in forGlobal)
+                    if (string.Equals(theme.Id, old.Id, StringComparison.Ordinal)) { kept = true; break; }
+
+                if (!kept)
+                    _logger.Information("[VIEWS] Вид «{Name}» убран из общих видов ({Where})",
+                        old.Name, forDocument.Exists(t => string.Equals(t.Id, old.Id, StringComparison.Ordinal))
+                            ? "перенесён в рукопись" : "удалён");
+            }
+
             Settings.ReadingThemes = forGlobal;
 
             // Список правился, а выбранный вид мог быть переименован или удалён —

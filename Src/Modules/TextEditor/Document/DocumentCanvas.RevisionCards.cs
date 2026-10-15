@@ -1421,6 +1421,8 @@ namespace Writersword.Modules.TextEditor.Document
         /// <summary>Принять или отклонить одну правку с выноски.</summary>
         private void ResolveRevisionHit(RevisionService.Hit hit, bool accept)
         {
+            if (RevisionResolveLocked()) return;
+
             var doc = DocVm!.Document;
             var paragraph = hit.Paragraph;
             if (RevisionService.Locate(doc, paragraph) is null) return;

@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
+using Writersword.Modules.TextEditor.Models.Styles;
 
 namespace Writersword.Modules.TextEditor.Services
 {
@@ -24,9 +26,36 @@ namespace Writersword.Modules.TextEditor.Services
     /// моменты, и Id абзацев, таблиц и ячеек у них общие. Порядок блоков сверяется
     /// разностью последовательностей, текст сопоставленных абзацев — по словам, как
     /// сравнивает Word: слово меняется целиком, а не по буквам.
+    ///
+    /// Второе применение — запись действия правкой (<see cref="Options.TrackEdit"/>).
+    /// Действия редактора, которые сами правкой не записываются (вставка таблицы,
+    /// разрыва, обновление оглавления и прочие), при включённой записи исправлений
+    /// размечаются по разнице «до» и «после»: документ до действия — вторая версия,
+    /// после — показанная. Здесь уже стоящие правки сохраняются: своя вставка,
+    /// убранная действием, уходит совсем, как при удалении с записью, чужая —
+    /// остаётся удалённой вставкой; удалённые картинки, фигуры и разрывы
+    /// возвращаются на место отмеченными; сменённое оформление абзаца запоминает
+    /// прежнее.
     /// </summary>
     public static class CompareMarkup
     {
+        /// <summary>Как размечать различия.</summary>
+        public sealed class Options
+        {
+            /// <summary>Автор и время пометок. Null — <see cref="CompareMarkup.Author"/>.</summary>
+            public RevisionInfo? Info { get; init; }
+
+            /// <summary>Показать пометки: включить вид «все исправления», если различия есть.</summary>
+            public bool ShowMarkup { get; init; } = true;
+
+            /// <summary>
+            /// Разметка действия при записи исправлений: вторая версия — тот же документ
+            /// до действия, его правки сохраняются по правилам записи.
+            /// </summary>
+            public bool TrackEdit { get; init; }
+        }
+
+        private static readonly JsonSerializerOptions FormattingKeyOptions = new() { WriteIndented = false };
         /// <summary>Автор пометок сравнения в карточках правок.</summary>
         public const string Author = "Сравнение версий";
 
@@ -50,21 +79,50 @@ namespace Writersword.Modules.TextEditor.Services
         /// показанную, без копирования.
         /// </summary>
         public static Result Apply(DocumentModel shown, DocumentModel other)
+            => Apply(shown, other, new Options());
+
+        /// <summary>То же с выбором автора, показа и режима записи действия.</summary>
+        public static Result Apply(DocumentModel shown, DocumentModel other, Options options)
         {
             var result = new Result();
 
             if (shown.Sections.Count == 0 || other.Sections.Count == 0)
                 return result;
 
-            var context = new Context(shown, other, result);
+            var context = new Context(shown, other, result, options);
 
             var shownSection = shown.Sections[0];
             var otherSection = other.Sections[0];
-            shownSection.Blocks = context.MergeBlocks(shownSection.Blocks, otherSection.Blocks);
+
+            // Параметры разделов второй версии — до сведения блоков: оно переносит
+            // удалённые блоки второй версии в показанную.
+            var otherSectionLooks = new Dictionary<Guid, string>();
+            foreach (var block in otherSection.Blocks)
+                if (block is BreakBlock { IsSectionBreak: true } otherEnd)
+                    otherSectionLooks[otherEnd.Id] = SectionFrame.RejectView(otherEnd, other);
+            string otherFinalLook = SectionFrame.RejectViewFinal(other);
+
+            // Список блоков меняется на месте: на него могут держать ссылку полотно и
+            // вью-модель документа.
+            var merged = context.MergeBlocks(shownSection.Blocks, otherSection.Blocks);
+            shownSection.Blocks.Clear();
+            shownSection.Blocks.AddRange(merged);
+
+            if (options.TrackEdit)
+                context.MergeFloatingObjects(shownSection.FloatingObjects, otherSection.FloatingObjects);
+
+            // Текст сносок — те же правила, что у абзацев ячейки.
+            context.MergeNotes(shownSection.InlineObjects);
+
+            // Вид картинок и фигур в строке: размер, поворот, обрезка.
+            context.CompareInlineAppearance(shownSection.InlineObjects);
+
+            // Параметры разделов: лист, поля, колонки, рамка, номера строк.
+            context.CompareSections(shownSection.Blocks, otherSectionLooks, otherFinalLook);
 
             // Пометки видны только при показе всех исправлений: вид «без исправлений»
             // спрятал бы как раз то, ради чего открыто сравнение.
-            if (result.Total > 0)
+            if (options.ShowMarkup && result.Total > 0)
                 shown.RevisionView = RevisionView.AllMarkup;
 
             return result;
@@ -74,21 +132,104 @@ namespace Writersword.Modules.TextEditor.Services
         {
             private readonly DocumentModel _shown;
             private readonly Result _result;
+            private readonly Options _options;
+            private readonly RevisionInfo _info;
             private readonly Dictionary<Guid, BlockModel> _otherInlineObjects = new();
             private readonly HashSet<Guid> _shownInlineObjects = new();
 
-            public Context(DocumentModel shown, DocumentModel other, Result result)
+            public Context(DocumentModel shown, DocumentModel other, Result result, Options options)
             {
                 _shown = shown;
                 _result = result;
+                _options = options;
+                _info = options.Info?.Clone() ?? new RevisionInfo { Author = Author };
 
                 foreach (var block in other.Sections[0].InlineObjects)
                     _otherInlineObjects[block.Id] = block;
                 foreach (var block in shown.Sections[0].InlineObjects)
                     _shownInlineObjects.Add(block.Id);
+
+                _ownShownInlineObjects = new HashSet<Guid>(_shownInlineObjects);
             }
 
-            private static RevisionInfo NewInfo() => new() { Author = Author };
+            // Объекты в строке показанной версии до разметки: удалённые знаки второй
+            // версии приносят свои объекты, и те своими не считаются.
+            private readonly HashSet<Guid> _ownShownInlineObjects;
+
+            /// <summary>
+            /// Текст сносок. Сноска есть в обеих версиях — абзацы сверяются как абзацы
+            /// ячейки; сноска только показанной версии — её текст вставлен целиком.
+            /// Сноски второй версии, вернувшиеся с удалённым знаком, остаются как были.
+            /// </summary>
+            public void MergeNotes(List<BlockModel> shownObjects)
+            {
+                foreach (var block in shownObjects.ToArray())
+                {
+                    if (block is not NoteBlock note) continue;
+                    if (!_ownShownInlineObjects.Contains(note.Id)) continue;
+
+                    if (_otherInlineObjects.TryGetValue(note.Id, out var otherBlock) && otherBlock is NoteBlock otherNote)
+                    {
+                        if (ReferenceEquals(note, otherNote)) continue;
+
+                        var merged = MergeParagraphs(note.Paragraphs, otherNote.Paragraphs);
+                        note.Paragraphs.Clear();
+                        note.Paragraphs.AddRange(merged);
+                        continue;
+                    }
+
+                    foreach (var paragraph in note.Paragraphs)
+                        MarkParagraphInserted(paragraph);
+                }
+            }
+
+            private RevisionInfo NewInfo() => _info.Clone();
+
+            /// <summary>
+            /// Параметры разделов, которые есть в обеих версиях: сменённые — сменой
+            /// параметров с прежними параметрами второй версии; вернувшиеся к прежним —
+            /// без неё. Раздел своей вставки смены не получает: его параметры — часть
+            /// вставки разрыва.
+            /// </summary>
+            public void CompareSections(List<BlockModel> shownBlocks, Dictionary<Guid, string> otherLooks, string otherFinalLook)
+            {
+                foreach (var block in shownBlocks)
+                {
+                    if (block is not BreakBlock { IsSectionBreak: true } sectionEnd) continue;
+                    if (sectionEnd.Deleted is not null) continue;
+                    if (_options.TrackEdit && IsOwn(sectionEnd.Inserted)) continue;
+                    if (!otherLooks.TryGetValue(sectionEnd.Id, out var previous)) continue;
+
+                    string now = SectionFrame.Capture(sectionEnd, _shown);
+
+                    if (!SectionFrame.Differs(now, previous))
+                    {
+                        if (sectionEnd.Section is { } same) same.FormatChange = null;
+                        continue;
+                    }
+
+                    var layout = sectionEnd.Section ??= new Models.Page.SectionLayout();
+                    if (layout.FormatChange is not null) continue;
+
+                    layout.FormatChange = new ObjectChange { Info = NewInfo(), Previous = previous };
+                    _result.FormatPlaces++;
+                }
+
+                string finalNow = SectionFrame.CaptureFinal(_shown);
+                if (!SectionFrame.Differs(finalNow, otherFinalLook))
+                {
+                    _shown.PageSetupChange = null;
+                    return;
+                }
+
+                if (_shown.PageSetupChange is not null) return;
+
+                _shown.PageSetupChange = new ObjectChange { Info = NewInfo(), Previous = otherFinalLook };
+                _result.FormatPlaces++;
+            }
+
+            /// <summary>Вставка того же автора — её удаление убирает её совсем.</summary>
+            private bool IsOwn(RevisionInfo? inserted) => RevisionService.IsOwnInsertion(inserted, _info);
 
             // ── Блоки ────────────────────────────────────────────────────────
 
@@ -167,6 +308,50 @@ namespace Writersword.Modules.TextEditor.Services
                     case TableBlock shownTable when otherBlock is TableBlock otherTable:
                         CompareTables(shownTable, otherTable);
                         break;
+
+                    case IAppearanceTracked:
+                        CompareAppearance(shownBlock, otherBlock);
+                        break;
+                }
+            }
+
+            /// <summary>
+            /// Вид картинки или фигуры, которая есть в обеих версиях: сдвинута, изменён
+            /// размер, повёрнута, обрезана — смена вида с прежним видом второй версии.
+            /// При записи действия своя вставка смены вида не получает, а объект,
+            /// вернувшийся к прежнему виду, теряет её.
+            /// </summary>
+            private void CompareAppearance(BlockModel shownBlock, BlockModel otherBlock)
+            {
+                if (shownBlock is not IAppearanceTracked shown || otherBlock is not IAppearanceTracked) return;
+                if (ReferenceEquals(shownBlock, otherBlock)) return;
+                if (shown.Deleted is not null) return;
+                if (_options.TrackEdit && IsOwn(shown.Inserted)) return;
+
+                string previous = ObjectAppearance.RejectView(otherBlock);
+                string now = ObjectAppearance.Capture(shownBlock);
+
+                if (string.Equals(previous, now, StringComparison.Ordinal))
+                {
+                    shown.Change = null;
+                    return;
+                }
+
+                if (shown.Change is not null) return;
+
+                shown.Change = new ObjectChange { Info = NewInfo(), Previous = previous };
+                _result.FormatPlaces++;
+            }
+
+            /// <summary>Вид объектов в строке, которые есть в обеих версиях.</summary>
+            public void CompareInlineAppearance(List<BlockModel> shownObjects)
+            {
+                foreach (var block in shownObjects)
+                {
+                    if (block is not IAppearanceTracked) continue;
+                    if (!_ownShownInlineObjects.Contains(block.Id)) continue;
+                    if (_otherInlineObjects.TryGetValue(block.Id, out var other))
+                        CompareAppearance(block, other);
                 }
             }
 
@@ -184,8 +369,8 @@ namespace Writersword.Modules.TextEditor.Services
                                 MarkParagraphInserted(paragraph);
                         break;
 
-                    case ImageBlock image when image.Inserted is null && image.Deleted is null:
-                        image.Inserted = NewInfo();
+                    case IRevisionMarked marked when marked.Inserted is null && marked.Deleted is null:
+                        marked.Inserted = NewInfo();
                         _result.InsertedPlaces++;
                         break;
                 }
@@ -201,8 +386,7 @@ namespace Writersword.Modules.TextEditor.Services
                 switch (block)
                 {
                     case ParagraphBlock paragraph:
-                        MarkParagraphDeleted(paragraph);
-                        return true;
+                        return MarkParagraphDeleted(paragraph);
 
                     case TableBlock table:
                         foreach (var cell in table.Cells)
@@ -210,15 +394,128 @@ namespace Writersword.Modules.TextEditor.Services
                                 MarkParagraphDeleted(paragraph);
                         return true;
 
+                    // Разрыв ни на какие файлы не ссылается — возвращается отмеченным
+                    // и при сравнении версий.
+                    case BreakBlock or ImageBlock or ShapeBlock when block is IRevisionMarked marked
+                                                                && (_options.TrackEdit || block is BreakBlock):
+                        return MarkWholeDeleted(marked);
+
                     default:
                         return false;
                 }
+            }
+
+            /// <summary>
+            /// Блок, удалённый целиком: остаётся на месте с отметкой удаления. Своя
+            /// вставка уходит совсем — её как будто и не было.
+            /// </summary>
+            private bool MarkWholeDeleted(IRevisionMarked marked)
+            {
+                if (marked.Deleted is not null) return true;
+                if (_options.TrackEdit && IsOwn(marked.Inserted)) return false;
+
+                if (!_options.TrackEdit) marked.Inserted = null;
+                marked.Deleted = NewInfo();
+                _result.DeletedPlaces++;
+                return true;
+            }
+
+            // ── Плавающие объекты ───────────────────────────────────────────
+
+            /// <summary>
+            /// Плавающие объекты при записи действия: убранный действием возвращается с
+            /// отметкой удаления, новый без отметки получает отметку вставки. Объекты
+            /// сопоставляются по Id — это тот же документ.
+            /// </summary>
+            public void MergeFloatingObjects(List<BlockModel> shownObjects, List<BlockModel> otherObjects)
+            {
+                var shownIds = new HashSet<Guid>();
+                foreach (var block in shownObjects)
+                {
+                    shownIds.Add(block.Id);
+                    if (block is IRevisionMarked { Inserted: null, Deleted: null } fresh
+                        && !ContainsId(otherObjects, block.Id))
+                    {
+                        fresh.Inserted = NewInfo();
+                        _result.InsertedPlaces++;
+                        continue;
+                    }
+
+                    // Объект на месте — сверяется его вид.
+                    foreach (var other in otherObjects)
+                        if (other.Id == block.Id) { CompareAppearance(block, other); break; }
+                }
+
+                foreach (var block in otherObjects)
+                {
+                    if (shownIds.Contains(block.Id)) continue;
+                    if (block is not IRevisionMarked marked) continue;
+                    if (MarkWholeDeleted(marked))
+                        shownObjects.Add(block);
+                }
+            }
+
+            /// <summary>
+            /// Плавающие объекты ячейки — по тем же правилам, что объекты листа: новый
+            /// без отметки получает отметку вставки, убранный при записи действия
+            /// возвращается с отметкой удаления.
+            /// </summary>
+            private void MergeCellFloats(TableCell shownCell, TableCell otherCell)
+            {
+                var otherIds = new HashSet<Guid>();
+                if (otherCell.Floats is { } otherFloats)
+                    foreach (var cellFloat in otherFloats)
+                        otherIds.Add(cellFloat.Object.Id);
+
+                var shownIds = new HashSet<Guid>();
+                if (shownCell.Floats is { } shownFloats)
+                {
+                    foreach (var cellFloat in shownFloats)
+                    {
+                        shownIds.Add(cellFloat.Object.Id);
+                        if (cellFloat.Object is IRevisionMarked { Inserted: null, Deleted: null } fresh
+                            && !otherIds.Contains(cellFloat.Object.Id))
+                        {
+                            fresh.Inserted = NewInfo();
+                            _result.InsertedPlaces++;
+                            continue;
+                        }
+
+                        // Объект на месте — сверяется его вид.
+                        if (otherCell.Floats is { } candidates)
+                            foreach (var other in candidates)
+                                if (other.Object.Id == cellFloat.Object.Id) { CompareAppearance(cellFloat.Object, other.Object); break; }
+                    }
+                }
+
+                // Убранный объект возвращается только при записи действия: при сравнении
+                // версий его файл мог уже уйти из проекта.
+                if (!_options.TrackEdit || otherCell.Floats is not { } removedCandidates) return;
+
+                foreach (var cellFloat in removedCandidates)
+                {
+                    if (shownIds.Contains(cellFloat.Object.Id)) continue;
+                    if (cellFloat.Object is not IRevisionMarked marked) continue;
+                    if (MarkWholeDeleted(marked))
+                        (shownCell.Floats ??= new List<CellFloat>()).Add(cellFloat);
+                }
+            }
+
+            private static bool ContainsId(List<BlockModel> blocks, Guid id)
+            {
+                foreach (var block in blocks)
+                    if (block.Id == id) return true;
+                return false;
             }
 
             // ── Таблицы ──────────────────────────────────────────────────────
 
             private void CompareTables(TableBlock shownTable, TableBlock otherTable)
             {
+                // Строки и столбцы, вставленные или удалённые целиком, — правкой
+                // самой строки или столбца (TableRevisions).
+                MergeTableStructure(shownTable, otherTable);
+
                 var otherCells = new Dictionary<Guid, TableCell>();
                 foreach (var cell in otherTable.Cells)
                     otherCells[cell.Id] = cell;
@@ -227,12 +524,23 @@ namespace Writersword.Modules.TextEditor.Services
                 {
                     if (!otherCells.TryGetValue(cell.Id, out var otherCell))
                     {
+                        // Вставленная строка или столбец отмечены на самой ячейке: её
+                        // текст — часть вставки.
+                        if (cell.Inserted is not null) continue;
+
                         foreach (var paragraph in cell.ParagraphsDeep())
                             MarkParagraphInserted(paragraph);
                         continue;
                     }
 
-                    cell.Paragraphs = MergeParagraphs(cell.Paragraphs, otherCell.Paragraphs);
+                    // Удалённая строка, возвращённая из второй версии, — та же ячейка.
+                    if (ReferenceEquals(cell, otherCell)) continue;
+
+                    var mergedParagraphs = MergeParagraphs(cell.Paragraphs, otherCell.Paragraphs);
+                    cell.Paragraphs.Clear();
+                    cell.Paragraphs.AddRange(mergedParagraphs);
+
+                    MergeCellFloats(cell, otherCell);
 
                     // Вставленные абзацы удалённого текста сдвинули номера абзацев,
                     // перед которыми стоят вложенные таблицы и плавающие объекты ячейки.
@@ -253,6 +561,283 @@ namespace Writersword.Modules.TextEditor.Services
                         else
                             MarkBlockInserted(nested.Table);
                     }
+                }
+
+                CompareTableFormat(shownTable, otherTable);
+            }
+
+            /// <summary>
+            /// Смена оформления таблицы: границы, заливка, ширины столбцов, высоты строк,
+            /// поля и выравнивание ячеек, свойства таблицы — по общим строкам, столбцам
+            /// и ячейкам. Прежний вид — оформление второй версии, каким оно было бы при
+            /// отклонении её правок. Таблица, вернувшаяся к прежнему виду, теряет смену.
+            /// </summary>
+            private void CompareTableFormat(TableBlock shownTable, TableBlock otherTable)
+            {
+                if (ReferenceEquals(shownTable, otherTable)) return;
+
+                string previous = TableFrame.RejectView(otherTable);
+                string now = TableFrame.Capture(shownTable);
+
+                if (!TableFrame.Differs(now, previous))
+                {
+                    shownTable.FormatChange = null;
+                    return;
+                }
+
+                if (shownTable.FormatChange is not null) return;
+
+                shownTable.FormatChange = new ObjectChange { Info = NewInfo(), Previous = previous };
+                _result.FormatPlaces++;
+            }
+
+            /// <summary>
+            /// Состав таблицы: строки или столбцы, которых во второй версии нет, —
+            /// вставлены, а те, что есть только во второй, — удалены и возвращаются в
+            /// показанную таблицу с отметкой удаления. Своя вставленная строка, убранная
+            /// действием, уходит совсем. Строки узнаются по ячейке, с которой они
+            /// начинаются слева, столбцы — по ячейке сверху. Если изменилось и то и
+            /// другое или правка задела объединённые ячейки, состав остаётся как есть.
+            /// </summary>
+            private void MergeTableStructure(TableBlock shownTable, TableBlock otherTable)
+            {
+                var shownIds = new HashSet<Guid>();
+                foreach (var cell in shownTable.Cells) shownIds.Add(cell.Id);
+                var otherIds = new HashSet<Guid>();
+                foreach (var cell in otherTable.Cells) otherIds.Add(cell.Id);
+
+                bool anyNew = false;
+                foreach (var cell in shownTable.Cells)
+                    if (!otherIds.Contains(cell.Id)) { anyNew = true; break; }
+                bool anyGone = false;
+                foreach (var cell in otherTable.Cells)
+                    if (!shownIds.Contains(cell.Id)) { anyGone = true; break; }
+
+                if (!anyNew && !anyGone) return;
+
+                if (TryMergeLines(shownTable, otherTable, shownIds, otherIds, TableRevisions.Axis.Row)) return;
+                TryMergeLines(shownTable, otherTable, shownIds, otherIds, TableRevisions.Axis.Column);
+            }
+
+            private static int LineOf(TableCell cell, TableRevisions.Axis axis)
+                => axis == TableRevisions.Axis.Row ? cell.Row : cell.Column;
+
+            private static int SpanOf(TableCell cell, TableRevisions.Axis axis)
+                => axis == TableRevisions.Axis.Row ? cell.RowSpan : cell.ColSpan;
+
+            private static int LineCount(TableBlock table, TableRevisions.Axis axis)
+                => axis == TableRevisions.Axis.Row ? table.RowCount : table.ColumnCount;
+
+            private static TableCell? LineKeyCell(TableBlock table, int line, TableRevisions.Axis axis)
+                => axis == TableRevisions.Axis.Row ? TableFrame.RowKeyCell(table, line) : TableFrame.ColumnKeyCell(table, line);
+
+            private static List<TableCell> CellsOfLine(TableBlock table, int line, TableRevisions.Axis axis)
+            {
+                var cells = new List<TableCell>();
+                foreach (var cell in table.Cells)
+                    if (LineOf(cell, axis) == line) cells.Add(cell);
+                return cells;
+            }
+
+            /// <summary>
+            /// Сводит строки (или столбцы) двух версий таблицы. False — различие не
+            /// сводится к строкам (столбцам) целиком.
+            /// </summary>
+            private bool TryMergeLines(
+                TableBlock shownTable, TableBlock otherTable,
+                HashSet<Guid> shownIds, HashSet<Guid> otherIds, TableRevisions.Axis axis)
+            {
+                // Поперёк — та же сетка: у строк те же столбцы, у столбцов те же строки.
+                var across = axis == TableRevisions.Axis.Row ? TableRevisions.Axis.Column : TableRevisions.Axis.Row;
+                if (LineCount(shownTable, across) != LineCount(otherTable, across)) return false;
+
+                int shownCount = LineCount(shownTable, axis);
+                int otherCount = LineCount(otherTable, axis);
+
+                var ids = new Dictionary<Guid, int>();
+                var a = new int[shownCount];
+                var b = new int[otherCount];
+                for (int i = 0; i < shownCount; i++)
+                {
+                    if (LineKeyCell(shownTable, i, axis) is not { } key) return false;
+                    a[i] = KeyOf(key.Id, ids);
+                }
+                for (int i = 0; i < otherCount; i++)
+                {
+                    if (LineKeyCell(otherTable, i, axis) is not { } key) return false;
+                    b[i] = KeyOf(key.Id, ids);
+                }
+
+                var ops = SequenceDiff.Compute(a, b, MaxEditDistance);
+
+                // Проверка: у общих строк — те же ячейки, новые — целиком новые,
+                // ушедшие — целиком ушедшие и без объединения поперёк.
+                int shownLine = 0;
+                foreach (var op in ops)
+                {
+                    switch (op.Kind)
+                    {
+                        case SequenceDiff.OpKind.Equal:
+                        {
+                            var shownCells = CellsOfLine(shownTable, op.IndexA, axis);
+                            var otherCells = CellsOfLine(otherTable, op.IndexB, axis);
+                            if (shownCells.Count != otherCells.Count) return false;
+                            foreach (var cell in shownCells)
+                                if (!otherIds.Contains(cell.Id)) return false;
+                            shownLine = op.IndexA + 1;
+                            break;
+                        }
+
+                        case SequenceDiff.OpKind.OnlyA:
+                            foreach (var cell in CellsOfLine(shownTable, op.IndexA, axis))
+                                if (otherIds.Contains(cell.Id)) return false;
+                            shownLine = op.IndexA + 1;
+                            break;
+
+                        case SequenceDiff.OpKind.OnlyB:
+                            foreach (var cell in CellsOfLine(otherTable, op.IndexB, axis))
+                            {
+                                if (shownIds.Contains(cell.Id)) return false;
+                                if (SpanOf(cell, axis) != 1) return false;
+                            }
+
+                            // Объединение второй версии поперёк ушедшей строки.
+                            foreach (var cell in otherTable.Cells)
+                            {
+                                int line = LineOf(cell, axis);
+                                if (line < op.IndexB && line + SpanOf(cell, axis) > op.IndexB) return false;
+                            }
+
+                            // Объединение показанной версии через место, куда строка вернётся.
+                            foreach (var cell in shownTable.Cells)
+                            {
+                                int line = LineOf(cell, axis);
+                                if (line < shownLine && line + SpanOf(cell, axis) > shownLine) return false;
+                            }
+                            break;
+                    }
+                }
+
+                // Сборка: строки по порядку, новые номера, высоты (ширины) — свои.
+                var cells = new List<TableCell>(shownTable.Cells.Count + 8);
+                var heights = new List<double>();
+                var exact = new List<int>();
+                var columns = new List<TableColumnDefinition>();
+                int index = 0;
+                bool insertedAny = false;
+                bool deletedAny = false;
+
+                void Take(TableBlock source, int line, List<TableCell> lineCells)
+                {
+                    foreach (var cell in lineCells)
+                    {
+                        if (axis == TableRevisions.Axis.Row) cell.Row = index;
+                        else cell.Column = index;
+                        cells.Add(cell);
+                    }
+
+                    if (axis == TableRevisions.Axis.Row)
+                    {
+                        heights.Add(source.GetRowMinHeightPt(line));
+                        if (source.IsRowHeightExact(line)) exact.Add(index);
+                    }
+                    else
+                    {
+                        columns.Add(line < source.Columns.Count
+                            ? source.Columns[line]
+                            : new TableColumnDefinition { WidthType = TableColumnWidthType.Auto });
+                    }
+
+                    index++;
+                }
+
+                // Ячейки собираются заранее: номера меняются по ходу сборки.
+                var shownLines = new List<TableCell>[shownCount];
+                for (int i = 0; i < shownCount; i++) shownLines[i] = CellsOfLine(shownTable, i, axis);
+                var otherLines = new List<TableCell>[otherCount];
+                for (int i = 0; i < otherCount; i++) otherLines[i] = CellsOfLine(otherTable, i, axis);
+
+                foreach (var op in ops)
+                {
+                    switch (op.Kind)
+                    {
+                        case SequenceDiff.OpKind.Equal:
+                            Take(shownTable, op.IndexA, shownLines[op.IndexA]);
+                            break;
+
+                        case SequenceDiff.OpKind.OnlyA:
+                        {
+                            var lineCells = shownLines[op.IndexA];
+                            bool fresh = false;
+                            foreach (var cell in lineCells)
+                            {
+                                if (cell.Inserted is not null || cell.Deleted is not null) continue;
+                                cell.Inserted = NewInfo();
+                                fresh = true;
+                            }
+                            if (fresh) { _result.InsertedPlaces++; insertedAny = true; }
+                            Take(shownTable, op.IndexA, lineCells);
+                            break;
+                        }
+
+                        case SequenceDiff.OpKind.OnlyB:
+                        {
+                            var lineCells = otherLines[op.IndexB];
+
+                            // Своя вставленная строка, убранная действием, уходит совсем.
+                            bool ownInsertion = _options.TrackEdit
+                                && lineCells.TrueForAll(cell => IsOwn(cell.Inserted));
+                            if (ownInsertion) break;
+
+                            foreach (var cell in lineCells)
+                            {
+                                if (!_options.TrackEdit) cell.Inserted = null;
+                                cell.Deleted ??= NewInfo();
+                                MarkCellContentDeleted(cell);
+                            }
+
+                            _result.DeletedPlaces++;
+                            deletedAny = true;
+                            Take(otherTable, op.IndexB, lineCells);
+                            break;
+                        }
+                    }
+                }
+
+                if (!insertedAny && !deletedAny && index == shownCount) return true;
+
+                shownTable.Cells.Clear();
+                shownTable.Cells.AddRange(cells);
+
+                if (axis == TableRevisions.Axis.Row)
+                {
+                    shownTable.RowCount = index;
+                    shownTable.RowMinHeightsPt = heights;
+                    shownTable.ExactHeightRows = exact.Count > 0 ? exact : null;
+                }
+                else
+                {
+                    shownTable.ColumnCount = index;
+                    shownTable.Columns = columns;
+                }
+
+                return true;
+            }
+
+            /// <summary>
+            /// Текст ячейки удалённой строки или столбца — удалённый. Своя вставка в
+            /// нём уходит совсем; знаки абзацев не трогаются: строку решает её отметка.
+            /// </summary>
+            private void MarkCellContentDeleted(TableCell cell)
+            {
+                foreach (var paragraph in cell.ParagraphsDeep())
+                {
+                    var source = paragraph.ToCharCells();
+                    var marked = new List<ParagraphBlock.CharCell>(source.Count);
+                    foreach (var charCell in source)
+                        if (WithDeleted(charCell) is { } deleted)
+                            marked.Add(deleted);
+                    paragraph.RebuildFromCharCells(marked);
                 }
             }
 
@@ -283,8 +868,8 @@ namespace Writersword.Modules.TextEditor.Services
                             break;
 
                         case SequenceDiff.OpKind.OnlyB:
-                            MarkParagraphDeleted(otherParagraphs[op.IndexB]);
-                            merged.Add(otherParagraphs[op.IndexB]);
+                            if (MarkParagraphDeleted(otherParagraphs[op.IndexB]))
+                                merged.Add(otherParagraphs[op.IndexB]);
                             break;
                     }
                 }
@@ -325,19 +910,42 @@ namespace Writersword.Modules.TextEditor.Services
                 _result.InsertedPlaces++;
             }
 
-            private void MarkParagraphDeleted(ParagraphBlock paragraph)
+            /// <summary>
+            /// Абзац второй версии, которого в показанной нет, — удалён. False — абзац
+            /// не возвращается: при записи действия это была целиком своя вставка.
+            /// </summary>
+            private bool MarkParagraphDeleted(ParagraphBlock paragraph)
             {
-                var cells = paragraph.ToCharCells();
+                var source = paragraph.ToCharCells();
+                var cells = new List<ParagraphBlock.CharCell>(source.Count);
 
-                for (int i = 0; i < cells.Count; i++)
-                    cells[i] = WithDeleted(cells[i]);
+                foreach (var cell in source)
+                    if (WithDeleted(cell) is { } deleted)
+                        cells.Add(deleted);
 
-                paragraph.RebuildFromCharCells(cells);
+                var props = paragraph.Properties;
 
-                paragraph.Properties.MarkInserted = null;
-                paragraph.Properties.MarkDeleted = NewInfo();
+                if (_options.TrackEdit)
+                {
+                    // Своя вставленная строка, убранная действием целиком, уходит совсем.
+                    if (cells.Count == 0 && IsOwn(props.MarkInserted)) return false;
+
+                    paragraph.RebuildFromCharCells(cells);
+
+                    // Отметка вставки знака абзаца остаётся: при отклонении он уйдёт,
+                    // как уходил бы до действия.
+                    if (props.MarkDeleted is null && !IsOwn(props.MarkInserted))
+                        props.MarkDeleted = NewInfo();
+                }
+                else
+                {
+                    paragraph.RebuildFromCharCells(cells);
+                    props.MarkInserted = null;
+                    props.MarkDeleted = NewInfo();
+                }
 
                 _result.DeletedPlaces++;
+                return true;
             }
 
             /// <summary>
@@ -346,6 +954,10 @@ namespace Writersword.Modules.TextEditor.Services
             /// </summary>
             private void CompareParagraphs(ParagraphBlock shownParagraph, ParagraphBlock otherParagraph)
             {
+                // Оформление и список абзаца — и при записи действия, и при сравнении
+                // версий: сменённое выравнивание или пункт списка — такая же правка.
+                CompareParagraphFormatting(shownParagraph, otherParagraph);
+
                 // Почти все абзацы версий одинаковы: их проверка не должна стоить
                 // разбора по знакам.
                 if (SameContent(shownParagraph, otherParagraph)) return;
@@ -392,7 +1004,7 @@ namespace Writersword.Modules.TextEditor.Services
                                     continue;
                                 }
 
-                                merged.Add(WithFormatChange(shownCell, otherCell.Props));
+                                merged.Add(WithFormatChange(shownCell, otherCell.Props, NewInfo()));
                                 formatHere = true;
                                 changed = true;
                             }
@@ -425,7 +1037,8 @@ namespace Writersword.Modules.TextEditor.Services
                         {
                             var token = otherTokens[op.IndexB];
                             for (int k = 0; k < token.Length; k++)
-                                merged.Add(WithDeleted(otherCells[token.Start + k]));
+                                if (WithDeleted(otherCells[token.Start + k]) is { } deletedCell)
+                                    merged.Add(deletedCell);
 
                             if (previous != SequenceDiff.OpKind.OnlyB) _result.DeletedPlaces++;
                             previous = SequenceDiff.OpKind.OnlyB;
@@ -495,6 +1108,50 @@ namespace Writersword.Modules.TextEditor.Services
                 return key;
             }
 
+            /// <summary>
+            /// Оформление абзаца, сменённое действием мимо записи: прежнее
+            /// запоминается сменой оформления абзаца (w:pPrChange).
+            /// </summary>
+            private void CompareParagraphFormatting(ParagraphBlock shownParagraph, ParagraphBlock otherParagraph)
+            {
+                var shownProps = shownParagraph.Properties;
+                var otherProps = otherParagraph.Properties;
+
+                // Прежний список второй стороны: если и у неё список уже сменён правкой —
+                // тот, что был до этой правки.
+                var otherList = otherProps.FormatChange is { ListChanged: true } otherChange
+                    ? otherChange.PreviousList
+                    : otherParagraph.ListProperties;
+                bool listDiffers = !ParagraphFormatChange.SameList(shownParagraph.ListProperties, otherList);
+
+                if (shownProps.FormatChange is { } existing)
+                {
+                    // Смена оформления уже записана; список, сменённый следом, дописывается
+                    // в неё же — одна правка абзаца, как у Word.
+                    if (!existing.ListChanged && listDiffers)
+                    {
+                        existing.ListChanged = true;
+                        existing.PreviousList = otherList?.Clone();
+                        _result.FormatPlaces++;
+                    }
+                    return;
+                }
+
+                string shownKey = JsonSerializer.Serialize(shownProps.WithoutRevisions(), FormattingKeyOptions);
+                string otherKey = JsonSerializer.Serialize(otherProps.WithoutRevisions(), FormattingKeyOptions);
+                bool propsDiffer = !string.Equals(shownKey, otherKey, StringComparison.Ordinal);
+                if (!propsDiffer && !listDiffers) return;
+
+                shownProps.FormatChange = new ParagraphFormatChange
+                {
+                    Info = NewInfo(),
+                    Previous = otherProps.FormatChange?.Previous?.WithoutRevisions() ?? otherProps.WithoutRevisions(),
+                    ListChanged = listDiffers,
+                    PreviousList = listDiffers ? otherList?.Clone() : null
+                };
+                _result.FormatPlaces++;
+            }
+
             // ── Знаки ────────────────────────────────────────────────────────
 
             private ParagraphBlock.CharCell WithInserted(ParagraphBlock.CharCell cell)
@@ -504,9 +1161,22 @@ namespace Writersword.Modules.TextEditor.Services
                 return new ParagraphBlock.CharCell(cell.Ch, props, cell.InlineImageId);
             }
 
-            private ParagraphBlock.CharCell WithDeleted(ParagraphBlock.CharCell cell)
+            /// <summary>
+            /// Знак второй версии, которого в показанной нет, — удалённым. Null — знак не
+            /// возвращается: при записи действия это своя вставка, она уходит совсем.
+            /// </summary>
+            private ParagraphBlock.CharCell? WithDeleted(ParagraphBlock.CharCell cell)
             {
-                var props = cell.Props?.WithoutRevisions() ?? new RunProperties();
+                if (_options.TrackEdit)
+                {
+                    if (cell.Props?.Deleted is not null) return cell;
+                    if (IsOwn(cell.Props?.Inserted)) return null;
+                }
+
+                // При записи действия чужая вставка остаётся вставкой — удалённой.
+                var props = _options.TrackEdit
+                    ? cell.Props?.Clone() ?? new RunProperties()
+                    : cell.Props?.WithoutRevisions() ?? new RunProperties();
                 props.Deleted = NewInfo();
 
                 // Примечания второй версии в показанной не существуют.
@@ -526,13 +1196,18 @@ namespace Writersword.Modules.TextEditor.Services
                 return new ParagraphBlock.CharCell(cell.Ch, props, cell.InlineImageId);
             }
 
-            private static ParagraphBlock.CharCell WithFormatChange(ParagraphBlock.CharCell cell, RunProperties? previous)
+            private static ParagraphBlock.CharCell WithFormatChange(ParagraphBlock.CharCell cell, RunProperties? previous, RevisionInfo info)
             {
                 var props = cell.Props?.Clone() ?? new RunProperties();
                 props.FormatChange = new RunFormatChange
                 {
-                    Info = NewInfo(),
-                    Previous = previous?.WithoutRevisions()
+                    Info = info,
+
+                    // Прежнее оформление, уже сменённое правкой, остаётся тем, что было
+                    // до первой смены: отклонение возвращает исходное.
+                    Previous = previous?.FormatChange is { } earlier
+                        ? earlier.Previous?.WithoutRevisions()
+                        : previous is null || previous.IsDefaultFormatting() ? null : previous.WithoutRevisions()
                 };
                 return new ParagraphBlock.CharCell(cell.Ch, props, cell.InlineImageId);
             }

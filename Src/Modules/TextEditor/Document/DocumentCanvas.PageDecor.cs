@@ -247,7 +247,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private List<ParaLayout> AlignSectionPagesVertically(
             List<ParaLayout> layouts, List<PageRect> pages, List<TableEntry> tables,
-            List<ImageEntry> images, Func<int, bool> pageHasNotes)
+            List<ImageEntry> images, List<PageBreakMark> breakMarks, Func<int, bool> pageHasNotes)
         {
             if (!SectionSheetsApply || pages.Count == 0) return layouts;
 
@@ -314,6 +314,17 @@ namespace Writersword.Modules.TextEditor.Document
                 images[i] = image with { Ypt = image.Ypt + shift[image.PageIndex] };
             }
 
+            // Отметки разрывов идут вместе с текстом листа: разрыв раздела в конце
+            // выровненного листа стоит под его последним абзацем, а не там, где
+            // кончился бы текст, прижатый к верху.
+            for (int i = 0; i < breakMarks.Count; i++)
+            {
+                var mark = breakMarks[i];
+                if (mark.PageIndex < 0 || mark.PageIndex >= shift.Length) continue;
+                if (shift[mark.PageIndex] == 0f) continue;
+                breakMarks[i] = mark with { Ypt = mark.Ypt + shift[mark.PageIndex] };
+            }
+
             return result;
         }
 
@@ -363,29 +374,7 @@ namespace Writersword.Modules.TextEditor.Document
                     bottom = page.Ypt + page.HeightPt - MmToPt(ps.MarginBottomMm);
                 }
 
-                if (borders.Top is { } t)
-                {
-                    float y = borders.FromPageEdge ? top + (float)t.SpacePt : top - (float)t.SpacePt;
-                    PageBorderPainter.DrawSide(canvas, t, left, y, right, y, true, borders.FromPageEdge, screenInk: true);
-                }
-
-                if (borders.Bottom is { } b)
-                {
-                    float y = borders.FromPageEdge ? bottom - (float)b.SpacePt : bottom + (float)b.SpacePt;
-                    PageBorderPainter.DrawSide(canvas, b, left, y, right, y, true, !borders.FromPageEdge, screenInk: true);
-                }
-
-                if (borders.Left is { } l)
-                {
-                    float x = borders.FromPageEdge ? left + (float)l.SpacePt : left - (float)l.SpacePt;
-                    PageBorderPainter.DrawSide(canvas, l, x, top, x, bottom, false, borders.FromPageEdge, screenInk: true);
-                }
-
-                if (borders.Right is { } r)
-                {
-                    float x = borders.FromPageEdge ? right - (float)r.SpacePt : right + (float)r.SpacePt;
-                    PageBorderPainter.DrawSide(canvas, r, x, top, x, bottom, false, !borders.FromPageEdge, screenInk: true);
-                }
+                PageBorderPainter.DrawFrame(canvas, borders, left, top, right, bottom, screenInk: true);
             }
         }
 

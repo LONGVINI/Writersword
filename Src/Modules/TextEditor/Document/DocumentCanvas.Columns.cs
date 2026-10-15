@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using SkiaSharp;
+using Writersword.Core.Models.Rendering;
 using Writersword.Modules.TextEditor.Rendering;
+using Writersword.Modules.TextEditor.ViewModels.Blocks;
 
 namespace Writersword.Modules.TextEditor.Document
 {
@@ -76,7 +78,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// <param name="leftPt">Левый край текстовой области листа.</param>
         /// <param name="bottomPt">Низ самой длинной колонки после выравнивания.</param>
         /// <param name="usedColumns">Сколько колонок занято после выравнивания.</param>
-        private static bool TryBalanceColumns(
+        private bool TryBalanceColumns(
             List<ParaLayout> layouts, int from, int pageIdx,
             float topPt, float limitPt, float leftPt,
             float[] offsets, float[] widths,
@@ -97,9 +99,25 @@ namespace Writersword.Modules.TextEditor.Document
                     entry.Ypt, entry.HeightPt, entry.LineFrom, entry.LineTo, entry.AbsXPt, 0));
             }
 
+            // Колонки разной ширины: абзац, перешедший в колонку другой ширины, верстается
+            // по ней. Пробы высоты повторяют одни и те же переходы — перевёрстка одного
+            // перехода делается один раз.
+            var relaid = new Dictionary<(SKTextLayout Layout, int FromLine, int WidthKey), SKTextLayout>();
+            SKTextLayout? Relayout(ColumnFrames.ColumnSlice slice, SKTextLayout layout, int fromLine, float widthPt)
+            {
+                if (slice.Key is not ParagraphViewModel pvm || pvm.Model is null) return null;
+
+                var key = (layout, fromLine, (int)MathF.Round(widthPt * 100f));
+                if (relaid.TryGetValue(key, out var ready)) return ready;
+
+                var result = ContinueParagraphLayout(pvm, layout, fromLine, widthPt);
+                relaid[key] = result;
+                return result;
+            }
+
             if (!ColumnFrames.TryBalance(
                     slices, topPt, limitPt, leftPt, offsets, widths,
-                    out var balanced, out bottomPt, out usedColumns))
+                    out var balanced, out bottomPt, out usedColumns, Relayout))
                 return false;
 
             layouts.RemoveRange(from, layouts.Count - from);
@@ -107,6 +125,7 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 layouts.Add((ParaLayout)slice.Source with
                 {
+                    Layout = slice.Layout,
                     Ypt = slice.Ypt,
                     HeightPt = slice.HeightPt,
                     PageIndex = pageIdx,
@@ -116,7 +135,58 @@ namespace Writersword.Modules.TextEditor.Document
                 });
             }
 
+            // Абзац, начатый на прошлом листе, мог получить новую раскладку: его куски
+            // там смотрят в неё же (строки до перехода в ней прежние).
+            if (from < layouts.Count && layouts[from].Layout is { } firstLayout)
+            {
+                var firstVm = layouts[from].Vm;
+                for (int i = from - 1; i >= 0; i--)
+                {
+                    var earlier = layouts[i];
+                    if (earlier.Vm != firstVm || earlier.Cell is not null) break;
+                    if (!ReferenceEquals(earlier.Layout, firstLayout))
+                        layouts[i] = earlier with { Layout = firstLayout };
+                }
+            }
+
             return true;
+        }
+
+        /// <summary>
+        /// Абзац продолжается в колонке, ширина которой не та, по которой сверстаны его
+        /// оставшиеся строки. Абзац с обтеканием так не переверстывается: его строки
+        /// сверстаны вокруг объектов своего места.
+        /// </summary>
+        private static bool ContinuesInOtherWidth(
+            ParagraphViewModel pvm, IReadOnlyList<SKWrapZone>? wrapZones, float columnWidthPt, float layoutWidthPt)
+            => wrapZones is null
+               && pvm.Model is not null
+               && Math.Abs(columnWidthPt - layoutWidthPt) > 0.5f;
+
+        /// <summary>
+        /// Раскладка абзаца, строки которого с <paramref name="fromLine"/> ушли в колонку
+        /// шириной <paramref name="widthPt"/> (SKTextRenderer.ContinueLayout). В кеш
+        /// раскладок не попадает: она зависит от места абзаца на листе.
+        /// </summary>
+        private SKTextLayout ContinueParagraphLayout(ParagraphViewModel pvm, SKTextLayout layout, int fromLine, float widthPt)
+        {
+            if (pvm.Model is null || _styleResolver is null) return layout;
+            return _renderer.ContinueLayout(layout, fromLine, pvm.Model, widthPt, _styleResolver);
+        }
+
+        /// <summary>
+        /// Куски абзаца с записи <paramref name="from"/> смотрят в раскладку
+        /// <paramref name="layout"/>: абзац перешёл в колонку другой ширины, и его
+        /// итоговая раскладка заменяет те, что были у кусков до перехода.
+        /// </summary>
+        private static void ShareParagraphLayout(List<ParaLayout> layouts, int from, ParagraphViewModel pvm, SKTextLayout layout)
+        {
+            for (int i = Math.Max(from, 0); i < layouts.Count; i++)
+            {
+                var entry = layouts[i];
+                if (entry.Vm != pvm || entry.Cell is not null || ReferenceEquals(entry.Layout, layout)) continue;
+                layouts[i] = entry with { Layout = layout };
+            }
         }
     }
 }

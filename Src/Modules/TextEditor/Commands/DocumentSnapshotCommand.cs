@@ -117,6 +117,28 @@ namespace Writersword.Modules.TextEditor.Commands
             _placeBefore = place;
         }
 
+        /// <summary>
+        /// Документ, каким он был до действия, — отдельным объектом. Нужен записи
+        /// исправлений: действие, которое само правкой не записалось, размечается по
+        /// разнице с ним (DocumentCanvas.RevisionGuard).
+        /// </summary>
+        public DocumentModel? DeserializeBefore()
+        {
+            try
+            {
+                return JsonSerializer.Deserialize<DocumentModel>(_before, _jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "[UNDO] Снимок «{D}»: документ до действия не прочитан", Description);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Запоминает документ после действия. Повторный вызов перезаписывает его: так
+        /// снимок принимает документ, размеченный правками уже после действия.
+        /// </summary>
         public void Commit(EditPlace place)
         {
             _after = Serialize(_docVm.Document);
@@ -193,6 +215,9 @@ namespace Writersword.Modules.TextEditor.Commands
 
             // Последний раздел сверх листа и колонок: рамка, номера строк, начало счёта.
             doc.FinalSection = restored.FinalSection?.Clone();
+
+            // Смена параметров последнего раздела правкой — вместе с самими параметрами.
+            doc.PageSetupChange = restored.PageSetupChange?.Clone();
 
             // Свойства рукописи, живущие вне разделов. Снимок их сохранял, а
             // восстановление обходило стороной, и отмена возвращала текст, оставляя

@@ -1,0 +1,141 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Writersword.Modules.TextEditor.Views.Dialogs.RevisionLockDialog"
+        Title="Защита исправлений"
+        Width="440"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        WindowDecorations="None"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent">
+
+	<!--
+	    Пароль защиты записи исправлений.
+
+	    Два вида одного окна: «Защитить» — пароль и его повтор, пустой пароль
+	    ставит защиту без пароля; «Снять защиту» — одно поле. Оформление — как у
+	    InputDialog: те же подложка, отступы и кнопки.
+	-->
+
+	<Panel>
+		<Grid>
+
+			<!-- Подложка (тень) -->
+			<Border Background="{DynamicResource BgBaseBrush}"
+			        CornerRadius="20"
+			        Margin="-2"/>
+
+			<!-- Контент -->
+			<Border Background="{DynamicResource BgAppBrush}"
+			        CornerRadius="12"
+			        Padding="24 20"
+			        BorderBrush="{DynamicResource BorderDefaultBrush}"
+			        BorderThickness="1"
+			        ClipToBounds="True"
+			        Margin="2">
+
+				<StackPanel Spacing="12">
+
+					<!-- Заголовок со значком замка -->
+					<StackPanel Orientation="Horizontal" Spacing="8">
+						<PathIcon Width="16" Height="16"
+						          VerticalAlignment="Center"
+						          Foreground="{DynamicResource AccentDefaultBrush}"
+						          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+						<TextBlock x:Name="TitleText"
+						           FontSize="15"
+						           FontWeight="SemiBold"
+						           VerticalAlignment="Center"
+						           Foreground="{DynamicResource TextPrimaryBrush}"
+						           TextWrapping="Wrap"/>
+					</StackPanel>
+
+					<!-- Что делает защита -->
+					<TextBlock x:Name="PromptText"
+					           FontSize="12"
+					           Foreground="{DynamicResource TextSecondaryBrush}"
+					           TextWrapping="Wrap"/>
+
+					<!-- Пароль -->
+					<StackPanel Spacing="4">
+						<TextBlock x:Name="PasswordCaption"
+						           FontSize="11"
+						           Foreground="{DynamicResource TextMutedBrush}"
+						           Text="Пароль"/>
+						<TextBox x:Name="PasswordBox"
+						         FontSize="13"
+						         Padding="8 6"
+						         CornerRadius="6"
+						         PasswordChar="●"
+						         Background="{DynamicResource BgSurfaceBrush}"
+						         BorderBrush="{DynamicResource BorderDefaultBrush}"
+						         BorderThickness="1"
+						         Foreground="{DynamicResource TextPrimaryBrush}"
+						         CaretBrush="{DynamicResource TextPrimaryBrush}"
+						         MaxLength="255"
+						         AcceptsReturn="False"/>
+					</StackPanel>
+
+					<!-- Повтор пароля: только при установке защиты -->
+					<StackPanel x:Name="RepeatPanel" Spacing="4">
+						<TextBlock FontSize="11"
+						           Foreground="{DynamicResource TextMutedBrush}"
+						           Text="Пароль ещё раз"/>
+						<TextBox x:Name="RepeatBox"
+						         FontSize="13"
+						         Padding="8 6"
+						         CornerRadius="6"
+						         PasswordChar="●"
+						         Background="{DynamicResource BgSurfaceBrush}"
+						         BorderBrush="{DynamicResource BorderDefaultBrush}"
+						         BorderThickness="1"
+						         Foreground="{DynamicResource TextPrimaryBrush}"
+						         CaretBrush="{DynamicResource TextPrimaryBrush}"
+						         MaxLength="255"
+						         AcceptsReturn="False"/>
+					</StackPanel>
+
+					<!-- Ошибка: пароли не совпали -->
+					<TextBlock x:Name="ErrorText"
+					           FontSize="12"
+					           Foreground="#E5605A"
+					           TextWrapping="Wrap"
+					           IsVisible="False"/>
+
+					<!-- Кнопки -->
+					<StackPanel Orientation="Horizontal"
+					            HorizontalAlignment="Right"
+					            Spacing="10"
+					            Margin="0 4 0 0">
+
+						<Button x:Name="CancelBtn"
+						        Content="Отмена"
+						        FontSize="12"
+						        Padding="20 8"
+						        CornerRadius="6"
+						        Cursor="Hand"
+						        Background="{DynamicResource BgSurfaceBrush}"
+						        BorderBrush="{DynamicResource BorderDefaultBrush}"
+						        BorderThickness="1"
+						        Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+						<Button x:Name="OkBtn"
+						        FontSize="12"
+						        FontWeight="SemiBold"
+						        Padding="20 8"
+						        CornerRadius="6"
+						        Cursor="Hand"
+						        Background="{DynamicResource AccentDefaultBrush}"
+						        BorderThickness="0"
+						        Foreground="White"/>
+
+					</StackPanel>
+
+				</StackPanel>
+
+			</Border>
+		</Grid>
+	</Panel>
+
+</Window>

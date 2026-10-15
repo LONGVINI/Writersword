@@ -488,6 +488,10 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 var ie = _images[ii];
 
+                // Прежний вид картинки в «Исходном документе» только показывается:
+                // выделять и править его нечего.
+                if (RevisionDisplay.IsDisplayTwin(ie.Block)) continue;
+
                 float xHitPt = xPt;
                 float yHitPt = yPt;
                 if (_pagesPerRow > 1 && ie.PageIndex >= 0 && ie.PageIndex != _gesturePage)
@@ -4412,6 +4416,9 @@ namespace Writersword.Modules.TextEditor.Document
                 if (undone)
                 {
                     _redoOrder.Push(src);
+
+                    // Под защитой отмена правки, сделанной мимо записи (до защиты), не проходит.
+                    GuardUndoRedo(src, wasUndo: true);
                     return;
                 }
 
@@ -4419,8 +4426,20 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             // Фолбэк, если порядок пуст (команда попала в стек мимо учёта).
-            if (TextUndoStack is not null && TextUndoStack.CanUndo && DocVm is not null) { UndoTextStep(); return; }
-            if (UndoStack is not null && UndoStack.CanUndo) { UndoSnapshotStep(); return; }
+            if (TextUndoStack is not null && TextUndoStack.CanUndo && DocVm is not null)
+            {
+                UndoTextStep();
+                _redoOrder.Push(UndoSource.Text);
+                GuardUndoRedo(UndoSource.Text, wasUndo: true);
+                return;
+            }
+            if (UndoStack is not null && UndoStack.CanUndo)
+            {
+                UndoSnapshotStep();
+                _redoOrder.Push(UndoSource.Snapshot);
+                GuardUndoRedo(UndoSource.Snapshot, wasUndo: true);
+                return;
+            }
             _logger.Debug("[UNDO] ExecuteUndo: nothing to undo");
         }
 
@@ -4518,14 +4537,29 @@ namespace Writersword.Modules.TextEditor.Document
                 if (redone)
                 {
                     _undoOrder.AddLast(src);
+
+                    // Повтор правки мимо записи под защитой тоже не проходит.
+                    GuardUndoRedo(src, wasUndo: false);
                     return;
                 }
 
                 _logger.Debug("[UNDO] ExecuteRedo: order entry {S} has no command left, skipping", src);
             }
 
-            if (TextUndoStack is not null && TextUndoStack.CanRedo && DocVm is not null) { RedoTextStep(); return; }
-            if (UndoStack is not null && UndoStack.CanRedo) { RedoSnapshotStep(); return; }
+            if (TextUndoStack is not null && TextUndoStack.CanRedo && DocVm is not null)
+            {
+                RedoTextStep();
+                _undoOrder.AddLast(UndoSource.Text);
+                GuardUndoRedo(UndoSource.Text, wasUndo: false);
+                return;
+            }
+            if (UndoStack is not null && UndoStack.CanRedo)
+            {
+                RedoSnapshotStep();
+                _undoOrder.AddLast(UndoSource.Snapshot);
+                GuardUndoRedo(UndoSource.Snapshot, wasUndo: false);
+                return;
+            }
             _logger.Debug("[UNDO] ExecuteRedo: nothing to redo");
         }
 

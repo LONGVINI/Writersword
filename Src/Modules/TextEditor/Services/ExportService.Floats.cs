@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
@@ -248,6 +248,11 @@ namespace Writersword.Modules.TextEditor.Services
             if (word is { Hidden: true })
                 properties.Hidden = true;
 
+            // Смена вида объекта правкой — своим расширением DrawingML: Word его
+            // пропускает, Writersword при открытии возвращает правку.
+            if (obj is IAppearanceTracked { Change: { } appearanceChange })
+                properties.AppendChild(XmlElement(ObjectChangeExtensionXml(appearanceChange)));
+
             var frameProperties = new Wp.NonVisualGraphicFrameDrawingProperties(
                 new Dr.GraphicFrameLocks { NoChangeAspect = obj.LockAspectRatio });
 
@@ -307,6 +312,51 @@ namespace Writersword.Modules.TextEditor.Services
             anchor.AppendChild(graphic);
 
             return new W.Drawing(anchor);
+        }
+
+        /// <summary>
+        /// Место плавающего объекта так, как его запишет Word: опора и сторона или
+        /// смещение по каждой оси (wp:positionH, wp:positionV). Нужно сравнению с
+        /// файлом: место объекта рукописи и объекта, прочитанного из .docx, сверяется
+        /// в одних единицах. Null — объект стоит в строке, места на листе у него нет.
+        /// </summary>
+        internal static (string Horizontal, string Vertical)? PlacementOf(IFloatingObject obj, TableFloatPosition? anchorPosition)
+        {
+            var word = obj.WordDrawing;
+            bool topAndBottom = obj.WrapMode == WrapMode.Inline && word is { WrapTopAndBottom: true };
+            if (obj.WrapMode == WrapMode.Inline && !topAndBottom) return null;
+
+            var position = topAndBottom
+                ? TopAndBottomPositionFor(obj, word!.TopAndBottomPosition)
+                : anchorPosition;
+
+            return (BuildHorizontalPositionXml(obj, position), BuildVerticalPositionXml(obj, position));
+        }
+
+        /// <summary>
+        /// Расширение wp:docPr со сменой вида объекта: a:extLst/a:ext с автором,
+        /// временем и записью прежнего вида.
+        /// </summary>
+        private static string ObjectChangeExtensionXml(ObjectChange change)
+        {
+            XNamespace a = DrawingMainNamespace;
+            XNamespace ws = ObjectAppearance.DocxNamespace;
+
+            var item = new XElement(ws + ObjectAppearance.DocxElement,
+                new XAttribute(XNamespace.Xmlns + "wsr", ObjectAppearance.DocxNamespace),
+                new XAttribute("author", change.Info.Author ?? string.Empty),
+                new XAttribute("previous", change.Previous ?? "{}"));
+
+            if (change.Info.Date is { } date)
+                item.Add(new XAttribute("date", date.ToString("o", CultureInfo.InvariantCulture)));
+
+            var list = new XElement(a + "extLst",
+                new XAttribute(XNamespace.Xmlns + "a", DrawingMainNamespace),
+                new XElement(a + "ext",
+                    new XAttribute("uri", ObjectAppearance.DocxExtensionUri),
+                    item));
+
+            return list.ToString(SaveOptions.DisableFormatting);
         }
 
         /// <summary>Длина в EMU со знаком: поля обрамления бывают отрицательными.</summary>

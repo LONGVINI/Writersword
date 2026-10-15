@@ -22,6 +22,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Review
         void ReviewHighlight(ReviewEntry? entry, uint argb);
         void ReviewResolve(IReadOnlyList<RevisionService.Hit> hits, bool accept);
         void ReviewResolveImages(IReadOnlyList<ImageBlock> images, bool accept);
+
+        /// <summary>Принять или отклонить правки разрывов и фигур.</summary>
+        void ReviewResolveBlocks(IReadOnlyList<BlockModel> blocks, bool accept);
         void ReviewSetCommentKind(CommentModel comment, CommentKind kind);
         void ReviewReply(CommentModel comment, string text);
         void ReviewToggleDone(CommentModel comment);
@@ -636,7 +639,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Review
         internal void Resolve(ReviewItemViewModel item, bool accept)
         {
             if (!item.IsRevision) return;
-            if (item.Entry.Image is null && item.Entry.Hits.Count == 0) return;
+            if (item.Entry.Image is null && item.Entry.Block is null && item.Entry.Hits.Count == 0) return;
 
             // Выбор переходит к следующему пункту — как у Word «Принять и перейти дальше».
             int index = _visible.IndexOf(item);
@@ -645,6 +648,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Review
             Hover(null);
             if (item.Entry.Image is { } image)
                 _host.ReviewResolveImages(new[] { image }, accept);
+            else if (item.Entry.Block is { } block)
+                _host.ReviewResolveBlocks(new[] { block }, accept);
             else
                 _host.ReviewResolve(item.Entry.Hits, accept);
         }
@@ -652,12 +657,14 @@ namespace Writersword.Modules.TextEditor.ViewModels.Review
         private void ResolveVisible(bool accept)
         {
             var revisions = _visible.Where(i => i.IsRevision).ToList();
-            var hits = revisions.Where(i => i.Entry.Image is null).SelectMany(i => i.Entry.Hits).ToList();
+            var hits = revisions.Where(i => i.Entry.Image is null && i.Entry.Block is null).SelectMany(i => i.Entry.Hits).ToList();
             var images = revisions.Select(i => i.Entry.Image).OfType<ImageBlock>().ToList();
-            if (hits.Count == 0 && images.Count == 0) return;
+            var blocks = revisions.Select(i => i.Entry.Block).OfType<BlockModel>().ToList();
+            if (hits.Count == 0 && images.Count == 0 && blocks.Count == 0) return;
 
             Hover(null);
             if (images.Count > 0) _host.ReviewResolveImages(images, accept);
+            if (blocks.Count > 0) _host.ReviewResolveBlocks(blocks, accept);
             if (hits.Count > 0) _host.ReviewResolve(hits, accept);
         }
 

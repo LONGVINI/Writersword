@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -707,6 +707,20 @@ namespace Writersword.Modules.TextEditor.Models.Document
         public double PaddingBottomPt { get; set; } = 4;
         public double PaddingLeftPt { get; set; } = 6;
         public double PaddingRightPt { get; set; } = 6;
+
+        /// <summary>
+        /// Ячейка вставлена правкой: её строка или столбец добавлены при записи
+        /// исправлений. Отклонение убирает строку или столбец целиком. Null — нет.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Inline.RevisionInfo? Inserted { get; set; }
+
+        /// <summary>
+        /// Ячейка удалена правкой: её строка или столбец убраны при записи
+        /// исправлений и стоят в таблице до принятия. Принятие убирает их. Null — нет.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Inline.RevisionInfo? Deleted { get; set; }
     }
 
     /// <summary>
@@ -977,6 +991,14 @@ namespace Writersword.Modules.TextEditor.Models.Document
 
         /// <summary>Текст перед продолжением таблицы на следующей странице. Null = не рисовать.</summary>
         public string? ContinuationLabel { get; set; }
+
+        /// <summary>
+        /// Смена оформления таблицы правкой: границы, заливка, ширины столбцов,
+        /// высоты строк, поля и выравнивание ячеек, свойства таблицы. Прежний вид —
+        /// запись Services.TableFrame. Null — оформление правкой не менялось.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public ObjectChange? FormatChange { get; set; }
 
         /// <summary>
         /// Возвращает ячейку по индексу строки и столбца.

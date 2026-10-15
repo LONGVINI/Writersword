@@ -236,6 +236,7 @@ namespace Writersword.Modules.TextEditor
             var saved = _settingsService.GetModuleSettings<TextEditorSettings>(moduleType);
             if (saved is not null)
             {
+                RememberThemes(saved);
                 _globalSettings = saved;
                 _localSettings = saved;
                 _logger.Debug("Settings loaded: MonitorSizeInches={V}", _globalSettings.MonitorSizeInches);
@@ -2730,6 +2731,7 @@ namespace Writersword.Modules.TextEditor
         {
             try
             {
+                PreserveUnknownThemes(settings);
                 _globalSettings = settings;
                 _localSettings = settings;
                 _settingsService.SaveModuleSettings(moduleType, settings);
@@ -2742,6 +2744,128 @@ namespace Writersword.Modules.TextEditor
 
             // Остальные открытые редакторы узнают о записи сразу же.
             SharedReadingSettingsSaved?.Invoke(this, settings);
+        }
+
+        // ── Защита видов от устаревших списков ────────────────────────────
+        //
+        // Список видов пишется в общие настройки целиком. Редактор, у которого список
+        // устарел, — другой открытый проект, окно настроек, вторая запущенная копия
+        // программы, копия настроек из файла проекта, — записывал свой список поверх
+        // и молча стирал виды, заведённые после того, как он свой список получил.
+        //
+        // Теперь вид уходит из общих настроек, только если его убрали там, где его
+        // видели: запись сверяется с тем, что уже лежит в настройках программы и в
+        // файле настроек на диске, и виды, которых пишущий никогда не видел, остаются.
+
+        // Опознаватели всех видов, которые видела эта копия программы. Вид из этого
+        // набора, которого нет в записываемом списке, удалён намеренно.
+        private static readonly HashSet<string> s_knownThemeIds = new(StringComparer.Ordinal);
+        private static readonly object s_knownThemesLock = new();
+
+        private static void RememberThemes(TextEditorSettings? settings)
+        {
+            if (settings?.ReadingThemes is not { } themes) return;
+
+            lock (s_knownThemesLock)
+            {
+                foreach (var theme in themes)
+                    if (!string.IsNullOrWhiteSpace(theme.Id)) s_knownThemeIds.Add(theme.Id);
+            }
+        }
+
+        /// <summary>
+        /// Возвращает в записываемый список виды, которых этот редактор не видел:
+        /// заведённые в другом редакторе или в другой копии программы.
+        /// </summary>
+        private void PreserveUnknownThemes(TextEditorSettings settings)
+        {
+            var outgoing = settings.ReadingThemes is { } list
+                ? new List<ReadingTheme>(list)
+                : new List<ReadingTheme>();
+
+            var outgoingIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var theme in outgoing)
+                if (!string.IsNullOrWhiteSpace(theme.Id)) outgoingIds.Add(theme.Id);
+
+            var candidates = new List<ReadingTheme>();
+
+            try
+            {
+                if (_settingsService.GetModuleSettings<TextEditorSettings>(moduleType)?.ReadingThemes is { } stored)
+                    candidates.AddRange(stored);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "[VIEWS] Stored views could not be read for the merge");
+            }
+
+            candidates.AddRange(ReadThemesFromSettingsFile());
+
+            var restored = new List<string>();
+
+            lock (s_knownThemesLock)
+            {
+                foreach (var theme in candidates)
+                {
+                    if (string.IsNullOrWhiteSpace(theme.Id) || theme.IsBuiltIn) continue;
+                    if (outgoingIds.Contains(theme.Id)) continue;
+                    if (s_knownThemeIds.Contains(theme.Id)) continue;
+
+                    outgoing.Add(theme);
+                    outgoingIds.Add(theme.Id);
+                    restored.Add(string.IsNullOrWhiteSpace(theme.Name) ? theme.Id : theme.Name);
+                }
+
+                foreach (var id in outgoingIds)
+                    s_knownThemeIds.Add(id);
+            }
+
+            settings.ReadingThemes = outgoing;
+
+            if (restored.Count > 0)
+                _logger.Warning(
+                    "[VIEWS] Запись общих настроек шла со списком видов без {Count}: {Names} — виды сохранены",
+                    restored.Count, string.Join(", ", restored));
+        }
+
+        /// <summary>
+        /// Виды из файла настроек программы на диске — их могла записать другая
+        /// запущенная копия программы. Пусто — файла нет или он не читается.
+        /// </summary>
+        private static List<ReadingTheme> ReadThemesFromSettingsFile()
+        {
+            var result = new List<ReadingTheme>();
+
+            try
+            {
+                var path = System.IO.Path.Combine(AppContext.BaseDirectory, "settings.json");
+                if (!System.IO.File.Exists(path)) return result;
+
+                using var json = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(path));
+                if (!json.RootElement.TryGetProperty("ModuleSettings", out var modules)) return result;
+                if (!modules.TryGetProperty("TextEditor", out var editor)) return result;
+                if (!editor.TryGetProperty("ReadingThemes", out var themes)
+                    || themes.ValueKind != System.Text.Json.JsonValueKind.Array) return result;
+
+                foreach (var element in themes.EnumerateArray())
+                {
+                    try
+                    {
+                        var theme = System.Text.Json.JsonSerializer.Deserialize<ReadingTheme>(element.GetRawText());
+                        if (theme is not null) result.Add(theme);
+                    }
+                    catch (Exception)
+                    {
+                        // Вид, который не читается, сохранить нечем — остальные читаются дальше.
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "[VIEWS] Settings file could not be read for the merge");
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -2772,6 +2896,7 @@ namespace Writersword.Modules.TextEditor
                 // Своя копия: списки видов не должны быть общими объектами двух
                 // редакторов — правка в одном меняла бы другой в обход записи.
                 var snapshot = saved.Clone();
+                RememberThemes(snapshot);
 
                 // Вид листа при правке разносится тем же путём, что и виды чтения.
                 // Без этого редактор другого проекта держал прежний вид в своей копии

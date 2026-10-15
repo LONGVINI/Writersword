@@ -659,6 +659,10 @@ namespace Writersword.Modules.TextEditor.Services
                 word.Name = AttributeOf(docPr, "name");
                 word.Title = AttributeOf(docPr, "title");
                 word.Hidden = IsTrueValue(AttributeOf(docPr, "hidden"));
+
+                // Смена вида, записанная Writersword (ObjectAppearance.DocxExtensionUri).
+                if (obj is IAppearanceTracked tracked && ReadObjectChange(docPr) is { } change)
+                    tracked.Change = change;
             }
 
             // Запрет менять пропорции (a:graphicFrameLocks noChangeAspect).
@@ -936,6 +940,11 @@ namespace Writersword.Modules.TextEditor.Services
                 if (cellPosition is not null)
                 {
                     shape.AnchorPosition = cellPosition;
+
+                    // Правка рана, в котором стояла фигура, уходит вместе с ней.
+                    shape.Inserted = runProps.Inserted?.Clone();
+                    shape.Deleted = runProps.Deleted?.Clone();
+
                     _cellFloatCollector.Add(shape);
                     return;
                 }
@@ -970,6 +979,11 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (container.LocalName == "anchor")
                 shape.AnchorPosition = ApplyAnchorPlacement(shape, container);
+
+            // Плавающая фигура уходит из строки блоком — правка рана, в котором она
+            // стояла (w:ins, w:del), уходит вместе с ней, как у плавающей картинки.
+            shape.Inserted = runProps.Inserted?.Clone();
+            shape.Deleted = runProps.Deleted?.Clone();
 
             _pendingFloats.Add(shape);
         }
@@ -1226,6 +1240,51 @@ namespace Writersword.Modules.TextEditor.Services
             foreach (var floating in _pendingFloats)
                 section.Blocks.Add(floating);
             _pendingFloats.Clear();
+        }
+
+        /// <summary>
+        /// Смена вида объекта из расширения wp:docPr, которое пишет Writersword; null —
+        /// расширения нет или оно не наше.
+        /// </summary>
+        private static ObjectChange? ReadObjectChange(OpenXmlElement docPr)
+        {
+            var list = ChildByName(docPr, "extLst");
+            if (list is null) return null;
+
+            foreach (var ext in list.ChildElements)
+            {
+                if (ext.LocalName != "ext") continue;
+                if (!string.Equals(AttributeOf(ext, "uri"), ObjectAppearance.DocxExtensionUri, StringComparison.OrdinalIgnoreCase)) continue;
+
+                foreach (var item in ext.ChildElements)
+                {
+                    if (item.LocalName != ObjectAppearance.DocxElement || item.NamespaceUri != ObjectAppearance.DocxNamespace) continue;
+
+                    string previous = AttributeOf(item, "previous") ?? string.Empty;
+                    if (previous.Length == 0) return null;
+
+                    // Запись прежнего вида должна читаться: битая запись при отклонении
+                    // сломала бы объект.
+                    try
+                    {
+                        using var parsed = System.Text.Json.JsonDocument.Parse(previous);
+                        if (parsed.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return null;
+                    }
+                    catch (System.Text.Json.JsonException)
+                    {
+                        return null;
+                    }
+
+                    var info = new RevisionInfo { Author = AttributeOf(item, "author") ?? string.Empty };
+                    if (DateTime.TryParse(AttributeOf(item, "date"), CultureInfo.InvariantCulture,
+                            DateTimeStyles.RoundtripKind, out var date))
+                        info.Date = date;
+
+                    return new ObjectChange { Info = info, Previous = previous };
+                }
+            }
+
+            return null;
         }
 
         private static OpenXmlElement? ChildByName(OpenXmlElement? parent, string localName)

@@ -167,7 +167,8 @@ namespace Writersword.Modules.TextEditor.Rendering
             bool isCell = false,
             IReadOnlyList<SKWrapZone>? wrapZones = null,
             bool wrapPreferPushDown = false,
-            WrapPageContext? wrapPages = null)
+            WrapPageContext? wrapPages = null,
+            int continueFromChar = -1)
         {
             // В исходном документе абзац, сменивший оформление, верстается с прежним.
             para = RevisionDisplay.DisplayParagraph(para, styles.RevisionView);
@@ -342,6 +343,20 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (para.SuppressSpaceBefore) spaceBeforePt = 0f;
             if (para.SuppressSpaceAfter) spaceAfterPt = 0f;
 
+            // Продолжение абзаца в колонке другой ширины (continueFromChar >= 0): строки
+            // начинаются со знака continueFromChar, номера знаков остаются номерами
+            // абзаца. Первая строка продолжения — не первая строка абзаца: без отступа
+            // первой строки, без номера списка и без интервала перед абзацем. Номер
+            // списка может занимать первую строку сам, и тогда продолжение со второй
+            // строки начинается со знака 0 — поэтому признак продолжения не «больше нуля».
+            bool continuation = continueFromChar >= 0;
+            if (continuation)
+            {
+                firstLineIndentPt = 0f;
+                markerOwnsFirstLine = false;
+                spaceBeforePt = 0f;
+            }
+
             // Рамка абзаца отодвигает соседей так же, как интервалы: верхняя линия с
             // зазором до текста встаёт над первой строкой, нижняя — под последней. Их
             // место прибавляется к интервалам раскладки, и разбивка на страницы,
@@ -350,7 +365,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             var borders = BuildBordersLayout(para.Properties.Borders, indentScale);
             if (borders is not null)
             {
-                spaceBeforePt += borders.Top?.ExtentPt ?? 0f;
+                if (!continuation) spaceBeforePt += borders.Top?.ExtentPt ?? 0f;
                 spaceAfterPt += borders.Bottom?.ExtentPt ?? 0f;
             }
 
@@ -426,6 +441,17 @@ namespace Writersword.Modules.TextEditor.Rendering
                 para, styleName, styles, InlineImageSize, InlineObjectDescent, InlineNoteMark, CommentHighlight,
                 InlineFieldText);
 
+            // Продолжение: знаки до continueFromChar стоят в прежней колонке.
+            if (continuation)
+            {
+                tokens.RemoveAll(token => token.GlobalIndex < continueFromChar);
+                if (tokens.Count == 0)
+                {
+                    layout.TextLength = GetPlainTextLength(para);
+                    return layout;
+                }
+            }
+
             // Пустой абзац рисуется шрифтом своего стиля. Запасной Times New Roman 14
             // давал пустой строке чужую высоту, и пустые строки между блоками текста
             // занимали на листе не столько же места, сколько в Word.
@@ -460,6 +486,126 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             return layout;
         }
+
+        /// <summary>
+        /// Абзац перешёл в колонку другой ширины: строки раскладки с <paramref name="fromLine"/>
+        /// верстаются заново по ширине новой колонки, строки до неё остаются как были.
+        ///
+        /// Получается одна раскладка на весь абзац: номера строк у кусков абзаца в
+        /// прежних колонках не меняются, а знаки строк продолжения — те же номера знаков
+        /// абзаца. Ширина области у строк продолжения записана в каждой из них
+        /// (<see cref="SKLineLayout.AreaWidthPt"/>): по ней их выравнивают, растягивают
+        /// по ширине и заливают.
+        ///
+        /// fromLine = 0 — абзац целиком уходит в колонку другой ширины: он верстается
+        /// заново как обычно, с отступом первой строки и номером списка.
+        /// </summary>
+        /// <param name="layout">Раскладка абзаца, строки которой до fromLine уже стоят на листе.</param>
+        /// <param name="fromLine">Первая строка, которая уходит в новую колонку.</param>
+        /// <param name="para">Абзац раскладки.</param>
+        /// <param name="availableWidthPt">Ширина новой колонки.</param>
+        public SKTextLayout ContinueLayout(
+            SKTextLayout layout, int fromLine, ParagraphBlock para, float availableWidthPt, StyleResolver styles)
+        {
+            if (fromLine <= 0) return BuildLayout(para, availableWidthPt, styles);
+            if (fromLine >= layout.Lines.Count) return layout;
+
+            var tail = BuildLayout(para, availableWidthPt, styles,
+                continueFromChar: layout.Lines[fromLine].FirstCharIndex);
+            if (tail.Lines.Count == 0) return layout;
+
+            var joined = new SKTextLayout
+            {
+                SpaceBeforePt = layout.SpaceBeforePt,
+                SpaceAfterPt = tail.SpaceAfterPt,
+                AllowsJustifyShrink = layout.AllowsJustifyShrink,
+                SpaceBeforeSuppressed = layout.SpaceBeforeSuppressed,
+                SpaceAfterSuppressed = layout.SpaceAfterSuppressed,
+                LeftIndentPt = layout.LeftIndentPt,
+                RightIndentPt = layout.RightIndentPt,
+                FirstLineIndentPt = layout.FirstLineIndentPt,
+                MarkerOwnsFirstLine = layout.MarkerOwnsFirstLine,
+                MarkerAlignment = layout.MarkerAlignment,
+                MarkerFontFamily = layout.MarkerFontFamily,
+                MarkerTextFontFamily = layout.MarkerTextFontFamily,
+                MarkerTextFontSizePt = layout.MarkerTextFontSizePt,
+                MarkerLineTopPt = layout.MarkerLineTopPt,
+                MarkerLineDescentPt = layout.MarkerLineDescentPt,
+                WrapPushedDown = layout.WrapPushedDown,
+                TextAreaWidthPt = layout.TextAreaWidthPt,
+                Alignment = layout.Alignment,
+                Borders = layout.Borders,
+                ShadingColor = layout.ShadingColor,
+                ShadingPattern = layout.ShadingPattern,
+                ShadingPatternColor = layout.ShadingPatternColor,
+                BarTabPositionsPt = layout.BarTabPositionsPt,
+                LineTextAlignment = layout.LineTextAlignment,
+                IsRightToLeft = layout.IsRightToLeft,
+                HasBidiText = layout.HasBidiText || tail.HasBidiText,
+                ChangeBarColor = layout.ChangeBarColor,
+                ChangeBarAllLines = layout.ChangeBarAllLines,
+                ChangeBarLastLine = layout.ChangeBarLastLine,
+                TextLength = layout.TextLength
+            };
+
+            for (int i = 0; i < fromLine; i++)
+                joined.Lines.Add(layout.Lines[i]);
+
+            // Строки продолжения встают сразу под последней оставшейся строкой: Y строк
+            // отсчитывается от верха абзаца, и кусок в новой колонке отсчитывает свои
+            // строки от Y первой из них.
+            var lastKept = layout.Lines[fromLine - 1];
+            float topPt = lastKept.Y + lastKept.Height;
+
+            // Ширина области строки: своя, если она не та, что у абзаца. Строки,
+            // сверстанные по ширине раскладки, отметки не получают.
+            float tailAreaPt = Math.Abs(tail.TextAreaWidthPt - layout.TextAreaWidthPt) > 0.01f
+                ? tail.TextAreaWidthPt
+                : 0f;
+
+            foreach (var line in tail.Lines)
+            {
+                line.Y += topPt;
+                line.AreaWidthPt = tailAreaPt;
+                joined.Lines.Add(line);
+            }
+
+            joined.TotalHeightPt = topPt + tail.TotalHeightPt;
+            return joined;
+        }
+
+        /// <summary>
+        /// Строки раскладки с <paramref name="fromLine"/> сверстаны по ширине колонки
+        /// <paramref name="availableWidthPt"/>: ширина области у каждой — ширина колонки
+        /// за вычетом отступов абзаца.
+        /// </summary>
+        public static bool LinesFitWidth(SKTextLayout layout, int fromLine, float availableWidthPt)
+        {
+            float targetPt = Math.Max(availableWidthPt - layout.LeftIndentPt - layout.RightIndentPt, 1f);
+            for (int i = Math.Max(fromLine, 0); i < layout.Lines.Count; i++)
+            {
+                if (Math.Abs(LineAreaWidthPt(layout, layout.Lines[i]) - targetPt) > 0.5f)
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Ширина текстовой области строки: своя у строки продолжения в колонке другой
+        /// ширины, иначе — абзаца. Полоса обтекания сюда не входит.
+        /// </summary>
+        public static float LineAreaWidthPt(SKTextLayout layout, SKLineLayout line)
+            => line.AreaWidthPt > 0f ? line.AreaWidthPt : layout.TextAreaWidthPt;
+
+        /// <summary>
+        /// Ширина текстовой области куска абзаца, начинающегося строкой
+        /// <paramref name="lineFrom"/>: у куска в колонке другой ширины — её ширина.
+        /// </summary>
+        public static float SliceAreaWidthPt(SKTextLayout layout, int lineFrom)
+            => lineFrom >= 0 && lineFrom < layout.Lines.Count
+                ? LineAreaWidthPt(layout, layout.Lines[lineFrom])
+                : layout.TextAreaWidthPt;
 
         /// <summary>
         /// Черта исправлений у абзаца с правками: какие строки её получают и каким
@@ -710,7 +856,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                         // Плавающие объекты этого абзаца встают от его верха; текст
                         // абзаца и всех следующих обтекает уже поставленные объекты.
                         if (!measure.IsRotated)
-                            PlaceCellFloats(measure, cell, pi, cellContentY, contentWidthPt);
+                            PlaceCellFloats(measure, cell, pi, cellContentY, contentWidthPt, styles.RevisionView);
 
                         SKTextLayout paraLayout;
                         if (!measure.IsRotated && measure.Floats.Count > 0)
@@ -945,7 +1091,8 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// и колонку, и поле, и лист), по вертикали — верх абзаца или верх ячейки.
         /// </summary>
         private void PlaceCellFloats(
-            CellMeasure measure, TableCell cell, int paragraphIndex, float paragraphTopPt, float contentWidthPt)
+            CellMeasure measure, TableCell cell, int paragraphIndex, float paragraphTopPt, float contentWidthPt,
+            RevisionView revisionView)
         {
             if (cell.Floats is not { Count: > 0 } floats) return;
 
@@ -954,13 +1101,21 @@ namespace Writersword.Modules.TextEditor.Rendering
             foreach (var cellFloat in floats)
             {
                 if (cell.FloatParagraphIndex(cellFloat) != paragraphIndex) continue;
-                if (cellFloat.Object is not IFloatingObject floating) continue;
+
+                // В «Исходном документе» объект со сменой вида стоит прежним.
+                var shownObject = RevisionDisplay.DisplayObject(cellFloat.Object, revisionView);
+                if (shownObject is not IFloatingObject floating) continue;
+
+                // Объект, спрятанный правкой при этом виде показа, места в ячейке не
+                // занимает и текст не отодвигает — как плавающий объект на листе.
+                if (cellFloat.Object is IRevisionMarked marked && RevisionDisplay.IsBlockHidden(marked, revisionView))
+                    continue;
 
                 float widthPt = (float)floating.WidthPt * scale;
                 float heightPt = (float)floating.HeightPt * scale;
                 if (widthPt <= 0f || heightPt <= 0f) continue;
 
-                TableFloatPosition? position = cellFloat.Object switch
+                TableFloatPosition? position = shownObject switch
                 {
                     ImageBlock image => image.AnchorPosition,
                     ShapeBlock shape => shape.AnchorPosition,
@@ -995,7 +1150,7 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 measure.Floats.Add(new SKCellFloatLayout
                 {
-                    Block = cellFloat.Object,
+                    Block = shownObject,
                     XPt = xPt,
                     YPt = yPt,
                     WidthPt = widthPt,
@@ -1578,6 +1733,10 @@ namespace Writersword.Modules.TextEditor.Rendering
             }
 
             var pageLayout = new SKPageLayout();
+
+            // Абзацы потока по их номеру — для перевёрстки при выравнивании колонок
+            // разной ширины.
+            var flowParagraphs = new Dictionary<int, ParagraphBlock>();
             var currentPage = CreateSectionPage(pageWidthPt, pageHeightPt,
                                          marginLeftPt, marginTopPt,
                                          sectionTextWidthPt, textHeightPt);
@@ -1672,9 +1831,25 @@ namespace Writersword.Modules.TextEditor.Rendering
                             piece.Y, linesPt, piece.LineFrom, piece.LineTo, PrintOffsetOf(piece), 0));
                     }
 
+                    // Колонки разной ширины: абзац, перешедший в колонку другой ширины,
+                    // верстается по ней; одинаковые переходы проб высоты — один раз.
+                    var relaid = new Dictionary<(SKTextLayout, int, int), SKTextLayout>();
+                    SKTextLayout? Relayout(ColumnFrames.ColumnSlice slice, SKTextLayout sliceLayout, int fromLine, float widthPt)
+                    {
+                        if (slice.Key is not int index || !flowParagraphs.TryGetValue(index, out var flowPara))
+                            return null;
+
+                        var key = (sliceLayout, fromLine, (int)MathF.Round(widthPt * 100f));
+                        if (relaid.TryGetValue(key, out var ready)) return ready;
+
+                        var result = ContinueLayout(sliceLayout, fromLine, flowPara, widthPt, styles);
+                        relaid[key] = result;
+                        return result;
+                    }
+
                     if (ColumnFrames.TryBalance(
                             slices, colTopY, textHeightPt, leftX, colOffsets, colWidths,
-                            out var balanced, out float balancedBottom, out int balancedColumns))
+                            out var balanced, out float balancedBottom, out int balancedColumns, Relayout))
                     {
                         currentPage.Paragraphs.RemoveRange(colRegionParasFrom, currentPage.Paragraphs.Count - colRegionParasFrom);
                         foreach (var slice in balanced)
@@ -1682,7 +1857,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                             var source = (SKPageParagraph)slice.Source;
                             var moved = new SKPageParagraph
                             {
-                                Layout = source.Layout,
+                                Layout = slice.Layout,
                                 Y = slice.Ypt,
                                 LineFrom = slice.LineFrom,
                                 LineTo = slice.LineTo,
@@ -1751,6 +1926,12 @@ namespace Writersword.Modules.TextEditor.Rendering
                         paraIndex++;
                         continue;
                     }
+
+                    // Разрыв страницы или колонки, спрятанный правкой при этом виде, лист
+                    // не начинает — как на полотне (DocumentCanvas.Layout).
+                    if (block is BreakBlock dormantBreak && !dormantBreak.IsSectionBreak
+                        && RevisionDisplay.IsBlockHidden(dormantBreak, styles.RevisionView))
+                        continue;
 
                     // Непрерывный разрыв раздела: колонки раздела выравниваются по
                     // высоте, следующий раздел на том же листе меняет поля слева и справа
@@ -2075,6 +2256,12 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                     var layout = BuildLayout(para, textWidthPt, styles);
 
+                    // Колонки разной ширины: строки, ушедшие в колонку другой ширины,
+                    // верстаются по ней (ContinueLayout). layoutWidthPt — ширина, по которой
+                    // сверстаны строки, ещё не вставшие на лист.
+                    float layoutWidthPt = textWidthPt;
+                    flowParagraphs[paraIndex] = para;
+
                     bool prevIsTable = bi > 0 && blocks[bi - 1] is TableBlock;
                     bool nextIsTable = bi + 1 < blocks.Count && blocks[bi + 1] is TableBlock;
                     bool isSystemAnchor = string.IsNullOrEmpty(para.GetPlainText())
@@ -2128,6 +2315,14 @@ namespace Writersword.Modules.TextEditor.Rendering
                             AdvanceFrame();
                             lineFrom = li;
                             sliceStartY = currentY;
+
+                            if (Math.Abs(textWidthPt - layoutWidthPt) > 0.5f)
+                            {
+                                layout = ContinueLayout(layout, li, para, textWidthPt, styles);
+                                layoutWidthPt = textWidthPt;
+                                line = layout.Lines[li];
+                                isLastLine = li == layout.Lines.Count - 1;
+                            }
                         }
 
                         // Строка встала на свой лист: её сноски встают внизу этого листа.
@@ -3004,7 +3199,8 @@ namespace Writersword.Modules.TextEditor.Rendering
             bool isStart = from == 0;
             bool isEnd = to >= layout.Lines.Count;
 
-            float textRightX = textLeftX + layout.TextAreaWidthPt;
+            // Кусок абзаца в колонке другой ширины заливается и обводится по ней.
+            float textRightX = textLeftX + SliceAreaWidthPt(layout, from);
             float textBottomY = textTopY + textHeight;
 
             var top = hasBorders && isStart && b!.Top is { IsVisible: true } ? b.Top : null;
@@ -5565,7 +5761,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             var endSeg = line.Segments[lastSeg];
             float contentRight = endSeg.X + endSeg.GlyphMetrics[lastGlyph].Right;
 
-            float area = line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : layout.TextAreaWidthPt;
+            float area = line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : LineAreaWidthPt(layout, line);
             float firstExtra = lineIndex == 0 ? layout.FirstLineIndentPt : 0f;
             float free = area - firstExtra - contentRight;
             if (free <= 0.01f) return;
@@ -6321,28 +6517,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 bottom = page.MarginTopPt + page.TextHeightPt;
             }
 
-            void Side(Models.Page.PageBorderSide? side, bool horizontal, bool atStart)
-            {
-                if (side is null) return;
-                float space = (float)side.SpacePt;
-                float inwardSign = borders.FromPageEdge ? 1f : -1f;
-
-                if (horizontal)
-                {
-                    float y = atStart ? top + space * inwardSign : bottom - space * inwardSign;
-                    PageBorderPainter.DrawSide(canvas, side, left, y, right, y, true, atStart == borders.FromPageEdge);
-                }
-                else
-                {
-                    float x = atStart ? left + space * inwardSign : right - space * inwardSign;
-                    PageBorderPainter.DrawSide(canvas, side, x, top, x, bottom, false, atStart == borders.FromPageEdge);
-                }
-            }
-
-            Side(borders.Top, true, true);
-            Side(borders.Bottom, true, false);
-            Side(borders.Left, false, true);
-            Side(borders.Right, false, false);
+            PageBorderPainter.DrawFrame(canvas, borders, left, top, right, bottom);
         }
 
         /// <summary>Номера строк раздела на листе печати — у левого края текста, на базовой линии.</summary>
@@ -7261,7 +7436,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             var line = layout.Lines[lineIndex];
             // Полоса обтекания сужает область строки и сдвигает её левый край:
             // выравнивание работает внутри полосы, а не всей текстовой области.
-            float area = line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : layout.TextAreaWidthPt;
+            float area = line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : LineAreaWidthPt(layout, line);
             float firstExtra = lineIndex == 0 ? layout.FirstLineIndentPt : 0f;
 
             // Строка разорвана объектом и идёт по нескольким отрезкам: её ширина включает
@@ -7379,7 +7554,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             // а не всей текстовой области.
             float areaW = fragmented
                 ? line.WrapFragments[fragmentIndex].WidthPt
-                : (line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : layout.TextAreaWidthPt);
+                : (line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : LineAreaWidthPt(layout, line));
 
             float free = (areaW - firstExtra) - contentWidth;
 

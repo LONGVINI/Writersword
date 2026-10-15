@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.Models.Document;
@@ -143,6 +143,20 @@ namespace Writersword.Modules.TextEditor.Commands
         /// </summary>
         public TextCommandTransaction BeginTransaction(DocumentModel doc, string description)
             => new TextCommandTransaction(this, doc, description);
+
+        /// <summary>
+        /// Убирает последнюю команду из истории без отката: её действие уже записано
+        /// другим шагом (снимком, размеченным правками). Состояние документа то же,
+        /// поэтому номер состояния не меняется.
+        /// </summary>
+        public void DiscardLast()
+        {
+            if (_undoStack.Last is null) return;
+
+            _undoStack.RemoveLast();
+            _undoStates.RemoveLast();
+            StateChanged?.Invoke();
+        }
 
         /// <summary>Полная очистка стека (например, при закрытии документа).</summary>
         public void Clear()

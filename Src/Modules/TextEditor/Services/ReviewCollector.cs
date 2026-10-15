@@ -65,6 +65,12 @@ namespace Writersword.Modules.TextEditor.Services
         /// <summary>Плавающая картинка, вставленная или удалённая правкой; null — правка текста.</summary>
         public ImageBlock? Image { get; init; }
 
+        /// <summary>
+        /// Разрыв или фигура, вставленные или удалённые правкой целиком; null — правка
+        /// текста или картинки.
+        /// </summary>
+        public BlockModel? Block { get; init; }
+
         /// <summary>Ответы обсуждения по порядку.</summary>
         public IReadOnlyList<CommentModel> Replies { get; init; } = Array.Empty<CommentModel>();
 
@@ -132,7 +138,7 @@ namespace Writersword.Modules.TextEditor.Services
         /// То, по чему пункт узнаётся после пересборки списка: у правки — абзац и
         /// знаки, у примечания — само примечание.
         /// </summary>
-        public object Key => (object?)Comment ?? (object?)Image ?? Hit!.Value;
+        public object Key => (object?)Comment ?? (object?)Image ?? (object?)Block ?? Hit!.Value;
     }
 
     /// <summary>
@@ -157,12 +163,52 @@ namespace Writersword.Modules.TextEditor.Services
             // Абзацы в порядке чтения с их блоком потока и заголовком над ними.
             var walk = new List<(ParagraphBlock Paragraph, Guid Owner, string Group)>();
             var floating = new List<(ImageBlock Image, int After, string Group)>();
+            var markedBlocks = new List<(BlockModel Block, int After, string Group)>();
+            var markedTables = new List<(TableBlock Table, Guid Owner, int At, string Group)>();
+            var changedSections = new List<(BreakBlock? Break, int After, string Group)>();
             string group = string.Empty;
+
+            // Текст сносок: его абзацы встают в обход сразу за абзацем со знаком
+            // сноски, своей группой «Сноска N». Пункт ведёт к знаку сноски в тексте.
+            NoteNumbering? numbering = null;
+            Dictionary<Guid, NoteBlock>? notes = null;
+
+            void AddNotesOf(ParagraphBlock paragraph, Guid owner)
+            {
+                foreach (var chunk in paragraph.Chunks)
+                {
+                    foreach (var run in chunk.Runs)
+                    {
+                        if (run.InlineImageId is not Guid id) continue;
+
+                        if (notes is null)
+                        {
+                            notes = new Dictionary<Guid, NoteBlock>();
+                            foreach (var note in RevisionService.AllNotes(document)) notes[note.Id] = note;
+                        }
+
+                        if (!notes.TryGetValue(id, out var found) || found.Paragraphs.Count == 0) continue;
+
+                        numbering ??= NoteNumbering.Compute(document);
+                        string mark = numbering.MarkOf(found.Id) ?? found.CustomMark ?? string.Empty;
+                        string noteGroup = found.Kind == NoteKind.Endnote
+                            ? ("Концевая сноска " + mark).Trim()
+                            : ("Сноска " + mark).Trim();
+
+                        foreach (var noteParagraph in found.Paragraphs)
+                            walk.Add((noteParagraph, owner, noteGroup));
+                    }
+                }
+            }
 
             foreach (var section in document.Sections)
             {
                 foreach (var block in section.Blocks)
                 {
+                    // Параметры раздела, сменённые правкой, — пункт в конце раздела.
+                    if (block is BreakBlock { IsSectionBreak: true, Section.FormatChange: not null } sectionEnd)
+                        changedSections.Add((sectionEnd, walk.Count - 1, group));
+
                     if (block is ParagraphBlock paragraph)
                     {
                         if (TocService.LevelOf(paragraph, document, includeManual: true) > 0)
@@ -171,18 +217,51 @@ namespace Writersword.Modules.TextEditor.Services
                             if (title.Length > 0) group = title;
                         }
                         walk.Add((paragraph, paragraph.Id, group));
+                        AddNotesOf(paragraph, paragraph.Id);
                     }
-                    else if (block is ImageBlock { } image && (image.Inserted is not null || image.Deleted is not null))
+                    else if (block is ImageBlock { } image && RevisionMarks.HasMark(image))
                     {
                         floating.Add((image, walk.Count - 1, group));
                     }
+                    else if (block is not ImageBlock && RevisionMarks.HasMark(block))
+                    {
+                        markedBlocks.Add((block, walk.Count - 1, group));
+                    }
                     else if (block is TableBlock table)
                     {
+                        // Строки, столбцы и оформление таблицы — пункты в начале таблицы.
+                        int tableStart = walk.Count;
+                        if (TableRevisions.HasMarks(table))
+                            markedTables.Add((table, table.Id, tableStart, group));
+                        foreach (var nestedTable in table.NestedTablesDeep())
+                            if (TableRevisions.HasMarks(nestedTable))
+                                markedTables.Add((nestedTable, table.Id, tableStart, group));
+
                         var cells = new List<TableCell>(table.Cells);
                         cells.Sort((a, b) => a.Row != b.Row ? a.Row.CompareTo(b.Row) : a.Column.CompareTo(b.Column));
                         foreach (var cell in cells)
+                        {
+                            // Текст вставленной или удалённой строки — часть её пункта.
+                            if (cell.Inserted is not null || cell.Deleted is not null) continue;
+
                             foreach (var cellParagraph in cell.ParagraphsDeep())
+                            {
+                                if (InMarkedNestedCell(cell, cellParagraph)) continue;
                                 walk.Add((cellParagraph, table.Id, group));
+                                AddNotesOf(cellParagraph, table.Id);
+                            }
+                        }
+
+                        // Картинки и фигуры, плавающие в ячейках, — пункты после таблицы.
+                        foreach (var (_, cellFloat) in RevisionService.CellFloats(table))
+                        {
+                            if (!RevisionMarks.HasMark(cellFloat.Object)) continue;
+
+                            if (cellFloat.Object is ImageBlock cellImage)
+                                floating.Add((cellImage, walk.Count - 1, group));
+                            else
+                                markedBlocks.Add((cellFloat.Object, walk.Count - 1, group));
+                        }
                     }
                 }
             }
@@ -228,6 +307,13 @@ namespace Writersword.Modules.TextEditor.Services
 
             AddComments(document, walk, entries);
             AddFloatingImages(document, walk, floating, entries);
+            AddMarkedBlocks(document, walk, markedBlocks, entries);
+            AddInlineObjectChanges(document, walk, entries);
+            AddTableRevisions(markedTables, entries);
+
+            if (document.PageSetupChange is not null)
+                changedSections.Add((null, walk.Count - 1, group));
+            AddSectionChanges(document, walk, changedSections, entries);
 
             entries.Sort((a, b) => a.Order != b.Order ? a.Order.CompareTo(b.Order) : a.From.CompareTo(b.From));
             return entries;
@@ -769,13 +855,21 @@ namespace Writersword.Modules.TextEditor.Services
 
             foreach (var section in document.Sections)
                 foreach (var block in section.FloatingObjects)
-                    if (block is ImageBlock pinned && (pinned.Inserted is not null || pinned.Deleted is not null))
+                    if (block is ImageBlock pinned && RevisionMarks.HasMark(pinned))
                         floating.Add((pinned, walk.Count - 1, walk[^1].Group));
 
             foreach (var (image, after, imageGroup) in floating)
             {
                 int order = Math.Clamp(after, 0, walk.Count - 1);
                 var (paragraph, owner, _) = walk[order];
+
+                // Только сменился вид: сдвинута, изменён размер, повёрнута.
+                if (image.Inserted is null && image.Deleted is null)
+                {
+                    if (image.Change is { } imageChange)
+                        entries.Add(ChangeEntry(image, imageChange, "рисунок", paragraph, paragraph.TotalLength, paragraph.TotalLength, owner, imageGroup, order));
+                    continue;
+                }
 
                 bool deleted = image.Deleted is not null;
                 var info = image.Deleted ?? image.Inserted;
@@ -803,6 +897,319 @@ namespace Writersword.Modules.TextEditor.Services
                 entries.Add(entry);
             }
         }
+
+        /// <summary>
+        /// Разрывы и фигуры, вставленные или удалённые правкой целиком. Место — абзац
+        /// перед блоком (у первого в документе — первый абзац); фигуры, закреплённые
+        /// на листе, — в конце.
+        /// </summary>
+        private static void AddMarkedBlocks(
+            DocumentModel document,
+            List<(ParagraphBlock Paragraph, Guid Owner, string Group)> walk,
+            List<(BlockModel Block, int After, string Group)> marked,
+            List<ReviewEntry> entries)
+        {
+            if (walk.Count == 0) return;
+
+            foreach (var section in document.Sections)
+                foreach (var block in section.FloatingObjects)
+                    if (block is not ImageBlock && RevisionMarks.HasMark(block))
+                        marked.Add((block, walk.Count - 1, walk[^1].Group));
+
+            foreach (var (block, after, blockGroup) in marked)
+            {
+                int order = Math.Clamp(after, 0, walk.Count - 1);
+                var (paragraph, owner, _) = walk[order];
+
+                // Только сменился вид фигуры.
+                if (RevisionMarks.InsertedOf(block) is null && RevisionMarks.DeletedOf(block) is null)
+                {
+                    if (RevisionMarks.ChangeOf(block) is { } blockChange)
+                        entries.Add(ChangeEntry(block, blockChange, MarkedBlockLabel(block), paragraph, paragraph.TotalLength, paragraph.TotalLength, owner, blockGroup, order));
+                    continue;
+                }
+
+                var deletedInfo = RevisionMarks.DeletedOf(block);
+                bool deleted = deletedInfo is not null;
+                var info = deletedInfo ?? RevisionMarks.InsertedOf(block);
+                string label = MarkedBlockLabel(block);
+
+                var entry = new ReviewEntry
+                {
+                    Kind = deleted ? ReviewKind.Deletion : ReviewKind.Insertion,
+                    Block = block,
+                    Paragraph = paragraph,
+                    From = paragraph.TotalLength,
+                    To = paragraph.TotalLength,
+                    Author = info?.Author ?? string.Empty,
+                    Date = info?.Date,
+                    Action = deleted ? "Удалено" : "Добавлено",
+                    Text = "«" + label + "»",
+                    Group = blockGroup,
+                    OwnerBlockId = owner,
+                    Order = order
+                };
+
+                if (deleted) entry.Removed = label;
+                else entry.Added = label;
+
+                entries.Add(entry);
+            }
+        }
+
+        /// <summary>
+        /// Параметры разделов, сменённые правкой: лист, поля, колонки, рамка. Место —
+        /// последний абзац раздела (у последнего раздела — последний абзац документа).
+        /// </summary>
+        private static void AddSectionChanges(
+            DocumentModel document,
+            List<(ParagraphBlock Paragraph, Guid Owner, string Group)> walk,
+            List<(BreakBlock? Break, int After, string Group)> sections,
+            List<ReviewEntry> entries)
+        {
+            if (walk.Count == 0) return;
+
+            foreach (var (sectionEnd, after, sectionGroup) in sections)
+            {
+                var change = sectionEnd is null ? document.PageSetupChange : sectionEnd.Section?.FormatChange;
+                if (change is null) continue;
+
+                string current = sectionEnd is null
+                    ? SectionFrame.CaptureFinal(document)
+                    : SectionFrame.Capture(sectionEnd, document);
+                string what = SectionFrame.Describe(change.Previous, current);
+
+                int order = Math.Clamp(after, 0, walk.Count - 1);
+                var (paragraph, owner, _) = walk[order];
+
+                var entry = new ReviewEntry
+                {
+                    Kind = ReviewKind.Format,
+                    Block = new SectionRevisionPart { Break = sectionEnd },
+                    Paragraph = paragraph,
+                    From = paragraph.TotalLength,
+                    To = paragraph.TotalLength,
+                    Author = change.Info.Author ?? string.Empty,
+                    Date = change.Info.Date,
+                    Action = "Изменено",
+                    Text = "«параметры страницы»: " + what,
+                    Group = sectionGroup,
+                    OwnerBlockId = owner,
+                    Order = order
+                };
+                entry.Marked = "параметры страницы: " + what;
+                entries.Add(entry);
+            }
+        }
+
+        /// <summary>Абзац лежит во вложенной таблице, в ячейке её вставленной или удалённой строки.</summary>
+        private static bool InMarkedNestedCell(TableCell cell, ParagraphBlock paragraph)
+        {
+            if (cell.NestedTables is not { Count: > 0 } nested) return false;
+
+            foreach (var item in nested)
+            {
+                foreach (var table in Enumerate(item.Table))
+                {
+                    foreach (var inner in table.Cells)
+                    {
+                        if (inner.Inserted is null && inner.Deleted is null) continue;
+                        if (inner.Paragraphs.Contains(paragraph)) return true;
+                    }
+                }
+            }
+
+            return false;
+
+            static IEnumerable<TableBlock> Enumerate(TableBlock table)
+            {
+                yield return table;
+                foreach (var deeper in table.NestedTablesDeep()) yield return deeper;
+            }
+        }
+
+        /// <summary>
+        /// Строки и столбцы, вставленные или удалённые правкой, и смена оформления
+        /// таблицы. Место — первый абзац строки (столбца) или таблицы.
+        /// </summary>
+        private static void AddTableRevisions(
+            List<(TableBlock Table, Guid Owner, int At, string Group)> tables,
+            List<ReviewEntry> entries)
+        {
+            foreach (var (table, owner, at, tableGroup) in tables)
+            {
+                foreach (var group in TableRevisions.Groups(table))
+                {
+                    var sorted = new List<TableCell>(group.Cells);
+                    sorted.Sort((a, b) => a.Row != b.Row ? a.Row.CompareTo(b.Row) : a.Column.CompareTo(b.Column));
+                    if (sorted.Count == 0 || sorted[0].Paragraphs.Count == 0) continue;
+
+                    var paragraph = sorted[0].Paragraphs[0];
+                    var ranges = new List<(ParagraphBlock, int, int)>();
+                    var text = new StringBuilder();
+                    foreach (var cell in sorted)
+                    {
+                        foreach (var cellParagraph in cell.Paragraphs)
+                        {
+                            ranges.Add((cellParagraph, 0, cellParagraph.TotalLength));
+                            string plain = cellParagraph.GetPlainText().Trim();
+                            if (plain.Length == 0) continue;
+                            if (text.Length > 0) text.Append(" | ");
+                            text.Append(plain);
+                        }
+                    }
+
+                    string label = group.Axis == TableRevisions.Axis.Row ? "строка таблицы" : "столбец таблицы";
+                    string content = text.Length > ChangeMaxChars
+                        ? text.ToString(0, ChangeMaxChars) + "…"
+                        : text.ToString();
+
+                    var entry = new ReviewEntry
+                    {
+                        Kind = group.Deleted ? ReviewKind.Deletion : ReviewKind.Insertion,
+                        Block = new TableRevisionPart { Table = table, Cells = group.Cells, Axis = group.Axis },
+                        Paragraph = paragraph,
+                        From = 0,
+                        To = paragraph.TotalLength,
+                        Ranges = ranges,
+                        Author = group.Info.Author ?? string.Empty,
+                        Date = group.Info.Date,
+                        Action = group.Deleted ? "Удалено" : "Добавлено",
+                        Text = "«" + label + "»" + (content.Length > 0 ? ": " + content : string.Empty),
+                        Group = tableGroup,
+                        OwnerBlockId = owner,
+                        Order = at
+                    };
+
+                    string shown = content.Length > 0 ? label + ": " + content : label;
+                    if (group.Deleted) entry.Removed = shown;
+                    else entry.Added = shown;
+
+                    entries.Add(entry);
+                }
+
+                if (table.FormatChange is { } change)
+                {
+                    var first = TableFrame.RowKeyCell(table, 0);
+                    var paragraph = first is { Paragraphs.Count: > 0 } ? first.Paragraphs[0] : null;
+                    if (paragraph is null) continue;
+
+                    string what = TableFrame.Describe(change.Previous, table);
+                    var entry = new ReviewEntry
+                    {
+                        Kind = ReviewKind.Format,
+                        Block = new TableRevisionPart { Table = table, Format = true },
+                        Paragraph = paragraph,
+                        From = 0,
+                        To = paragraph.TotalLength,
+                        Author = change.Info.Author ?? string.Empty,
+                        Date = change.Info.Date,
+                        Action = "Изменено",
+                        Text = "«таблица»: " + what,
+                        Group = tableGroup,
+                        OwnerBlockId = owner,
+                        Order = at
+                    };
+                    entry.Marked = "таблица: " + what;
+                    entries.Add(entry);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Картинки и фигуры в строке, у которых сменился вид. Место — сам объект в
+        /// тексте абзаца.
+        /// </summary>
+        private static void AddInlineObjectChanges(
+            DocumentModel document,
+            List<(ParagraphBlock Paragraph, Guid Owner, string Group)> walk,
+            List<ReviewEntry> entries)
+        {
+            Dictionary<Guid, BlockModel>? changed = null;
+            foreach (var section in document.Sections)
+            {
+                foreach (var block in section.InlineObjects)
+                {
+                    if (block is not IAppearanceTracked { Change: not null, Inserted: null, Deleted: null }) continue;
+                    changed ??= new Dictionary<Guid, BlockModel>();
+                    changed[block.Id] = block;
+                }
+            }
+
+            if (changed is null) return;
+
+            for (int order = 0; order < walk.Count; order++)
+            {
+                var (paragraph, owner, paragraphGroup) = walk[order];
+
+                int index = 0;
+                foreach (var chunk in paragraph.Chunks)
+                {
+                    foreach (var run in chunk.Runs)
+                    {
+                        if (run.InlineImageId is not Guid id)
+                        {
+                            index += run.Text.Length;
+                            continue;
+                        }
+
+                        if (changed.Remove(id, out var block) && RevisionMarks.ChangeOf(block) is { } change)
+                        {
+                            string label = block is ShapeBlock ? "фигура" : "рисунок";
+                            entries.Add(ChangeEntry(block, change, label, paragraph, index, index + 1, owner, paragraphGroup, order));
+                        }
+
+                        index++;
+                    }
+                }
+
+                if (changed.Count == 0) return;
+            }
+        }
+
+        /// <summary>
+        /// Пункт смены вида картинки или фигуры: что с объектом сделали — сдвинут,
+        /// изменён размер, повёрнут. Картинка решается как картинка, фигура — как блок.
+        /// </summary>
+        private static ReviewEntry ChangeEntry(
+            BlockModel block, ObjectChange change, string label,
+            ParagraphBlock paragraph, int from, int to, Guid owner, string group, int order)
+        {
+            string what = ObjectAppearance.Describe(change.Previous, block);
+
+            var entry = new ReviewEntry
+            {
+                Kind = ReviewKind.Format,
+                Image = block as ImageBlock,
+                Block = block is ImageBlock ? null : block,
+                Paragraph = paragraph,
+                From = from,
+                To = to,
+                Ranges = to > from
+                    ? new[] { (paragraph, from, to) }
+                    : Array.Empty<(ParagraphBlock, int, int)>(),
+                Author = change.Info.Author ?? string.Empty,
+                Date = change.Info.Date,
+                Action = "Изменено",
+                Text = "«" + label + "»: " + what,
+                Group = group,
+                OwnerBlockId = owner,
+                Order = order
+            };
+
+            entry.Marked = label + ": " + what;
+            return entry;
+        }
+
+        /// <summary>Как блок называется в пункте панели — как у Word.</summary>
+        private static string MarkedBlockLabel(BlockModel block) => block switch
+        {
+            BreakBlock { IsSectionBreak: true } => "разрыв раздела",
+            BreakBlock { BreakType: BreakType.Column } or BreakBlock { FromColumnBreak: true } => "разрыв столбца",
+            BreakBlock => "разрыв страницы",
+            ShapeBlock => "фигура",
+            _ => "объект"
+        };
 
         // ── Примечания ────────────────────────────────────────────────────
 

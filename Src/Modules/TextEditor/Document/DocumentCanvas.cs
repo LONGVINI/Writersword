@@ -1353,6 +1353,10 @@ namespace Writersword.Modules.TextEditor.Document
                 // месте: сделал бы вид, что отменил, ничего не отменив.
                 ForgetPhantomReturn();
             }
+
+            // Запись исправлений: действие, не записанное правкой, размечается или,
+            // под защитой, откатывается (DocumentCanvas.RevisionGuard).
+            OnTextStepPushed(cmd);
         }
 
         // Фиксирует снапшотную команду в общем порядке отмены (вызывается из CommitEdit).
@@ -1364,6 +1368,9 @@ namespace Writersword.Modules.TextEditor.Document
             // Та же причина, что и в PushTextCommand: появился шаг отмены, значит
             // рукопись изменилась, и Ctrl+Z обязан снова быть отменой.
             ForgetPhantomReturn();
+
+            // Запись исправлений и защита — как у лёгких команд.
+            OnSnapshotStepRecorded();
         }
 
         // Сброс порядка отмены — при смене документа, когда стеки очищаются.
@@ -1902,6 +1909,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.HeadingCollapseChanged -= OnHeadingCollapseChanged;
                 _docVm.CommentsChanged -= OnCommentsChanged;
                 _docVm.RevisionViewChanged -= OnRevisionViewChanged;
+                _docVm.RevisionsChanged -= OnRevisionStateForGuard;
                 _docVm.ReviewCommandDelegate = null;
                 UnwireReviewPanel(_docVm);
                 _docVm.StylesChanged -= OnStylesChanged;
@@ -2372,6 +2380,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.HeadingCollapseChanged -= OnHeadingCollapseChanged;
                 _docVm.CommentsChanged -= OnCommentsChanged;
                 _docVm.RevisionViewChanged -= OnRevisionViewChanged;
+                _docVm.RevisionsChanged -= OnRevisionStateForGuard;
                 _docVm.ReviewCommandDelegate = null;
                 UnwireReviewPanel(_docVm);
                 _docVm.StylesChanged -= OnStylesChanged;
@@ -2483,6 +2492,9 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.CommentsChanged += OnCommentsChanged;
             DocVm.RevisionViewChanged -= OnRevisionViewChanged;
             DocVm.RevisionViewChanged += OnRevisionViewChanged;
+            DocVm.RevisionsChanged -= OnRevisionStateForGuard;
+            DocVm.RevisionsChanged += OnRevisionStateForGuard;
+            ResetRevisionGuard();
             DocVm.ReviewCommandDelegate = ExecuteReviewCommand;
             WireReviewPanel(DocVm);
             DocVm.BeginFontPreviewDelegate = BeginFontPreviewSession;
@@ -5029,6 +5041,26 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         /// <summary>
+        /// Картинка строки для вёрстки и рисования: в «Исходном документе» картинка со
+        /// сменой вида — прежней (RevisionDisplay.DisplayObject). Для правки — только
+        /// <see cref="FindInlineImage"/>.
+        /// </summary>
+        private ImageBlock? FindDisplayInlineImage(Guid id)
+        {
+            var image = FindInlineImage(id);
+            if (image is null || DocVm is null) return image;
+            return RevisionDisplay.DisplayImage(image, DocVm.Document.RevisionView);
+        }
+
+        /// <summary>Фигура строки для вёрстки и рисования — как <see cref="FindDisplayInlineImage"/>.</summary>
+        private ShapeBlock? FindDisplayInlineShape(Guid id)
+        {
+            var shape = FindInlineShape(id);
+            if (shape is null || DocVm is null) return shape;
+            return RevisionDisplay.DisplayShape(shape, DocVm.Document.RevisionView);
+        }
+
+        /// <summary>
         /// Формула в строке текста по её Id. Живёт там же, где картинки строки, —
         /// в InlineObjects раздела; run абзаца хранит только ссылку.
         /// </summary>
@@ -5299,7 +5331,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private (float WidthPt, float HeightPt)? GetInlineImageSize(Guid id)
         {
-            var image = FindInlineImage(id);
+            var image = FindDisplayInlineImage(id);
             if (image is not null)
             {
                 var (w, h) = ReadingImageSize(image);
@@ -5307,7 +5339,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             // Фигура в строке — такой же объект строки, как картинка.
-            var shape = FindInlineShape(id);
+            var shape = FindDisplayInlineShape(id);
             if (shape is not null)
             {
                 var (shapeW, shapeH) = ReadingShapeSize(shape);

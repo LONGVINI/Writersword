@@ -4235,6 +4235,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
                     var shapeCopy = (ShapeBlock)DocumentCloner.CloneBlock(sourceShape);
                     shapeCopy.Id = Guid.NewGuid();
+                    RevisionMarks.Clear(shapeCopy);
                     _document.Sections[0].InlineObjects.Add(shapeCopy);
                     cells[i] = new ParagraphBlock.CharCell(cells[i].Ch, cells[i].Props, shapeCopy.Id);
                     changed = true;
@@ -6425,6 +6426,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 return;
             }
 
+            // Импорт заменяет текст целиком и мимо записи исправлений: под защитой это
+            // была бы та самая молчаливая правка, от которой защита стоит.
+            if (IsRevisionLocked)
+            {
+                NotifyRevisionLocked();
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
             {
                 notifications?.ShowError(TextEditorStrings.Import_FileNotFound);
@@ -6724,6 +6733,20 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public const string ImportUndoDescription = "Импорт документа";
 
         private void ApplyImportedDocument(DocumentModel imported)
+        {
+            // Импорт заменяет документ целиком — это не правка, которую размечать.
+            AutoTrackingSuppressed = true;
+            try
+            {
+                ReplaceWithImported(imported);
+            }
+            finally
+            {
+                AutoTrackingSuppressed = false;
+            }
+        }
+
+        private void ReplaceWithImported(DocumentModel imported)
         {
             BeginEditDelegate?.Invoke(ImportUndoDescription);
 

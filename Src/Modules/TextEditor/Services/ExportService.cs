@@ -355,7 +355,7 @@ namespace Writersword.Modules.TextEditor.Services
                                         if (lastIsPageBreak)
                                         {
                                             if (lastBreakRun is not null)
-                                                lastBreakRun.Remove();
+                                                RemoveRunWithRevision(lastBreakRun);
                                             else
                                                 lastParagraph.RemoveAllChildren<W.Run>();
                                         }
@@ -415,6 +415,8 @@ namespace Writersword.Modules.TextEditor.Services
                                     ending?.Page ?? document.PageSettings,
                                     ending?.Columns ?? ToSectionColumns(document.ColumnSettings),
                                     currentSectionStart);
+                                if (ending?.FormatChange is { } sectionChange)
+                                    AppendSectionChange(endingSectPr, sectionChange, ending, currentSectionStart, ctx);
                                 if (hfPlan is not null)
                                     ApplyHeaderFooterToSection(endingSectPr, hfPlan, ctx);
                                 NormalizeSectionProperties(endingSectPr);
@@ -450,12 +452,12 @@ namespace Writersword.Modules.TextEditor.Services
                                     && brk.BreakType is BreakType.Page or BreakType.Column)
                                 {
                                     lastBreakRun = BuildBreakRun(brk);
-                                    lastParagraph.AppendChild(lastBreakRun);
+                                    lastParagraph.AppendChild(WrapObjectRevision(lastBreakRun, brk, ctx));
                                     continueIntoLast = brk.InParagraph && brk.ContinuesParagraph;
                                 }
                                 else
                                 {
-                                    lastParagraph = BuildBreakParagraph(brk);
+                                    lastParagraph = BuildBreakParagraph(brk, ctx);
                                     body.AppendChild(lastParagraph);
                                     lastBreakRun = null;
                                     lastIsFlowParagraph = false;
@@ -531,6 +533,8 @@ namespace Writersword.Modules.TextEditor.Services
                             ? finalColumns
                             : ToSectionColumns(section.ColumnSettings ?? document.ColumnSettings),
                         currentSectionStart);
+                    if (isFinal && document.PageSetupChange is { } pageSetupChange)
+                        AppendSectionChange(sectPr, pageSetupChange, finalLayout, currentSectionStart, ctx);
                     if (hfPlan is not null)
                         ApplyHeaderFooterToSection(sectPr, hfPlan, ctx);
                     NormalizeSectionProperties(sectPr);
@@ -1015,11 +1019,14 @@ namespace Writersword.Modules.TextEditor.Services
 
             var indentation = new W.Indentation();
 
-            if (left != 0) indentation.Left = TwipsString(left);
-            if (right != 0) indentation.Right = TwipsString(right);
+            // Явный ноль пишется: стиль абзаца может нести свой отступ (у «Цитаты» —
+            // справа, у «Кода» — слева), и без записанного нуля Word и обратный импорт
+            // брали бы отступ стиля — абзац сдвигался.
+            if (left != 0 || props?.LeftIndent is not null) indentation.Left = TwipsString(left);
+            if (right != 0 || props?.RightIndent is not null) indentation.Right = TwipsString(right);
 
             if (firstLine < 0) indentation.Hanging = TwipsString(-firstLine);
-            else if (firstLine > 0) indentation.FirstLine = TwipsString(firstLine);
+            else if (firstLine > 0 || props?.FirstLineIndent is not null) indentation.FirstLine = TwipsString(firstLine);
 
             return indentation;
         }
@@ -1398,9 +1405,11 @@ namespace Writersword.Modules.TextEditor.Services
             if (start < text.Length) yield return text.Substring(start);
         }
 
-        private W.Paragraph BuildBreakParagraph(BreakBlock block)
+        private W.Paragraph BuildBreakParagraph(BreakBlock block, DocxWriteContext ctx)
         {
-            return new W.Paragraph(BuildBreakRun(block));
+            var paragraph = new W.Paragraph(WrapObjectRevision(BuildBreakRun(block), block, ctx));
+            MarkBreakParagraphRevision(paragraph, block, ctx);
+            return paragraph;
         }
 
         /// <summary>
@@ -1654,9 +1663,27 @@ namespace Writersword.Modules.TextEditor.Services
 
         // ── docx: таблицы ───────────────────────────────────────────────────
 
-        private W.Table BuildTable(TableBlock table, DocxWriteContext ctx)
+        /// <param name="propertiesOnly">
+        /// Только свойства таблицы, строк и ячеек, без содержимого — для прежнего вида
+        /// таблицы в w:tblPrChange, w:trPrChange и w:tcPrChange.
+        /// </param>
+        private W.Table BuildTable(TableBlock table, DocxWriteContext ctx, bool propertiesOnly = false)
         {
             var result = new W.Table();
+
+            // Смена оформления правкой: прежний вид — копия таблицы с прежним
+            // оформлением, выгруженная одними свойствами. Её свойства уходят в
+            // w:tblPrChange, w:tblGridChange, w:trPrChange и w:tcPrChange, как у Word.
+            W.Table? previousXml = null;
+            RevisionInfo? formatInfo = null;
+            if (!propertiesOnly && table.FormatChange is { } formatChange)
+            {
+                var previous = (TableBlock)DocumentCloner.CloneBlock(table);
+                previous.FormatChange = null;
+                TableFrame.Restore(previous, formatChange.Previous);
+                previousXml = BuildTable(previous, ctx, propertiesOnly: true);
+                formatInfo = formatChange.Info;
+            }
 
             // Таблица «справа налево» хранит колонки в видимом порядке; Word ждёт
             // логический — первая колонка в разметке стоит у правого края.
@@ -1750,6 +1777,29 @@ namespace Writersword.Modules.TextEditor.Services
 
             result.AppendChild(grid);
 
+            // Строки и столбцы, вставленные или удалённые правкой: строка — w:ins или
+            // w:del у её w:trPr, ячейка столбца — w:cellIns или w:cellDel у её w:tcPr.
+            var rowRevisions = new Dictionary<int, (bool Deleted, RevisionInfo Info)>();
+            var cellRevisions = new Dictionary<Models.Document.TableCell, (bool Deleted, RevisionInfo Info)>(ReferenceEqualityComparer.Instance);
+            if (!propertiesOnly)
+            {
+                foreach (var group in TableRevisions.Groups(table))
+                {
+                    if (group.Axis == TableRevisions.Axis.Row)
+                    {
+                        rowRevisions[group.Index] = (group.Deleted, group.Info);
+                        continue;
+                    }
+
+                    foreach (var cell in group.Cells)
+                    {
+                        var own = group.Deleted ? cell.Deleted : cell.Inserted;
+                        if (own is not null && !rowRevisions.ContainsKey(cell.Row))
+                            cellRevisions[cell] = (group.Deleted, own);
+                    }
+                }
+            }
+
             for (int row = 0; row < rowCount; row++)
             {
                 var tableRow = new W.TableRow();
@@ -1762,7 +1812,8 @@ namespace Writersword.Modules.TextEditor.Services
                 // Первая строка, которую таблица переносит на новую страницу целиком,
                 // у Word — строка с запретом разрыва (w:cantSplit).
                 bool cantSplit = table.SplitMode == TableSplitMode.ByRow && row == 0;
-                if (minHeightPt > 0 || repeatHeader || cantSplit)
+                bool rowRevision = rowRevisions.TryGetValue(row, out var rowMark);
+                if (minHeightPt > 0 || repeatHeader || cantSplit || rowRevision)
                 {
                     var rowProperties = new W.TableRowProperties();
                     if (cantSplit) rowProperties.AppendChild(new W.CantSplit());
@@ -1777,6 +1828,16 @@ namespace Writersword.Modules.TextEditor.Services
                         });
                     }
                     if (repeatHeader) rowProperties.AppendChild(new W.TableHeader());
+
+                    // Правка строки — после свойств строки, как требует схема.
+                    if (rowRevision)
+                    {
+                        OpenXmlElement rowRevisionMark = rowMark.Deleted
+                            ? StampRevision(new W.Deleted(), rowMark.Info, ctx)
+                            : StampRevision(new W.Inserted(), rowMark.Info, ctx);
+                        rowProperties.AppendChild(rowRevisionMark);
+                    }
+
                     tableRow.AppendChild(rowProperties);
                 }
 
@@ -1794,11 +1855,17 @@ namespace Writersword.Modules.TextEditor.Services
 
                     int span = Math.Clamp(cell.ColSpan, 1, columnCount - column);
 
+                    OpenXmlElement? cellRevision = cellRevisions.TryGetValue(cell, out var cellMark)
+                        ? cellMark.Deleted
+                            ? StampRevision(new W.CellDeletion(), cellMark.Info, ctx)
+                            : StampRevision(new W.CellInsertion(), cellMark.Info, ctx)
+                        : null;
+
                     if (cell.Row == row && cell.Column == column)
                     {
                         tableRow.AppendChild(BuildTableCell(
                             cell, span, isVerticalMergeContinuation: false, columnShares, column, gridTotalTwips, ctx,
-                            firstCell));
+                            firstCell, propertiesOnly, cellRevision));
                     }
                     else if (cell.Column == column)
                     {
@@ -1806,7 +1873,7 @@ namespace Writersword.Modules.TextEditor.Services
                         // содержимое лежит в её «главной» строке.
                         tableRow.AppendChild(BuildTableCell(
                             cell, span, isVerticalMergeContinuation: true, columnShares, column, gridTotalTwips, ctx,
-                            firstCell));
+                            firstCell, propertiesOnly));
                     }
                     else
                     {
@@ -1824,7 +1891,96 @@ namespace Writersword.Modules.TextEditor.Services
                 result.AppendChild(tableRow);
             }
 
+            if (previousXml is not null && formatInfo is not null)
+                AppendTableFormatChange(result, previousXml, formatInfo, ctx);
+
             return result;
+        }
+
+        /// <summary>
+        /// Смена оформления таблицы — прежние свойства таблицы, сетки, строк и ячеек
+        /// (w:tblPrChange, w:tblGridChange, w:trPrChange, w:tcPrChange), как их пишет
+        /// Word. Строки и ячейки прежнего вида идут в том же порядке, что и нынешние:
+        /// оформление состав таблицы не меняет. Свойства, которые не менялись, своей
+        /// правки не получают; правка самой таблицы пишется всегда — по ней Word
+        /// показывает «Изменён формат таблицы».
+        /// </summary>
+        private static void AppendTableFormatChange(W.Table current, W.Table previous, RevisionInfo info, DocxWriteContext ctx)
+        {
+            static string Signature(OpenXmlElement? element, params Type[] skipped)
+            {
+                if (element is null) return string.Empty;
+                var copy = (OpenXmlElement)element.CloneNode(true);
+                foreach (var child in copy.ChildElements.ToList())
+                    if (Array.IndexOf(skipped, child.GetType()) >= 0) child.Remove();
+                return copy.InnerXml;
+            }
+
+            static void CopyChildren(OpenXmlElement from, OpenXmlElement to, params Type[] skipped)
+            {
+                foreach (var child in from.ChildElements)
+                {
+                    if (Array.IndexOf(skipped, child.GetType()) >= 0) continue;
+                    to.AppendChild(child.CloneNode(true));
+                }
+            }
+
+            if (current.GetFirstChild<W.TableProperties>() is { } tablePr
+                && previous.GetFirstChild<W.TableProperties>() is { } previousTablePr)
+            {
+                var before = new W.PreviousTableProperties();
+                CopyChildren(previousTablePr, before);
+                tablePr.AppendChild(StampRevision(new W.TablePropertiesChange(before), info, ctx));
+            }
+
+            if (current.GetFirstChild<W.TableGrid>() is { } grid
+                && previous.GetFirstChild<W.TableGrid>() is { } previousGrid
+                && Signature(grid) != Signature(previousGrid))
+            {
+                var before = new W.PreviousTableGrid();
+                CopyChildren(previousGrid, before);
+                var gridChange = new W.TableGridChange(before);
+                gridChange.SetAttribute(new OpenXmlAttribute("w", "id", WordprocessingNs,
+                    (ctx.NextRevisionId++).ToString(CultureInfo.InvariantCulture)));
+                grid.AppendChild(gridChange);
+            }
+
+            var rows = current.Elements<W.TableRow>().ToList();
+            var previousRows = previous.Elements<W.TableRow>().ToList();
+            for (int r = 0; r < rows.Count && r < previousRows.Count; r++)
+            {
+                var row = rows[r];
+                var previousRow = previousRows[r];
+
+                var rowPr = row.TableRowProperties;
+                var previousRowPr = previousRow.TableRowProperties;
+                if (Signature(rowPr, typeof(W.Inserted), typeof(W.Deleted)) != Signature(previousRowPr))
+                {
+                    if (rowPr is null)
+                    {
+                        rowPr = new W.TableRowProperties();
+                        row.InsertAt(rowPr, row.GetFirstChild<W.TablePropertyExceptions>() is null ? 0 : 1);
+                    }
+
+                    var before = new W.PreviousTableRowProperties();
+                    if (previousRowPr is not null) CopyChildren(previousRowPr, before);
+                    rowPr.AppendChild(StampRevision(new W.TableRowPropertiesChange(before), info, ctx));
+                }
+
+                var cells = row.Elements<W.TableCell>().ToList();
+                var previousCells = previousRow.Elements<W.TableCell>().ToList();
+                for (int c = 0; c < cells.Count && c < previousCells.Count; c++)
+                {
+                    var cellPr = cells[c].TableCellProperties;
+                    var previousCellPr = previousCells[c].TableCellProperties;
+                    if (cellPr is null || previousCellPr is null) continue;
+                    if (Signature(cellPr, typeof(W.CellInsertion), typeof(W.CellDeletion)) == Signature(previousCellPr)) continue;
+
+                    var before = new W.PreviousTableCellProperties();
+                    CopyChildren(previousCellPr, before);
+                    cellPr.AppendChild(StampRevision(new W.TableCellPropertiesChange(before), info, ctx));
+                }
+            }
         }
 
         private static double[] ColumnShares(TableBlock table, int columnCount)
@@ -2031,7 +2187,9 @@ namespace Writersword.Modules.TextEditor.Services
                     PaddingTopPt = cell.PaddingTopPt,
                     PaddingBottomPt = cell.PaddingBottomPt,
                     PaddingLeftPt = cell.PaddingLeftPt,
-                    PaddingRightPt = cell.PaddingRightPt
+                    PaddingRightPt = cell.PaddingRightPt,
+                    Inserted = cell.Inserted,
+                    Deleted = cell.Deleted
                 });
             }
 
@@ -2065,7 +2223,9 @@ namespace Writersword.Modules.TextEditor.Services
             int column,
             double gridTotalTwips,
             DocxWriteContext ctx,
-            Models.Document.TableCell? tableMarginsCell = null)
+            Models.Document.TableCell? tableMarginsCell = null,
+            bool propertiesOnly = false,
+            OpenXmlElement? cellRevision = null)
         {
             var result = new W.TableCell();
 
@@ -2138,9 +2298,14 @@ namespace Writersword.Modules.TextEditor.Services
                 });
             }
 
+            // Ячейка вставленного или удалённого правкой столбца — после всех свойств
+            // ячейки, как требует схема.
+            if (cellRevision is not null)
+                properties.AppendChild(cellRevision);
+
             result.AppendChild(properties);
 
-            if (isVerticalMergeContinuation)
+            if (isVerticalMergeContinuation || propertiesOnly)
             {
                 // Содержимое объединённой ячейки хранится в её первой строке.
                 result.AppendChild(new W.Paragraph());
@@ -2179,7 +2344,8 @@ namespace Writersword.Modules.TextEditor.Services
                                 continue;
                             }
 
-                            cellParagraph.InsertAt(floatRun, floatInsertAt++);
+                            // Вставленный или удалённый правкой объект — под своей правкой.
+                            cellParagraph.InsertAt(WrapObjectRevision(floatRun, cellFloat.Object, ctx), floatInsertAt++);
                         }
                     }
 
@@ -2599,7 +2765,15 @@ namespace Writersword.Modules.TextEditor.Services
 
         private void CollectParagraph(ParagraphBlock paragraph)
         {
-            var list = paragraph.ListProperties;
+            // Прежний список правки тоже получает нумерацию: w:pPrChange ссылается на неё.
+            if (paragraph.Properties.FormatChange is { ListChanged: true, PreviousList: { } previousList })
+                CollectList(previousList);
+
+            CollectList(paragraph.ListProperties);
+        }
+
+        private void CollectList(ListProperties? list)
+        {
             if (list is null || list.MarkerType == ListMarkerType.None) return;
 
             if (!_levelsByList.TryGetValue(list.ListId, out var levels))

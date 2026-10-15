@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -105,6 +105,7 @@ namespace Writersword.Modules.TextEditor.Commands
             target.SplitMode = source.SplitMode;
             target.BreakLabel = source.BreakLabel;
             target.ContinuationLabel = source.ContinuationLabel;
+            target.FormatChange = source.FormatChange;
         }
 
         private TableBlock? FindTable(DocumentModel doc)

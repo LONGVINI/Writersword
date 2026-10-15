@@ -70,6 +70,15 @@ namespace Writersword.Modules.TextEditor.Models.Document
         public SectionLayout? FinalSection { get; set; }
 
         /// <summary>
+        /// Смена параметров последнего раздела правкой: лист и поля документа, колонки,
+        /// выравнивание по высоте, рамка, номера строк. Прежний вид — запись
+        /// Services.SectionFrame. Null — параметры правкой не менялись. У остальных
+        /// разделов смена лежит на их разрыве (SectionLayout.FormatChange).
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public ObjectChange? PageSetupChange { get; set; }
+
+        /// <summary>
         /// Визуальные настройки листа (цвет фона, текста).
         /// Не влияют на экспорт/печать.
         ///
@@ -160,6 +169,15 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public bool TrackRevisions { get; set; }
+
+        /// <summary>
+        /// Защита записи исправлений (w:documentProtection w:edit="trackedChanges" у
+        /// Word). Пока она стоит, запись исправлений не выключить, а правки нельзя ни
+        /// принять, ни отклонить: любая правка остаётся видимой тому, кто будет их
+        /// разбирать. Null — защиты нет.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public RevisionProtection? RevisionProtection { get; set; }
 
         /// <summary>
         /// Как показаны исправления на листе. Состояние окна, а не документа: в файл

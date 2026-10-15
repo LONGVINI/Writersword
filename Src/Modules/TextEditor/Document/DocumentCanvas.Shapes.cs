@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Input;
 using SkiaSharp;
 using System;
@@ -304,6 +304,10 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void DrawShape(SKCanvas canvas, ShapeBlock shape, SKRect rect, bool offPage)
         {
+            // Фигура, спрятанная правкой при этом виде показа, не рисуется — как
+            // плавающая картинка.
+            if (BlockHiddenByRevision(shape)) return;
+
             var fillImage = string.IsNullOrEmpty(shape.FillImageFileName)
                 ? null
                 : GetImageBitmap(shape.FillImageFileName!);
@@ -312,6 +316,9 @@ namespace Writersword.Modules.TextEditor.Document
             // есть и где он лежит, но что на страницу он не попадает.
             Rendering.FloatingObjectRenderer.DrawShape(
                 canvas, shape, rect, fillImage, offPage ? 0.45 : 1.0);
+
+            // Фигура, вставленная или удалённая правкой, — с отметкой.
+            DrawBlockRevisionMark(canvas, shape, rect);
         }
 
         /// <summary>
@@ -437,6 +444,9 @@ namespace Writersword.Modules.TextEditor.Document
             for (int i = shapes.Count - 1; i >= 0; i--)
             {
                 var se = shapes[i];
+
+                // Прежний вид фигуры в «Исходном документе» только показывается.
+                if (Rendering.RevisionDisplay.IsDisplayTwin(se.Block)) continue;
 
                 // Фигура «за текстом»: приоритет у текста. Клик по строке ставит
                 // каретку, клик по свободному от текста участку выделяет фигуру.
@@ -989,6 +999,11 @@ namespace Writersword.Modules.TextEditor.Document
             if (copy is null) return;
 
             copy.Id = Guid.NewGuid();
+
+            // Отметки правок оригинала копии не достаются: при записи исправлений
+            // копия станет вставкой того, кто вставляет.
+            Services.RevisionMarks.Clear(copy);
+
             copy.OffsetXPt += ShapePasteOffsetPt;
             copy.OffsetYPt += ShapePasteOffsetPt;
 

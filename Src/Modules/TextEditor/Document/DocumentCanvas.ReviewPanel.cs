@@ -44,6 +44,7 @@ namespace Writersword.Modules.TextEditor.Document
             docVm.GoToReviewImageDelegate = GoToReviewImage;
             docVm.HighlightReviewImageDelegate = HighlightReviewImage;
             docVm.ResolveImageRevisionsDelegate = ResolveImageRevisions;
+            docVm.ResolveBlockRevisionsDelegate = ResolveBlockRevisions;
         }
 
         private void UnwireReviewPanel(DocumentViewModel docVm)
@@ -54,6 +55,7 @@ namespace Writersword.Modules.TextEditor.Document
             docVm.GoToReviewImageDelegate = null;
             docVm.HighlightReviewImageDelegate = null;
             docVm.ResolveImageRevisionsDelegate = null;
+            docVm.ResolveBlockRevisionsDelegate = null;
             _reviewHighlight = null;
             _reviewHighlightImage = null;
         }
@@ -67,7 +69,15 @@ namespace Writersword.Modules.TextEditor.Document
             List<PageRect> pages;
             lock (_renderLock) { images = _images; pages = _pages; }
 
-            var entry = images.Find(e => ReferenceEquals(e.Block, image));
+            var entry = images.Find(e => ReferenceEquals(Rendering.RevisionDisplay.RealObject(e.Block), image));
+
+            // Картинка, плавающая в ячейке таблицы, в списке картинок листа не стоит:
+            // к ней ведёт её абзац ячейки.
+            if (entry is null && CellFloatAnchor(image) is { } anchor)
+            {
+                GoToReviewPlace(anchor, 0, 0, false);
+                return;
+            }
 
             ExitImageCropMode(apply: false);
             _tableSelections.Clear();
@@ -90,6 +100,40 @@ namespace Writersword.Modules.TextEditor.Document
             SmoothScrollTo(Math.Max(0, target));
         }
 
+        /// <summary>
+        /// Знак сноски в тексте для абзаца из текста сноски: абзац со знаком и место.
+        /// Null — абзац не в сноске или знака у сноски нет.
+        /// </summary>
+        private (ParagraphBlock Owner, int Index)? NoteMarkPlace(ParagraphBlock paragraph)
+        {
+            if (DocVm is null) return null;
+            if (RevisionService.NoteOfParagraph(DocVm.Document, paragraph) is not { } note) return null;
+            return RevisionService.NoteReferenceOf(DocVm.Document, note);
+        }
+
+        /// <summary>Абзац ячейки, к которому привязан плавающий в ячейке объект; null — объект не в ячейке.</summary>
+        private ParagraphBlock? CellFloatAnchor(BlockModel block)
+        {
+            if (DocVm is null) return null;
+
+            foreach (var section in DocVm.Document.Sections)
+            {
+                foreach (var candidate in section.Blocks)
+                {
+                    if (candidate is not TableBlock table) continue;
+
+                    foreach (var (cell, cellFloat) in RevisionService.CellFloats(table))
+                    {
+                        if (!ReferenceEquals(cellFloat.Object, block)) continue;
+                        if (cell.Paragraphs.Count == 0) return null;
+                        return cell.Paragraphs[Math.Clamp(cell.FloatParagraphIndex(cellFloat), 0, cell.Paragraphs.Count - 1)];
+                    }
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>Подсвечивает плавающую картинку пункта под указателем; null — снимает.</summary>
         private void HighlightReviewImage(ImageBlock? image, uint argb)
         {
@@ -107,6 +151,14 @@ namespace Writersword.Modules.TextEditor.Document
         private void GoToReviewPlace(ParagraphBlock paragraph, int from, int to, bool isMark)
         {
             if (DocVm is null) return;
+
+            // Правка в тексте сноски: каретки там нет — выделяется знак сноски в тексте.
+            if (NoteMarkPlace(paragraph) is { } noteMark)
+            {
+                if (SelectRevision(new RevisionService.Hit(noteMark.Owner, noteMark.Index, noteMark.Index + 1, false)))
+                    ScrollToCaret();
+                return;
+            }
 
             int length = paragraph.TotalLength;
             from = Math.Clamp(from, 0, length);
@@ -139,6 +191,20 @@ namespace Writersword.Modules.TextEditor.Document
         private void HighlightReviewPlaces(IReadOnlyList<(ParagraphBlock Paragraph, int From, int To)>? places, uint argb)
         {
             if (places is null && _reviewHighlight is null) return;
+
+            // Места в тексте сноски подсвечиваются её знаком в тексте.
+            if (places is { Count: > 0 })
+            {
+                List<(ParagraphBlock Paragraph, int From, int To)>? mapped = null;
+                for (int i = 0; i < places.Count; i++)
+                {
+                    if (NoteMarkPlace(places[i].Paragraph) is not { } noteMark) continue;
+                    mapped ??= new List<(ParagraphBlock Paragraph, int From, int To)>(places);
+                    mapped[i] = (noteMark.Owner, noteMark.Index, noteMark.Index + 1);
+                }
+
+                if (mapped is not null) places = mapped;
+            }
 
             _reviewHighlight = places;
             _reviewHighlightColor = new SKColor(argb);
@@ -216,15 +282,15 @@ namespace Writersword.Modules.TextEditor.Document
 
         // Картинки строк, вставленные или удалённые правкой: Id объекта — его правка.
         // Собирается при первой отрисовке после раскладки.
-        private Dictionary<Guid, (bool Deleted, SKColor Color)>? _inlineRevisionMarks;
+        private Dictionary<Guid, (bool Deleted, SKColor Color, bool Changed)>? _inlineRevisionMarks;
 
         private static readonly SKColor DeletedImageColor = new(0xE0, 0x4F, 0x45);
 
-        private Dictionary<Guid, (bool Deleted, SKColor Color)> InlineRevisionMarks()
+        private Dictionary<Guid, (bool Deleted, SKColor Color, bool Changed)> InlineRevisionMarks()
         {
             if (_inlineRevisionMarks is { } ready) return ready;
 
-            var marks = new Dictionary<Guid, (bool Deleted, SKColor Color)>();
+            var marks = new Dictionary<Guid, (bool Deleted, SKColor Color, bool Changed)>();
             if (DocVm is { } vm)
             {
                 foreach (var paragraph in RevisionService.ReadingOrder(vm.Document))
@@ -236,12 +302,24 @@ namespace Writersword.Modules.TextEditor.Document
                             if (run.InlineImageId is not Guid id) continue;
                             var props = run.Properties;
                             if (props?.Deleted is { } deleted)
-                                marks[id] = (true, DeletedImageColor);
+                                marks[id] = (true, DeletedImageColor, false);
                             else if (props?.Inserted is { } inserted)
                                 marks[id] = (false, inserted.IsMove
                                     ? new SKColor(0x00, 0x80, 0x00)
-                                    : _styleResolver?.AuthorColor(inserted.Author) ?? new SKColor(0x2E, 0x9E, 0x5B));
+                                    : _styleResolver?.AuthorColor(inserted.Author) ?? new SKColor(0x2E, 0x9E, 0x5B), false);
                         }
+                    }
+                }
+
+                // Картинка в строке, у которой правкой сменён вид (размер, поворот,
+                // обрезка), — отметкой смены вида, если её знак не вставлен и не удалён.
+                foreach (var section in vm.Document.Sections)
+                {
+                    foreach (var block in section.InlineObjects)
+                    {
+                        if (RevisionMarks.ChangeOf(block) is not { } change) continue;
+                        if (marks.ContainsKey(block.Id)) continue;
+                        marks[block.Id] = (false, _styleResolver?.AuthorColor(change.Info.Author) ?? new SKColor(0x2E, 0x9E, 0x5B), true);
                     }
                 }
             }
@@ -263,40 +341,130 @@ namespace Writersword.Modules.TextEditor.Document
             if (width <= 0f || height <= 0f) return;
             if (!InlineRevisionMarks().TryGetValue(id, out var mark)) return;
 
-            DrawRevisionMarkBox(canvas, mark.Deleted, mark.Color, left, top, width, height);
+            DrawRevisionMarkBox(canvas, mark.Deleted, mark.Color, left, top, width, height, mark.Changed);
         }
 
         /// <summary>Плавающая картинка спрятана правкой при текущем виде показа.</summary>
-        private bool FloatingImageHiddenByRevision(ImageBlock image)
-        {
-            if (DocVm is null || (image.Inserted is null && image.Deleted is null)) return false;
-            return DocVm.Document.RevisionView switch
-            {
-                RevisionView.Original => image.Inserted is not null,
-                RevisionView.SimpleMarkup or RevisionView.NoMarkup => image.Deleted is not null,
-                _ => false
-            };
-        }
+        private bool FloatingImageHiddenByRevision(ImageBlock image) => BlockHiddenByRevision(image);
+
+        /// <summary>
+        /// Блок, вставленный или удалённый правкой целиком (картинка, фигура), спрятан
+        /// при текущем виде показа.
+        /// </summary>
+        private bool BlockHiddenByRevision(IRevisionMarked block)
+            => DocVm is not null && Rendering.RevisionDisplay.IsBlockHidden(block, DocVm.Document.RevisionView);
 
         /// <summary>Отметка правки плавающей картинки — та же, что у картинки в строке.</summary>
         private void DrawFloatingRevisionMark(SKCanvas canvas, ImageBlock image, SKRect rect)
+            => DrawBlockRevisionMark(canvas, image, rect);
+
+        /// <summary>
+        /// Отметка правки блока, вставленного или удалённого целиком: рамка цвета
+        /// автора со значком «+», у удалённого — пунктир, крест и «−».
+        /// </summary>
+        private void DrawBlockRevisionMark(SKCanvas canvas, IRevisionMarked block, SKRect rect)
         {
             if (ExportPassActive || ReadingActive || DocVm is null) return;
-            if (image.Inserted is null && image.Deleted is null) return;
             if (!Rendering.RevisionDisplay.ShowsMarkup(DocVm.Document.RevisionView)) return;
 
-            bool deleted = image.Deleted is not null;
+            // Только смена вида: рамка цвета автора и значок правки вида.
+            if (block.Inserted is null && block.Deleted is null)
+            {
+                if (block is not IAppearanceTracked { Change: { } change }) return;
+                var changeColor = _styleResolver?.AuthorColor(change.Info.Author) ?? new SKColor(0x2E, 0x9E, 0x5B);
+                DrawRevisionMarkBox(canvas, false, changeColor, rect.Left, rect.Top, rect.Width, rect.Height, changed: true);
+                return;
+            }
+
+            bool deleted = block.Deleted is not null;
             var color = deleted
                 ? DeletedImageColor
-                : image.Inserted!.IsMove
+                : block.Inserted!.IsMove
                     ? new SKColor(0x00, 0x80, 0x00)
-                    : _styleResolver?.AuthorColor(image.Inserted.Author) ?? new SKColor(0x2E, 0x9E, 0x5B);
+                    : _styleResolver?.AuthorColor(block.Inserted.Author) ?? new SKColor(0x2E, 0x9E, 0x5B);
 
             DrawRevisionMarkBox(canvas, deleted, color, rect.Left, rect.Top, rect.Width, rect.Height);
         }
 
-        private static void DrawRevisionMarkBox(SKCanvas canvas, bool deletedMark, SKColor markColor, float left, float top, float width, float height)
+        /// <summary>
+        /// Принимает или отклоняет правки разрывов и фигур одним шагом отмены — из
+        /// панели рецензии. Картинки идут своим путём (ResolveImageRevisions).
+        /// </summary>
+        private void ResolveBlockRevisions(IReadOnlyList<BlockModel> blocks, bool accept)
         {
+            if (DocVm is null || blocks.Count == 0 || IsEditingBlocked) return;
+            if (RevisionResolveLocked()) return;
+
+            var images = new List<ImageBlock>();
+            var others = new List<BlockModel>();
+            foreach (var block in blocks)
+            {
+                if (block is ImageBlock image) images.Add(image);
+                else others.Add(block);
+            }
+
+            BeginTrackedSnapshot(accept ? "Принять исправления" : "Отклонить исправления");
+            try
+            {
+                if (images.Count > 0) ApplyImageResolution(images, accept);
+                ApplyMarkedBlockResolution(others, accept, whole: false);
+                RebuildLayouts();
+                InvalidateMeasure();
+            }
+            finally
+            {
+                EndTrackedSnapshot();
+            }
+
+            _reviewHighlight = null;
+            _reviewHighlightImage = null;
+            InvalidateFull();
+        }
+
+        /// <summary>
+        /// Решение по правкам разрывов и фигур без своего шага отмены: убранный
+        /// блок снимается с выделения, состав блоков пересобирается.
+        /// </summary>
+        private void ApplyMarkedBlockResolution(IReadOnlyList<BlockModel> blocks, bool accept, bool whole)
+        {
+            if (DocVm is null || blocks.Count == 0) return;
+
+            var removed = RevisionService.ResolveBlocks(DocVm.Document, blocks, accept, whole);
+            foreach (var block in removed)
+                if (ReferenceEquals(_selectedShape, block)) _selectedShape = null;
+
+            // Строки, столбцы и оформление таблиц: их раскладки строятся заново.
+            foreach (var block in blocks)
+            {
+                if (block is not (TableBlock or Services.TableRevisionPart)) continue;
+                _layoutCache.Clear();
+                InvalidateCellLayoutCaches();
+                DocVm.RebuildParagraphViewModelsPublic();
+                break;
+            }
+
+            // Параметры разделов: лист и колонки другие — раскладка заново целиком.
+            foreach (var block in blocks)
+            {
+                if (block is not Services.SectionRevisionPart) continue;
+                _layoutCache.Clear();
+                InvalidateCellLayoutCaches();
+                DocVm.RaisePageSettingsChanged();
+                break;
+            }
+
+            _inlineRevisionMarks = null;
+            DocVm.RaiseStructureChanged();
+        }
+
+        private static void DrawRevisionMarkBox(SKCanvas canvas, bool deletedMark, SKColor markColor, float left, float top, float width, float height, bool changed = false)
+        {
+            if (changed)
+            {
+                DrawAppearanceChangeMark(canvas, markColor, left, top, width, height);
+                return;
+            }
+
             var mark = (Deleted: deletedMark, Color: markColor);
             if (width <= 0f || height <= 0f) return;
 
@@ -352,6 +520,59 @@ namespace Writersword.Modules.TextEditor.Document
             float arm = r * 0.5f;
             canvas.DrawLine(cx - arm, cy, cx + arm, cy, sign);
             if (!mark.Deleted) canvas.DrawLine(cx, cy - arm, cx, cy + arm, sign);
+        }
+
+        /// <summary>
+        /// Отметка смены вида объекта: рамка цвета автора точками и значок в углу —
+        /// кружок с двумя стрелками «было — стало». Не путается ни со вставкой («+»),
+        /// ни с удалением (крест).
+        /// </summary>
+        private static void DrawAppearanceChangeMark(SKCanvas canvas, SKColor color, float left, float top, float width, float height)
+        {
+            if (width <= 0f || height <= 0f) return;
+
+            const float outset = 2f;
+            var box = new SKRect(left - outset, top - outset, left + width + outset, top + height + outset);
+
+            using (var frame = new SKPaint
+            {
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = 1.6f,
+                Color = color,
+                StrokeCap = SKStrokeCap.Round,
+                PathEffect = SKPathEffect.CreateDash(new[] { 0.1f, 3.2f }, 0f)
+            })
+            {
+                canvas.DrawRoundRect(box, 2.5f, 2.5f, frame);
+            }
+
+            float r = Math.Clamp(Math.Min(width, height) * 0.12f, 4.5f, 7f);
+            float cx = box.Right;
+            float cy = box.Top;
+
+            using (var badge = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color })
+                canvas.DrawCircle(cx, cy, r, badge);
+
+            using var arrows = new SKPaint
+            {
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = Math.Max(1.1f, r * 0.22f),
+                StrokeCap = SKStrokeCap.Round,
+                StrokeJoin = SKStrokeJoin.Round,
+                Color = SKColors.White
+            };
+
+            float arm = r * 0.5f;
+            float gap = r * 0.22f;
+            float head = r * 0.22f;
+
+            // Верхняя стрелка вправо, нижняя — влево.
+            canvas.DrawLine(cx - arm, cy - gap, cx + arm, cy - gap, arrows);
+            canvas.DrawLine(cx + arm, cy - gap, cx + arm - head, cy - gap - head, arrows);
+            canvas.DrawLine(cx - arm, cy + gap, cx + arm, cy + gap, arrows);
+            canvas.DrawLine(cx - arm, cy + gap, cx - arm + head, cy + gap + head, arrows);
         }
 
         // ── Удаление картинки под рецензированием ─────────────────────────
@@ -451,6 +672,15 @@ namespace Writersword.Modules.TextEditor.Document
         {
             foreach (var image in images)
             {
+                // Смена вида: принять — новый вид остаётся, отклонить — прежний.
+                if (image.Change is { } change)
+                {
+                    if (!accept) ObjectAppearance.Restore(image, change.Previous);
+                    image.Change = null;
+                }
+
+                if (image.Inserted is null && image.Deleted is null) continue;
+
                 bool remove = accept
                     ? image.Deleted is not null
                     : image.Inserted is not null && (image.Deleted is null || whole);
@@ -472,12 +702,9 @@ namespace Writersword.Modules.TextEditor.Document
         private void RemoveFloatingImageBlock(ImageBlock image)
         {
             if (DocVm is null) return;
-            foreach (var section in DocVm.Document.Sections)
-            {
-                if (section.Blocks.Remove(image)) break;
-                if (section.FloatingObjects.Remove(image)) break;
-                if (section.InlineObjects.Remove(image)) break;
-            }
+
+            // Где бы картинка ни стояла — в потоке, на листе, в строке или в ячейке.
+            RevisionService.RemoveBlock(DocVm.Document, image);
             DocVm.RaiseStructureChanged();
         }
 

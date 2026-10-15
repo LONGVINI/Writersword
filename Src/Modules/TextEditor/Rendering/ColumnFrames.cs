@@ -133,8 +133,10 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// колонки, при которой всё помещается. Строки абзаца переходят в следующую
         /// колонку по одной, промежуток над абзацем вверху колонки снимается.
         ///
-        /// Выравниваются колонки равной ширины и куски без обтекания, стоящие у левого
-        /// края своей колонки. Иначе — false, и раскладка остаётся как есть.
+        /// Выравниваются куски без обтекания, стоящие у левого края своей колонки. Колонки
+        /// разной ширины — только с <paramref name="relayout"/>: строка, перешедшая в
+        /// колонку другой ширины, верстается по ней заново, и число строк абзаца меняется
+        /// с каждой пробной высотой. Иначе — false, и раскладка остаётся как есть.
         /// </summary>
         /// <param name="slices">Куски области в порядке потока.</param>
         /// <param name="topPt">Верх области колонок.</param>
@@ -143,11 +145,18 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// <param name="balanced">Куски после выравнивания: колонка, место и строки каждого.</param>
         /// <param name="bottomPt">Низ самой длинной колонки после выравнивания.</param>
         /// <param name="usedColumns">Сколько колонок занято после выравнивания.</param>
+        /// <param name="relayout">
+        /// Перевёрстка абзаца для колонки другой ширины: первый кусок абзаца в области,
+        /// его раскладка, первая строка, уходящая в колонку, и ширина колонки. Вернуть
+        /// нужно раскладку, в которой строки до этой остались прежними, а с неё
+        /// сверстаны по ширине колонки (SKTextRenderer.ContinueLayout); null — нельзя.
+        /// </param>
         public static bool TryBalance(
             IReadOnlyList<ColumnSlice> slices,
             float topPt, float limitPt, float leftPt,
             float[] offsets, float[] widths,
-            out List<ColumnSlice> balanced, out float bottomPt, out int usedColumns)
+            out List<ColumnSlice> balanced, out float bottomPt, out int usedColumns,
+            Func<ColumnSlice, SKTextLayout, int, float, SKTextLayout?>? relayout = null)
         {
             balanced = new List<ColumnSlice>();
             bottomPt = topPt;
@@ -156,8 +165,10 @@ namespace Writersword.Modules.TextEditor.Rendering
             int columns = offsets.Length;
             if (columns < 2 || slices.Count == 0) return false;
 
+            bool unequal = false;
             for (int c = 1; c < columns; c++)
-                if (Math.Abs(widths[c] - widths[0]) > 0.5f) return false;
+                if (Math.Abs(widths[c] - widths[0]) > 0.5f) { unequal = true; break; }
+            if (unequal && relayout is null) return false;
 
             var runs = new List<BalanceRun>();
 
@@ -233,6 +244,11 @@ namespace Writersword.Modules.TextEditor.Rendering
                     LastBottomPt = entry.Ypt + (empty ? entry.HeightPt : linesPt)
                 });
             }
+
+            if (unequal)
+                return TryBalanceUnequal(
+                    runs, topPt, limitPt, leftPt, offsets, widths, relayout!,
+                    balanced, out bottomPt, out usedColumns);
 
             float UnitHeight(BalanceRun run, int unit)
                 => run.Empty ? run.EmptyHeightPt : run.First.Layout.Lines[run.LineFrom + unit].Height;
@@ -358,6 +374,188 @@ namespace Writersword.Modules.TextEditor.Rendering
                         Ypt = topPt + slots[start].Top,
                         HeightPt = heightPt,
                         LineFrom = run.LineFrom + start,
+                        LineTo = lineTo,
+                        XPt = leftPt + offsets[column],
+                        Column = column
+                    };
+                    balanced.Add(slice);
+                    bottom = Math.Max(bottom, slice.Ypt + slice.HeightPt);
+
+                    start = end;
+                }
+            }
+
+            bottomPt = bottom;
+            usedColumns = used;
+            return true;
+        }
+
+        /// <summary>
+        /// Выравнивание колонок разной ширины. Счёт тот же, что у равных колонок, но
+        /// строки абзаца не переносятся из колонки в колонку как есть: перешедшие в
+        /// колонку другой ширины верстаются по ней заново (<paramref name="relayout"/>),
+        /// и сколько строк у абзаца, зависит от того, где он разорван. Поэтому каждая
+        /// пробная высота раскладывает абзацы заново, а место строк ищется по номеру
+        /// строки в той раскладке, что получилась у абзаца к концу пробы.
+        /// </summary>
+        private static bool TryBalanceUnequal(
+            List<BalanceRun> runs,
+            float topPt, float limitPt, float leftPt,
+            float[] offsets, float[] widths,
+            Func<ColumnSlice, SKTextLayout, int, float, SKTextLayout?> relayout,
+            List<ColumnSlice> balanced, out float bottomPt, out int usedColumns)
+        {
+            bottomPt = topPt;
+            usedColumns = 1;
+            int columns = offsets.Length;
+
+            // Раскладка, строки которой с fromLine стоят по ширине колонки column.
+            SKTextLayout? Fitted(BalanceRun run, SKTextLayout layout, int fromLine, int column)
+                => SKTextRenderer.LinesFitWidth(layout, fromLine, widths[column])
+                    ? layout
+                    : relayout(run.First, layout, fromLine, widths[column]);
+
+            // Раскладка по колонкам высотой heightPt. place — строки каждого абзаца с
+            // колонкой и верхом, finals — раскладка абзаца после пробы.
+            bool Fit(float heightPt, List<List<(int Line, int Column, float Top)>>? place, SKTextLayout?[]? finals)
+            {
+                int column = 0;
+                float y = 0f;
+
+                for (int r = 0; r < runs.Count; r++)
+                {
+                    var run = runs[r];
+                    if (r == 0) y = run.GapPt;
+                    else if (y > 0.01f) y += run.GapPt;
+
+                    if (run.Empty)
+                    {
+                        if (y + run.EmptyHeightPt > heightPt + 0.01f && y > 0.01f)
+                        {
+                            column++;
+                            y = 0f;
+                            if (column >= columns) return false;
+                        }
+
+                        place?.Add(new List<(int, int, float)> { (-1, column, y) });
+                        if (finals is not null) finals[r] = null;
+                        y += run.EmptyHeightPt;
+                        continue;
+                    }
+
+                    var layout = Fitted(run, run.First.Layout, run.LineFrom, column);
+                    if (layout is null) return false;
+
+                    var slots = place is null ? null : new List<(int Line, int Column, float Top)>();
+                    float runStartY = y;
+                    int firstInColumn = run.LineFrom;
+                    int u = run.LineFrom;
+
+                    while (u < layout.Lines.Count)
+                    {
+                        float h = layout.Lines[u].Height;
+                        if (y + h > heightPt + 0.01f && y > 0.01f)
+                        {
+                            // Висячие строки — как у равных колонок: первая строка абзаца
+                            // не остаётся одна внизу колонки, последняя не уходит одна.
+                            int units = layout.Lines.Count - run.LineFrom;
+                            int breakAt = u;
+                            if (units >= 2 && firstInColumn == run.LineFrom && u == run.LineFrom + 1 && runStartY > 0.01f)
+                                breakAt = run.LineFrom;
+                            else if (units >= 3 && layout.Lines.Count - u == 1 && u - firstInColumn >= 2)
+                                breakAt = u - 1;
+
+                            column++;
+                            y = 0f;
+                            if (column >= columns) return false;
+
+                            slots?.RemoveAll(slot => slot.Line >= breakAt);
+                            firstInColumn = breakAt;
+                            u = breakAt;
+
+                            layout = Fitted(run, layout, u, column);
+                            if (layout is null) return false;
+                            continue;
+                        }
+
+                        slots?.Add((u, column, y));
+                        y += h;
+                        u++;
+                    }
+
+                    if (slots is not null) place!.Add(slots);
+                    if (finals is not null) finals[r] = layout;
+                }
+
+                return true;
+            }
+
+            float high = limitPt - topPt;
+            if (high <= 0f || !Fit(high, null, null)) return false;
+
+            // Нижняя граница — не доля нынешней высоты строк: в широкой колонке абзац
+            // займёт меньше строк, чем сейчас, и столбцы могут выйти ниже этой доли.
+            float low = 0f;
+            for (int step = 0; step < 32 && high - low > 0.05f; step++)
+            {
+                float mid = (low + high) / 2f;
+                if (Fit(mid, null, null)) high = mid;
+                else low = mid;
+            }
+
+            var placement = new List<List<(int Line, int Column, float Top)>>(runs.Count);
+            var finals = new SKTextLayout?[runs.Count];
+            if (!Fit(high, placement, finals)) return false;
+
+            float bottom = topPt;
+            int used = 1;
+
+            for (int r = 0; r < runs.Count; r++)
+            {
+                var run = runs[r];
+                var slots = placement[r];
+
+                if (run.Empty)
+                {
+                    var (_, column, top) = slots[0];
+                    used = Math.Max(used, column + 1);
+                    var slice = run.First with
+                    {
+                        Ypt = topPt + top,
+                        HeightPt = run.EmptyHeightPt,
+                        XPt = leftPt + offsets[column],
+                        Column = column
+                    };
+                    balanced.Add(slice);
+                    bottom = Math.Max(bottom, slice.Ypt + slice.HeightPt);
+                    continue;
+                }
+
+                var layout = finals[r]!;
+                int lines = layout.Lines.Count;
+                int start = 0;
+                while (start < slots.Count)
+                {
+                    int column = slots[start].Column;
+                    used = Math.Max(used, column + 1);
+
+                    int end = start;
+                    float heightPt = 0f;
+                    while (end < slots.Count && slots[end].Column == column)
+                    {
+                        heightPt += layout.Lines[slots[end].Line].Height;
+                        end++;
+                    }
+
+                    int lineTo = slots[end - 1].Line + 1;
+                    if (lineTo == lines) heightPt += run.TrailingPt;
+
+                    var slice = run.First with
+                    {
+                        Layout = layout,
+                        Ypt = topPt + slots[start].Top,
+                        HeightPt = heightPt,
+                        LineFrom = slots[start].Line,
                         LineTo = lineTo,
                         XPt = leftPt + offsets[column],
                         Column = column

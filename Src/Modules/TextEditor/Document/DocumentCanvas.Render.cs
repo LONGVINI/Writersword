@@ -661,7 +661,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Линию под повторённым заголовком рисует первая строка куска — своей
             // верхней, поэтому сам заголовок низ не замыкает.
-            RenderTableStructureOnly(canvas, te.Layout, te.XPt, headerY, 0, 1, closeSliceBottom: false);
+            RenderTableStructureOnly(canvas, te.Layout, te.XPt, headerY, 0, 1, closeSliceBottom: false, table: te.Table);
             SKTextRenderer.RenderTableRowContent(canvas, te.Layout, 0, te.XPt, headerY);
         }
 
@@ -670,8 +670,25 @@ namespace Writersword.Modules.TextEditor.Document
             SKCanvas canvas, SKTableLayout tableLayout, float tableX, float tableY,
             int rowFrom = 0, int rowTo = -1,
             float lastRowVisibleHeightPt = -1f, float firstRowContentOffsetPt = 0f,
-            bool isContinuation = false, bool closeSliceBottom = true)
+            bool isContinuation = false, bool closeSliceBottom = true,
+            TableBlock? table = null)
         {
+            // Правки таблицы при «Всех исправлениях»: ячейки вставленных и удалённых
+            // строк и столбцов — заливкой цветом автора, смена оформления — рамкой
+            // вокруг куска таблицы, как у картинок (DocumentCanvas.ReviewPanel).
+            Dictionary<(int Row, int Column), TableCell>? revisedCells = null;
+            if (table is not null && !ExportPassActive && !ReadingActive && DocVm is not null
+                && RevisionDisplay.ShowsMarkup(DocVm.Document.RevisionView)
+                && Services.TableRevisions.HasMarks(table))
+            {
+                revisedCells = new Dictionary<(int, int), TableCell>();
+                foreach (var modelCell in table.Cells)
+                    if (modelCell.Inserted is not null || modelCell.Deleted is not null)
+                        revisedCells[(modelCell.Row, modelCell.Column)] = modelCell;
+            }
+            float marksTop = float.MaxValue;
+            float marksBottom = float.MinValue;
+
             var m = canvas.TotalMatrix;
             float canvasScale = MathF.Sqrt(m.ScaleX * m.ScaleX + m.SkewY * m.SkewY);
             if (canvasScale < 0.01f) canvasScale = 1f;
@@ -741,6 +758,15 @@ namespace Writersword.Modules.TextEditor.Document
 
                             // Узор заливки (pct25, diagStripe…) поверх цвета фона.
                             SKTextRenderer.RenderCellShadingPattern(canvas, cell, cellX, cellY + rowShift, cell.WidthPt, cellVisibleH);
+
+                            if (revisedCells is not null)
+                            {
+                                marksTop = Math.Min(marksTop, cellY + rowShift);
+                                marksBottom = Math.Max(marksBottom, cellY + rowShift + cellVisibleH);
+
+                                if (revisedCells.TryGetValue((cell.Row, cell.Column), out var revised))
+                                    DrawCellRevisionTint(canvas, revised, cellX, cellY + rowShift, cell.WidthPt, cellVisibleH);
+                            }
                             continue;
                         }
 
@@ -757,6 +783,65 @@ namespace Writersword.Modules.TextEditor.Document
                     }
                 }
             }
+
+            // Смена оформления таблицы — рамка вокруг куска.
+            if (table?.FormatChange is { } formatChange && !ExportPassActive && !ReadingActive && DocVm is not null
+                && RevisionDisplay.ShowsMarkup(DocVm.Document.RevisionView))
+            {
+                if (marksTop == float.MaxValue)
+                {
+                    foreach (var row in tableLayout.Rows)
+                    {
+                        if (row.Row < rowFrom || row.Row >= effectiveRowTo) continue;
+                        float rowTop = tableY + row.Ypt - rowOffsetY;
+                        marksTop = Math.Min(marksTop, rowTop);
+                        marksBottom = Math.Max(marksBottom, rowTop + row.HeightPt);
+                    }
+                }
+
+                if (marksTop < marksBottom)
+                {
+                    var color = _styleResolver?.AuthorColor(formatChange.Info.Author) ?? new SKColor(0x2E, 0x9E, 0x5B);
+                    DrawAppearanceChangeMark(canvas, color, tableX, marksTop, tableLayout.TotalWidthPt, marksBottom - marksTop);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Ячейка вставленной или удалённой правкой строки (столбца): прозрачная заливка
+        /// цветом автора; у удалённой — ещё косая штриховка, как зачёркивание.
+        /// </summary>
+        private void DrawCellRevisionTint(SKCanvas canvas, TableCell cell, float x, float y, float width, float height)
+        {
+            if (width <= 0f || height <= 0f) return;
+
+            var info = cell.Deleted ?? cell.Inserted;
+            var color = _styleResolver?.AuthorColor(info?.Author) ?? new SKColor(0x2E, 0x9E, 0x5B);
+
+            using var fill = new SKPaint
+            {
+                IsAntialias = false,
+                Style = SKPaintStyle.Fill,
+                Color = color.WithAlpha(0x26)
+            };
+            canvas.DrawRect(x, y, width, height, fill);
+
+            if (cell.Deleted is null) return;
+
+            using var hatch = new SKPaint
+            {
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = 0.6f,
+                Color = color.WithAlpha(0x70)
+            };
+
+            canvas.Save();
+            canvas.ClipRect(SKRect.Create(x, y, width, height));
+            const float step = 7f;
+            for (float d = -height; d < width; d += step)
+                canvas.DrawLine(x + d, y + height, x + d + height, y, hatch);
+            canvas.Restore();
         }
 
         /// <summary>
@@ -1619,7 +1704,7 @@ namespace Writersword.Modules.TextEditor.Document
                     RenderTableStructureOnly(canvas, te.Layout, te.XPt, te.Ypt,
                         te.RowFrom, te.RowTo,
                         te.LastRowVisibleHeightPt, te.FirstRowContentOffsetPt,
-                        te.IsContinuation);
+                        te.IsContinuation, table: te.Table);
                     canvas.Restore();
                 }
                 else
@@ -1628,7 +1713,7 @@ namespace Writersword.Modules.TextEditor.Document
                     RenderTableStructureOnly(canvas, te.Layout, te.XPt, te.Ypt,
                         te.RowFrom, te.RowTo,
                         te.LastRowVisibleHeightPt, te.FirstRowContentOffsetPt,
-                        te.IsContinuation);
+                        te.IsContinuation, table: te.Table);
                 }
             }
 
@@ -1669,9 +1754,9 @@ namespace Writersword.Modules.TextEditor.Document
             // Значки примечаний на правом поле (DocumentCanvas.Comments).
             RenderCommentMarkers(canvas, layouts, pages, firstPage, lastPage);
 
-            // Явные разрывы страницы — отметкой, когда показаны непечатаемые знаки.
-            if (FormattingMarksVisible)
-                DrawPageBreakMarks(canvas, pages, firstPage, lastPage);
+            // Явные разрывы страницы — отметкой, когда показаны непечатаемые знаки;
+            // разрывы с правкой — и без них, пока правки показаны.
+            DrawPageBreakMarks(canvas, pages, firstPage, lastPage, revisionsOnly: !FormattingMarksVisible);
 
             // Колонтитулы и номера страниц — в полях листа (DocumentCanvas.HeaderFooter).
             RenderHeaderFooters(canvas, layouts, pages, firstPage, lastPage);
@@ -2110,6 +2195,10 @@ namespace Writersword.Modules.TextEditor.Document
                             canvas.Restore();
                             break;
 
+                        case ImageBlock hiddenImage when BlockHiddenByRevision(hiddenImage):
+                            canvas.Restore();
+                            break;
+
                         case ImageBlock image when GetImageBitmap(image.ImageFileName) is { } skImg:
                         {
                             float cx = rect.MidX;
@@ -2124,6 +2213,10 @@ namespace Writersword.Modules.TextEditor.Document
 
                             // Восстанавливает холст сама.
                             DrawInlineImageBody(canvas, image, skImg, rect.Left, rect.Top, rect.Width, rect.Height);
+
+                            // Картинка в ячейке, вставленная или удалённая правкой, — с той
+                            // же отметкой, что плавающая на листе.
+                            DrawBlockRevisionMark(canvas, image, rect);
                             break;
                         }
 
@@ -2157,7 +2250,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void DrawInlineShapeSegment(SKCanvas canvas, SKRunSegment seg, float segX, float baseY, Guid id)
         {
-            var shape = FindInlineShape(id);
+            var shape = FindDisplayInlineShape(id);
             if (shape is null) return;
 
             float boxW = seg.ObjectWidthPt;
@@ -2776,7 +2869,7 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 if (te.Ypt + te.Layout.TotalHeightPt < viewTopPt) continue;
                 if (te.Ypt > viewBotPt) break;
-                RenderTableStructureOnly(canvas, te.Layout, te.XPt, te.Ypt);
+                RenderTableStructureOnly(canvas, te.Layout, te.XPt, te.Ypt, table: te.Table);
             }
 
             // Картинки-блоки идут до текста: в потоке они занимают собственную высоту,

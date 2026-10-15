@@ -204,8 +204,17 @@ namespace Writersword.Modules.TextEditor.Models.Page
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public PageNumberFormat? PageNumberFormat { get; set; }
 
+        /// <summary>
+        /// Смена параметров раздела правкой: лист, поля, колонки, выравнивание по
+        /// высоте, рамка, номера строк (w:sectPrChange у Word). Прежний вид — запись
+        /// Services.SectionFrame. Null — параметры правкой не менялись.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Document.ObjectChange? FormatChange { get; set; }
+
         public SectionLayout Clone() => new()
         {
+            FormatChange = FormatChange?.Clone(),
             Start = Start,
             Page = Page?.Clone(),
             Columns = Columns?.Clone(),

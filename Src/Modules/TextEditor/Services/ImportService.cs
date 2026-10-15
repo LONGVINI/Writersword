@@ -139,6 +139,7 @@ namespace Writersword.Modules.TextEditor.Services
             // у следующего раздела, а он в файле ещё впереди.
             CollectDocumentSections(body);
             doc.FinalSection = ReadFinalSection(body);
+            doc.PageSetupChange = ReadFinalSectionChange(body, doc);
 
             ImportBlockElements(body.Elements(), section, resolver, numbering, listIdMap,
                 mainPart, extractedImages, warnings);
@@ -1063,7 +1064,7 @@ namespace Writersword.Modules.TextEditor.Services
 
                 // Правки абзаца. Знак абзаца стоит в его последнем куске: куски до
                 // разрыва страницы кончаются разрывом, а не знаком.
-                ApplyParagraphRevisions(p, para, resolver);
+                ApplyParagraphRevisions(p, para, resolver, numbering, listIdMap);
                 if (i < segments.Count - 1)
                 {
                     para.Properties.MarkInserted = null;
@@ -1084,7 +1085,9 @@ namespace Writersword.Modules.TextEditor.Services
                         BreakType = BreakType.Page,
                         InParagraph = !split.IsEditorBreak,
                         ContinuesParagraph = true,
-                        FromColumnBreak = split.IsColumn
+                        FromColumnBreak = split.IsColumn,
+                        Inserted = split.Inserted,
+                        Deleted = split.Deleted
                     };
                     section.Blocks.Add(previousBreak);
                 }
@@ -1146,6 +1149,60 @@ namespace Writersword.Modules.TextEditor.Services
                     continue;
                 }
 
+                // Разрыв внутри правки (w:ins, w:del): правка делится на часть до разрыва
+                // и после, а сам разрыв получает её отметку — вставленный или удалённый
+                // разрыв Word остаётся правкой, а не теряется.
+                if (child is W.InsertedRun or W.DeletedRun
+                    && child.Elements<W.Run>().Any(r => r.Elements<W.Break>().Any(IsPageBreak)))
+                {
+                    var beforeContainer = child.CloneNode(false);
+                    var afterContainer = child.CloneNode(false);
+                    var info = ReadRevisionInfo(child);
+                    var split = new BreakSplit(false, false,
+                        child is W.InsertedRun ? info : null,
+                        child is W.DeletedRun ? info : null);
+                    bool seenBreak = false;
+
+                    foreach (var rc in child.ChildElements)
+                    {
+                        if (!seenBreak && rc is W.Run breakRun && breakRun.Elements<W.Break>().Any(IsPageBreak))
+                        {
+                            var runBefore = new W.Run(breakRun.RunProperties?.CloneNode(true) ?? new W.RunProperties());
+                            var runAfter = new W.Run(breakRun.RunProperties?.CloneNode(true) ?? new W.RunProperties());
+                            bool seenInRun = false;
+
+                            foreach (var part in breakRun.ChildElements)
+                            {
+                                if (!seenInRun && part is W.Break brk && IsPageBreak(brk))
+                                {
+                                    split = split with
+                                    {
+                                        IsColumn = brk.Type?.Value == W.BreakValues.Column,
+                                        IsEditorBreak = IsEditorBreak(brk)
+                                    };
+                                    seenInRun = true;
+                                    continue;
+                                }
+                                if (part is W.RunProperties) continue;
+                                (seenInRun ? runAfter : runBefore).AppendChild(part.CloneNode(true));
+                            }
+
+                            if (runBefore.ChildElements.Count > 1) beforeContainer.AppendChild(runBefore);
+                            if (runAfter.ChildElements.Count > 1) afterContainer.AppendChild(runAfter);
+                            seenBreak = true;
+                            continue;
+                        }
+
+                        (seenBreak ? afterContainer : beforeContainer).AppendChild(rc.CloneNode(true));
+                    }
+
+                    if (beforeContainer.HasChildren) segments[^1].Add(beforeContainer);
+                    splits.Add(split);
+                    segments.Add(new List<OpenXmlElement>());
+                    if (afterContainer.HasChildren) segments[^1].Add(afterContainer);
+                    continue;
+                }
+
                 segments[^1].Add(child);
             }
 
@@ -1157,7 +1214,11 @@ namespace Writersword.Modules.TextEditor.Services
         /// Чем разрезан абзац: разрывом колонки (иначе страницы) и поставлен ли разрыв в
         /// редакторе Writersword (пометка wsx, которую пишет экспорт).
         /// </summary>
-        private readonly record struct BreakSplit(bool IsColumn, bool IsEditorBreak);
+        private readonly record struct BreakSplit(
+            bool IsColumn,
+            bool IsEditorBreak,
+            RevisionInfo? Inserted = null,
+            RevisionInfo? Deleted = null);
 
         /// <summary>
         /// Разрыв поставлен в редакторе Writersword, а не в Word: у него пометка wsx.
@@ -2203,6 +2264,11 @@ namespace Writersword.Modules.TextEditor.Services
                     lastColumn: lastInRow || cell.Column + cell.ColSpan >= columnCount);
             }
 
+            // Правки состава таблицы: строки (w:ins, w:del у w:trPr) и ячейки столбцов
+            // (w:cellIns, w:cellDel у w:tcPr). Читаются до перестановки колонок
+            // таблицы «справа налево»: места ячеек — места разметки Word.
+            ReadTableStructureRevisions(rows, block);
+
             // Таблица «справа налево» (w:bidiVisual): Word показывает первую колонку
             // справа. Колонки переставляются в видимый порядок; левая сторона в разметке
             // Word у такой таблицы — ведущая, то есть правая, поэтому границы и поля
@@ -2225,6 +2291,10 @@ namespace Writersword.Modules.TextEditor.Services
                 if (block.Alignment == TableBlockAlignment.Left)
                     block.LeftIndentPt = 0;
             }
+
+            // Смена оформления таблицы (w:tblPrChange и соседи): прежний вид — та же
+            // таблица с прежними свойствами, прочитанная без содержимого.
+            ReadTableFormatChange(table, block, section, resolver, numbering, listIdMap, mainPart, extractedImages, depth);
 
             return block;
         }
@@ -2712,7 +2782,7 @@ namespace Writersword.Modules.TextEditor.Services
             if (chunk.Runs.Count == 0)
                 chunk.Runs.Add(BuildParagraphMarkRun(p, resolver, effPara));
 
-            ApplyParagraphRevisions(p, para, resolver);
+            ApplyParagraphRevisions(p, para, resolver, numbering, listIdMap);
 
             chunk.InvalidateLength();
             return para;

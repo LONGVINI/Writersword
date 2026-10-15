@@ -52,6 +52,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             RejectAllCommand = ReactiveCommand.Create(() => _host.ExecuteReview(ReviewAction.RejectAll));
             NextCommand = ReactiveCommand.Create(() => _host.ExecuteReview(ReviewAction.Next));
             PreviousCommand = ReactiveCommand.Create(() => _host.ExecuteReview(ReviewAction.Previous));
+            CompareCommand = ReactiveCommand.Create(() => _host.CompareWithFile());
 
             _host.ReviewStateChanged += OnReviewStateChanged;
             RecountNow();
@@ -89,6 +90,34 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 this.RaisePropertyChanged();
             }
         }
+
+        // ── Защита и сравнение ────────────────────────────────────────────
+
+        /// <summary>
+        /// Защита записи исправлений. Нажатие ставит или снимает её через окно
+        /// пароля; до ответа кнопка показывает прежнее состояние.
+        /// </summary>
+        public bool IsRevisionLocked
+        {
+            get => _host.IsRevisionLocked;
+            set
+            {
+                if (_host.IsRevisionLocked != value) _host.ToggleRevisionLock();
+                this.RaisePropertyChanged();
+            }
+        }
+
+        /// <summary>Тумблер записи доступен: под защитой запись не выключить.</summary>
+        public bool CanToggleTrackRevisions => !_host.IsRevisionLocked;
+
+        /// <summary>Подпись кнопки защиты.</summary>
+        public string LockTitle => _host.IsRevisionLocked ? "Снять защиту" : "Защитить";
+
+        /// <summary>Сравнение доступно: под защитой оно не идёт — оно принимает правки рукописи.</summary>
+        public bool CanCompare => !_host.IsRevisionLocked;
+
+        /// <summary>Сравнить рукопись с файлом и разметить различия правками.</summary>
+        public ICommand CompareCommand { get; }
 
         /// <summary>
         /// Имя рецензента. Пустое поле — имя пользователя системы; поле показывает
@@ -187,8 +216,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         // ── Правки ────────────────────────────────────────────────────────
 
-        /// <summary>В документе есть правки — кнопки работы с ними доступны.</summary>
+        /// <summary>В документе есть правки — кнопки перехода к ним доступны.</summary>
         public bool HasRevisions => _revisionCount > 0;
+
+        /// <summary>Правки можно принимать и отклонять: они есть, и защиты нет.</summary>
+        public bool CanResolve => _revisionCount > 0 && !_host.IsRevisionLocked;
 
         /// <summary>Сколько правок в документе — подписью под кнопками.</summary>
         public string RevisionCountText => _revisionCount switch
@@ -215,6 +247,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             this.RaisePropertyChanged(nameof(IsTrackRevisions));
             this.RaisePropertyChanged(nameof(IsReviewPanelOpen));
+            this.RaisePropertyChanged(nameof(IsRevisionLocked));
+            this.RaisePropertyChanged(nameof(CanToggleTrackRevisions));
+            this.RaisePropertyChanged(nameof(LockTitle));
+            this.RaisePropertyChanged(nameof(CanCompare));
+            this.RaisePropertyChanged(nameof(CanResolve));
             RaiseViewProperties();
 
             string name = _host.ReviewerName;
@@ -241,13 +278,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             _revisionCount = count;
             this.RaisePropertyChanged(nameof(HasRevisions));
+            this.RaisePropertyChanged(nameof(CanResolve));
             this.RaisePropertyChanged(nameof(RevisionCountText));
         }
 
-        /// <summary>Сворачивает группы по ширине окна: сначала «Показ», затем «Запись».</summary>
+        /// <summary>
+        /// Сворачивает группы по ширине окна: сначала «Показ», затем «Запись».
+        /// «Сравнение» и «Защита» — по одной кнопке, они не сворачиваются, и пороги
+        /// учитывают их ширину.
+        /// </summary>
         public void UpdateLayout(double availableWidth)
         {
-            if (availableWidth >= 700)
+            if (availableWidth >= 840)
             {
                 IsRecordGroupExpanded = true;
                 IsViewGroupExpanded = true;
@@ -257,7 +299,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             IsViewGroupExpanded = false;
 
-            if (availableWidth >= 540)
+            if (availableWidth >= 680)
             {
                 IsRecordGroupExpanded = true;
                 IsChangesGroupExpanded = true;
@@ -265,7 +307,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             }
 
             IsRecordGroupExpanded = false;
-            IsChangesGroupExpanded = availableWidth >= 300;
+            IsChangesGroupExpanded = availableWidth >= 440;
         }
     }
 }

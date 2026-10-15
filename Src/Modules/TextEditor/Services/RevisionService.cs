@@ -39,6 +39,9 @@ namespace Writersword.Modules.TextEditor.Services
 
             public static ParagraphList OfCell(TableCell cell) => new(null, cell.Paragraphs, cell);
 
+            /// <summary>Абзацы вне потока и ячеек — текст сноски.</summary>
+            public static ParagraphList OfParagraphs(List<ParagraphBlock> paragraphs) => new(null, paragraphs, null);
+
             /// <summary>Ячейка, которой принадлежит список. Null — поток раздела.</summary>
             public TableCell? Cell { get; }
 
@@ -118,6 +121,11 @@ namespace Writersword.Modules.TextEditor.Services
                     if (block is TableBlock table)
                         foreach (var list in TableLists(table))
                             yield return list;
+
+                // Текст сносок: правка в нём принимается и отклоняется с остальными.
+                foreach (var block in section.InlineObjects)
+                    if (block is NoteBlock note && note.Paragraphs.Count > 0)
+                        yield return ParagraphList.OfParagraphs(note.Paragraphs);
             }
         }
 
@@ -176,6 +184,103 @@ namespace Writersword.Modules.TextEditor.Services
                     result.Add(paragraph);
         }
 
+        // ── Сноски ────────────────────────────────────────────────────────
+        // Текст сноски живёт не в потоке, а в объекте сноски: в тексте стоит только
+        // её знак. Правки в тексте сноски — такие же правки документа: они считаются,
+        // принимаются и отклоняются вместе с остальными, а к месту правки ведёт знак
+        // сноски — каретки в тексте сносок нет.
+
+        /// <summary>Сноски документа, у которых есть знак в тексте или нет — все.</summary>
+        public static IEnumerable<NoteBlock> AllNotes(DocumentModel doc)
+        {
+            foreach (var section in doc.Sections)
+                foreach (var block in section.InlineObjects)
+                    if (block is NoteBlock note)
+                        yield return note;
+        }
+
+        /// <summary>Абзацы в порядке чтения, а за ними — абзацы сносок.</summary>
+        public static IEnumerable<ParagraphBlock> ReadingOrderWithNotes(DocumentModel doc)
+        {
+            foreach (var paragraph in ReadingOrder(doc))
+                yield return paragraph;
+
+            foreach (var note in AllNotes(doc))
+                foreach (var paragraph in note.Paragraphs)
+                    yield return paragraph;
+        }
+
+        /// <summary>Сноска, в тексте которой стоит абзац; null — абзац не в сноске.</summary>
+        public static NoteBlock? NoteOfParagraph(DocumentModel doc, ParagraphBlock paragraph)
+        {
+            foreach (var note in AllNotes(doc))
+                foreach (var candidate in note.Paragraphs)
+                    if (ReferenceEquals(candidate, paragraph))
+                        return note;
+
+            return null;
+        }
+
+        /// <summary>Знак сноски в тексте: абзац и место знака; null — знака нет.</summary>
+        public static (ParagraphBlock Owner, int Index)? NoteReferenceOf(DocumentModel doc, NoteBlock note)
+        {
+            foreach (var paragraph in ReadingOrder(doc))
+            {
+                int index = paragraph.IndexOfInlineObject(note.Id);
+                if (index >= 0) return (paragraph, index);
+            }
+
+            return null;
+        }
+
+        /// <summary>Сноски, чьи знаки стоят в абзаце на местах [from, to), с местом знака.</summary>
+        public static List<(int Index, NoteBlock Note)> NotesReferencedIn(
+            DocumentModel doc, ParagraphBlock paragraph, int from = 0, int to = int.MaxValue)
+        {
+            var result = new List<(int, NoteBlock)>();
+
+            Dictionary<Guid, NoteBlock>? notes = null;
+            int position = 0;
+
+            foreach (var chunk in paragraph.Chunks)
+            {
+                foreach (var run in chunk.Runs)
+                {
+                    if (run.InlineImageId is Guid id)
+                    {
+                        if (position >= from && position < to)
+                        {
+                            if (notes is null)
+                            {
+                                notes = new Dictionary<Guid, NoteBlock>();
+                                foreach (var note in AllNotes(doc)) notes[note.Id] = note;
+                            }
+
+                            if (notes.TryGetValue(id, out var found))
+                                result.Add((position, found));
+                        }
+
+                        position++;
+                        continue;
+                    }
+
+                    position += run.Text.Length;
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>В тексте сноски есть правки.</summary>
+        public static bool NoteHasRevisions(NoteBlock note)
+        {
+            foreach (var paragraph in note.Paragraphs)
+                if (HitsIn(paragraph).Count > 0)
+                    return true;
+
+            return false;
+        }
+
         // ── Сведения о правках ────────────────────────────────────────────
 
         /// <summary>Авторы правок в порядке первого появления в документе.</summary>
@@ -190,7 +295,7 @@ namespace Writersword.Modules.TextEditor.Services
                 if (seen.Add(info.Author)) result.Add(info.Author);
             }
 
-            foreach (var paragraph in ReadingOrder(doc))
+            foreach (var paragraph in ReadingOrderWithNotes(doc))
             {
                 foreach (var chunk in paragraph.Chunks)
                     foreach (var run in chunk.Runs)
@@ -216,7 +321,7 @@ namespace Writersword.Modules.TextEditor.Services
         {
             int count = 0;
 
-            foreach (var paragraph in ReadingOrder(doc))
+            foreach (var paragraph in ReadingOrderWithNotes(doc))
             {
                 if (paragraph.Properties.FormatChange is not null) count++;
 
@@ -233,7 +338,201 @@ namespace Writersword.Modules.TextEditor.Services
                     count++;
             }
 
-            return count + FloatingImageRevisions(doc).Count;
+            return count + BlockRevisions(doc).Count;
+        }
+
+        /// <summary>
+        /// Блоки, вставленные или удалённые правкой целиком: плавающие картинки и
+        /// фигуры, разрывы — в потоке и закреплённые на листе. Объекты в строке сюда
+        /// не входят: их правка в знаке.
+        /// </summary>
+        public static List<BlockModel> BlockRevisions(DocumentModel doc)
+        {
+            var result = new List<BlockModel>();
+            foreach (var section in doc.Sections)
+            {
+                foreach (var block in section.Blocks)
+                {
+                    if (RevisionMarks.HasMark(block)) result.Add(block);
+
+                    if (block is TableBlock table)
+                    {
+                        // Строки, столбцы и оформление таблицы, в том числе вложенных.
+                        if (TableRevisions.HasMarks(table)) result.Add(table);
+                        foreach (var nested in table.NestedTablesDeep())
+                            if (TableRevisions.HasMarks(nested)) result.Add(nested);
+
+                        // Картинки и фигуры, плавающие в ячейках таблиц, — тоже блоки целиком.
+                        foreach (var (_, cellFloat) in CellFloats(table))
+                            if (RevisionMarks.HasMark(cellFloat.Object)) result.Add(cellFloat.Object);
+                    }
+                }
+
+                foreach (var block in section.FloatingObjects)
+                    if (RevisionMarks.HasMark(block)) result.Add(block);
+
+                // Параметры разделов, сменённые правкой.
+                foreach (var block in section.Blocks)
+                    if (block is BreakBlock { IsSectionBreak: true, Section.FormatChange: not null } sectionEnd)
+                        result.Add(new SectionRevisionPart { Break = sectionEnd });
+
+                // Картинки и фигуры в строке: их вставка и удаление — в знаке, а смена
+                // вида — на самом объекте.
+                foreach (var block in section.InlineObjects)
+                    if (RevisionMarks.ChangeOf(block) is not null) result.Add(block);
+            }
+
+            // Параметры последнего раздела.
+            if (doc.PageSetupChange is not null)
+                result.Add(new SectionRevisionPart());
+            return result;
+        }
+
+        /// <summary>
+        /// Плавающие объекты ячеек таблицы, в том числе вложенных таблиц: ячейка и
+        /// объект.
+        /// </summary>
+        public static IEnumerable<(TableCell Cell, CellFloat Float)> CellFloats(TableBlock table)
+        {
+            foreach (var cell in table.Cells)
+            {
+                if (cell.Floats is { Count: > 0 } floats)
+                    foreach (var cellFloat in floats)
+                        yield return (cell, cellFloat);
+
+                if (cell.NestedTables is { Count: > 0 } nested)
+                    foreach (var inner in nested)
+                        foreach (var item in CellFloats(inner.Table))
+                            yield return item;
+            }
+        }
+
+        /// <summary>Убирает таблицу из потока раздела или из ячейки, где она вложена.</summary>
+        private static bool RemoveTable(DocumentModel doc, TableBlock table)
+        {
+            foreach (var section in doc.Sections)
+            {
+                if (section.Blocks.Remove(table)) return true;
+
+                foreach (var block in section.Blocks)
+                {
+                    if (block is not TableBlock owner) continue;
+                    if (owner.FindNestedOwner(table) is not { } found) continue;
+                    found.Cell.NestedTables?.Remove(found.Nested);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Убирает блок из документа, где бы он ни стоял: поток раздела, закреплённые
+        /// на листе, объекты в строке, плавающие объекты ячеек. False — блока нет.
+        /// </summary>
+        public static bool RemoveBlock(DocumentModel doc, BlockModel block)
+        {
+            foreach (var section in doc.Sections)
+            {
+                if (section.Blocks.Remove(block)) return true;
+                if (section.FloatingObjects.Remove(block)) return true;
+                if (section.InlineObjects.Remove(block)) return true;
+
+                foreach (var candidate in section.Blocks)
+                {
+                    if (candidate is not TableBlock table) continue;
+
+                    foreach (var (cell, cellFloat) in CellFloats(table))
+                    {
+                        if (!ReferenceEquals(cellFloat.Object, block)) continue;
+                        cell.Floats!.Remove(cellFloat);
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Принимает или отклоняет правки блоков, вставленных или удалённых целиком.
+        /// Принять: удалённый уходит, вставленный остаётся без отметки. Отклонить:
+        /// вставленный уходит, удалённый остаётся без отметки. Блок, у которого обе
+        /// отметки (удалённая вставка), уходит при отклонении, только если решение по
+        /// всем правкам разом (<paramref name="whole"/>), — как у Word.
+        /// Возвращает убранные блоки.
+        /// </summary>
+        public static List<BlockModel> ResolveBlocks(DocumentModel doc, IEnumerable<BlockModel> blocks, bool accept, bool whole = false)
+        {
+            var removed = new List<BlockModel>();
+
+            foreach (var block in blocks)
+            {
+                // Параметры раздела: принять — новые остаются, отклонить — прежние
+                // возвращаются.
+                if (block is SectionRevisionPart sectionPart)
+                {
+                    if (sectionPart.Break is { Section.FormatChange: { } sectionChange } sectionEnd)
+                    {
+                        if (!accept) SectionFrame.Restore(sectionEnd, sectionChange.Previous);
+                        sectionEnd.Section!.FormatChange = null;
+                    }
+                    else if (sectionPart.Break is null && doc.PageSetupChange is { } pageChange)
+                    {
+                        if (!accept) SectionFrame.RestoreFinal(doc, pageChange.Previous);
+                        doc.PageSetupChange = null;
+                    }
+                    continue;
+                }
+
+                // Таблица целиком или один её пункт: строка, столбец, оформление.
+                if (block is TableBlock or TableRevisionPart)
+                {
+                    var table = block is TableRevisionPart part ? part.Table : (TableBlock)block;
+
+                    if (block is TableRevisionPart { Format: true })
+                        TableRevisions.Resolve(doc, table, accept, Array.Empty<TableCell>(), format: true);
+                    else if (block is TableRevisionPart cellsPart)
+                        TableRevisions.Resolve(doc, table, accept, new HashSet<TableCell>(cellsPart.Cells, ReferenceEqualityComparer.Instance), format: false);
+                    else
+                        TableRevisions.Resolve(doc, table, accept);
+
+                    // Таблица без строк или столбцов — это уже не таблица.
+                    if (table.RowCount <= 0 || table.ColumnCount <= 0 || table.Cells.Count == 0)
+                    {
+                        if (RemoveTable(doc, table)) removed.Add(table);
+                    }
+                    continue;
+                }
+
+                if (block is not IRevisionMarked marked) continue;
+
+                // Смена вида: принять — новый вид остаётся, отклонить — прежний вид
+                // возвращается. Удаление и вставка решаются следом своим правилом.
+                if (block is IAppearanceTracked { Change: { } change } tracked)
+                {
+                    if (!accept) ObjectAppearance.Restore(block, change.Previous);
+                    tracked.Change = null;
+                }
+
+                if (marked.Inserted is null && marked.Deleted is null) continue;
+
+                bool remove = accept
+                    ? marked.Deleted is not null
+                    : marked.Inserted is not null && (marked.Deleted is null || whole);
+
+                if (remove)
+                {
+                    RemoveBlock(doc, block);
+                    removed.Add(block);
+                    continue;
+                }
+
+                if (accept) marked.Inserted = null;
+                else marked.Deleted = null;
+            }
+
+            return removed;
         }
 
         /// <summary>
@@ -441,6 +740,17 @@ namespace Writersword.Modules.TextEditor.Services
 
                     if (markGoes)
                     {
+                        // Абзац ушёл целиком — и текст, и знак: он просто убирается.
+                        // Слияние оставило бы следующему абзацу оформление ушедшего, и
+                        // абзац за удалённым заголовком становился бы заголовком.
+                        if (paragraph.TotalLength == 0 && list.NextMergeable(i) >= 0)
+                        {
+                            list.RemoveAt(i);
+                            structureChanged = true;
+                            touched.Add(paragraph);
+                            continue;
+                        }
+
                         // Знак абзаца уходит — абзац сливается со следующим. Нельзя
                         // слить (последний в списке, за ним таблица) — знак остаётся
                         // обычным.
@@ -556,6 +866,10 @@ namespace Writersword.Modules.TextEditor.Services
                 props.MarkInserted = markInserted;
                 props.MarkDeleted = markDeleted;
             }
+
+            // Отклонённая смена списка возвращает прежний список абзаца.
+            if (!accept && change.ListChanged)
+                paragraph.ListProperties = change.PreviousList?.Clone();
 
             props.FormatChange = null;
             return true;

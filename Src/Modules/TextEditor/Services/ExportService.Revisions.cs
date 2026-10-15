@@ -33,23 +33,24 @@ namespace Writersword.Modules.TextEditor.Services
         /// долей секунды, как у Word.
         /// </summary>
         /// <summary>
-        /// Ран плавающей картинки под её правкой: удалённая — в w:del, вставленная — в
+        /// Ран блока, вставленного или удалённого правкой целиком (плавающая картинка,
+        /// фигура, разрыв), под его правкой: удалённый — в w:del, вставленный — в
         /// w:ins, удалённая вставка — w:del внутри w:ins. Без правки — ран как есть.
         /// </summary>
         private static OpenXmlElement WrapObjectRevision(W.Run run, Models.Document.BlockModel block, DocxWriteContext ctx)
         {
-            if (block is not Models.Document.ImageBlock image) return run;
+            if (block is not Models.Document.IRevisionMarked marked) return run;
 
             OpenXmlElement content = run;
 
-            if (image.Deleted is { } deleted)
+            if (marked.Deleted is { } deleted)
             {
                 var deletedRun = StampRevision(new W.DeletedRun(), deleted, ctx);
                 deletedRun.AppendChild(content);
                 content = deletedRun;
             }
 
-            if (image.Inserted is { } inserted)
+            if (marked.Inserted is { } inserted)
             {
                 var insertedRun = StampRevision(new W.InsertedRun(), inserted, ctx);
                 insertedRun.AppendChild(content);
@@ -57,6 +58,41 @@ namespace Writersword.Modules.TextEditor.Services
             }
 
             return content;
+        }
+
+        /// <summary>
+        /// Отметка знака абзаца, который несёт только разрыв, вставленный или удалённый
+        /// правкой: без неё Word при отклонении вставки оставил бы пустой абзац.
+        /// </summary>
+        private static void MarkBreakParagraphRevision(W.Paragraph paragraph, Models.Document.BreakBlock block, DocxWriteContext ctx)
+        {
+            if (block.Inserted is null && block.Deleted is null) return;
+
+            var markRunProperties = new W.ParagraphMarkRunProperties();
+            if (block.Inserted is { } inserted)
+                markRunProperties.AppendChild(StampRevision(new W.Inserted(), inserted, ctx));
+            if (block.Deleted is { } deleted)
+                markRunProperties.AppendChild(StampRevision(new W.Deleted(), deleted, ctx));
+
+            var pPr = paragraph.GetFirstChild<W.ParagraphProperties>();
+            if (pPr is null)
+            {
+                pPr = new W.ParagraphProperties();
+                paragraph.PrependChild(pPr);
+            }
+            pPr.AppendChild(markRunProperties);
+        }
+
+        /// <summary>
+        /// Убирает ран вместе с обёртками правки, в которых он лежит: пустой w:ins или
+        /// w:del в абзаце Word не нужен.
+        /// </summary>
+        private static void RemoveRunWithRevision(W.Run run)
+        {
+            OpenXmlElement top = run;
+            while (top.Parent is W.InsertedRun or W.DeletedRun)
+                top = top.Parent;
+            top.Remove();
         }
 
         private static T StampRevision<T>(T element, RevisionInfo info, DocxWriteContext ctx) where T : OpenXmlElement
@@ -122,9 +158,12 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (props.FormatChange is { } change)
             {
+                // Прежний список — свой, если правка сменила и список.
+                var previousList = change.ListChanged ? change.PreviousList : para.ListProperties;
+
                 var previous = new W.ParagraphPropertiesExtended();
                 foreach (var element in BuildParagraphPropertyElements(
-                             change.Previous, para.ListProperties, ctx.Numbering, null))
+                             change.Previous, previousList, ctx.Numbering, null))
                     previous.AppendChild(element);
 
                 var pPrChange = StampRevision(new W.ParagraphPropertiesChange(), change.Info, ctx);
@@ -288,15 +327,65 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         private static void WriteTrackRevisionsSetting(MainDocumentPart mainPart, DocumentModel document)
         {
-            if (!document.TrackRevisions) return;
+            if (!document.TrackRevisions && document.RevisionProtection is null) return;
 
             var part = mainPart.DocumentSettingsPart ?? mainPart.AddNewPart<DocumentSettingsPart>();
             part.Settings ??= new W.Settings();
 
-            if (part.Settings.GetFirstChild<W.TrackRevisions>() is null)
-                part.Settings.PrependChild(new W.TrackRevisions());
+            var track = part.Settings.GetFirstChild<W.TrackRevisions>();
+            if (track is null)
+            {
+                track = new W.TrackRevisions();
+                part.Settings.PrependChild(track);
+            }
+
+            if (document.RevisionProtection is { } protection)
+                WriteRevisionProtection(part.Settings, track, protection);
 
             part.Settings.Save();
+        }
+
+        /// <summary>
+        /// Защита записи исправлений: w:documentProtection w:edit="trackedChanges",
+        /// по схеме — сразу за w:trackRevisions. Отпечаток пароля пишется тем видом
+        /// атрибутов, каким он получен: свой — как пишет Word (w:cryptAlgorithmSid,
+        /// w:hash, w:salt), пришедший из файла в строгом виде — так же строго.
+        /// </summary>
+        private static void WriteRevisionProtection(W.Settings settings, W.TrackRevisions track, RevisionProtection protection)
+        {
+            settings.GetFirstChild<W.DocumentProtection>()?.Remove();
+
+            var element = new W.DocumentProtection
+            {
+                Edit = W.DocumentProtectionValues.TrackedChanges,
+                Enforcement = new OnOffValue(true)
+            };
+
+            if (protection.HasPassword)
+            {
+                if (protection.Format == RevisionProtectionFormat.AlgorithmName)
+                {
+                    element.AlgorithmName = protection.AlgorithmName;
+                    element.HashValue = protection.HashValue;
+                    element.SaltValue = protection.SaltValue;
+                    element.SpinCount = protection.SpinCount;
+                }
+                else
+                {
+                    string? algorithm = RevisionLock.NormalizeAlgorithm(protection.AlgorithmName);
+                    bool sha1 = algorithm is null or "SHA-1";
+
+                    element.CryptographicProviderType = sha1 ? W.CryptProviderValues.RsaFull : W.CryptProviderValues.RsaAdvancedEncryptionStandard;
+                    element.CryptographicAlgorithmClass = W.CryptAlgorithmClassValues.Hash;
+                    element.CryptographicAlgorithmType = W.CryptAlgorithmValues.TypeAny;
+                    element.CryptographicAlgorithmSid = RevisionLock.AlgorithmSid(algorithm);
+                    element.CryptographicSpinCount = (uint)Math.Max(0, protection.SpinCount);
+                    element.Hash = protection.HashValue;
+                    element.Salt = protection.SaltValue;
+                }
+            }
+
+            track.InsertAfterSelf(element);
         }
     }
 }

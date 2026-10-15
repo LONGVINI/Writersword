@@ -115,7 +115,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 if (IsReadOnly) return;
 
                 bool leadingSpace = string.IsNullOrEmpty(note.CustomMark);
-                string current = NoteEditableText(note, leadingSpace);
+
+                // При записи исправлений окно показывает текст сноски, каким его видит
+                // читатель: удалённое правкой в окно не идёт. Новый текст ложится поверх
+                // этого вида, а разницу с прежним текстом размечает запись правок
+                // (DocumentCanvas.RevisionGuard): удалённое остаётся удалённым, чужие
+                // вставки — вставками, набранное в окне становится вставкой.
+                var source = _document.TrackRevisions ? VisibleNoteView(note) : note;
+                string current = NoteEditableText(source, leadingSpace);
 
                 var result = await TextEditDialog.ShowAsync(
                     NoteTitle(note.Kind),
@@ -139,8 +146,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 BeginEditDelegate?.Invoke("Правка сноски");
 
                 var (paragraphProperties, runProperties, _) = NoteTextTemplate(note.Kind, note);
-                string newText = FullNoteText(note, result.Text, leadingSpace);
-                note.Paragraphs = RichTextEdit.Apply(note.Paragraphs, newText, runProperties, paragraphProperties);
+                string newText = FullNoteText(source, result.Text, leadingSpace);
+                note.Paragraphs = RichTextEdit.Apply(source.Paragraphs, newText, runProperties, paragraphProperties);
 
                 CommitEditDelegate?.Invoke();
                 StructureChanged?.Invoke();
@@ -149,6 +156,39 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 _log.Error(ex, "[NOTES] Текст сноски изменить не удалось");
             }
+        }
+
+        /// <summary>
+        /// Сноска, какой её видит читатель: без текста, удалённого правкой, и без
+        /// абзацев, удалённых целиком. Копия — сама сноска не меняется; Id абзацев те
+        /// же, по ним запись правок сопоставит абзацы до и после правки.
+        /// </summary>
+        private static NoteBlock VisibleNoteView(NoteBlock note)
+        {
+            var view = new NoteBlock
+            {
+                Id = note.Id,
+                Kind = note.Kind,
+                CustomMark = note.CustomMark,
+                MarkProperties = note.MarkProperties
+            };
+
+            foreach (var paragraph in note.Paragraphs)
+            {
+                var copy = (ParagraphBlock)DocumentCloner.CloneBlock(paragraph);
+                var cells = copy.ToCharCells();
+                int removed = cells.RemoveAll(cell => cell.Props?.Deleted is not null);
+
+                if (cells.Count == 0 && paragraph.Properties.MarkDeleted is not null) continue;
+
+                if (removed > 0) copy.RebuildFromCharCells(cells);
+                view.Paragraphs.Add(copy);
+            }
+
+            if (view.Paragraphs.Count == 0)
+                view.Paragraphs.Add(new ParagraphBlock());
+
+            return view;
         }
 
         /// <summary>Убирает сноску вместе с её знаком в тексте.</summary>

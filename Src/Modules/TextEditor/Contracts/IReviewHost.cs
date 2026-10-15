@@ -69,6 +69,18 @@ namespace Writersword.Modules.TextEditor.Contracts
         void InsertComment(Models.Document.CommentKind kind);
 
         /// <summary>
+        /// Защита записи исправлений стоит: запись не выключить, правки не принять и
+        /// не отклонить.
+        /// </summary>
+        bool IsRevisionLocked { get; }
+
+        /// <summary>Поставить защиту или снять её — с окном пароля.</summary>
+        void ToggleRevisionLock();
+
+        /// <summary>Выбрать файл и разметить различия рукописи с ним правками.</summary>
+        void CompareWithFile();
+
+        /// <summary>
         /// Состояние рецензирования сменилось: запись, вид, правки в документе или
         /// сам документ.
         /// </summary>

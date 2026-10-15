@@ -46,11 +46,16 @@ namespace Writersword.Modules.TextEditor.Services
                 FootnoteNumberStart = source.FootnoteNumberStart,
                 EndnoteNumberStart = source.EndnoteNumberStart,
                 FinalSection = source.FinalSection?.Clone(),
+                PageSetupChange = source.PageSetupChange?.Clone(),
 
                 // Запись исправлений — свойство рукописи, как в Word: без неё снимок
                 // для сохранения выключал рецензирование, и после перезапуска правки
                 // снова шли без отметок.
                 TrackRevisions = source.TrackRevisions,
+
+                // Защита записи — тоже свойство рукописи: без неё снимок для сохранения
+                // снимал бы защиту.
+                RevisionProtection = source.RevisionProtection?.Clone(),
 
                 // Виды чтения, приложенные к рукописи, — копией: снимок сериализуется
                 // вне UI-потока, а живые виды тем временем могут править.
@@ -325,7 +330,9 @@ namespace Writersword.Modules.TextEditor.Services
                         InParagraph = breakBlock.InParagraph,
                         ContinuesParagraph = breakBlock.ContinuesParagraph,
                         FromColumnBreak = breakBlock.FromColumnBreak,
-                        Section = breakBlock.Section?.Clone()
+                        Section = breakBlock.Section?.Clone(),
+                        Inserted = breakBlock.Inserted?.Clone(),
+                        Deleted = breakBlock.Deleted?.Clone()
                     };
                 default:
                     throw new NotSupportedException(
@@ -405,7 +412,8 @@ namespace Writersword.Modules.TextEditor.Services
 
                 // Заданные высоты строк — часть таблицы: копия без них теряла высоты.
                 RowMinHeightsPt = new List<double>(source.RowMinHeightsPt),
-                ExactHeightRows = source.ExactHeightRows is null ? null : new List<int>(source.ExactHeightRows)
+                ExactHeightRows = source.ExactHeightRows is null ? null : new List<int>(source.ExactHeightRows),
+                FormatChange = source.FormatChange?.Clone()
             };
 
             foreach (var column in source.Columns)
@@ -442,7 +450,9 @@ namespace Writersword.Modules.TextEditor.Services
                 PaddingTopPt = source.PaddingTopPt,
                 PaddingBottomPt = source.PaddingBottomPt,
                 PaddingLeftPt = source.PaddingLeftPt,
-                PaddingRightPt = source.PaddingRightPt
+                PaddingRightPt = source.PaddingRightPt,
+                Inserted = source.Inserted?.Clone(),
+                Deleted = source.Deleted?.Clone()
             };
 
             foreach (var paragraph in source.Paragraphs)
@@ -495,6 +505,7 @@ namespace Writersword.Modules.TextEditor.Services
                 ImageFileName = source.ImageFileName,
                 Inserted = source.Inserted?.Clone(),
                 Deleted = source.Deleted?.Clone(),
+                Change = source.Change?.Clone(),
                 WidthPt = source.WidthPt,
                 HeightPt = source.HeightPt,
                 LockAspectRatio = source.LockAspectRatio,
@@ -537,6 +548,9 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 Id = source.Id,
                 Hash = source.Hash,
+                Inserted = source.Inserted?.Clone(),
+                Deleted = source.Deleted?.Clone(),
+                Change = source.Change?.Clone(),
                 ShapeType = source.ShapeType,
                 WidthPt = source.WidthPt,
                 HeightPt = source.HeightPt,

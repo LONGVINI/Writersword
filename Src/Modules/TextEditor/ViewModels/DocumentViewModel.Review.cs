@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Text.Json;
 using ReactiveUI;
+using Writersword.Core.Interfaces.Services.UI;
+using Writersword.Core.Services;
 using Writersword.Modules.TextEditor.Contracts;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
@@ -55,6 +57,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// <summary>Принять или отклонить правки плавающих картинок одним шагом отмены.</summary>
         public Action<IReadOnlyList<ImageBlock>, bool>? ResolveImageRevisionsDelegate { get; set; }
 
+        /// <summary>Принять или отклонить правки разрывов и фигур одним шагом отмены.</summary>
+        public Action<IReadOnlyList<BlockModel>, bool>? ResolveBlockRevisionsDelegate { get; set; }
+
+        /// <summary>Принять или отклонить правки разрывов и фигур.</summary>
+        public void ResolveBlockRevisions(IReadOnlyList<BlockModel> blocks, bool accept)
+        {
+            if (IsReadOnly || blocks.Count == 0) return;
+            if (RefuseLockedResolve()) return;
+            ResolveBlockRevisionsDelegate?.Invoke(blocks, accept);
+        }
+
         public void GoToReviewImage(ImageBlock image) => GoToReviewImageDelegate?.Invoke(image);
 
         public void HighlightReviewImage(ImageBlock? image, uint argb) => HighlightReviewImageDelegate?.Invoke(image, argb);
@@ -62,6 +75,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ResolveImageRevisions(IReadOnlyList<ImageBlock> images, bool accept)
         {
             if (IsReadOnly || images.Count == 0) return;
+            if (RefuseLockedResolve()) return;
             ResolveImageRevisionsDelegate?.Invoke(images, accept);
         }
 
@@ -91,6 +105,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ResolveRevisionHits(IReadOnlyList<RevisionService.Hit> hits, bool accept)
         {
             if (IsReadOnly || hits.Count == 0) return;
+            if (RefuseLockedResolve()) return;
             ResolveRevisionHitsDelegate?.Invoke(hits, accept);
         }
 
@@ -122,6 +137,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (_document.TrackRevisions == enabled) return;
 
+            // Под защитой запись не выключается: лента вернёт тумблер по событию.
+            if (!enabled && IsRevisionLocked)
+            {
+                NotifyRevisionLocked();
+                RevisionsChanged?.Invoke();
+                return;
+            }
+
             _document.TrackRevisions = enabled;
             this.RaisePropertyChanged(nameof(TrackRevisions));
             RaiseContentModified();
@@ -151,6 +174,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// <summary>Выполняет кнопку рецензирования через полотно.</summary>
         public bool ExecuteReview(ReviewAction action)
         {
+            if (action is ReviewAction.Accept or ReviewAction.Reject or ReviewAction.AcceptAll or ReviewAction.RejectAll
+                && RefuseLockedResolve())
+                return false;
+
             bool done = ReviewCommandDelegate?.Invoke(action) ?? false;
             if (done) RevisionsChanged?.Invoke();
             return done;
@@ -170,6 +197,95 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 Author = _reviewerName,
                 Date = minute
             };
+        }
+
+        // ── Защита записи исправлений ─────────────────────────────────────
+        // Защита — как «Ограничить редактирование → Исправления» в Word: запись не
+        // выключить, правки не принять и не отклонить. Кто правит защищённый
+        // документ, может только предлагать — каждая его правка остаётся видна тому,
+        // кто снимет защиту и будет их разбирать.
+
+        /// <summary>Защита записи исправлений стоит.</summary>
+        public bool IsRevisionLocked => _document.RevisionProtection is not null;
+
+        /// <summary>Защита снимается только паролем.</summary>
+        public bool RevisionLockHasPassword => _document.RevisionProtection?.HasPassword == true;
+
+        /// <summary>
+        /// Ставит защиту. Запись исправлений включается и остаётся включённой, пока
+        /// защита стоит. Пустой пароль — защита без пароля.
+        /// </summary>
+        public void LockRevisions(string? password)
+        {
+            if (IsReadOnly || IsRevisionLocked) return;
+
+            _document.RevisionProtection = RevisionLock.Create(password);
+            _document.TrackRevisions = true;
+
+            this.RaisePropertyChanged(nameof(TrackRevisions));
+            this.RaisePropertyChanged(nameof(IsRevisionLocked));
+            RaiseContentModified();
+            RevisionsChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Снимает защиту. False — пароль не подошёл. Запись исправлений остаётся
+        /// включённой: выключить её — отдельное решение.
+        /// </summary>
+        public bool UnlockRevisions(string? password)
+        {
+            if (_document.RevisionProtection is not { } protection) return true;
+            if (IsReadOnly) return false;
+            if (!RevisionLock.Verify(protection, password)) return false;
+
+            _document.RevisionProtection = null;
+
+            this.RaisePropertyChanged(nameof(IsRevisionLocked));
+            RaiseContentModified();
+            RevisionsChanged?.Invoke();
+            return true;
+        }
+
+        /// <summary>Сообщает, что документ защищён и правки разбирать нельзя.</summary>
+        public void NotifyRevisionLocked()
+        {
+            CoreServices.GetService<INotificationService>()?.ShowWarning(
+                "Документ защищён: правки можно только предлагать. Принять или отклонить их, выключить запись исправлений " +
+                "и заменить текст импортом можно после снятия защиты — «Рецензирование» → «Защита»");
+        }
+
+        /// <summary>
+        /// Действие под защитой откатилось: правкой его не разметить (смена списка,
+        /// удаление строки таблицы с текстом и подобное).
+        /// </summary>
+        public void NotifyLockedActionRefused()
+        {
+            CoreServices.GetService<INotificationService>()?.ShowWarning(
+                "Документ защищён: это действие нельзя записать исправлением, поэтому оно отменено. " +
+                "Под защитой текст меняется только правками");
+        }
+
+        /// <summary>Отмена или повтор под защитой не прошли: шаг меняет текст мимо правок.</summary>
+        public void NotifyLockedUndoRefused(bool wasUndo)
+        {
+            CoreServices.GetService<INotificationService>()?.ShowWarning(wasUndo
+                ? "Документ защищён: отменить правку, сделанную до защиты, нельзя — это изменило бы текст мимо записи исправлений"
+                : "Документ защищён: повторить этот шаг нельзя — он меняет текст мимо записи исправлений");
+        }
+
+        /// <summary>
+        /// Идёт действие, которое само расставляет правки или заменяет документ
+        /// целиком (сравнение с файлом, импорт). Полотно не размечает его разницей
+        /// «до/после» — оно приняло бы такое действие за обычную правку.
+        /// </summary>
+        public bool AutoTrackingSuppressed { get; private set; }
+
+        /// <summary>Защита стоит — разбор правок не идёт, человек узнаёт почему.</summary>
+        private bool RefuseLockedResolve()
+        {
+            if (!IsRevisionLocked) return false;
+            NotifyRevisionLocked();
+            return true;
         }
 
         // ── Запись смены оформления ───────────────────────────────────────

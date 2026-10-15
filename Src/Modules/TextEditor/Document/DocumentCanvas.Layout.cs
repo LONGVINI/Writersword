@@ -1507,7 +1507,9 @@ namespace Writersword.Modules.TextEditor.Document
                 PageOffsetXChanged?.Invoke(pageOffsetXPx);
             }
 
-            var blocks = DocVm!.Document.Sections[0].Blocks;
+            // В «Исходном документе» картинки и фигуры со сменой вида стоят прежними
+            // (RevisionDisplay.DisplayObject).
+            var blocks = RevisionDisplay.DisplayBlocks(DocVm!.Document.Sections[0].Blocks, DocVm.Document.RevisionView);
 
             // Схлопывание интервалов между абзацами (см. DocumentModel.CollapseParagraphSpacing):
             // сколько интервала после оставил предыдущий абзац и где он кончился. Абзац,
@@ -1643,6 +1645,29 @@ namespace Writersword.Modules.TextEditor.Document
                 if (!NextColumn()) AdvancePage();
             }
 
+            // Ширина колонки каждого абзаца выровненной области — для быстрой перевёрстки
+            // при наборе (TextWidthForBlock).
+            void NoteBalancedWidths()
+            {
+                float regionLeftPt = pageXPt + ml;
+                for (int i = colRegionLayoutsFrom; i < newLayouts.Count; i++)
+                {
+                    var entry = newLayouts[i];
+                    if (entry.Cell is not null || entry.Vm.Model is not { } model) continue;
+
+                    for (int c = 0; c < colOffsets.Length; c++)
+                    {
+                        if (Math.Abs(entry.AbsXPt - (regionLeftPt + colOffsets[c])) >= 0.5f) continue;
+
+                        if (Math.Abs(colWidths[c] - documentTextWidthPt) > 0.05f)
+                            passTextWidths[model] = colWidths[c];
+                        else
+                            passTextWidths.Remove(model);
+                        break;
+                    }
+                }
+            }
+
             // Раздел в колонках кончается непрерывным разрывом: Word выравнивает его
             // колонки на этом листе по высоте, и поток идёт под самой длинной из них.
             void BalanceAndCloseColumns()
@@ -1665,6 +1690,15 @@ namespace Writersword.Modules.TextEditor.Document
                         bottom = balancedBottom;
                         used = balancedColumns;
                         collapseEndYPt = float.NaN;
+
+                        // Колонки разной ширины: абзац, переехавший при выравнивании в
+                        // колонку другой ширины, при наборе переверстывается по ней.
+                        for (int c = 1; c < colWidths.Length; c++)
+                        {
+                            if (Math.Abs(colWidths[c] - colWidths[0]) <= 0.5f) continue;
+                            NoteBalancedWidths();
+                            break;
+                        }
                     }
 
                     CloseColumnRegion(bottom, used);
@@ -1696,9 +1730,21 @@ namespace Writersword.Modules.TextEditor.Document
                 // меняет поля слева и справа и свои колонки начинает под предыдущим
                 // разделом; лист другого размера Word и при непрерывном разрыве
                 // начинает с новой страницы.
+                // Разрыв страницы или колонки, спрятанный правкой при этом виде показа
+                // (удалённый — в простой разметке и без пометок, вставленный — в
+                // исходном документе), лист не начинает: текст идёт дальше, как будто
+                // разрыва нет. Разрыв раздела несёт параметры раздела и идёт как есть.
+                if (block is BreakBlock dormantBreak && !dormantBreak.IsSectionBreak
+                    && DocVm is { } revisionVm
+                    && RevisionDisplay.IsBlockHidden(dormantBreak, revisionVm.Document.RevisionView))
+                {
+                    continue;
+                }
+
                 if (block is BreakBlock inPlace && inPlace.IsSectionBreak && !inPlace.StartsNewPage)
                 {
-                    newBreakMarks.Add(new PageBreakMark(pageIdx, contentYPt, Kind: inPlace.BreakType));
+                    int inPlaceMark = newBreakMarks.Count;
+                    newBreakMarks.Add(new PageBreakMark(pageIdx, contentYPt, Kind: inPlace.BreakType, Block: inPlace));
 
                     sectionIndex = SectionIndexOf(sectionGeometries, bi + 1);
                     var inPlaceNext = sectionGeometries[sectionIndex].Geometry;
@@ -1742,6 +1788,11 @@ namespace Writersword.Modules.TextEditor.Document
 
                     BalanceAndCloseColumns();
 
+                    // Отметка разрыва стоит под колонками раздела: после выравнивания
+                    // колонок по высоте — под самой длинной из них, а не там, где
+                    // кончился бы текст в одной первой колонке.
+                    newBreakMarks[inPlaceMark] = newBreakMarks[inPlaceMark] with { Ypt = contentYPt };
+
                     if (sameSheet)
                     {
                         EnterSection(inPlaceNext, newSheet: false);
@@ -1776,7 +1827,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                     newBreakMarks.Add(new PageBreakMark(
                         pageIdx, contentYPt, columnTail,
-                        columnBreak.ContinuesParagraph, true, columnBreak.BreakType));
+                        columnBreak.ContinuesParagraph, true, columnBreak.BreakType, columnBreak));
 
                     colRegionPlain = false;
                     AdvanceFrame();
@@ -1796,7 +1847,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                     newBreakMarks.Add(new PageBreakMark(
                         pageIdx, contentYPt, bb.IsSectionBreak ? null : breakTail,
-                        bb.ContinuesParagraph, bb.FromColumnBreak, bb.BreakType));
+                        bb.ContinuesParagraph, bb.FromColumnBreak, bb.BreakType, bb));
 
                     // Колонки листа кончаются на разрыве: черты — до самой длинной.
                     CloseColumnRegion(Math.Max(colRegionBottomPt, contentYPt), colIndex + 1);
@@ -2941,6 +2992,14 @@ namespace Writersword.Modules.TextEditor.Document
                 int lineFrom = 0;
                 float lineGroupYPt = contentYPt;
 
+                // Колонки разной ширины: строки, ушедшие в колонку другой ширины,
+                // верстаются по ней (ContinueParagraphLayout). layoutWidthPt — ширина, по
+                // которой сверстаны строки, ещё не вставшие на лист; куски абзаца с
+                // paraSlicesFrom по окончании смотрят в одну итоговую раскладку.
+                float layoutWidthPt = textWidthPt;
+                bool layoutContinued = false;
+                int paraSlicesFrom = newLayouts.Count;
+
                 // Реальная позиция ПЕРВОЙ строки абзаца (без её собственного вытеснения
                 // под картинку) — вход для итеративной сходимости зон. lineGroupYPt в
                 // конце цикла относится к последнему куску разрезанного абзаца и не годится.
@@ -3034,6 +3093,13 @@ namespace Writersword.Modules.TextEditor.Document
                             contentYPt = pageYPt + mt + PageContinuationTopPadPt;
                             absXPt = textXPt;
 
+                            if (ContinuesInOtherWidth(pvm, wrapZones, textWidthPt, layoutWidthPt))
+                            {
+                                layout = ContinueParagraphLayout(pvm, layout, sliceEnd, textWidthPt);
+                                layoutWidthPt = textWidthPt;
+                                layoutContinued = true;
+                            }
+
                             lineFrom = sliceEnd;
                             lineGroupYPt = contentYPt;
 
@@ -3057,6 +3123,15 @@ namespace Writersword.Modules.TextEditor.Document
 
                         AdvanceFrame();
                         absXPt = textXPt;
+
+                        if (ContinuesInOtherWidth(pvm, wrapZones, textWidthPt, layoutWidthPt))
+                        {
+                            layout = ContinueParagraphLayout(pvm, layout, li, textWidthPt);
+                            layoutWidthPt = textWidthPt;
+                            layoutContinued = true;
+                            line = layout.Lines[li];
+                            isLast = li == layout.Lines.Count - 1;
+                        }
 
                         lineFrom = li;
                         // Небольшой отступ чтобы первая строка продолжения не прилипала к верхнему полю.
@@ -3154,6 +3229,15 @@ namespace Writersword.Modules.TextEditor.Document
                                 AdvanceFrame();
                                 contentYPt = pageYPt + mt + PageContinuationTopPadPt;
                                 absXPt = textXPt;
+
+                                if (ContinuesInOtherWidth(pvm, wrapZones, textWidthPt, layoutWidthPt))
+                                {
+                                    layout = ContinueParagraphLayout(pvm, layout, li, textWidthPt);
+                                    layoutWidthPt = textWidthPt;
+                                    layoutContinued = true;
+                                    line = layout.Lines[li];
+                                    isLast = li == layout.Lines.Count - 1;
+                                }
                             }
 
                             lineFrom = li;
@@ -3185,6 +3269,21 @@ namespace Writersword.Modules.TextEditor.Document
                     contentYPt - lineGroupYPt,
                     pageIdx, lineFrom, layout.Lines.Count,
                     AbsXPt: absXPt, Marker: paraMarker));
+
+                // Абзац перешёл в колонку другой ширины: его прежние куски смотрят в
+                // итоговую раскладку — строки до места перехода в ней те же, а каретка,
+                // выделение и попадание мышью ищут строку по номеру в раскладке куска.
+                if (layoutContinued)
+                {
+                    ShareParagraphLayout(newLayouts, paraSlicesFrom, pvm, layout);
+
+                    // Абзац, целиком ушедший в колонку другой ширины, при наборе
+                    // переверстывается по её ширине.
+                    if (Math.Abs(layoutWidthPt - documentTextWidthPt) > 0.05f)
+                        passTextWidths[paraBlock] = layoutWidthPt;
+                    else
+                        passTextWidths.Remove(paraBlock);
+                }
 
                 collapsePrevAfterPt = CollapsibleSpaceAfterPt(layout);
                 collapseEndYPt = contentYPt;
@@ -3495,7 +3594,7 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 var notePages = new HashSet<int>();
                 foreach (var note in newNoteSlices) notePages.Add(note.PageIndex);
-                newLayouts = AlignSectionPagesVertically(newLayouts, newPages, newTables, newImages, notePages.Contains);
+                newLayouts = AlignSectionPagesVertically(newLayouts, newPages, newTables, newImages, newBreakMarks, notePages.Contains);
             }
 
             // Результат прохода: промежуточные проходы сходимости обтекания его только
@@ -3999,7 +4098,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                         if (seg.InlineImageId is Guid inlineId && !seg.IsHidden)
                         {
-                            var block = FindInlineImage(inlineId);
+                            var block = FindDisplayInlineImage(inlineId);
                             if (block is not null && block.WidthPt > 0.0 && block.HeightPt > 0.0)
                             {
                                 float segX = paraX + seg.X + lineShift + justifyShift;
@@ -4114,7 +4213,9 @@ namespace Writersword.Modules.TextEditor.Document
             float lastTableRightPt = padWPt;
             float lastTableBotPt = padHPt;
 
-            var blocks = DocVm!.Document.Sections[0].Blocks;
+            // В «Исходном документе» картинки и фигуры со сменой вида стоят прежними
+            // (RevisionDisplay.DisplayObject).
+            var blocks = RevisionDisplay.DisplayBlocks(DocVm!.Document.Sections[0].Blocks, DocVm.Document.RevisionView);
 
             // Схлопывание интервалов между абзацами (см. DocumentModel.CollapseParagraphSpacing):
             // сколько интервала после оставил предыдущий абзац и где он кончился. Абзац,

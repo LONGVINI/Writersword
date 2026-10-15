@@ -50,11 +50,56 @@ namespace Writersword.Modules.TextEditor.Services
             var nextSectPr = next < _documentSections.Count ? _documentSections[next] : null;
             var nextStart = ReadSectionStart(nextSectPr);
 
-            return new BreakBlock
+            var sectionEnd = new BreakBlock
             {
                 BreakType = BreakTypeOf(nextStart),
                 Section = ReadSectionLayout(sectPr, withPage: true)
             };
+
+            // Смена параметров раздела правкой (w:sectPrChange).
+            if (ReadPreviousSection(sectPr) is { } previous)
+            {
+                var layout = sectionEnd.Section;
+                string now = SectionFrame.CaptureLayout(layout, layout.Page!, layout.Columns!);
+                string before = SectionFrame.CaptureLayout(
+                    previous.Layout, previous.Layout.Page!, previous.Layout.Columns!);
+                if (SectionFrame.Differs(now, before, forFile: true))
+                    layout.FormatChange = new ObjectChange { Info = previous.Info, Previous = before };
+            }
+
+            return sectionEnd;
+        }
+
+        /// <summary>
+        /// Прежние параметры раздела из w:sectPrChange с автором и временем правки;
+        /// null — правки параметров нет.
+        /// </summary>
+        private static (SectionLayout Layout, Models.Inline.RevisionInfo Info)? ReadPreviousSection(W.SectionProperties sectPr)
+        {
+            if (sectPr.GetFirstChild<W.SectionPropertiesChange>() is not { } change) return null;
+            if (change.GetFirstChild<W.PreviousSectionProperties>() is not { } before) return null;
+
+            var previous = new W.SectionProperties();
+            foreach (var child in before.ChildElements)
+                previous.AppendChild(child.CloneNode(true));
+
+            return (ReadSectionLayout(previous, withPage: true), ReadRevisionInfo(change));
+        }
+
+        /// <summary>
+        /// Смена параметров последнего раздела правкой (w:sectPrChange у w:sectPr тела)
+        /// против параметров документа, уже прочитанных из файла; null — правки нет.
+        /// </summary>
+        private static ObjectChange? ReadFinalSectionChange(W.Body body, DocumentModel doc)
+        {
+            if (body.GetFirstChild<W.SectionProperties>() is not { } sectPr) return null;
+            if (ReadPreviousSection(sectPr) is not { } previous) return null;
+
+            string now = SectionFrame.CaptureFinal(doc);
+            string before = SectionFrame.CaptureLayout(previous.Layout, previous.Layout.Page!, previous.Layout.Columns!);
+            return SectionFrame.Differs(now, before, forFile: true)
+                ? new ObjectChange { Info = previous.Info, Previous = before }
+                : null;
         }
 
         /// <summary>Тип разрыва раздела по тому, как начинается следующий раздел.</summary>

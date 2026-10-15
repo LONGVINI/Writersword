@@ -67,7 +67,8 @@ namespace Writersword.Modules.TextEditor.Document
 
         /// <summary>Скрыт ли блок свёрнутым заголовком в текущей раскладке.</summary>
         private bool IsCollapsedBlock(BlockModel block)
-            => _collapsedBlocks is { } hidden && hidden.Contains(block);
+            => _collapsedBlocks is { } hidden
+               && (hidden.Contains(block) || hidden.Contains(Rendering.RevisionDisplay.RealObject(block)));
 
         // ── Что скрыто ────────────────────────────────────────────────────
 

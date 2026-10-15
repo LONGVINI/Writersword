@@ -160,6 +160,14 @@ namespace Writersword.Modules.TextEditor.Services
                         JsonSerializer.Serialize(writer, table.ExactHeightRows);
                     }
 
+                    // Смена оформления таблицы правкой: принятие или отклонение снимает её,
+                    // и без неё в хеше снятая отметка не попадала бы в сохранение.
+                    if (table.FormatChange is not null)
+                    {
+                        writer.WritePropertyName("formatChange");
+                        JsonSerializer.Serialize(writer, table.FormatChange);
+                    }
+
                     writer.WriteStartArray("cells");
                     foreach (var cell in table.Cells)
                     {
@@ -180,6 +188,19 @@ namespace Writersword.Modules.TextEditor.Services
                         writer.WriteNumber("padR", cell.PaddingRightPt);
                         writer.WritePropertyName("borders");
                         JsonSerializer.Serialize(writer, cell.Borders);
+
+                        // Строка или столбец, вставленные или удалённые правкой.
+                        if (cell.Inserted is not null)
+                        {
+                            writer.WritePropertyName("ins");
+                            JsonSerializer.Serialize(writer, cell.Inserted);
+                        }
+                        if (cell.Deleted is not null)
+                        {
+                            writer.WritePropertyName("del");
+                            JsonSerializer.Serialize(writer, cell.Deleted);
+                        }
+
                         WriteIdArray(writer, "paragraphs", cell.Paragraphs.Select(p => p.Id));
 
                         // Вложенные таблицы: место в ячейке и хеш свойств каждой. Без них
@@ -297,6 +318,9 @@ namespace Writersword.Modules.TextEditor.Services
             writer.WriteNumber("schema", document.SchemaVersion);
             // Запись исправлений — свойство документа: её включение должно сохраняться.
             writer.WriteBoolean("trackRevisions", document.TrackRevisions);
+            // Защита записи исправлений: поставленная или снятая защита — правка документа.
+            if (document.RevisionProtection is { } protection)
+                writer.WriteString("revisionProtection", protection.HashValue ?? "on");
             writer.WriteNumber("footnoteNumbers", (int)document.FootnoteNumberFormat);
             writer.WriteNumber("endnoteNumbers", (int)document.EndnoteNumberFormat);
             writer.WriteNumber("footnoteStart", document.FootnoteNumberStart);
@@ -309,6 +333,19 @@ namespace Writersword.Modules.TextEditor.Services
             JsonSerializer.Serialize(writer, document.PageSettings);
             writer.WritePropertyName("columns");
             JsonSerializer.Serialize(writer, document.ColumnSettings);
+
+            // Последний раздел сверх листа и колонок и смена его параметров правкой:
+            // отклонение правки возвращает и рамку, и номера строк, и колонки.
+            if (document.FinalSection is not null)
+            {
+                writer.WritePropertyName("finalSection");
+                JsonSerializer.Serialize(writer, document.FinalSection);
+            }
+            if (document.PageSetupChange is not null)
+            {
+                writer.WritePropertyName("pageSetupChange");
+                JsonSerializer.Serialize(writer, document.PageSetupChange);
+            }
             writer.WritePropertyName("canvas");
             JsonSerializer.Serialize(writer, document.CanvasSettings);
             writer.WritePropertyName("styles");

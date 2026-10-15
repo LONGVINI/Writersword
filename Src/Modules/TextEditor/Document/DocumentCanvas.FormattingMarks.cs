@@ -30,7 +30,12 @@ namespace Writersword.Modules.TextEditor.Document
             ParagraphBlock? Tail = null,
             bool ContinuesParagraph = false,
             bool IsColumn = false,
-            BreakType Kind = BreakType.Page);
+            BreakType Kind = BreakType.Page,
+            BreakBlock? Block = null)
+        {
+            /// <summary>Разрыв вставлен или удалён правкой.</summary>
+            public bool HasRevision => Block is { } block && (block.Inserted is not null || block.Deleted is not null);
+        }
 
         /// <summary>Подпись отметки разрыва раздела — как у Word.</summary>
         private static string? SectionBreakLabel(BreakType kind) => kind switch
@@ -290,7 +295,9 @@ namespace Writersword.Modules.TextEditor.Document
             float labelWidth = labelFont.MeasureText(label);
             float labelGap = 3f;
 
-            float textRight = xPt + layout.LeftIndentPt + layout.TextAreaWidthPt;
+            // Последняя строка абзаца могла уйти в колонку другой ширины.
+            float textRight = xPt + layout.LeftIndentPt
+                + Rendering.SKTextRenderer.SliceAreaWidthPt(layout, layout.Lines.Count - 1);
 
             // Абзац кончается разрывом: пунктир с каждой стороны подписи — в четверть её
             // ширины, как у Word. Продолжается — до правого края текста.
@@ -450,14 +457,90 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         /// <summary>
+        /// Отметка разрыва, вставленного или удалённого правкой: пунктир во всю ширину
+        /// текста цветом автора, подпись со знаком «+» или «−», у удалённого подпись
+        /// перечёркнута — как правка текста.
+        /// </summary>
+        private void DrawRevisionBreakMark(
+            SKCanvas canvas, List<PageRect> pages, PageBreakMark mark,
+            int firstPage, int lastPage, float marginRight, float onePx)
+        {
+            if (mark.PageIndex < firstPage || mark.PageIndex > lastPage) return;
+            if (mark.PageIndex < 0 || mark.PageIndex >= pages.Count) return;
+            if (mark.Block is not { } block) return;
+
+            bool deleted = block.Deleted is not null;
+            var info = block.Deleted ?? block.Inserted;
+            var color = deleted
+                ? DeletedImageColor
+                : _styleResolver?.AuthorColor(info?.Author) ?? new SKColor(0x2E, 0x9E, 0x5B);
+
+            string baseLabel = SectionBreakLabel(mark.Kind) ?? (mark.IsColumn ? ColumnBreakLabel : PageBreakLabel);
+            string label = (deleted ? "− " : "+ ") + baseLabel;
+
+            var page = pages[mark.PageIndex];
+            float left = page.PadLeftPt + page.MarginLeftPt;
+            float right = page.PadLeftPt + page.WidthPt - marginRight + page.GutterShiftPt;
+            if (right <= left) return;
+
+            using var font = new SKFont(FormattingMarkTypeface, BreakLabelSizePt);
+            float labelWidth = font.MeasureText(label);
+            float y = mark.Ypt + FallbackLinePt * 0.5f;
+            float center = (left + right) / 2f;
+            float gap = labelWidth / 2f + 4f;
+
+            using var dash = SKPathEffect.CreateDash(new[] { 3f * onePx, 2f * onePx }, 0f);
+            using var line = new SKPaint
+            {
+                Color = color,
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = Math.Max(onePx, 1.2f),
+                PathEffect = dash
+            };
+            using var textPaint = new SKPaint { Color = color, IsAntialias = true };
+
+            if (right - left > labelWidth + 16f)
+            {
+                canvas.DrawLine(left, y, center - gap, y, line);
+                canvas.DrawLine(center + gap, y, right, y, line);
+
+                float textLeft = center - labelWidth / 2f;
+                canvas.DrawText(label, textLeft, y + 2.5f, SKTextAlign.Left, font, textPaint);
+
+                if (deleted)
+                {
+                    using var strike = new SKPaint
+                    {
+                        Color = color,
+                        IsAntialias = true,
+                        Style = SKPaintStyle.Stroke,
+                        StrokeWidth = Math.Max(onePx, 1f)
+                    };
+                    canvas.DrawLine(textLeft, y, textLeft + labelWidth, y, strike);
+                }
+            }
+            else
+            {
+                canvas.DrawLine(left, y, right, y, line);
+            }
+        }
+
+        /// <summary>
         /// Отметки явных разрывов страницы на видимых листах: пунктир во всю ширину
         /// текста с подписью посередине, как «Разрыв страницы» у Word.
         /// </summary>
-        private void DrawPageBreakMarks(SKCanvas canvas, List<PageRect> pages, int firstPage, int lastPage)
+        private void DrawPageBreakMarks(SKCanvas canvas, List<PageRect> pages, int firstPage, int lastPage, bool revisionsOnly = false)
         {
             List<PageBreakMark> marks;
             lock (_renderLock) marks = _breakMarks;
             if (marks.Count == 0) return;
+
+            // Разрывы, вставленные или удалённые правкой, при показе правок видны и без
+            // непечатаемых знаков — цветом автора, удалённый перечёркнут.
+            bool showRevisions = !ExportPassActive && !ReadingActive && DocVm is not null
+                && Rendering.RevisionDisplay.ShowsMarkup(DocVm.Document.RevisionView);
+            if (revisionsOnly && !showRevisions) return;
 
             var (_, _, marginRight, _) = GetPagePaddingPt();
             float onePx = OnePixelPt(canvas);
@@ -480,8 +563,18 @@ namespace Writersword.Modules.TextEditor.Document
 
             foreach (var mark in marks)
             {
-                // Разрыв внутри абзаца отмечен на строке самого абзаца (DrawInlineBreakMark).
-                if (mark.Tail is not null) continue;
+                bool revision = showRevisions && mark.HasRevision;
+                if (revisionsOnly && !revision) continue;
+
+                // Разрыв внутри абзаца отмечен на строке самого абзаца (DrawInlineBreakMark);
+                // правка разрыва без непечатаемых знаков — здесь, строкой под текстом.
+                if (mark.Tail is not null && !revisionsOnly) continue;
+
+                if (revision)
+                {
+                    DrawRevisionBreakMark(canvas, pages, mark, firstPage, lastPage, marginRight, onePx);
+                    continue;
+                }
 
                 string? sectionLabel = SectionBreakLabel(mark.Kind);
                 string label = sectionLabel ?? (mark.IsColumn ? ColumnBreakLabel : PageBreakLabel);

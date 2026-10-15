@@ -32,6 +32,90 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// <summary>Вид показывает текст как до правок.</summary>
         public static bool ShowsOriginal(RevisionView view) => view == RevisionView.Original;
 
+        // Двойники картинок и фигур со сменой вида для «Исходного документа»: копия
+        // с прежним видом. Двойник пересоздаётся, когда сменился вид объекта или его
+        // прежний вид.
+        private sealed class ObjectTwin
+        {
+            public string Key = string.Empty;
+            public BlockModel Block = null!;
+        }
+
+        private static readonly ConditionalWeakTable<BlockModel, ObjectTwin> Twins = new();
+        private static readonly ConditionalWeakTable<BlockModel, BlockModel> TwinOwners = new();
+        private static readonly object TwinsLock = new();
+
+        /// <summary>
+        /// Картинка или фигура для вёрстки и рисования. В «Исходном документе» объект,
+        /// которому правка сменила вид, показывается прежним: на прежнем месте, в
+        /// прежнем размере, с прежним поворотом и обрезкой — двойником с тем же Id.
+        /// Двойник только для показа: выделить и править его нельзя
+        /// (<see cref="IsDisplayTwin"/>).
+        /// </summary>
+        public static BlockModel DisplayObject(BlockModel block, RevisionView view)
+        {
+            if (view != RevisionView.Original || block is not IAppearanceTracked { Change: { } change })
+                return block;
+
+            string key = change.Previous + "\u0001" + Services.ObjectAppearance.Capture(block)
+                         + "\u0001" + (block as ImageBlock)?.ImageFileName;
+
+            lock (TwinsLock)
+            {
+                if (Twins.TryGetValue(block, out var cached) && cached.Key == key)
+                    return cached.Block;
+
+                var twin = Services.DocumentCloner.CloneBlock(block);
+                Services.ObjectAppearance.Restore(twin, change.Previous);
+
+                Twins.AddOrUpdate(block, new ObjectTwin { Key = key, Block = twin });
+                TwinOwners.AddOrUpdate(twin, block);
+                return twin;
+            }
+        }
+
+        /// <summary>Картинка для вёрстки и рисования — см. <see cref="DisplayObject"/>.</summary>
+        public static ImageBlock DisplayImage(ImageBlock image, RevisionView view)
+            => DisplayObject(image, view) as ImageBlock ?? image;
+
+        /// <summary>Фигура для вёрстки и рисования — см. <see cref="DisplayObject"/>.</summary>
+        public static ShapeBlock DisplayShape(ShapeBlock shape, RevisionView view)
+            => DisplayObject(shape, view) as ShapeBlock ?? shape;
+
+        /// <summary>Блок — двойник объекта для показа прежнего вида, а не сам объект документа.</summary>
+        public static bool IsDisplayTwin(BlockModel block)
+        {
+            lock (TwinsLock) return TwinOwners.TryGetValue(block, out _);
+        }
+
+        /// <summary>Объект документа, которому принадлежит двойник; не двойник — сам блок.</summary>
+        public static BlockModel RealObject(BlockModel block)
+        {
+            lock (TwinsLock) return TwinOwners.TryGetValue(block, out var owner) ? owner : block;
+        }
+
+        /// <summary>
+        /// Блоки потока для вёрстки: в «Исходном документе» картинки и фигуры со
+        /// сменой вида заменены двойниками с прежним видом. Без таких объектов —
+        /// тот же список.
+        /// </summary>
+        public static List<BlockModel> DisplayBlocks(List<BlockModel> blocks, RevisionView view)
+        {
+            if (view != RevisionView.Original) return blocks;
+
+            List<BlockModel>? shown = null;
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                var block = blocks[i];
+                if (block is not IAppearanceTracked { Change: not null }) continue;
+
+                shown ??= new List<BlockModel>(blocks);
+                shown[i] = DisplayObject(block, view);
+            }
+
+            return shown ?? blocks;
+        }
+
         /// <summary>Фрагмент спрятан правкой при этом виде.</summary>
         public static bool IsRunHidden(RunProperties? props, RevisionView view)
         {
@@ -52,6 +136,24 @@ namespace Writersword.Modules.TextEditor.Rendering
             {
                 RevisionView.Original => props.MarkInserted is not null,
                 RevisionView.SimpleMarkup or RevisionView.NoMarkup => props.MarkDeleted is not null,
+                _ => false
+            };
+        }
+
+        /// <summary>
+        /// Блок, вставленный или удалённый правкой целиком (плавающая картинка,
+        /// фигура, разрыв), спрятан при этом виде: вставленный — в «Исходном
+        /// документе», удалённый — без пометок и в простой разметке. Спрятанный разрыв
+        /// и лист не начинает.
+        /// </summary>
+        public static bool IsBlockHidden(Models.Document.IRevisionMarked block, RevisionView view)
+        {
+            if (block.Inserted is null && block.Deleted is null) return false;
+
+            return view switch
+            {
+                RevisionView.Original => block.Inserted is not null,
+                RevisionView.SimpleMarkup or RevisionView.NoMarkup => block.Deleted is not null,
                 _ => false
             };
         }

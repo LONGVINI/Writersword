@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
@@ -9,12 +9,16 @@
 	<!--
 	    Вкладка «Рецензирование».
 
-	    Три группы, и в каждой одно дело:
-	      «Запись» — включена ли запись исправлений и чьим именем подписываются правки;
-	      «Показ»  — как правки видны на листе: четыре вида Word кнопками, а не
-	                 списком, — выбранный вид виден сразу, без раскрытия;
-	      «Правки» — принять, отклонить, все сразу, назад, далее и сколько правок
-	                 осталось.
+	    Группы, и в каждой одно дело:
+	      «Запись»    — включена ли запись исправлений и чьим именем подписываются правки;
+	      «Показ»     — как правки видны на листе: четыре вида Word кнопками, а не
+	                    списком, — выбранный вид виден сразу, без раскрытия;
+	      «Правки»    — принять, отклонить, все сразу, назад, далее и сколько правок
+	                    осталось;
+	      «Сравнение» — различия с присланным файлом размечаются правками, будто
+	                    запись была включена;
+	      «Защита»    — запись не выключить, правки не принять и не отклонить, пока
+	                    защиту не снимут.
 
 	    Кнопки, группы и тумблеры ленты живут в Styles/Controls/Ribbon.axaml — одни
 	    на все вкладки. Здесь только подпись поля имени и подпись счётчика.
@@ -65,8 +69,9 @@
 						<StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
 							<ToggleButton Classes="RibbonToggle RibbonToggleLarge"
 							              IsChecked="{Binding IsTrackRevisions, Mode=TwoWay}"
+							              IsEnabled="{Binding CanToggleTrackRevisions}"
 							              behaviours:TooltipBehavior.Tip="Исправления"
-							              behaviours:TooltipBehavior.Description="Включено — каждая правка запоминается: набранное отмечается вставкой, удалённое остаётся в тексте зачёркнутым, смена оформления помнит прежнее. Правки можно принять или отклонить по одной или все сразу. Запись сохраняется в документе и переходит в Word">
+							              behaviours:TooltipBehavior.Description="Включено — каждая правка запоминается: набранное отмечается вставкой, удалённое остаётся в тексте зачёркнутым, смена оформления помнит прежнее. Правки можно принять или отклонить по одной или все сразу. Запись сохраняется в документе и переходит в Word. Под защитой («Защита») запись не выключить">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="20" Height="20"
 									          Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
@@ -112,6 +117,7 @@
 									<StackPanel Orientation="Horizontal" Spacing="6" Margin="8">
 										<ToggleButton Classes="RibbonToggle RibbonToggleLarge"
 										              IsChecked="{Binding IsTrackRevisions, Mode=TwoWay}"
+										              IsEnabled="{Binding CanToggleTrackRevisions}"
 										              behaviours:TooltipBehavior.Tip="Исправления">
 											<StackPanel Spacing="2" HorizontalAlignment="Center">
 												<PathIcon Width="20" Height="20"
@@ -261,9 +267,9 @@
 
 							<Button Classes="RibbonBtnLarge"
 							        Command="{Binding AcceptCommand}"
-							        IsEnabled="{Binding HasRevisions}"
+							        IsEnabled="{Binding CanResolve}"
 							        behaviours:TooltipBehavior.Tip="Принять"
-							        behaviours:TooltipBehavior.Description="Принимает правку под кареткой или все правки в выделении и переходит к следующей. Принятая вставка становится обычным текстом, принятое удаление убирает текст">
+							        behaviours:TooltipBehavior.Description="Принимает правку под кареткой или все правки в выделении и переходит к следующей. Принятая вставка становится обычным текстом, принятое удаление убирает текст. Под защитой недоступно">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="20" Height="20"
 									          Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
@@ -272,9 +278,9 @@
 							</Button>
 							<Button Classes="RibbonBtnLarge"
 							        Command="{Binding RejectCommand}"
-							        IsEnabled="{Binding HasRevisions}"
+							        IsEnabled="{Binding CanResolve}"
 							        behaviours:TooltipBehavior.Tip="Отклонить"
-							        behaviours:TooltipBehavior.Description="Отклоняет правку под кареткой или все правки в выделении и переходит к следующей. Отклонённая вставка уходит, отклонённое удаление возвращает текст, оформление становится прежним">
+							        behaviours:TooltipBehavior.Description="Отклоняет правку под кареткой или все правки в выделении и переходит к следующей. Отклонённая вставка уходит, отклонённое удаление возвращает текст, оформление становится прежним. Под защитой недоступно">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="20" Height="20"
 									          Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
@@ -287,7 +293,7 @@
 								        MinHeight="24" Height="24"
 								        HorizontalContentAlignment="Left"
 								        Command="{Binding AcceptAllCommand}"
-								        IsEnabled="{Binding HasRevisions}"
+								        IsEnabled="{Binding CanResolve}"
 								        behaviours:TooltipBehavior.Tip="Принять все"
 								        behaviours:TooltipBehavior.Description="Принимает все правки документа">
 									<StackPanel Orientation="Horizontal" Spacing="5">
@@ -300,7 +306,7 @@
 								        MinHeight="24" Height="24"
 								        HorizontalContentAlignment="Left"
 								        Command="{Binding RejectAllCommand}"
-								        IsEnabled="{Binding HasRevisions}"
+								        IsEnabled="{Binding CanResolve}"
 								        behaviours:TooltipBehavior.Tip="Отклонить все"
 								        behaviours:TooltipBehavior.Description="Отклоняет все правки документа: он возвращается к исходному виду">
 									<StackPanel Orientation="Horizontal" Spacing="5">
@@ -371,7 +377,7 @@
 											</ToggleButton>
 											<Button Classes="RibbonBtnLarge"
 											        Command="{Binding AcceptCommand}"
-											        IsEnabled="{Binding HasRevisions}"
+											        IsEnabled="{Binding CanResolve}"
 											        behaviours:TooltipBehavior.Tip="Принять">
 												<StackPanel Spacing="2" HorizontalAlignment="Center">
 													<PathIcon Width="20" Height="20"
@@ -381,7 +387,7 @@
 											</Button>
 											<Button Classes="RibbonBtnLarge"
 											        Command="{Binding RejectCommand}"
-											        IsEnabled="{Binding HasRevisions}"
+											        IsEnabled="{Binding CanResolve}"
 											        behaviours:TooltipBehavior.Tip="Отклонить">
 												<StackPanel Spacing="2" HorizontalAlignment="Center">
 													<PathIcon Width="20" Height="20"
@@ -414,13 +420,13 @@
 											<Button Classes="RibbonBtn"
 											        MinHeight="24" Height="24"
 											        Command="{Binding AcceptAllCommand}"
-											        IsEnabled="{Binding HasRevisions}">
+											        IsEnabled="{Binding CanResolve}">
 												<TextBlock Text="Принять все" FontSize="11" VerticalAlignment="Center"/>
 											</Button>
 											<Button Classes="RibbonBtn"
 											        MinHeight="24" Height="24"
 											        Command="{Binding RejectAllCommand}"
-											        IsEnabled="{Binding HasRevisions}">
+											        IsEnabled="{Binding CanResolve}">
 												<TextBlock Text="Отклонить все" FontSize="11" VerticalAlignment="Center"/>
 											</Button>
 											<TextBlock Classes="RevisionCount"
@@ -479,6 +485,56 @@
 								</StackPanel>
 							</Button>
 						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══ СРАВНЕНИЕ ════════════════════════════════════════════
+				     Рукопись поправили без записи исправлений и вернули файлом:
+				     различия с файлом ложатся в рукопись правками, подписанными
+				     автором файла, — дальше их принимают и отклоняют как обычные.
+				     Одна кнопка, группа не сворачивается. -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom"
+						           Classes="RibbonGroupLabel"
+						           Text="Сравнение"/>
+						<Button Classes="RibbonBtnLarge"
+						        VerticalAlignment="Top"
+						        Command="{Binding CompareCommand}"
+						        IsEnabled="{Binding CanCompare}"
+						        behaviours:TooltipBehavior.Tip="Сравнить с файлом"
+						        behaviours:TooltipBehavior.Description="Выберите файл (.docx или .txt), который вернули после правки без записи исправлений. Всё, чем он отличается от рукописи, будет размечено правками: вставленное, удалённое, сменённое оформление слов. «Принять все» даст текст файла, «Отклонить все» вернёт рукопись. Непринятые правки рукописи перед сравнением принимаются; всё сравнение отменяется одним Ctrl+Z">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Width="20" Height="20"
+								          Data="M18 23H4c-1.1 0-2-.9-2-2V7h2v14h14v2zM15 1H8c-1.1 0-1.99.9-1.99 2L6 17c0 1.1.89 2 1.99 2H19c1.1 0 2-.9 2-2V7l-6-6zm1.5 14h-6v-2h6v2zm0-6h-2v2h-2V9h-2V7h2V5h2v2h2v2z"/>
+								<TextBlock Text="Сравнить" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</Button>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══ ЗАЩИТА ═══════════════════════════════════════════════
+				     Как «Ограничить редактирование → Исправления» в Word: пока
+				     защита стоит, запись исправлений не выключить, правки не
+				     принять и не отклонить. Пароль необязателен; защита и пароль
+				     уходят в .docx и понятны Word. Одна кнопка, группа не
+				     сворачивается. -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom"
+						           Classes="RibbonGroupLabel"
+						           Text="Защита"/>
+						<ToggleButton Classes="RibbonToggle RibbonToggleLarge"
+						              VerticalAlignment="Top"
+						              IsChecked="{Binding IsRevisionLocked, Mode=TwoWay}"
+						              behaviours:TooltipBehavior.Tip="{Binding LockTitle}"
+						              behaviours:TooltipBehavior.Description="Защита записи исправлений: любая правка записывается, выключить запись, принять или отклонить правки нельзя, пока защиту не снимут. Отдайте документ так — каждая правка вернётся видимой. Пароль необязателен: без него защиту снимет любой, с ним — только знающий пароль, в Word тоже">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Width="20" Height="20"
+								          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+								<TextBlock Text="{Binding LockTitle}" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</ToggleButton>
 					</DockPanel>
 				</Border>
 
