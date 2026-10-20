@@ -216,6 +216,13 @@ namespace Writersword.Modules.Characters.Views.Tabs
             block.BeginTextEdit();
         }
 
+        private void OnDescriptionIconClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is Button { Parent: Panel slot })
+                slot.Children.OfType<TextBox>().FirstOrDefault()?.Focus();
+        }
+
         private void OnInlineLostFocus(object? sender, FocusChangedEventArgs e)
         {
             BlockOf(sender)?.CommitTextEdit();

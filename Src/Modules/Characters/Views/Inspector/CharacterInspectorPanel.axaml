@@ -608,7 +608,8 @@
 					         FontSize="14" FontWeight="Medium"
 					         Padding="8,6"
 					         LostFocus="OnNameLostFocus"
-					         KeyDown="OnNameKeyDown"/>
+					         KeyDown="OnNameKeyDown"
+					         behaviours:SelectAllBehavior.Enabled="True"/>
 					<TextBlock Text="{Binding SelectionCaption}"
 					           FontSize="10.5"
 					           IsVisible="{Binding IsMultiple}"

@@ -700,6 +700,18 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// <summary>Свойства рисунка Word, которых нет в модели картинки.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public WordDrawingInfo? WordDrawing { get; set; }
+
+        /// <summary>
+        /// Диаграмма. Не null — блок показывает не файл картинки, а диаграмму по этим
+        /// данным (<see cref="ImageFileName"/> у неё пустой). Место в тексте, обтекание,
+        /// размер, поворот и рамка — общие с картинкой.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public ChartModel? Chart { get; set; }
+
+        /// <summary>Блок — диаграмма, а не картинка из файла.</summary>
+        [JsonIgnore]
+        public bool IsChart => Chart is not null;
     }
 
     /// <summary>

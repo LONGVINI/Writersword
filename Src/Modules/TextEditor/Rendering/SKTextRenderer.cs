@@ -667,6 +667,16 @@ namespace Writersword.Modules.TextEditor.Rendering
             // LeftIndentPt только позиционирует таблицу — не ограничивает ширину.
             // За правый край страницы выходить можно — рендер обрежет по клипу страницы.
             var colWidthsPt = ComputeColumnWidths(table, textAreaWidthPt, colCount);
+
+            // Столбцы, спрятанные правкой при этом виде, места не занимают: таблица
+            // становится уже, как у Word (RevisionHiddenColumns). Текст их ячеек
+            // верстается по прежней ширине — иначе он вытянулся бы в столбик и раздул
+            // строку, — но в высоту строки не идёт.
+            var measureWidthsPt = new List<float>(colWidthsPt);
+            if (RevisionHiddenColumns(table, styles.RevisionView) is { } hiddenColumns)
+                for (int c = 0; c < colCount && c < colWidthsPt.Count && c < hiddenColumns.Length; c++)
+                    if (hiddenColumns[c]) colWidthsPt[c] = 0f;
+
             float tableWidthPt = 0f;
             foreach (var w in colWidthsPt) tableWidthPt += w;
 
@@ -770,6 +780,16 @@ namespace Writersword.Modules.TextEditor.Rendering
                     for (int c = col; c < col + cell.ColSpan && c < colCount; c++)
                         cellWidthPt += colWidthsPt[c];
 
+                    // Ячейка спрятанного столбца: на листе её нет, текст — по прежней ширине.
+                    bool hiddenCell = cellWidthPt <= 0.01f;
+                    float textCellWidthPt = cellWidthPt;
+                    if (hiddenCell)
+                    {
+                        textCellWidthPt = 0f;
+                        for (int c = col; c < col + cell.ColSpan && c < colCount; c++)
+                            textCellWidthPt += measureWidthsPt[c];
+                    }
+
                     // Отступы внутри ячейки ужимаются вместе с колонками: иначе на
                     // уменьшенной таблице поля остаются печатными и съедают текст.
                     float contentScale = ReadingContentScale;
@@ -790,7 +810,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // Вычитание рамок целиком делало каждую ячейку на пункт уже вордовской,
                     // и слово, которое у Word помещается в строку, уходило на следующую.
                     float contentWidthPt = Math.Max(
-                        cellWidthPt
+                        textCellWidthPt
                             - Math.Max(padLeftPt, leftBorderW / 2f)
                             - Math.Max(padRightPt, rightBorderW / 2f),
                         1f);
@@ -913,7 +933,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     measured.Add(measure);
 
                     // Высота строки определяется самой высокой ячейкой без RowSpan.
-                    if (cell.RowSpan == 1 && measure.OwnHeightPt > rowHeight)
+                    if (cell.RowSpan == 1 && measure.OwnHeightPt > rowHeight && !hiddenCell)
                         rowHeight = measure.OwnHeightPt;
                 }
 
@@ -935,6 +955,14 @@ namespace Writersword.Modules.TextEditor.Rendering
                 rowHeightsPt[row] = rowHeight;
             }
 
+            // Строки, спрятанные правкой при этом виде: удалённые — без пометок и в
+            // простой разметке, вставленные — в исходном документе. Как у Word, строки
+            // нет на листе: высота её нулевая, и объединение её не растягивает.
+            var hiddenRows = RevisionHiddenRows(table, styles.RevisionView);
+            if (hiddenRows is not null)
+                for (int r = 0; r < rowCount; r++)
+                    if (hiddenRows[r]) rowHeightsPt[r] = 0f;
+
             // Объединённая по вертикали ячейка растягивает свои строки, когда её
             // содержимому не хватает их суммарной высоты.
             //
@@ -945,7 +973,8 @@ namespace Writersword.Modules.TextEditor.Rendering
             // «объединение съело содержимое ячеек».
             foreach (var measure in measured)
             {
-                if (measure.Cell.RowSpan <= 1) continue;
+                // Ячейка спрятанного столбца строки не растягивает: её на листе нет.
+                if (measure.Cell.RowSpan <= 1 || measure.WidthPt <= 0.01f) continue;
 
                 int firstRow = measure.Row;
                 int lastRow = Math.Min(firstRow + measure.Cell.RowSpan, rowCount) - 1;
@@ -961,14 +990,18 @@ namespace Writersword.Modules.TextEditor.Rendering
                 // Недостача делится поровну между строками объединения: вся прибавка
                 // на одной строке перекосила бы её соседей справа и слева от
                 // объединённой ячейки. Строки точной высоты не растут.
+                bool Growable(int r)
+                    => !(table.IsRowHeightExact(r) && table.GetRowMinHeightPt(r) > 0)
+                       && !(hiddenRows is not null && hiddenRows[r]);
+
                 int growable = 0;
                 for (int r = firstRow; r <= lastRow; r++)
-                    if (!(table.IsRowHeightExact(r) && table.GetRowMinHeightPt(r) > 0)) growable++;
+                    if (Growable(r)) growable++;
                 if (growable == 0) continue;
 
                 float sharePt = deficitPt / growable;
                 for (int r = firstRow; r <= lastRow; r++)
-                    if (!(table.IsRowHeightExact(r) && table.GetRowMinHeightPt(r) > 0))
+                    if (Growable(r))
                         rowHeightsPt[r] += sharePt;
             }
 
@@ -1041,6 +1074,101 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             tableLayout.TotalHeightPt = tableY;
             return tableLayout;
+        }
+
+        /// <summary>
+        /// Столбцы таблицы, спрятанные правкой при этом виде показа: столбец, каждая
+        /// ячейка которого удалена, не виден без пометок и в простой разметке; столбец,
+        /// каждая ячейка которого вставлена, — в исходном документе. Ячейка, накрывающая
+        /// ещё и соседний столбец, столбец не прячет. Null — спрятанных столбцов нет.
+        /// </summary>
+        public static bool[]? RevisionHiddenColumns(TableBlock table, Models.Inline.RevisionView view)
+        {
+            if (view == Models.Inline.RevisionView.AllMarkup) return null;
+
+            bool original = view == Models.Inline.RevisionView.Original;
+            bool any = false;
+            foreach (var cell in table.Cells)
+            {
+                if ((original ? cell.Inserted : cell.Deleted) is null) continue;
+                any = true;
+                break;
+            }
+            if (!any) return null;
+
+            int columnCount = table.ColumnCount;
+            var hidden = new bool[columnCount];
+            bool anyHidden = false;
+
+            for (int c = 0; c < columnCount; c++)
+            {
+                bool all = true;
+                bool seen = false;
+                for (int r = 0; r < table.RowCount; r++)
+                {
+                    var cell = table.GetCell(r, c);
+                    if (cell is null) continue;
+                    seen = true;
+                    if (cell.ColSpan > 1 || (original ? cell.Inserted : cell.Deleted) is null) { all = false; break; }
+                }
+
+                hidden[c] = seen && all;
+                anyHidden |= hidden[c];
+            }
+
+            // Строки, где удалена каждая ячейка, — это удалённые строки, а не столбцы:
+            // таблица из одного удалённого столбца прячется строками.
+            if (anyHidden)
+            {
+                bool allHidden = true;
+                foreach (bool h in hidden) allHidden &= h;
+                if (allHidden) return null;
+            }
+
+            return anyHidden ? hidden : null;
+        }
+
+        /// <summary>
+        /// Строки таблицы, спрятанные правкой при этом виде показа: строка, все ячейки
+        /// которой удалены, не видна без пометок и в простой разметке; строка, все
+        /// ячейки которой вставлены, — в исходном документе. Null — спрятанных строк нет.
+        /// Строка, целиком накрытая объединением сверху, своих ячеек не имеет и не
+        /// прячется.
+        /// </summary>
+        public static bool[]? RevisionHiddenRows(TableBlock table, Models.Inline.RevisionView view)
+        {
+            if (view == Models.Inline.RevisionView.AllMarkup) return null;
+
+            bool original = view == Models.Inline.RevisionView.Original;
+            bool any = false;
+            foreach (var cell in table.Cells)
+            {
+                if ((original ? cell.Inserted : cell.Deleted) is null) continue;
+                any = true;
+                break;
+            }
+            if (!any) return null;
+
+            int rowCount = table.RowCount;
+            var has = new bool[rowCount];
+            var hidden = new bool[rowCount];
+            for (int r = 0; r < rowCount; r++) hidden[r] = true;
+
+            foreach (var cell in table.Cells)
+            {
+                if (cell.Row < 0 || cell.Row >= rowCount) continue;
+                has[cell.Row] = true;
+                if ((original ? cell.Inserted : cell.Deleted) is null) hidden[cell.Row] = false;
+            }
+
+            bool anyHidden = false;
+            for (int r = 0; r < rowCount; r++)
+            {
+                hidden[r] &= has[r];
+                anyHidden |= hidden[r];
+            }
+
+            return anyHidden ? hidden : null;
         }
 
         /// <summary>
@@ -1601,7 +1729,7 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                     case ImageBlock image:
                     {
-                        var bitmap = PrintImageResolver?.Invoke(image.ImageFileName);
+                        var bitmap = PrintImageOf(image);
                         if (bitmap is not null)
                             FloatingObjectRenderer.DrawImage(canvas, image, rect, bitmap);
                         break;
@@ -1661,6 +1789,8 @@ namespace Writersword.Modules.TextEditor.Rendering
             Services.NoteNumbering? notes = null,
             List<PageNoteRule>? noteRules = null)
         {
+            LastParityBreaks.Clear();
+
             float pageWidthPt = MmToPt(pageSettings.GetPhysicalWidthMm());
             float pageHeightPt = MmToPt(pageSettings.GetPhysicalHeightMm());
             float marginLeftPt = MmToPt(pageSettings.MarginLeftMm + pageSettings.MarginGutterMm);
@@ -2035,13 +2165,18 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                         // Раздел «с чётной» или «с нечётной» страницы: если новый лист не
                         // той чётности, Word оставляет пустой лист и начинает со следующего.
-                        if (NeedsBlankPageBefore(bb.BreakType, pageLayout.Pages.Count + 1))
+                        // Чётность — по печатаемому номеру (SettleParity).
+                        bool blankBefore = BlankPageBefore(bb, pageLayout.Pages.Count + 1, ParityDecisions);
+                        if (blankBefore)
                         {
                             pageLayout.Pages.Add(currentPage);
                             currentPage = CreateSectionPage(pageWidthPt, pageHeightPt,
                                                      marginLeftPt, marginTopPt,
                                                      sectionTextWidthPt, textHeightPt);
                         }
+
+                        if (bb.BreakType is BreakType.SectionEvenPage or BreakType.SectionOddPage)
+                            LastParityBreaks.Add(new ParityBreak(bb.Id, bb.BreakType, pageLayout.Pages.Count, blankBefore));
 
                         OpenColumnRegion();
                         continue;
@@ -2695,7 +2830,7 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                     case ImageBlock image:
                     {
-                        var bitmap = PrintImageResolver?.Invoke(image.ImageFileName);
+                        var bitmap = PrintImageOf(image);
                         if (bitmap is not null)
                             FloatingObjectRenderer.DrawImage(canvas, image, rect, bitmap);
                         break;
@@ -2710,6 +2845,18 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// подмены статического рендера.
         /// </summary>
         public static Func<string, SKImage?>? PrintImageResolver { get; set; }
+
+        /// <summary>
+        /// Образ картинки для печати: у диаграммы — её растр в разрешении печати, у
+        /// картинки — файл из хранилища проекта через <see cref="PrintImageResolver"/>.
+        /// </summary>
+        public static SKImage? PrintImageOf(ImageBlock image)
+        {
+            if (image.Chart is { } chart)
+                return Charts.ChartImageCache.Get(chart, image.WidthPt, image.HeightPt, Charts.ChartImageCache.PrintPixelsPerPoint);
+
+            return PrintImageResolver?.Invoke(image.ImageFileName);
+        }
 
         /// <summary>
         /// Сдвиг переплёта у печатаемого листа, в пунктах: отрицательный, когда переплёт
@@ -6219,6 +6366,20 @@ namespace Writersword.Modules.TextEditor.Rendering
             // делится поровну сверху и снизу, как и прежде.
             float lineHeightBase = maxTop + maxDescent;
             float lineHeight = lineSpacing.Resolve(maxTop, maxDescent, 0f);
+
+            // Множитель интервала («1,15», «двойной») у строки, которую поднял объект,
+            // Word прибавляет от шрифта строки, а не от высоты объекта: диаграмма в
+            // 252 пт при «1,15» даёт строку в 252 пт и прибавку в 0,15 строки текста, а
+            // не 290 пт. Иначе каждая такая строка была выше вордовской на 15 % своей
+            // высоты, и картинки уезжали на следующий лист там, где у Word помещались.
+            if (lineHasObject && maxObjectHeightPt > 0f
+                && lineSpacing.Rule == Models.Styles.LineSpacingRule.Auto
+                && lineSpacing.Value > 0f && Math.Abs(lineSpacing.Value - 1f) > 0.001f)
+            {
+                float fontLine = maxTextAscent + maxTextDescent;
+                if (maxObjectHeightPt >= fontLine)
+                    lineHeight = Math.Max(lineHeightBase + fontLine * (lineSpacing.Value - 1f), 1f);
+            }
             float baseline = (lineHeight - lineHeightBase) / 2f + maxTop;
 
             // Вытеснение строки под обтекаемый объект: зазор входит в высоту параграфа.
@@ -6494,6 +6655,15 @@ namespace Writersword.Modules.TextEditor.Rendering
         public static double? PrintSheetGutterMm(SKPageContent page)
             => PrintPageSections.TryGetValue(page, out var info) ? info.Layout?.Page?.MarginGutterMm : null;
 
+        /// <summary>
+        /// Левое и правое поле листа раздела на листе печати, мм; null — лист живёт по
+        /// параметрам страницы документа.
+        /// </summary>
+        public static (double LeftMm, double RightMm)? PrintSheetSideMarginsMm(SKPageContent page)
+            => PrintPageSections.TryGetValue(page, out var info) && info.Layout?.Page is { } sheet
+                ? (sheet.MarginLeftMm, sheet.MarginRightMm)
+                : null;
+
         /// <summary>Рамка страницы раздела на листе печати.</summary>
         private static void RenderPrintPageBorders(SKCanvas canvas, SKPageContent page, bool behind)
         {
@@ -6670,6 +6840,76 @@ namespace Writersword.Modules.TextEditor.Rendering
             BreakType.SectionOddPage => pageNumber % 2 == 0,
             _ => false
         };
+
+        /// <summary>
+        /// Разрыв раздела «с чётной» или «с нечётной» страницы в проходе раскладки: на
+        /// каком листе начался раздел и был ли перед ним оставлен пустой лист.
+        /// </summary>
+        public readonly record struct ParityBreak(Guid BreakId, BreakType Type, int FirstPage, bool BlankInserted);
+
+        /// <summary>
+        /// Пустой лист перед разделом «с чётной» или «с нечётной» страницы: решение
+        /// прошлого прохода (<paramref name="decisions"/>), а без него — по номеру листа
+        /// по порядку.
+        /// </summary>
+        public static bool BlankPageBefore(BreakBlock sectionBreak, int pageNumber, IReadOnlyDictionary<Guid, bool>? decisions)
+            => decisions is not null && decisions.TryGetValue(sectionBreak.Id, out bool decided)
+                ? decided && sectionBreak.BreakType is BreakType.SectionEvenPage or BreakType.SectionOddPage
+                : NeedsBlankPageBefore(sectionBreak.BreakType, pageNumber);
+
+        /// <summary>
+        /// Чётность раздела — по номеру, который печатается на его первом листе, как у
+        /// Word, а не по листу по порядку: счёт, начатый заново или сбитый пустыми
+        /// листами, меняет чётность. Номера известны только после раскладки, поэтому
+        /// проход ставит пустые листы по прошлому решению, а здесь решения сверяются с
+        /// номерами готовых листов. Раздел не той чётности при сплошном счёте получает
+        /// обратное решение: пустой лист убирается или ставится, и номер сдвигается на
+        /// единицу. При счёте, начатом заново, пустой лист номер не меняет — решение
+        /// остаётся прежним.
+        /// </summary>
+        /// <param name="breaks">Разрывы прохода.</param>
+        /// <param name="numberOf">Печатаемый номер листа по его индексу; null — неизвестен.</param>
+        /// <param name="decisions">Решения: разрыв → нужен ли пустой лист перед разделом.</param>
+        /// <returns>true — решение сменилось, раскладку нужно повторить.</returns>
+        public static bool SettleParity(
+            IReadOnlyList<ParityBreak> breaks, Func<int, int?> numberOf, Dictionary<Guid, bool> decisions)
+        {
+            bool changed = false;
+
+            foreach (var parity in breaks)
+            {
+                if (numberOf(parity.FirstPage) is not int number) continue;
+
+                bool wantEven = parity.Type == BreakType.SectionEvenPage;
+                if ((number % 2 == 0) == wantEven)
+                {
+                    decisions[parity.BreakId] = parity.BlankInserted;
+                    continue;
+                }
+
+                int? previous = parity.FirstPage > 0 ? numberOf(parity.FirstPage - 1) : null;
+                bool continuing = previous is int before && before + 1 == number;
+                if (!continuing)
+                {
+                    decisions[parity.BreakId] = parity.BlankInserted;
+                    continue;
+                }
+
+                decisions[parity.BreakId] = !parity.BlankInserted;
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        /// <summary>Разрывы «с чётной» и «с нечётной» страницы последней раскладки печати.</summary>
+        public List<ParityBreak> LastParityBreaks { get; } = new();
+
+        /// <summary>
+        /// Решения о пустых листах перед разделами «с чётной» и «с нечётной» страницы для
+        /// раскладки печати (<see cref="SettleParity"/>); null — по номеру листа по порядку.
+        /// </summary>
+        public Dictionary<Guid, bool>? ParityDecisions { get; set; }
 
         /// <summary>
         /// Текст слева направо, которому нужен набор HarfBuzz: индийские письменности,

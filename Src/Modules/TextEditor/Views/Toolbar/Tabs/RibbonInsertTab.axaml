@@ -357,6 +357,78 @@
 										</Flyout>
 									</SplitButton.Flyout>
 								</SplitButton>
+								<SplitButton Classes="RibbonSplit"
+								             Command="{Binding InsertChartCommand}"
+								             CommandParameter="Column"
+								             behaviours:TooltipBehavior.Tip="Диаграмма: вид, данные и оформление в окне диаграммы">
+									<SplitButton.Content>
+										<StackPanel Spacing="2" HorizontalAlignment="Center">
+											<PathIcon Data="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z" Width="20" Height="20"/>
+											<TextBlock Text="Диаграмма" FontSize="9" TextAlignment="Center"/>
+										</StackPanel>
+									</SplitButton.Content>
+									<SplitButton.Flyout>
+										<MenuFlyout>
+											<MenuItem Header="Гистограмма" Command="{Binding InsertChartCommand}" CommandParameter="Column">
+												<MenuItem.Icon>
+													<dialogs:ChartKindIcon Kind="Column" Width="20" Height="15"/>
+												</MenuItem.Icon>
+											</MenuItem>
+											<MenuItem Header="Линейчатая" Command="{Binding InsertChartCommand}" CommandParameter="Bar">
+												<MenuItem.Icon>
+													<dialogs:ChartKindIcon Kind="Bar" Width="20" Height="15"/>
+												</MenuItem.Icon>
+											</MenuItem>
+											<MenuItem Header="График" Command="{Binding InsertChartCommand}" CommandParameter="Line">
+												<MenuItem.Icon>
+													<dialogs:ChartKindIcon Kind="Line" Width="20" Height="15"/>
+												</MenuItem.Icon>
+											</MenuItem>
+											<MenuItem Header="С областями" Command="{Binding InsertChartCommand}" CommandParameter="Area">
+												<MenuItem.Icon>
+													<dialogs:ChartKindIcon Kind="Area" Width="20" Height="15"/>
+												</MenuItem.Icon>
+											</MenuItem>
+											<MenuItem Header="Круговая" Command="{Binding InsertChartCommand}" CommandParameter="Pie">
+												<MenuItem.Icon>
+													<dialogs:ChartKindIcon Kind="Pie" Width="20" Height="15"/>
+												</MenuItem.Icon>
+											</MenuItem>
+											<MenuItem Header="Кольцевая" Command="{Binding InsertChartCommand}" CommandParameter="Doughnut">
+												<MenuItem.Icon>
+													<dialogs:ChartKindIcon Kind="Doughnut" Width="20" Height="15"/>
+												</MenuItem.Icon>
+											</MenuItem>
+											<MenuItem Header="Точечная" Command="{Binding InsertChartCommand}" CommandParameter="Scatter">
+												<MenuItem.Icon>
+													<dialogs:ChartKindIcon Kind="Scatter" Width="20" Height="15"/>
+												</MenuItem.Icon>
+											</MenuItem>
+											<MenuItem Header="Пузырьковая" Command="{Binding InsertChartCommand}" CommandParameter="Bubble">
+												<MenuItem.Icon>
+													<dialogs:ChartKindIcon Kind="Bubble" Width="20" Height="15"/>
+												</MenuItem.Icon>
+											</MenuItem>
+											<MenuItem Header="Лепестковая" Command="{Binding InsertChartCommand}" CommandParameter="Radar">
+												<MenuItem.Icon>
+													<dialogs:ChartKindIcon Kind="Radar" Width="20" Height="15"/>
+												</MenuItem.Icon>
+											</MenuItem>
+											<MenuItem Header="Биржевая" Command="{Binding InsertChartCommand}" CommandParameter="Stock">
+												<MenuItem.Icon>
+													<dialogs:ChartKindIcon Kind="Stock" Width="20" Height="15"/>
+												</MenuItem.Icon>
+											</MenuItem>
+											<MenuItem Header="Комбинированная" Command="{Binding InsertChartCommand}" CommandParameter="Combo">
+												<MenuItem.Icon>
+													<dialogs:ChartKindIcon Kind="Column" Combo="True" Width="20" Height="15"/>
+												</MenuItem.Icon>
+											</MenuItem>
+											<Separator/>
+											<MenuItem Header="Из таблицы…" Command="{Binding InsertChartFromTableCommand}"/>
+										</MenuFlyout>
+									</SplitButton.Flyout>
+								</SplitButton>
 							</StackPanel>
 						</DockPanel>
 					</Border>
@@ -425,6 +497,78 @@
 													</Flyout>
 												</SplitButton.Flyout>
 											</SplitButton>
+											<SplitButton Classes="RibbonSplit"
+											             Command="{Binding InsertChartCommand}"
+											             CommandParameter="Column"
+											             behaviours:TooltipBehavior.Tip="Диаграмма: вид, данные и оформление в окне диаграммы">
+												<SplitButton.Content>
+													<StackPanel Spacing="2" HorizontalAlignment="Center">
+														<PathIcon Data="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z" Width="20" Height="20"/>
+														<TextBlock Text="Диаграмма" FontSize="9" TextAlignment="Center"/>
+													</StackPanel>
+												</SplitButton.Content>
+												<SplitButton.Flyout>
+													<MenuFlyout>
+														<MenuItem Header="Гистограмма" Command="{Binding InsertChartCommand}" CommandParameter="Column">
+															<MenuItem.Icon>
+																<dialogs:ChartKindIcon Kind="Column" Width="20" Height="15"/>
+															</MenuItem.Icon>
+														</MenuItem>
+														<MenuItem Header="Линейчатая" Command="{Binding InsertChartCommand}" CommandParameter="Bar">
+															<MenuItem.Icon>
+																<dialogs:ChartKindIcon Kind="Bar" Width="20" Height="15"/>
+															</MenuItem.Icon>
+														</MenuItem>
+														<MenuItem Header="График" Command="{Binding InsertChartCommand}" CommandParameter="Line">
+															<MenuItem.Icon>
+																<dialogs:ChartKindIcon Kind="Line" Width="20" Height="15"/>
+															</MenuItem.Icon>
+														</MenuItem>
+														<MenuItem Header="С областями" Command="{Binding InsertChartCommand}" CommandParameter="Area">
+															<MenuItem.Icon>
+																<dialogs:ChartKindIcon Kind="Area" Width="20" Height="15"/>
+															</MenuItem.Icon>
+														</MenuItem>
+														<MenuItem Header="Круговая" Command="{Binding InsertChartCommand}" CommandParameter="Pie">
+															<MenuItem.Icon>
+																<dialogs:ChartKindIcon Kind="Pie" Width="20" Height="15"/>
+															</MenuItem.Icon>
+														</MenuItem>
+														<MenuItem Header="Кольцевая" Command="{Binding InsertChartCommand}" CommandParameter="Doughnut">
+															<MenuItem.Icon>
+																<dialogs:ChartKindIcon Kind="Doughnut" Width="20" Height="15"/>
+															</MenuItem.Icon>
+														</MenuItem>
+														<MenuItem Header="Точечная" Command="{Binding InsertChartCommand}" CommandParameter="Scatter">
+															<MenuItem.Icon>
+																<dialogs:ChartKindIcon Kind="Scatter" Width="20" Height="15"/>
+															</MenuItem.Icon>
+														</MenuItem>
+														<MenuItem Header="Пузырьковая" Command="{Binding InsertChartCommand}" CommandParameter="Bubble">
+															<MenuItem.Icon>
+																<dialogs:ChartKindIcon Kind="Bubble" Width="20" Height="15"/>
+															</MenuItem.Icon>
+														</MenuItem>
+														<MenuItem Header="Лепестковая" Command="{Binding InsertChartCommand}" CommandParameter="Radar">
+															<MenuItem.Icon>
+																<dialogs:ChartKindIcon Kind="Radar" Width="20" Height="15"/>
+															</MenuItem.Icon>
+														</MenuItem>
+														<MenuItem Header="Биржевая" Command="{Binding InsertChartCommand}" CommandParameter="Stock">
+															<MenuItem.Icon>
+																<dialogs:ChartKindIcon Kind="Stock" Width="20" Height="15"/>
+															</MenuItem.Icon>
+														</MenuItem>
+														<MenuItem Header="Комбинированная" Command="{Binding InsertChartCommand}" CommandParameter="Combo">
+															<MenuItem.Icon>
+																<dialogs:ChartKindIcon Kind="Column" Combo="True" Width="20" Height="15"/>
+															</MenuItem.Icon>
+														</MenuItem>
+														<Separator/>
+														<MenuItem Header="Из таблицы…" Command="{Binding InsertChartFromTableCommand}"/>
+													</MenuFlyout>
+												</SplitButton.Flyout>
+											</SplitButton>
 										</StackPanel>
 									</Flyout>
 								</Button.Flyout>
@@ -468,6 +612,10 @@
 										<MenuFlyout>
 											<MenuItem Header="{x:Static loc:TextEditorStrings.Break_SectionNextPage}"   Command="{Binding InsertSectionBreakNextPageCommand}"/>
 											<MenuItem Header="{x:Static loc:TextEditorStrings.Break_SectionContinuous}" Command="{Binding InsertSectionBreakContinuousCommand}"/>
+											<MenuItem Header="С чётной страницы"   Command="{Binding InsertSectionBreakEvenPageCommand}"/>
+											<MenuItem Header="С нечётной страницы" Command="{Binding InsertSectionBreakOddPageCommand}"/>
+											<Separator/>
+											<MenuItem Header="Разрыв колонки"      Command="{Binding InsertColumnBreakCommand}"/>
 										</MenuFlyout>
 									</SplitButton.Flyout>
 								</SplitButton>
@@ -509,6 +657,10 @@
 													<MenuFlyout>
 														<MenuItem Header="{x:Static loc:TextEditorStrings.Break_SectionNextPage}"   Command="{Binding InsertSectionBreakNextPageCommand}"/>
 														<MenuItem Header="{x:Static loc:TextEditorStrings.Break_SectionContinuous}" Command="{Binding InsertSectionBreakContinuousCommand}"/>
+														<MenuItem Header="С чётной страницы"   Command="{Binding InsertSectionBreakEvenPageCommand}"/>
+														<MenuItem Header="С нечётной страницы" Command="{Binding InsertSectionBreakOddPageCommand}"/>
+														<Separator/>
+														<MenuItem Header="Разрыв колонки"      Command="{Binding InsertColumnBreakCommand}"/>
 													</MenuFlyout>
 												</SplitButton.Flyout>
 											</SplitButton>

@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
              xmlns:models="using:Writersword.Modules.Characters.Models"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
@@ -78,7 +79,8 @@
                      CornerRadius="0"
                      Padding="12,8"
                      PlaceholderText="{x:Static loc:CharactersStrings.Note_TitlePlaceholder}"
-                     IsVisible="{Binding SelectedNote, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                     IsVisible="{Binding SelectedNote, Converter={x:Static ObjectConverters.IsNotNull}}"
+                     behaviours:SelectAllBehavior.Enabled="True"/>
 
             <!-- Текст заметки -->
             <TextBox Grid.Row="1"

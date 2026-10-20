@@ -176,7 +176,8 @@
 							         Text="{Binding Name, Mode=TwoWay}"
 							         PlaceholderText="Название"
 							         KeyDown="OnNameKeyDown"
-							         TextChanged="OnNameChanged"/>
+							         TextChanged="OnNameChanged"
+							         behaviours:SelectAllBehavior.Enabled="True"/>
 
 							<infra:HintMark Grid.Column="1" VerticalAlignment="Center"
 							                behaviours:TooltipBehavior.Tip="Имя метки"
@@ -327,7 +328,8 @@
 							<Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
 								<TextBox Grid.Column="0" Classes="field"
 								         Text="{Binding Description, Mode=TwoWay}"
-								         PlaceholderText="Пояснение"/>
+								         PlaceholderText="Пояснение"
+								         behaviours:SelectAllBehavior.Enabled="True"/>
 								<infra:HintMark Grid.Column="1" VerticalAlignment="Center"
 								                behaviours:TooltipBehavior.Tip="Пояснение метки"
 								                behaviours:TooltipBehavior.Description="Всплывает, когда наводят на значок метки — на карточке персонажа и в списках. Можно оставить пустым: у метки с говорящим именем пояснять нечего."/>

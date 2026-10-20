@@ -34,6 +34,82 @@ namespace Writersword.Modules.TextEditor.Services
             public SectionVerticalAlignment VerticalAlignment { get; set; }
             public SectionPageBorders? PageBorders { get; set; }
             public SectionLineNumbering? LineNumbering { get; set; }
+
+            /// <summary>
+            /// Как раздел начинается (w:type): вид разрыва раздела перед ним. Null — не
+            /// записано (записи, сделанные до этого поля).
+            /// </summary>
+            public SectionStart? Start { get; set; }
+
+            /// <summary>
+            /// Разрыв раздела перед разделом, по которому записано начало. Начало
+            /// сравнивается, только если разрыв тот же: новый разрыв, вставленный в
+            /// раздел, меняет вид разрыва перед его второй частью, но это вставка
+            /// разрыва, а не смена начала раздела. Null — разрыв неизвестен (запись из
+            /// файла или раздел первый).
+            /// </summary>
+            public Guid? StartBreak { get; set; }
+        }
+
+        /// <summary>Разрыв раздела перед разделом, который кончается sectionEnd (null — последним).</summary>
+        private static BreakBlock? PrecedingSectionBreak(DocumentModel document, BreakBlock? sectionEnd)
+        {
+            if (document.Sections.Count == 0) return null;
+
+            var blocks = document.Sections[0].Blocks;
+            int index = sectionEnd is null ? blocks.Count : blocks.IndexOf(sectionEnd);
+            if (index < 0) return null;
+
+            for (int i = index - 1; i >= 0; i--)
+                if (blocks[i] is BreakBlock { IsSectionBreak: true } before)
+                    return before;
+
+            return null;
+        }
+
+        /// <summary>Как начинается раздел за разрывом этого вида.</summary>
+        private static SectionStart StartOf(BreakType type) => type switch
+        {
+            BreakType.SectionContinuous => SectionStart.Continuous,
+            BreakType.SectionEvenPage => SectionStart.EvenPage,
+            BreakType.SectionOddPage => SectionStart.OddPage,
+            BreakType.SectionNextColumn => SectionStart.NextColumn,
+            _ => SectionStart.NextPage
+        };
+
+        /// <summary>Вид разрыва перед разделом, который так начинается.</summary>
+        private static BreakType BreakTypeOf(SectionStart start) => start switch
+        {
+            SectionStart.Continuous => BreakType.SectionContinuous,
+            SectionStart.EvenPage => BreakType.SectionEvenPage,
+            SectionStart.OddPage => BreakType.SectionOddPage,
+            SectionStart.NextColumn => BreakType.SectionNextColumn,
+            _ => BreakType.SectionNextPage
+        };
+
+        /// <summary>
+        /// Начало раздела для записи: по разрыву перед ним, а у первого раздела — то,
+        /// что записано у него самого.
+        /// </summary>
+        private static (SectionStart? Start, Guid? Break) StartFor(DocumentModel document, BreakBlock? sectionEnd, SectionLayout? layout)
+        {
+            if (PrecedingSectionBreak(document, sectionEnd) is { } before)
+                return (StartOf(before.BreakType), before.Id);
+
+            return (layout?.Start, null);
+        }
+
+        /// <summary>
+        /// Возвращает разделу начало из записи: вид разрыва раздела перед ним. Разрыв
+        /// должен быть тем же, по которому записано начало.
+        /// </summary>
+        private static void RestoreStart(DocumentModel document, BreakBlock? sectionEnd, Look look)
+        {
+            if (look.Start is not { } start) return;
+            if (PrecedingSectionBreak(document, sectionEnd) is not { } before) return;
+            if (look.StartBreak is { } id && id != before.Id) return;
+
+            before.BreakType = BreakTypeOf(start);
         }
 
         // ── Запись ───────────────────────────────────────────────────────
@@ -42,13 +118,16 @@ namespace Writersword.Modules.TextEditor.Services
         public static string Capture(BreakBlock sectionEnd, DocumentModel document)
         {
             var layout = sectionEnd.Section;
+            var (start, startBreak) = StartFor(document, sectionEnd, layout);
             return Serialize(new Look
             {
                 Page = (layout?.Page ?? document.PageSettings).Clone(),
                 Columns = ColumnFrames.ColumnsOf(document, sectionEnd).Clone(),
                 VerticalAlignment = layout?.VerticalAlignment ?? SectionVerticalAlignment.Top,
                 PageBorders = layout?.PageBorders?.Clone(),
-                LineNumbering = layout?.LineNumbering?.Clone()
+                LineNumbering = layout?.LineNumbering?.Clone(),
+                Start = start,
+                StartBreak = startBreak
             });
         }
 
@@ -56,13 +135,16 @@ namespace Writersword.Modules.TextEditor.Services
         public static string CaptureFinal(DocumentModel document)
         {
             var final = document.FinalSection;
+            var (start, startBreak) = StartFor(document, null, final);
             return Serialize(new Look
             {
                 Page = document.PageSettings.Clone(),
                 Columns = ColumnFrames.FinalColumns(document).Clone(),
                 VerticalAlignment = final?.VerticalAlignment ?? SectionVerticalAlignment.Top,
                 PageBorders = final?.PageBorders?.Clone(),
-                LineNumbering = final?.LineNumbering?.Clone()
+                LineNumbering = final?.LineNumbering?.Clone(),
+                Start = start,
+                StartBreak = startBreak
             });
         }
 
@@ -87,7 +169,8 @@ namespace Writersword.Modules.TextEditor.Services
                 Columns = columns.Clone(),
                 VerticalAlignment = layout.VerticalAlignment,
                 PageBorders = layout.PageBorders?.Clone(),
-                LineNumbering = layout.LineNumbering?.Clone()
+                LineNumbering = layout.LineNumbering?.Clone(),
+                Start = layout.Start
             });
 
         /// <summary>Запись, прочитанная обратно; null — запись не читается.</summary>
@@ -106,10 +189,26 @@ namespace Writersword.Modules.TextEditor.Services
 
         // ── Возврат ──────────────────────────────────────────────────────
 
+        /// <summary>
+        /// Возвращает разделу, который кончается этим разрывом, параметры из записи и
+        /// его начало — вид разрыва перед ним.
+        /// </summary>
+        public static void Restore(BreakBlock sectionEnd, string json, DocumentModel document)
+        {
+            if (Parse(json) is not { } look) return;
+            RestoreStart(document, sectionEnd, look);
+            Restore(sectionEnd, look);
+        }
+
         /// <summary>Возвращает разделу, который кончается этим разрывом, параметры из записи.</summary>
         public static void Restore(BreakBlock sectionEnd, string json)
         {
             if (Parse(json) is not { } look) return;
+            Restore(sectionEnd, look);
+        }
+
+        private static void Restore(BreakBlock sectionEnd, Look look)
+        {
 
             var layout = sectionEnd.Section ??= new SectionLayout();
             if (layout.Page is null) layout.Page = look.Page.Clone();
@@ -129,6 +228,8 @@ namespace Writersword.Modules.TextEditor.Services
         public static void RestoreFinal(DocumentModel document, string json)
         {
             if (Parse(json) is not { } look) return;
+
+            RestoreStart(document, null, look);
 
             CopyPage(look.Page, document.PageSettings);
 
@@ -177,7 +278,7 @@ namespace Writersword.Modules.TextEditor.Services
 
         /// <summary>
         /// Что различается в параметрах двух записей: «size», «orientation», «margins»,
-        /// «gutter», «distances», «columns», «valign», «borders», «lines». Пусто —
+        /// «gutter», «distances», «columns», «valign», «borders», «lines», «start». Пусто —
         /// параметры одни и те же. <paramref name="forFile"/> — с допуском перевода
         /// единиц Word (твипы).
         /// </summary>
@@ -203,6 +304,12 @@ namespace Writersword.Modules.TextEditor.Services
             if (a.VerticalAlignment != b.VerticalAlignment) result.Add("valign");
             if (!SameJson(a.PageBorders, b.PageBorders)) result.Add("borders");
             if (!SameJson(a.LineNumbering, b.LineNumbering)) result.Add("lines");
+
+            // Начало раздела: сравнивается, когда известно у обеих записей и разрыв
+            // перед разделом тот же (или у одной из записей он неизвестен).
+            if (a.Start is { } startA && b.Start is { } startB && startA != startB
+                && (a.StartBreak is null || b.StartBreak is null || a.StartBreak == b.StartBreak))
+                result.Add("start");
 
             return result;
         }
@@ -261,6 +368,7 @@ namespace Writersword.Modules.TextEditor.Services
                 if (differences.Contains("valign")) parts.Add("выравнивание по высоте");
                 if (differences.Contains("borders")) parts.Add("рамка страницы");
                 if (differences.Contains("lines")) parts.Add("номера строк");
+                if (differences.Contains("start")) parts.Add("начало раздела");
             }
 
             if (parts.Count == 0) parts.Add("параметры");

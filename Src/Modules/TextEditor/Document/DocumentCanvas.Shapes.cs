@@ -480,10 +480,14 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (IsEditingBlocked) return false;
 
+            // Правая кнопка фигуру только выделяет: ни ручки, ни перетаскивание не
+            // начинаются, меню откроется на отпускании.
+            bool rightPress = e.GetCurrentPoint(this).Properties.IsRightButtonPressed;
+
             // Маркеры проверяются раньше выделения: клик по маркеру уже выделенной
             // фигуры должен начинать изменение размера или поворот, а не выделять
             // то, что лежит под маркером.
-            if (_selectedShape is not null)
+            if (_selectedShape is not null && !rightPress)
             {
                 double zoomH = Zoom;
                 var (handleXPt, handleYPt) = LogicalPointForSelectedShape(
@@ -551,6 +555,13 @@ namespace Writersword.Modules.TextEditor.Document
             if (hit is not null)
             {
                 SelectShape(hit.Block);
+
+                if (rightPress)
+                {
+                    Focus();
+                    InvalidateFull();
+                    return true;
+                }
 
                 _shapeDragging = true;
                 _shapeDragMoved = false;

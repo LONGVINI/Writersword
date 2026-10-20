@@ -450,7 +450,8 @@
 						         VerticalAlignment="Center"
 						         KeyDown="OnPackNameKeyDown"
 						         behaviours:TooltipBehavior.Tip="Имя выбранной папки"
-						         behaviours:TooltipBehavior.Description="Правится прямо здесь. Новое имя запоминается по Enter или когда вы уходите из поля. У встроенной папки и у склада картинок имя своё и правке не подлежит"/>
+						         behaviours:TooltipBehavior.Description="Правится прямо здесь. Новое имя запоминается по Enter или когда вы уходите из поля. У встроенной папки и у склада картинок имя своё и правке не подлежит"
+						         behaviours:SelectAllBehavior.Enabled="True"/>
 
 						<StackPanel Grid.Column="1" Orientation="Horizontal"
 						            Spacing="6" VerticalAlignment="Center">

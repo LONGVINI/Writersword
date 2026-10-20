@@ -74,6 +74,11 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     if (cellLayout.Row != rowLayout.Row) continue;
 
+                    // Ячейка строки, спрятанной правкой при этом виде
+                    // (SKTextRenderer.RevisionHiddenRows): на листе её нет, и каретке в
+                    // ней стоять негде.
+                    if (cellLayout.HeightPt <= 0.01f || cellLayout.WidthPt <= 0.01f) continue;
+
                     float cellBT = cellLayout.TopInsetPt;
                     float cellBB = cellLayout.BottomInsetPt;
                     float cellPadTopTotal = cellBT + cellLayout.PadTopPt;
@@ -814,6 +819,19 @@ namespace Writersword.Modules.TextEditor.Document
 
                     RebuildPageModeConverge();
                 }
+
+                // Разделы «с чётной» и «с нечётной» страницы встают по печатаемому номеру
+                // листа, а он известен только по готовой раскладке: пустой лист не на том
+                // месте — раскладка повторяется с исправленным решением.
+                for (int parityPass = 0; parityPass < 2 && SettlePageParityFromPass(); parityPass++)
+                {
+                    _wrapZoneImagesOverride = null;
+                    _wrapZoneShapesOverride = null;
+                    _wrapAnchorIn.Clear();
+                    _wrapAnchorOut = new Dictionary<ParagraphBlock, float>();
+
+                    RebuildPageModeConverge();
+                }
             }
             finally
             {
@@ -980,6 +998,13 @@ namespace Writersword.Modules.TextEditor.Document
         private List<ImageEntry>? _warmWrapImages;
         private List<ShapeEntry>? _warmWrapShapes;
 
+        // Ширина холста (пт), при которой снят итог. Места объектов в нём — в координатах
+        // холста, а лист стоит по центру холста, и его левый край зависит от ширины, то
+        // есть от масштаба. Итог, снятый при другой ширине, ставил картинку туда, где
+        // лист был прежде: при отдалении картинки оставались слева от листов, текст
+        // обтекал пустое место, а при возврате масштаба всё вставало обратно.
+        private float _warmWrapCanvasWPt = float.NaN;
+
         /// <summary>
         /// Подставляет итог прошлой раскладки как вход прохода. Не подходит, если в нём
         /// есть обтекаемый объект, замороженный на месте первого прохода (поднятый над
@@ -989,6 +1014,13 @@ namespace Writersword.Modules.TextEditor.Document
         private bool TryWarmWrapStart()
         {
             if (_warmWrapAnchors is null || _warmWrapImages is null || _warmWrapShapes is null) return false;
+
+            float canvasWPt = (float)(_canvasWidth * PxToPt);
+            if (float.IsNaN(_warmWrapCanvasWPt) || Math.Abs(canvasWPt - _warmWrapCanvasWPt) > 0.01f)
+            {
+                ForgetWarmWrap();
+                return false;
+            }
 
             foreach (var entry in _warmWrapImages)
             {
@@ -1100,6 +1132,7 @@ namespace Writersword.Modules.TextEditor.Document
             _warmWrapAnchors = new Dictionary<ParagraphBlock, float>(_wrapAnchorOut);
             _warmWrapImages = _passImages;
             _warmWrapShapes = _passShapes;
+            _warmWrapCanvasWPt = (float)(_canvasWidth * PxToPt);
         }
 
         private void ForgetWarmWrap()
@@ -1107,6 +1140,7 @@ namespace Writersword.Modules.TextEditor.Document
             _warmWrapAnchors = null;
             _warmWrapImages = null;
             _warmWrapShapes = null;
+            _warmWrapCanvasWPt = float.NaN;
         }
 
         /// <summary>
@@ -1363,6 +1397,8 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void RebuildPageModePass()
         {
+            _passParityBreaks.Clear();
+
             // Удаляем из кеша записи параграфов которых больше нет в документе.
             // Без этого словарь растёт вечно: при split/delete старый ParagraphViewModel
             // удаляется из DocVm.Paragraphs но сильная ссылка в _layoutCache не даёт GC его собрать.
@@ -1872,8 +1908,13 @@ namespace Writersword.Modules.TextEditor.Document
 
                     // Раздел «с чётной» или «с нечётной» страницы: лист не той чётности
                     // остаётся пустым, как у Word, и раздел начинается со следующего.
-                    if (Rendering.SKTextRenderer.NeedsBlankPageBefore(bb.BreakType, pageIdx + 1))
+                    // Чётность — по печатаемому номеру (SettlePageParityFromPass).
+                    bool blankBefore = Rendering.SKTextRenderer.BlankPageBefore(bb, pageIdx + 1, _parityDecisions);
+                    if (blankBefore)
                         AdvancePage();
+
+                    if (bb.BreakType is BreakType.SectionEvenPage or BreakType.SectionOddPage)
+                        _passParityBreaks.Add(new Rendering.SKTextRenderer.ParityBreak(bb.Id, bb.BreakType, pageIdx, blankBefore));
 
                     lastTableXPt = textXPt;
                     continue;

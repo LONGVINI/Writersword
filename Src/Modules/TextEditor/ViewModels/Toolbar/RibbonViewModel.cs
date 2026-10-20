@@ -20,6 +20,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private bool _isTocTabVisible;
         private bool _isHeaderFooterTabVisible;
         private bool _isFormulaTabVisible;
+        private bool _isChartTabVisible;
         private bool _isEditingEnabled = true;
 
         public int SelectedTabIndex
@@ -76,6 +77,16 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             get => _isFormulaTabVisible;
             set => this.RaiseAndSetIfChanged(ref _isFormulaTabVisible, value);
+        }
+
+        /// <summary>
+        /// Управляет видимостью контекстной вкладки «Диаграмма».
+        /// true — на листе выделена диаграмма.
+        /// </summary>
+        public bool IsChartTabVisible
+        {
+            get => _isChartTabVisible;
+            set => this.RaiseAndSetIfChanged(ref _isChartTabVisible, value);
         }
 
         /// <summary>
@@ -139,6 +150,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// <summary>Контекстная вкладка колонтитулов и номеров страниц.</summary>
         public RibbonHeaderFooterTabViewModel HeaderFooter { get; }
 
+        /// <summary>
+        /// Контекстная вкладка «Диаграмма»: данные, вид, элементы и цвета выделенной
+        /// диаграммы. Видна вместе с «Форматом» и «Расположением»: диаграмма — тоже
+        /// объект на листе.
+        /// </summary>
+        public RibbonChartTabViewModel Chart { get; }
+
         public RibbonViewModel(
             ITextEditorCommandTarget target, IEditorViewHost viewHost, ITocHost tocHost,
             IHeaderFooterHost headerFooterHost, IReviewHost reviewHost)
@@ -154,6 +172,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             Image = new RibbonImageTabViewModel(target);
             Toc = new RibbonTocTabViewModel(tocHost);
             HeaderFooter = new RibbonHeaderFooterTabViewModel(headerFooterHost);
+            Chart = new RibbonChartTabViewModel(target);
 
             // Кнопки «Колонтитулы» и «Номер страницы» на «Вставке» — те же команды, что
             // на своей вкладке: одно действие не должно жить в двух реализациях.

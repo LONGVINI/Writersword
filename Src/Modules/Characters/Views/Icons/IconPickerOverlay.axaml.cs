@@ -30,10 +30,69 @@ namespace Writersword.Modules.Characters.Views.Icons
         private IconPickerViewModel? _model;
         private TaskCompletionSource<CharacterIconChoice?>? _pending;
 
+        // Ширина окна с двумя колонками: левая 574 (560 под значки — 11 в
+        // ряд — и 14 под полосу прокрутки), зазор 22, цвета 344 (330 и 14 под
+        // полосу), плюс поля 20 и рамка 1 с каждой стороны. Без цветов — одна
+        // левая.
+        private const double WideMaxWidth = 982;
+        private const double SingleMaxWidth = 616;
+
+        // Поля окна вокруг панели (Margin 24) и её поля с рамкой (20 + 1).
+        private const double OuterInset = 48;
+        private const double InnerInset = 42;
+
+        // Колонка цветов и зазор до неё. Уже, чем LeftMinWidth слева от них,
+        // значкам и превью тесно — тогда цвета уходят под значки.
+        private const double ColorsWidth = 344;
+        private const double ColumnGap = 22;
+        private const double LeftMinWidth = 300;
+
+        private bool? _stacked;
+
         public IconPickerOverlay()
         {
             InitializeComponent();
             OwnColorPicker.PropertyChanged += OnOwnColorPickerPropertyChanged;
+            SizeChanged += (_, _) => UpdateLayoutMode();
+        }
+
+        /// <summary>
+        /// Раскладка по ширине окна. Пока места хватает, цвета стоят справа,
+        /// а левая колонка сжимается. Когда слева остаётся меньше
+        /// LeftMinWidth, цвета уходят под значки во всю ширину, высота
+        /// делится между ними: значкам больше, цветам меньше, у обоих своя
+        /// прокрутка. Без цветов окно одноколоночное и уже.
+        /// </summary>
+        private void UpdateLayoutMode()
+        {
+            var allowColor = _model?.AllowColor ?? false;
+            PickerPanel.MaxWidth = allowColor ? WideMaxWidth : SingleMaxWidth;
+
+            var inner = Math.Min(Bounds.Width - OuterInset, PickerPanel.MaxWidth) - InnerInset;
+            var stacked = allowColor && inner - ColorsWidth - ColumnGap < LeftMinWidth;
+            if (_stacked == stacked) return;
+            _stacked = stacked;
+
+            if (stacked)
+            {
+                LayoutGrid.ColumnDefinitions = new ColumnDefinitions("*");
+                LayoutGrid.RowDefinitions = new RowDefinitions("Auto,3*,2*,Auto");
+                LayoutGrid.ColumnSpacing = 0;
+                Grid.SetRow(ColorsColumn, 2);
+                Grid.SetColumn(ColorsColumn, 0);
+                ColorsColumn.Width = double.NaN;
+                Grid.SetRow(FooterRow, 3);
+            }
+            else
+            {
+                LayoutGrid.ColumnDefinitions = new ColumnDefinitions("*,Auto");
+                LayoutGrid.RowDefinitions = new RowDefinitions("Auto,*,Auto");
+                LayoutGrid.ColumnSpacing = ColumnGap;
+                Grid.SetRow(ColorsColumn, 1);
+                Grid.SetColumn(ColorsColumn, 1);
+                ColorsColumn.Width = ColorsWidth;
+                Grid.SetRow(FooterRow, 2);
+            }
         }
 
         /// <summary>
@@ -88,6 +147,8 @@ namespace Writersword.Modules.Characters.Views.Icons
             _model = model;
             DataContext = model;
             IsVisible = true;
+            _stacked = null;
+            UpdateLayoutMode();
 
             // Фокус — на само окно, а не в поиск: поле не горит рамкой с
             // порога, а Esc и Enter работают сразу.

@@ -67,6 +67,387 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ApplySectionColumns(int count)
             => ApplyToSections("Колонки", newPage: false, null, Math.Clamp(count, 1, 12));
 
+        /// <summary>
+        /// Размер листа раздела под кареткой, мм, — ширина и высота листа так, как он
+        /// стоит. Совпавший с известным форматом размер получает имя формата, иначе —
+        /// «свой». Ориентация остаётся прежней: у альбомного листа ширина и высота
+        /// формата меняются местами.
+        /// </summary>
+        public void ApplySectionPageSizeMm(double widthMm, double heightMm)
+        {
+            widthMm = Math.Clamp(widthMm, 10.0, 1000.0);
+            heightMm = Math.Clamp(heightMm, 10.0, 1000.0);
+
+            ApplyToSections("Размер листа", newPage: true, page =>
+            {
+                bool landscape = page.Orientation == PageOrientation.Landscape;
+                double portraitWidth = landscape ? heightMm : widthMm;
+                double portraitHeight = landscape ? widthMm : heightMm;
+
+                page.PaperSize = KnownPaperSize(portraitWidth, portraitHeight);
+                page.WidthMm = portraitWidth;
+                page.HeightMm = portraitHeight;
+            }, null);
+        }
+
+        /// <summary>Формат бумаги с таким размером книжного листа; иначе — свой.</summary>
+        private static PaperSize KnownPaperSize(double widthMm, double heightMm)
+        {
+            foreach (var size in new[] { PaperSize.A3, PaperSize.A4, PaperSize.A5, PaperSize.Letter, PaperSize.Legal, PaperSize.B5 })
+            {
+                var probe = new TextEditorPageSettings();
+                probe.ApplyPaperSize(size);
+                if (Math.Abs(probe.WidthMm - widthMm) < 0.5 && Math.Abs(probe.HeightMm - heightMm) < 0.5)
+                    return size;
+            }
+
+            return PaperSize.Custom;
+        }
+
+        /// <summary>
+        /// Колонки раздела целиком: число, промежуток, черта и ширина каждой колонки,
+        /// если они разные, — окно «Другие колонки». Колонки меняются на том же листе:
+        /// разрывы режима «только выделенное» — непрерывные.
+        /// </summary>
+        public void ApplySectionColumnLayout(SectionColumns columns)
+        {
+            var wanted = NormalizedColumns(columns);
+
+            ApplyToSections("Колонки", newPage: false, null, null,
+                layout => layout.Columns = wanted.Clone(),
+                () =>
+                {
+                    var settings = (_document.Sections.Count > 0 ? _document.Sections[0].ColumnSettings : null)
+                        ?? _document.ColumnSettings;
+                    settings.ColumnCount = wanted.Count;
+                    settings.GapMm = wanted.GapMm;
+                    settings.ShowSeparator = wanted.Count > 1 && wanted.Separator;
+
+                    // Колонки разной ширины последнего раздела живут в его параметрах;
+                    // равные — в колонках документа.
+                    if (wanted.Columns is { Count: > 1 })
+                    {
+                        var final = _document.FinalSection ??= new SectionLayout();
+                        final.Columns = wanted.Clone();
+                    }
+                    else if (_document.FinalSection is { Columns: not null } final)
+                    {
+                        final.Columns = null;
+                    }
+                });
+        }
+
+        /// <summary>
+        /// Колонки в том виде, в каком их хранит раздел: одна колонка — без черты и без
+        /// списка ширин; список ширин — только у колонок разной ширины, и его длина
+        /// задаёт их число.
+        /// </summary>
+        private static SectionColumns NormalizedColumns(SectionColumns columns)
+        {
+            if (columns.Columns is { Count: > 1 } own)
+            {
+                var list = new List<SectionColumn>(own.Count);
+                for (int i = 0; i < own.Count; i++)
+                {
+                    list.Add(new SectionColumn
+                    {
+                        WidthMm = Math.Max(own[i].WidthMm, 1.0),
+                        SpaceAfterMm = i < own.Count - 1 ? Math.Max(own[i].SpaceAfterMm, 0.0) : 0.0
+                    });
+                }
+
+                return new SectionColumns
+                {
+                    Count = list.Count,
+                    GapMm = list[0].SpaceAfterMm,
+                    Separator = columns.Separator,
+                    Columns = list
+                };
+            }
+
+            int count = Math.Clamp(columns.Count, 1, 12);
+            return new SectionColumns
+            {
+                Count = count,
+                GapMm = Math.Max(columns.GapMm, 0.0),
+                Separator = count > 1 && columns.Separator
+            };
+        }
+
+        /// <summary>Выравнивание текста раздела по высоте листа.</summary>
+        public void ApplySectionVerticalAlignment(SectionVerticalAlignment alignment)
+            => ApplyToSections("Вертикальное выравнивание", newPage: true, null, null,
+                layout => layout.VerticalAlignment = alignment, null);
+
+        /// <summary>Номера строк раздела; null — строки не нумеруются.</summary>
+        public void ApplySectionLineNumbering(SectionLineNumbering? numbering)
+        {
+            var wanted = numbering is null
+                ? null
+                : new SectionLineNumbering
+                {
+                    CountBy = Math.Clamp(numbering.CountBy, 1, 100),
+                    Start = Math.Clamp(numbering.Start, 1, 32767),
+                    DistanceMm = Math.Clamp(numbering.DistanceMm, 0.0, 100.0),
+                    Restart = numbering.Restart
+                };
+
+            ApplyToSections("Номера строк", newPage: true, null, null,
+                layout => layout.LineNumbering = wanted?.Clone(), null);
+        }
+
+        /// <summary>Рамка страницы раздела; null — рамки нет.</summary>
+        public void ApplySectionPageBorders(SectionPageBorders? borders)
+            => ApplyToSections("Рамка страницы", newPage: true, null, null,
+                layout => layout.PageBorders = borders?.Clone(), null);
+
+        /// <summary>
+        /// Все параметры окна «Параметры раздела» одним шагом отмены: размер листа,
+        /// выравнивание по высоте, номера строк, рамка и начало раздела.
+        /// </summary>
+        public void ApplySectionSetup(SectionSetup setup)
+        {
+            if (IsReadOnly) return;
+
+            double widthMm = Math.Clamp(setup.Page.GetPhysicalWidthMm(), 10.0, 1000.0);
+            double heightMm = Math.Clamp(setup.Page.GetPhysicalHeightMm(), 10.0, 1000.0);
+            var borders = setup.PageBorders?.Clone();
+            var numbering = setup.LineNumbering is null
+                ? null
+                : new SectionLineNumbering
+                {
+                    CountBy = Math.Clamp(setup.LineNumbering.CountBy, 1, 100),
+                    Start = Math.Clamp(setup.LineNumbering.Start, 1, 32767),
+                    DistanceMm = Math.Clamp(setup.LineNumbering.DistanceMm, 0.0, 100.0),
+                    Restart = setup.LineNumbering.Restart
+                };
+
+            BeginUndoStep("Параметры раздела");
+            try
+            {
+                ApplyToSections("Параметры раздела", newPage: true, page =>
+                {
+                    // Размер меняется, только если его поменяли: иначе лист известного
+                    // формата без нужды становился бы «своим».
+                    if (Math.Abs(page.GetPhysicalWidthMm() - widthMm) < 0.05
+                        && Math.Abs(page.GetPhysicalHeightMm() - heightMm) < 0.05)
+                        return;
+
+                    bool landscape = page.Orientation == PageOrientation.Landscape;
+                    double portraitWidth = landscape ? heightMm : widthMm;
+                    double portraitHeight = landscape ? widthMm : heightMm;
+                    page.PaperSize = KnownPaperSize(portraitWidth, portraitHeight);
+                    page.WidthMm = portraitWidth;
+                    page.HeightMm = portraitHeight;
+                }, null, layout =>
+                {
+                    layout.VerticalAlignment = setup.VerticalAlignment;
+                    layout.LineNumbering = numbering?.Clone();
+                    layout.PageBorders = borders?.Clone();
+                }, null);
+
+                if (setup.StartBreak is { } start)
+                    SetCaretSectionStart(start);
+            }
+            finally
+            {
+                CommitUndoStep();
+            }
+        }
+
+        /// <summary>
+        /// Как начинается раздел под кареткой: вид разрыва раздела перед ним. У первого
+        /// раздела документа разрыва перед ним нет, и команда ничего не меняет.
+        /// </summary>
+        public void ApplySectionStart(BreakType start)
+        {
+            if (IsReadOnly) return;
+
+            BeginUndoStep("Начало раздела");
+            try
+            {
+                SetCaretSectionStart(start);
+                SyncParagraphViewModels();
+            }
+            finally
+            {
+                CommitUndoStep();
+            }
+
+            this.RaisePropertyChanged(nameof(PageSettings));
+        }
+
+        private void SetCaretSectionStart(BreakType start)
+        {
+            if (start is not (BreakType.SectionNextPage or BreakType.SectionContinuous
+                or BreakType.SectionEvenPage or BreakType.SectionOddPage or BreakType.SectionNextColumn))
+                return;
+
+            var blocks = PageSetupBlocks();
+            if (blocks is null || PageSetupRange(blocks) is not { } range) return;
+
+            int sectionStart = SectionStartOf(blocks, range.First);
+            if (sectionStart > 0 && blocks[sectionStart - 1] is BreakBlock { IsSectionBreak: true } before)
+                before.BreakType = start;
+        }
+
+        /// <summary>
+        /// Параметры раздела под кареткой — копия для окон вкладки «Макет»: лист,
+        /// колонки, выравнивание по высоте, рамка, номера строк и начало раздела.
+        /// </summary>
+        public SectionSetup GetSectionSetup()
+        {
+            var blocks = PageSetupBlocks();
+            int end = -1;
+            int sectionStart = 0;
+            if (blocks is not null && PageSetupRange(blocks) is { } range)
+            {
+                end = SectionEndAtOrAfter(blocks, range.First);
+                sectionStart = SectionStartOf(blocks, range.First);
+            }
+
+            SectionLayout? layout = end >= 0
+                ? ((BreakBlock)blocks![end]).Section
+                : _document.FinalSection;
+
+            var columns = end >= 0
+                ? ColumnFrames.ColumnsOf(_document, (BreakBlock)blocks![end])
+                : ColumnFrames.FinalColumns(_document);
+
+            BreakType? startBreak = blocks is not null && sectionStart > 0
+                                    && blocks[sectionStart - 1] is BreakBlock { IsSectionBreak: true } before
+                ? before.BreakType
+                : null;
+
+            return new SectionSetup
+            {
+                Page = CaretSectionPage().Clone(),
+                Columns = columns.Clone(),
+                VerticalAlignment = layout?.VerticalAlignment ?? SectionVerticalAlignment.Top,
+                PageBorders = layout?.PageBorders?.Clone(),
+                LineNumbering = layout?.LineNumbering?.Clone(),
+                StartBreak = startBreak
+            };
+        }
+
+        /// <summary>
+        /// Разрыв колонки у каретки: текст за ним идёт в следующую колонку, в разделе из
+        /// одной колонки — на следующую страницу, как у Word.
+        /// </summary>
+        public void InsertColumnBreak()
+        {
+            if (IsReadOnly) return;
+
+            var breakBlock = new BreakBlock { BreakType = BreakType.Page, FromColumnBreak = true };
+            InsertBlockAtCaret(breakBlock);
+            NormalizeBreakAnchors();
+
+            if (_document.Sections.Count == 0) return;
+            var blocks = _document.Sections[0].Blocks;
+            int breakIdx = blocks.IndexOf(breakBlock);
+            if (breakIdx >= 0 && breakIdx + 1 < blocks.Count && blocks[breakIdx + 1] is ParagraphBlock anchorBlock)
+                OnPageBreakInserted?.Invoke(anchorBlock);
+        }
+
+        /// <summary>
+        /// Разрыв раздела у каретки. Как у Word, обе части раздела сохраняют его
+        /// параметры: новый разрыв получает копию параметров раздела, в котором стоит
+        /// каретка, — без неё первая часть жила бы по листу и колонкам документа. Новый
+        /// счёт страниц остаётся у первой части: она начинает прежний раздел.
+        /// </summary>
+        private void InsertSectionBreakAtCaret(BreakType type)
+        {
+            if (IsReadOnly) return;
+            if (_document.Sections.Count == 0) return;
+
+            var blocks = _document.Sections[0].Blocks;
+            var target = GetCaretTargetDelegate?.Invoke();
+            int at = target?.Para is { } caretPara ? blocks.IndexOf(caretPara) : -1;
+            if (at < 0 && _activeParagraph is not null) at = blocks.IndexOf(_activeParagraph.Model);
+
+            int end = at >= 0 ? SectionEndAtOrAfter(blocks, at) : -1;
+            var copy = SectionCopy(blocks, end);
+
+            var breakBlock = new BreakBlock { BreakType = type, Section = copy };
+
+            BeginUndoStep("Разрыв раздела");
+            try
+            {
+                ContinuePageNumbering(blocks, end);
+                InsertBlockAtCaret(breakBlock);
+                NormalizeBreakAnchors();
+            }
+            finally
+            {
+                CommitUndoStep();
+            }
+
+            int breakIdx = blocks.IndexOf(breakBlock);
+            if (breakIdx >= 0 && breakIdx + 1 < blocks.Count && blocks[breakIdx + 1] is ParagraphBlock anchorBlock)
+                OnPageBreakInserted?.Invoke(anchorBlock);
+
+            this.RaisePropertyChanged(nameof(PageSettings));
+        }
+
+        /// <summary>
+        /// Копия параметров раздела, который кончается разрывом end (-1 — последнего), с
+        /// листом и колонками: в отличие от <see cref="CopyOfSection"/>, сам раздел не
+        /// трогает. Смена параметров правкой к копии не переходит: новый раздел ещё
+        /// никто не менял.
+        /// </summary>
+        private SectionLayout SectionCopy(List<BlockModel> blocks, int end)
+        {
+            SectionLayout copy;
+            if (end >= 0 && blocks[end] is BreakBlock { Section: { } own })
+            {
+                copy = own.Clone();
+                copy.Page ??= _document.PageSettings.Clone();
+                copy.Columns ??= ColumnFrames.FinalColumns(_document).Clone();
+            }
+            else if (end >= 0)
+            {
+                copy = new SectionLayout
+                {
+                    Page = _document.PageSettings.Clone(),
+                    Columns = ColumnFrames.FinalColumns(_document).Clone()
+                };
+            }
+            else
+            {
+                copy = _document.FinalSection?.Clone() ?? new SectionLayout();
+                copy.Page = _document.PageSettings.Clone();
+                copy.Columns = ColumnFrames.FinalColumns(_document).Clone();
+            }
+
+            copy.FormatChange = null;
+            return copy;
+        }
+
+        /// <summary>Зеркальные поля документа.</summary>
+        public bool GetMirrorMargins() => _document.PageSettings.MirrorMargins;
+
+        /// <summary>
+        /// Зеркальные поля — настройка документа, как у Word: левое поле становится
+        /// внутренним, правое — внешним, и на чётных листах они меняются местами вместе с
+        /// переплётом. Листы разделов отдельной настройки не имеют.
+        /// </summary>
+        public void SetMirrorMargins(bool mirror)
+        {
+            if (IsReadOnly || _document.PageSettings.MirrorMargins == mirror) return;
+
+            BeginUndoStep("Зеркальные поля");
+            try
+            {
+                _document.PageSettings.MirrorMargins = mirror;
+            }
+            finally
+            {
+                CommitUndoStep();
+            }
+
+            this.RaisePropertyChanged(nameof(PageSettings));
+        }
+
         /// <summary>Поля и переплёт раздела под кареткой — для полей ввода вкладки «Макет».</summary>
         public (double TopMm, double BottomMm, double LeftMm, double RightMm, double GutterMm) GetSectionPageMargins()
         {
@@ -241,8 +622,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// Правка меняет лист: разрывы режима «только выделенное» — со следующей страницы.
         /// Иначе (колонки) — непрерывные.
         /// </param>
+        /// <param name="changeSection">
+        /// Правка остальных параметров раздела: выравнивание по высоте, рамка, номера
+        /// строк, колонки целиком. У последнего раздела — его параметры
+        /// (<see cref="DocumentModel.FinalSection"/>), если не задан changeFinal.
+        /// </param>
+        /// <param name="changeFinal">Своя правка последнего раздела вместо changeSection.</param>
         private void ApplyToSections(
-            string description, bool newPage, Action<TextEditorPageSettings>? changePage, int? columnCount)
+            string description, bool newPage, Action<TextEditorPageSettings>? changePage, int? columnCount,
+            Action<SectionLayout>? changeSection = null, Action? changeFinal = null)
         {
             if (IsReadOnly) return;
 
@@ -254,7 +642,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 if (blocks is null || range is null)
                 {
-                    ApplyToFinalSection(changePage, columnCount);
+                    ApplyToFinalSection(changePage, columnCount, changeSection, changeFinal);
                 }
                 else
                 {
@@ -271,12 +659,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
                         int end = SectionEndAtOrAfter(blocks, from);
                         if (end < 0)
                         {
-                            ApplyToFinalSection(changePage, columnCount);
+                            ApplyToFinalSection(changePage, columnCount, changeSection, changeFinal);
                             break;
                         }
 
                         var layout = OwnSectionLayout((BreakBlock)blocks[end]);
                         changePage?.Invoke(layout.Page!);
+                        changeSection?.Invoke(layout);
                         if (columnCount is int count)
                             layout.Columns = new SectionColumns
                             {
@@ -301,9 +690,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         /// <summary>Последний раздел: его лист — параметры страницы документа.</summary>
-        private void ApplyToFinalSection(Action<TextEditorPageSettings>? changePage, int? columnCount)
+        private void ApplyToFinalSection(
+            Action<TextEditorPageSettings>? changePage, int? columnCount,
+            Action<SectionLayout>? changeSection, Action? changeFinal)
         {
             changePage?.Invoke(_document.PageSettings);
+
+            if (changeFinal is not null) changeFinal();
+            else if (changeSection is not null) changeSection(_document.FinalSection ??= new SectionLayout());
 
             if (columnCount is not int count) return;
 

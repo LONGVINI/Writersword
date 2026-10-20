@@ -1010,6 +1010,10 @@ namespace Writersword.Modules.TextEditor
                             // .docx) живой так же: экспорт пишет в .docx именно его.
                             if (!string.IsNullOrEmpty(image.SourceImageFileName))
                                 target.Add(image.SourceImageFileName!);
+
+                            // Картинка фона диаграммы.
+                            if (!string.IsNullOrEmpty(image.Chart?.BackgroundImage))
+                                target.Add(image.Chart!.BackgroundImage!);
                             break;
 
                         // Картинка-заливка фигуры — такой же файл проекта.

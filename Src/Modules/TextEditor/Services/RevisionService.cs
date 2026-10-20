@@ -474,7 +474,7 @@ namespace Writersword.Modules.TextEditor.Services
                 {
                     if (sectionPart.Break is { Section.FormatChange: { } sectionChange } sectionEnd)
                     {
-                        if (!accept) SectionFrame.Restore(sectionEnd, sectionChange.Previous);
+                        if (!accept) SectionFrame.Restore(sectionEnd, sectionChange.Previous, doc);
                         sectionEnd.Section!.FormatChange = null;
                     }
                     else if (sectionPart.Break is null && doc.PageSetupChange is { } pageChange)

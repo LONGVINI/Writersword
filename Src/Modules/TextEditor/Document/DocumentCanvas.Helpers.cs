@@ -254,6 +254,57 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void CancelImageEdit() => _pendingImageCommand = null;
 
+        /// <summary>
+        /// Правка свойств картинки извне полотна (окно и лента диаграммы) одним шагом
+        /// отмены — той же командой свойств, что ресайз и поворот. Объект картинки при
+        /// отмене остаётся прежним: выделение и лента не теряют его.
+        /// </summary>
+        private void ApplyImageEdit(ImageBlock image, string description, Action apply)
+        {
+            if (image is null || apply is null) return;
+            BeginImageEdit(image, description);
+            apply();
+            CommitImageEdit();
+            InvalidateFull();
+        }
+
+        /// <summary>
+        /// После отката или повтора снимка документа картинки приходят новыми
+        /// объектами. Выделенная перевешивается на свой новый объект по Id — иначе
+        /// лента и маркеры правили бы объект, которого в документе уже нет. Если
+        /// картинки после отката нет, выделение снимается.
+        /// </summary>
+        private void ReattachSelectedImage()
+        {
+            if (_selectedImage is null || DocVm is null) return;
+
+            var id = _selectedImage.Id;
+            ImageBlock? fresh = null;
+            foreach (var section in DocVm.Document.Sections)
+            {
+                fresh = section.Blocks.OfType<ImageBlock>().FirstOrDefault(i => i.Id == id)
+                    ?? section.FloatingObjects.OfType<ImageBlock>().FirstOrDefault(i => i.Id == id)
+                    ?? section.InlineObjects.OfType<ImageBlock>().FirstOrDefault(i => i.Id == id);
+                if (fresh is not null) break;
+            }
+
+            if (ReferenceEquals(fresh, _selectedImage)) return;
+
+            if (fresh is null)
+            {
+                ExitImageCropMode(apply: false);
+                _selectedImage = null;
+                DocVm.FireCursorContextChanged();
+                ImageSelectionChanged?.Invoke(false);
+            }
+            else
+            {
+                _selectedImage = fresh;
+                ImageSelectionChanged?.Invoke(true);
+            }
+            InvalidateFull();
+        }
+
         // ── Selection ────────────────────────────────────────────────────
         private bool HasSel() =>
             _selStartPara != _selEndPara || _selStartChar != _selEndChar;
@@ -871,18 +922,37 @@ namespace Writersword.Modules.TextEditor.Document
             _clipboardImageBytes = null;
 
             byte[]? data = null;
-            try
+            if (img.Chart is { } chart)
             {
-                var ctx = Writersword.Core.Services.CoreServices
-                    .GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()?.ActiveTab?.Context;
-                // Байты — для вставки в другой проект (файл переносится в его хранилище).
-                // Картинка недавнего импорта может ещё писаться в проект.
-                data = Writersword.Modules.TextEditor.Services.PendingProjectImages.Read(
-                    ctx, $"TextEditor/Images/{img.ImageFileName}");
+                // У диаграммы файла нет: наружу — её снимок PNG, чтобы вставить её
+                // картинкой в Word, письмо или графический редактор. Внутри редактора
+                // вставка берёт саму диаграмму из внутреннего буфера.
+                try
+                {
+                    var picture = Rendering.Charts.ChartImageCache.Get(chart, img.WidthPt, img.HeightPt, 3f, GetImageBitmap);
+                    using var encoded = picture?.Encode(SKEncodedImageFormat.Png, 100);
+                    data = encoded?.ToArray();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Debug(ex, "[CLIP] Chart picture for clipboard failed");
+                }
             }
-            catch (Exception ex)
+            else
             {
-                _logger.Debug(ex, "[CLIP] Read image file failed: {File}", img.ImageFileName);
+                try
+                {
+                    var ctx = Writersword.Core.Services.CoreServices
+                        .GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()?.ActiveTab?.Context;
+                    // Байты — для вставки в другой проект (файл переносится в его хранилище).
+                    // Картинка недавнего импорта может ещё писаться в проект.
+                    data = Writersword.Modules.TextEditor.Services.PendingProjectImages.Read(
+                        ctx, $"TextEditor/Images/{img.ImageFileName}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Debug(ex, "[CLIP] Read image file failed: {File}", img.ImageFileName);
+                }
             }
 
             _clipboardImageBytes = data;
@@ -1117,7 +1187,8 @@ namespace Writersword.Modules.TextEditor.Document
             ZOrder = s.ZOrder,
             AltText = s.AltText,
             SourceImageFileName = s.SourceImageFileName,
-            WordDrawing = s.WordDrawing?.Clone()
+            WordDrawing = s.WordDrawing?.Clone(),
+            Chart = s.Chart?.Clone()
         };
 
         /// <summary>
@@ -1395,7 +1466,8 @@ namespace Writersword.Modules.TextEditor.Document
             ZOrder = src.ZOrder,
             AltText = src.AltText,
             SourceImageFileName = src.SourceImageFileName,
-            WordDrawing = src.WordDrawing?.Clone()
+            WordDrawing = src.WordDrawing?.Clone(),
+            Chart = src.Chart?.Clone()
         };
 
         /// <summary>
@@ -1474,13 +1546,14 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (TextUndoStack is null || DocVm is null) return false;
 
-            var info = GetCurrentCell();
-            if (info is null) return false;
+            // Отсчёт — от левой верхней выделенной ячейки, без выделения — от ячейки с кареткой.
+            if (CellPasteAnchor() is not { } anchor) return false;
 
-            var table = info.Table;
-            var anchorCell = info.Cell;
-            int row0 = anchorCell.Row;
-            int col0 = anchorCell.Column;
+            var table = anchor.Table;
+            int row0 = anchor.Row;
+            int col0 = anchor.Column;
+            var anchorCell = table.GetCell(row0, col0);
+            if (anchorCell is null) return false;
 
             // Источник: относительные координаты скопированных ячеек + параграфы + фон.
             // Вложенные таблицы скопированных ячеек едут отдельным указателем — по списку
@@ -1589,6 +1662,16 @@ namespace Writersword.Modules.TextEditor.Document
 
         private async Task PasteAsync()
         {
+            // Вид вставки: выбранный пунктом меню правой кнопки или, у Ctrl+V, вставка по
+            // умолчанию (Services.PasteDefaults). Без оформления пропускаются внутренние
+            // копии с оформлением — сразу путь простого текста. Картинки пропускает только
+            // явный пункт «Вставить только текст»: у Ctrl+V картинка из буфера остаётся
+            // картинкой, иначе вставка не делала бы ничего.
+            bool? pasteChoice = _pasteTextOnly;
+            _pasteTextOnly = null;
+            bool textOnly = pasteChoice ?? Services.PasteDefaults.TextOnly;
+            bool skipImages = pasteChoice == true;
+
             if (IsEditingBlocked) return;
 
             // Системный буфер мог быть перезаписан другой программой — снимком экрана,
@@ -1599,7 +1682,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Внутренняя копия картинки (её положил Ctrl+C по картинке) — вставляем её.
             // Внутренний буфер сбрасывается при любом другом копировании внутри
             // редактора (текст, ячейки), так что устаревания в обычном сценарии нет.
-            if (_clipboardImage is not null && DocVm is not null)
+            if (!skipImages && _clipboardImage is not null && DocVm is not null)
             {
                 // В клетке таблицы картинка встаёт только в текст.
                 //
@@ -1657,6 +1740,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             // Картинка из буфера обмена — вставляем как изображение и выходим.
+            if (!skipImages)
             {
                 var imgClip = TopLevel.GetTopLevel(this)?.Clipboard;
                 if (imgClip is not null && DocVm is not null)
@@ -1684,7 +1768,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Каретка в ячейке, а в буфере блок таблицы (2+ ячейки) — вставляем «сетка в сетку»:
             // содержимое скопированных ячеек ложится в целевые начиная с текущей. Операционно,
             // без снапшота. Одиночная ячейка сюда не попадает — она уходит на plain-text путь ниже.
-            if (IsInCell(_caretPara) && TextUndoStack != null
+            if (!textOnly && IsInCell(_caretPara) && TextUndoStack != null
                 && !string.IsNullOrEmpty(_internalClipboardJson) && DocVm is not null)
             {
                 var cellOpts = new JsonSerializerOptions();
@@ -1698,7 +1782,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Внутренний буфер используется только когда есть таблицы.
             // Вставка только параграфов идёт через plain-text путь — он проверен и работает.
-            if (!string.IsNullOrEmpty(_internalClipboardJson) && DocVm is not null && !IsInCell(_caretPara))
+            if (!textOnly && !string.IsNullOrEmpty(_internalClipboardJson) && DocVm is not null && !IsInCell(_caretPara))
             {
                 var opts = new JsonSerializerOptions();
                 var blocks = JsonSerializer.Deserialize<List<ClipboardBlock>>(_internalClipboardJson, opts);
@@ -1830,6 +1914,11 @@ namespace Writersword.Modules.TextEditor.Document
             if (string.IsNullOrEmpty(text)) return;
 
             _ = PrefetchClipboardAsync();
+
+            // Таблица из Excel, Word или браузера (табуляции и строки) или одно значение
+            // на несколько выделенных ячеек — раскладываем по ячейкам (DocumentCanvas.CellPaste).
+            if ((IsInCell(_caretPara) || HasCellRangeSel()) && TryPasteTextGridIntoCells(text))
+                return;
 
             if (IsInCell(_caretPara))
             {
@@ -2403,8 +2492,20 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         // ── Scroll to caret ───────────────────────────────────────────────
+
+        /// <summary>
+        /// Следующая прокрутка к каретке ставит её строку у верхнего края вида, а не
+        /// подтягивает к ближнему краю. Ставит переход к абзацу (навигатор,
+        /// оглавление): человек идёт читать то, что ниже заголовка, и заголовок у
+        /// нижнего края прятал бы именно это.
+        /// </summary>
+        private bool _scrollCaretToTop;
+
         private void ScrollToCaret()
         {
+            // Откуда попросили прокрутку — только для журнала: стек не собирается, пока
+            // подробный журнал выключен.
+            string? origin = _logger.IsEnabled(Serilog.Events.LogEventLevel.Debug) ? ShortStack() : null;
             Dispatcher.UIThread.Post(() =>
             {
                 if (_parentScrollViewer is null) return;
@@ -2445,6 +2546,13 @@ namespace Writersword.Modules.TextEditor.Document
                 double scrollY = _parentScrollViewer.Offset.Y;
                 double viewportH = _parentScrollViewer.Viewport.Height;
 
+                if (_scrollCaretToTop)
+                {
+                    _scrollCaretToTop = false;
+                    SmoothScrollTo(Math.Max(0, caretYPx - Math.Max(caretHPx, 24.0)), origin);
+                    return;
+                }
+
                 bool caretVisible = caretYPx >= scrollY && caretYPx + caretHPx <= scrollY + viewportH;
                 if (caretVisible) return;
 
@@ -2457,20 +2565,41 @@ namespace Writersword.Modules.TextEditor.Document
 
                 newOffsetY = Math.Max(0, newOffsetY);
 
-                SmoothScrollTo(newOffsetY);
+                SmoothScrollTo(newOffsetY, origin);
 
             }, DispatcherPriority.Render);
         }
 
+        /// <summary>Несколько ближайших вызовов из кода программы — для журнала: кто прокрутил лист.</summary>
+        private static string ShortStack()
+        {
+            var frames = new System.Diagnostics.StackTrace(2, false).GetFrames();
+            var names = new List<string>();
+            foreach (var frame in frames)
+            {
+                var method = frame.GetMethod();
+                var type = method?.DeclaringType;
+                if (type?.FullName is not { } full || !full.StartsWith("Writersword", StringComparison.Ordinal)) continue;
+                string owner = type.Name.Contains('<') && type.DeclaringType is { } outer ? outer.Name : type.Name;
+                names.Add(owner + "." + method!.Name);
+                if (names.Count == 6) break;
+            }
+            return names.Count == 0 ? "—" : string.Join(" ← ", names);
+        }
+
         // Запускает плавную анимацию скролла к targetOffsetY за ScrollAnimDurationMs мс
         // с ease-out кривой (кубическая: f(t) = 1 - (1-t)^3).
-        private void SmoothScrollTo(double targetOffsetY)
+        private void SmoothScrollTo(double targetOffsetY, string? origin = null)
         {
             if (_parentScrollViewer is null) return;
 
             double currentY = _parentScrollViewer.Offset.Y;
             if (Math.Abs(targetOffsetY - currentY) < 1.0)
                 return;
+
+            if (_logger.IsEnabled(Serilog.Events.LogEventLevel.Debug))
+                _logger.Debug("[SCROLL] Прокрутка к каретке {From:F0} → {To:F0}, каретка: абзац {Para}, символ {Char}, выделена картинка {Image}; откуда: {Stack}",
+                    currentY, targetOffsetY, _caretPara, _caretChar, _selectedImage is not null, origin ?? ShortStack());
 
             // Если анимация уже идёт — продолжаем от текущей позиции к новой цели.
             _scrollAnimFrom = currentY;
@@ -3070,7 +3199,11 @@ namespace Writersword.Modules.TextEditor.Document
             return false;
         }
 
-        public void RestoreCaretState(int docParaIdx, int charIdx)
+        /// <param name="scrollToTop">
+        /// true — строка каретки встаёт у верхнего края вида (переход к главе); иначе
+        /// вид сдвигается ровно настолько, чтобы каретку было видно.
+        /// </param>
+        public void RestoreCaretState(int docParaIdx, int charIdx, bool scrollToTop = false)
         {
             Dispatcher.UIThread.Post(() =>
             {
@@ -3100,6 +3233,7 @@ namespace Writersword.Modules.TextEditor.Document
                 SnapCaretToCorrectSlice();
                 UpdatePreferredX();
                 SyncSel();
+                _scrollCaretToTop = scrollToTop;
                 ResetCaret();
                 var pvm = GetVmAt(_caretPara);
                 if (pvm is not null && DocVm?.Paragraphs.Contains(pvm) == true)

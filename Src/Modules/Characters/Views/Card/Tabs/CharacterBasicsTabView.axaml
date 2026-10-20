@@ -890,7 +890,8 @@
 						         Classes="name-title"
 						         Width="{Binding #NameTrim.Bounds.Width}"
 						         Text="{Binding Name, Mode=TwoWay}"
-						         KeyDown="OnNameTitleKeyDown"/>
+						         KeyDown="OnNameTitleKeyDown"
+						         behaviours:SelectAllBehavior.Enabled="True"/>
 						<TextBlock x:Name="NameTrim"
 						           Classes="name-title-trim"
 						           Text="{Binding Name}"
@@ -903,7 +904,8 @@
 						<TextBox x:Name="ShortDescriptionBox"
 						         Classes="name-subtitle"
 						         Width="{Binding #ShortDescriptionTrim.Bounds.Width}"
-						         Text="{Binding ShortDescription, Mode=TwoWay}"/>
+						         Text="{Binding ShortDescription, Mode=TwoWay}"
+						         behaviours:SelectAllBehavior.Enabled="True"/>
 						<TextBlock x:Name="ShortDescriptionTrim"
 						           Classes="name-subtitle-trim"
 						           Text="{Binding ShortDescription}"
@@ -1066,7 +1068,8 @@
 										           Text="{x:Static loc:CharactersStrings.Field_CustomImportanceLabel}"/>
 										<TextBox Classes="field"
 										         Width="240"
-										         Text="{Binding CustomImportanceLabel, Mode=TwoWay}"/>
+										         Text="{Binding CustomImportanceLabel, Mode=TwoWay}"
+										         behaviours:SelectAllBehavior.Enabled="True"/>
 									</StackPanel>
 								</Grid>
 
@@ -1487,7 +1490,8 @@
 									</Grid.ColumnDefinitions>
 									<TextBox Classes="field"
 									         x:Name="NewNameBox"
-									         KeyDown="OnNewNameKeyDown"/>
+									         KeyDown="OnNewNameKeyDown"
+									         behaviours:SelectAllBehavior.Enabled="True"/>
 								</Grid>
 							</StackPanel>
 

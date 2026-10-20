@@ -218,11 +218,57 @@ namespace Writersword.Modules.TextEditor.Contracts
         void InsertFloatingTextBox();
         void InsertPageBreak();
         void InsertSectionBreak(BreakType breakType);
+
+        /// <summary>
+        /// Разрыв колонки у каретки: текст за ним идёт в следующую колонку, в разделе из
+        /// одной колонки — на следующую страницу.
+        /// </summary>
+        void InsertColumnBreak();
         void InsertFootnote();
         void InsertEndnote();
 
         /// <summary>Открывает окно формулы и вставляет формулу в место каретки.</summary>
         void InsertFormula();
+
+        /// <summary>Открывает окно новой диаграммы заданного вида и вставляет её в место каретки.</summary>
+        void InsertChart(ChartKind kind);
+
+        /// <summary>
+        /// Открывает окно новой комбинированной диаграммы — столбцы и линия на
+        /// вспомогательной оси — и вставляет её в место каретки.
+        /// </summary>
+        void InsertComboChart();
+
+        /// <summary>Открывает окно правки выделенной диаграммы.</summary>
+        void EditSelectedChart();
+
+        /// <summary>Выделенный объект — диаграмма.</summary>
+        bool IsSelectedChart();
+
+        /// <summary>Модель выделенной диаграммы; null — выделена не диаграмма.</summary>
+        ChartModel? GetSelectedChart();
+
+        /// <summary>Ставит выделенной диаграмме новую модель одним шагом отмены.</summary>
+        void ApplySelectedChart(ChartModel chart, string description);
+
+        /// <summary>
+        /// Показывает выделенную диаграмму в листе так, будто у неё другая модель, — пока
+        /// указатель на образце стиля или цвета. Документ не меняется, отмены нет;
+        /// null возвращает настоящий вид.
+        /// </summary>
+        void PreviewSelectedChart(ChartModel? preview) { }
+
+        /// <summary>
+        /// Возвращает клавиатуру листу: после кнопки ленты или панели Ctrl+Z, Ctrl+Y и
+        /// ввод снова идут в документ, а не в кнопку.
+        /// </summary>
+        void FocusEditor();
+
+        /// <summary>
+        /// Диаграмма по данным таблицы под кареткой: выделенные ячейки или вся таблица.
+        /// Открывает окно диаграммы и ставит её за таблицей.
+        /// </summary>
+        void InsertChartFromTable();
 
         /// <summary>
         /// Вставляет готовую формулу (запись LaTeX) в место каретки отдельной строкой,
@@ -414,10 +460,40 @@ namespace Writersword.Modules.TextEditor.Contracts
         /// переплёта чередуется: на нечётных листах слева, на чётных справа.
         /// </summary>
         void SetPageGutter(double gutterMm);
+
+        /// <summary>
+        /// Зеркальные поля документа: левое поле — внутреннее, правое — внешнее, на чётных
+        /// листах они меняются местами вместе с переплётом.
+        /// </summary>
+        bool GetMirrorMargins();
+
+        /// <summary>Включает или выключает зеркальные поля документа.</summary>
+        void SetMirrorMargins(bool mirror);
         void SetColumns(int count);
 
         /// <summary>Число колонок раздела под кареткой.</summary>
         int GetColumnCount();
+
+        /// <summary>
+        /// Параметры раздела под кареткой — копия для окон вкладки «Макет»: лист,
+        /// колонки, выравнивание по высоте, рамка, номера строк и начало раздела.
+        /// </summary>
+        SectionSetup GetSectionSetup();
+
+        /// <summary>Размер листа раздела, мм: ширина и высота так, как лист стоит.</summary>
+        void SetPageSizeMm(double widthMm, double heightMm);
+
+        /// <summary>
+        /// Колонки раздела целиком: число, промежуток, черта и ширина каждой колонки,
+        /// если они разные (<see cref="SectionColumns.Columns"/>).
+        /// </summary>
+        void SetColumnLayout(SectionColumns columns);
+
+        /// <summary>
+        /// Размер листа, выравнивание по высоте, номера строк, рамка страницы и начало
+        /// раздела одним шагом отмены.
+        /// </summary>
+        void SetSectionSetup(SectionSetup setup);
 
         /// <summary>
         /// Размер, ориентация, поля, переплёт и колонки ложатся только на выделенное

@@ -71,7 +71,7 @@ namespace Writersword.Modules.TextEditor.Document
         public override void Render(DrawingContext ctx)
         {
             ctx.Custom(new CanvasSKDrawOperation(
-                this, new Rect(0, 0, Bounds.Width, Bounds.Height)));
+                this, new Rect(0, 0, Bounds.Width, Bounds.Height), CaptureViewFrame()));
         }
 
         internal void RenderWithSKCanvas(SKCanvas canvas)
@@ -289,6 +289,14 @@ namespace Writersword.Modules.TextEditor.Document
 
                 _contentDirty = false;
                 PerfTime("r.frame.spread", perfFrameTs);
+                return;
+            }
+
+            // Листы переезжают в новую сетку после жеста масштаба: содержимое листов —
+            // из снимка, места — промежуточные (DocumentCanvas.PageReflow).
+            if (TryDrawPageReflow(canvas, scale, canvasHeightPt, canvasWidth))
+            {
+                PerfTime("r.frame.reflow", perfFrameTs);
                 return;
             }
 
@@ -1585,7 +1593,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (ie.InLine) continue;
                 var wm = ie.Block.WrapMode;
                 if (wm == WrapMode.InFront || wm == WrapMode.Square || wm == WrapMode.Tight) continue;
-                var skImg = GetImageBitmap(ie.Block.ImageFileName);
+                var skImg = GetImageBitmap(ie.Block);
                 if (skImg is null)
                 {
                     // Файла нет — на его месте отметка, а не пустота: страница,
@@ -1775,7 +1783,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // снимка — смена её кадра не пересобирает снимок (DocumentCanvas.Animation).
                 if (IsOverlayAnimation(ie, images, pages)) continue;
 
-                var skImg = GetImageBitmap(ie.Block.ImageFileName);
+                var skImg = GetImageBitmap(ie.Block);
                 if (skImg is null)
                 {
                     // Файла нет — на его месте отметка, а не пустота: страница,
@@ -1906,7 +1914,7 @@ namespace Writersword.Modules.TextEditor.Document
                             ie.Block.FlipVertical ? -1f : 1f,
                             visCx, visCy);
 
-                    var cropImg = GetImageBitmap(ie.Block.ImageFileName);
+                    var cropImg = GetImageBitmap(ie.Block);
                     if (cropImg is not null)
                     {
                         _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
@@ -1976,6 +1984,15 @@ namespace Writersword.Modules.TextEditor.Document
                     // соединённый линией с рамкой.
                     canvas.DrawLine(cx, t, cx, t - ImageRotateHandleOffsetPt + ImageRotateHandleRadiusPt, _paintImageSelection);
                     DrawRotateHandle(canvas, cx, t - ImageRotateHandleOffsetPt);
+
+                    // У диаграммы — кнопка правки её данных: двойной щелчок знают не все.
+                    if (ie.Block.IsChart && !ExportPassActive && !IsEditingBlocked)
+                    {
+                        DrawChartButton(canvas, ChartButtonRect(l, t));
+
+                        // И три кнопки справа, как у Word: элементы, стили и фильтр.
+                        if (!_imageCropMode) DrawChartSideButtons(canvas, r, t);
+                    }
 
                     canvas.Restore();
                 }
@@ -2110,7 +2127,7 @@ namespace Writersword.Modules.TextEditor.Document
             // (DocumentCanvas.Animation).
             if (IsOverlayInlineAnimation(block)) return;
 
-            var skImg = GetImageBitmap(block.ImageFileName);
+            var skImg = GetImageBitmap(block);
             if (skImg is null) return;
 
             // Бокс сегмента — это AABB повёрнутой картинки; сама картинка
@@ -2199,7 +2216,7 @@ namespace Writersword.Modules.TextEditor.Document
                             canvas.Restore();
                             break;
 
-                        case ImageBlock image when GetImageBitmap(image.ImageFileName) is { } skImg:
+                        case ImageBlock image when GetImageBitmap(image) is { } skImg:
                         {
                             float cx = rect.MidX;
                             float cy = rect.MidY;
@@ -2417,6 +2434,81 @@ namespace Writersword.Modules.TextEditor.Document
 
         // Рисует маркер поворота: белый круг с оранжевой рамкой и значком
         // круговой стрелки внутри (дуга 270 градусов с наконечником).
+        /// <summary>
+        /// Кнопка данных диаграммы: квадратик с сеткой 3 × 3, как ручка таблицы, —
+        /// с первого взгляда ясно, что за ним таблица данных. Цвета — как у маркеров
+        /// выделенной картинки: белый квадрат в цвет рамки выделения.
+        /// </summary>
+        private void DrawChartButton(SKCanvas canvas, SKRect rect)
+        {
+            using var lines = new SKPaint
+            {
+                Color = _paintImageSelection.Color,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = 1f,
+                IsAntialias = true
+            };
+
+            // Без поворота кнопка рисуется в пикселях экрана: клетки сетки — целое число
+            // пикселей, линии — по середине пикселя. В пунктах при дробном масштабе клетки
+            // выходили разной ширины, и сетка смотрелась кривой.
+            var matrix = canvas.TotalMatrix;
+            if (matrix.SkewX != 0f || matrix.SkewY != 0f || matrix.ScaleX <= 0f || matrix.ScaleY <= 0f)
+            {
+                canvas.DrawRoundRect(rect, 2f, 2f, _paintImageHandleFill);
+                canvas.DrawRoundRect(rect, 2f, 2f, lines);
+                var grid = new SKRect(rect.Left + 2.5f, rect.Top + 2.5f, rect.Right - 2.5f, rect.Bottom - 2.5f);
+                canvas.DrawRect(grid, lines);
+                for (int i = 1; i < 3; i++)
+                {
+                    canvas.DrawLine(grid.Left + grid.Width * i / 3f, grid.Top, grid.Left + grid.Width * i / 3f, grid.Bottom, lines);
+                    canvas.DrawLine(grid.Left, grid.Top + grid.Height * i / 3f, grid.Right, grid.Top + grid.Height * i / 3f, lines);
+                }
+                return;
+            }
+
+            var device = matrix.MapRect(rect);
+            float scale = matrix.ScaleX;
+            float stroke = Math.Max(1f, MathF.Round(scale));
+            float half = stroke / 2f;
+
+            float left = MathF.Round(device.Left);
+            float top = MathF.Round(device.Top);
+            int size = Math.Max(9, (int)MathF.Round(device.Width));
+            var box = new SKRect(left + half, top + half, left + size - half, top + size - half);
+
+            int inset = Math.Max(2, (int)MathF.Round(2.5f * scale));
+            int step = Math.Max(2, (int)MathF.Round((size - 2 * inset - stroke) / 3f));
+            int gridSize = step * 3;
+            float gridLeft = left + MathF.Floor((size - gridSize - stroke) / 2f) + half;
+            float gridTop = top + MathF.Floor((size - gridSize - stroke) / 2f) + half;
+
+            canvas.Save();
+            canvas.ResetMatrix();
+            lines.StrokeWidth = stroke;
+            lines.IsAntialias = false;
+            float radius = 2f * scale;
+            using (var fill = _paintImageHandleFill.Clone())
+            {
+                fill.IsAntialias = true;
+                canvas.DrawRoundRect(box, radius, radius, fill);
+            }
+            using (var outline = lines.Clone())
+            {
+                outline.IsAntialias = true;
+                canvas.DrawRoundRect(box, radius, radius, outline);
+            }
+            canvas.DrawRect(new SKRect(gridLeft, gridTop, gridLeft + gridSize, gridTop + gridSize), lines);
+            for (int i = 1; i < 3; i++)
+            {
+                float x = gridLeft + step * i;
+                float y = gridTop + step * i;
+                canvas.DrawLine(x, gridTop, x, gridTop + gridSize, lines);
+                canvas.DrawLine(gridLeft, y, gridLeft + gridSize, y, lines);
+            }
+            canvas.Restore();
+        }
+
         private void DrawRotateHandle(SKCanvas canvas, float cxPt, float cyPt)
         {
             canvas.DrawCircle(cxPt, cyPt, ImageRotateHandleRadiusPt, _paintImageHandleFill);
@@ -2601,6 +2693,30 @@ namespace Writersword.Modules.TextEditor.Document
                 _logger.Debug(ex, "[IMG] Уменьшенное раскодирование не удалось: {File}", fileName);
                 return SKBitmap.Decode(bytes);
             }
+        }
+
+        /// <summary>
+        /// Образ картинки для отрисовки. У диаграммы это её растр по модели (растр
+        /// печати, когда идёт печать или выгрузка в PDF), у картинки — файл проекта.
+        /// </summary>
+        private SKImage? GetImageBitmap(ImageBlock block)
+        {
+            if (block.Chart is { } chart)
+            {
+                bool print = ExportPassActive || SKTextRenderer.PrintImageResolver is not null;
+
+                // Предпросмотр стиля или цвета с галереи — только на экране.
+                if (!print && ReferenceEquals(block, _chartPreviewBlock) && _chartPreviewModel is { } preview)
+                    chart = preview;
+
+                return Rendering.Charts.ChartImageCache.Get(
+                    chart, block.WidthPt, block.HeightPt,
+                    print ? Rendering.Charts.ChartImageCache.PrintPixelsPerPoint
+                          : Rendering.Charts.ChartImageCache.ScreenPixelsPerPoint,
+                    GetImageBitmap);
+            }
+
+            return GetImageBitmap(block.ImageFileName);
         }
 
         private SKImage? GetImageBitmap(string fileName)
@@ -2973,7 +3089,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void DrawFlowImage(SKCanvas canvas, ImageEntry ie)
         {
-            var skImg = GetImageBitmap(ie.Block.ImageFileName);
+            var skImg = GetImageBitmap(ie.Block);
             if (skImg is null)
             {
                 if (IsImageMissing(ie.Block.ImageFileName))
@@ -3212,8 +3328,12 @@ namespace Writersword.Modules.TextEditor.Document
         // Каретка в чтении не рисуется вовсе. Мигающая палочка посреди страницы —
         // обещание правки, которой здесь нет: ни ввода, ни выделения, ни постановки
         // каретки нажатием.
+        //
+        // Пока выделена картинка или диаграмма, каретки тоже нет: правится объект, а не
+        // текст. Иначе возврат фокуса после кнопок ленты зажигал её там, где она стояла
+        // до выделения, — порой страницами выше.
         private bool CaretDrawable =>
-            _caretVisible && CaretPlaceable;
+            _caretVisible && CaretPlaceable && _selectedImage is null;
 
         /// <summary>
         /// Каретка в этом виде рукописи бывает вообще — безотносительно того, в какой

@@ -30,6 +30,14 @@ namespace Writersword.Modules.TextEditor.Document
     /// складывается в одну цель. Пока идёт жест, лист не перерисовывается заново, а
     /// прежний снимок растягивается под новый масштаб (DocumentCanvas.ZoomPreview).
     ///
+    /// Движение к цели — критически задемпфированная пружина: у масштаба есть
+    /// скорость, и она меняется плавно. Прежде масштаб догонял цель по экспоненте:
+    /// в первый кадр после щелчка скорость сразу была наибольшей и дальше гасла, и
+    /// каждый щелчок давал толчок с места, а серия щелчков шла ступеньками.
+    ///
+    /// На месте остаётся каретка, если она видна в окне, — как у Word: человек
+    /// смотрит туда, где пишет. Каретки в окне нет — точка под указателем мыши.
+    ///
     /// Масштаб и прокрутка обязаны смениться в одном кадре. Если прокрутка отстаёт
     /// хотя бы на кадр, этот кадр показывает документ, растянутый от верха холста, —
     /// на глубине в сотню страниц это скачок на несколько листов, и следующий кадр
@@ -51,11 +59,20 @@ namespace Writersword.Modules.TextEditor.Document
         private const double WheelZoomMin = 0.25;
         private const double WheelZoomMax = 5.0;
 
-        // Постоянная времени догоняния цели, мс. За три таких интервала масштаб
-        // проходит 95% пути.
-        private const double WheelZoomSmoothTauMs = 60.0;
+        // Собственная частота пружины масштаба, 1/с. Один щелчок проходит 95% пути
+        // примерно за 215 мс, без перелёта.
+        private const double WheelZoomSpringOmega = 22.0;
+
+        // Скорость масштаба в логарифмической шкале, 1/с.
+        private double _wheelZoomVelocity;
 
         private bool _wheelZoomAnimActive;
+
+        // Кадр анимации уже заказан у окна. Жест, остановленный не из кадра (клик,
+        // клавиша, смена документа), оставлял заказанный кадр в очереди; следующий
+        // щелчок колеса заказывал ещё один, и анимацию вели две цепочки сразу: масштаб
+        // шагал вдвое чаще и дёргался. Заказ теперь один на кадр.
+        private bool _wheelZoomFrameRequested;
         private double _wheelZoomTarget;
         private double _wheelZoomCurrent;
         private TimeSpan _wheelZoomLastFrame;
@@ -72,6 +89,21 @@ namespace Writersword.Modules.TextEditor.Document
         private double _wheelZoomAnchorDocY;
         private double _wheelZoomAnchorViewX;
         private double _wheelZoomAnchorViewY;
+
+        // Лист, на котором стоит точка привязки, и её место на нём по горизонтали, пт.
+        // По горизонтали холст не растягивается от левого края: одиночный лист стоит
+        // по центру окна, листы в ряд — по центру ряда. Привязка по пикселям холста
+        // уводила вид к левому краю листа, как только лист становился шире окна.
+        // По листу точка остаётся на месте при любом центрировании. -1 — листа нет,
+        // привязка по пикселям.
+        private int _wheelZoomAnchorPage = -1;
+        private float _wheelZoomAnchorPageXPt;
+
+        // Где была мышь (точка окна), когда снималась привязка жеста. Пока мышь не
+        // ушла от неё дальше допуска, привязка жеста не меняется.
+        private double _wheelZoomSeriesPointerViewX;
+        private double _wheelZoomSeriesPointerViewY;
+        private const double WheelZoomPointerSlopPx = 24.0;
 
         // Точка окна, которую держал последний жест масштаба. По ней же держится
         // место, когда после жеста меняется число листов в ряду.
@@ -103,13 +135,52 @@ namespace Writersword.Modules.TextEditor.Document
             // масштаба не меняют.
             if (Math.Abs(delta) < 1e-6) return;
 
+            bool seriesRunning = _wheelZoomAnimActive && ReferenceEquals(_wheelZoomDocVm, docVm);
+
             double baseZoom = BeginZoomSeries(docVm);
             double target = Math.Clamp(
                 baseZoom * Math.Pow(WheelZoomStepFactor, delta),
                 WheelZoomMin, WheelZoomMax);
 
             var p = e.GetPosition(this);
-            CaptureZoomAnchorAtCanvasPoint(p.X, p.Y, docVm.Zoom);
+            double pointerViewX = p.X - (_parentScrollViewer?.Offset.X ?? 0);
+            double pointerViewY = p.Y - (_parentScrollViewer?.Offset.Y ?? 0);
+
+            // Точка привязки выбирается один раз на жест. Колесо с мелким шагом
+            // присылает событие каждые 10–15 мс, рука на колесе чуть сдвигает мышь, и
+            // привязка, снятая заново на каждом событии, каждый раз оказывалась чуть в
+            // другом месте: весь документ дёргался вверх-вниз на эту разницу. Заново
+            // точка берётся, только если мышь заметно сдвинули.
+            bool keepAnchor = seriesRunning
+                && _wheelZoomAnchorValid
+                && Math.Abs(pointerViewX - _wheelZoomSeriesPointerViewX) <= WheelZoomPointerSlopPx
+                && Math.Abs(pointerViewY - _wheelZoomSeriesPointerViewY) <= WheelZoomPointerSlopPx;
+
+            if (!keepAnchor)
+            {
+                _wheelZoomSeriesPointerViewX = pointerViewX;
+                _wheelZoomSeriesPointerViewY = pointerViewY;
+
+                // На месте остаётся каретка, если её строка видна в окне: по вертикали —
+                // её строка, по горизонтали — она сама, если и по ширине она в окне.
+                // Иначе — точка под указателем мыши.
+                double anchorX = p.X;
+                double anchorY = p.Y;
+                bool onCaret = false;
+                if (TryGetCaretPointPx(out double caretX, out double caretY, out bool caretVisibleX, out bool caretVisibleY)
+                    && caretVisibleY)
+                {
+                    anchorY = caretY;
+                    if (caretVisibleX) anchorX = caretX;
+                    onCaret = true;
+                }
+                CaptureZoomAnchorAtCanvasPoint(anchorX, anchorY, docVm.Zoom);
+
+                _logger.Debug(
+                    "[ZOOM] Привязка: {Source}, точка окна {X:F0}×{Y:F0}, лист {Page}",
+                    onCaret ? "каретка" : "мышь",
+                    _wheelZoomAnchorViewX, _wheelZoomAnchorViewY, _wheelZoomAnchorPage + 1);
+            }
 
             RunZoomAnimation(docVm, target);
         }
@@ -164,6 +235,7 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 _wheelZoomCurrent = displayed;
                 _wheelZoomTarget = displayed;
+                _wheelZoomVelocity = 0;
             }
 
             return _wheelZoomTarget;
@@ -197,7 +269,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 ResetZoomDiagnostics(docVm.Zoom);
 
-                topLevel.RequestAnimationFrame(OnWheelZoomAnimationFrame);
+                RequestWheelZoomFrame(topLevel);
             }
 
             // Строка состояния показывает цель, а не промежуточные кадры.
@@ -222,8 +294,9 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         /// <summary>
-        /// Привязка к середине окна. В самом начале документа привязка — верх окна:
-        /// лист, который стоял у верхнего края, там и остаётся.
+        /// Привязка к каретке, если она видна в окне, иначе к середине окна. В самом
+        /// начале документа привязка — верх окна: лист, который стоял у верхнего края,
+        /// там и остаётся.
         /// </summary>
         private void CaptureZoomAnchorAtViewCenter(double displayedZoom)
         {
@@ -236,7 +309,118 @@ namespace Writersword.Modules.TextEditor.Document
             double viewX = sv.Viewport.Width / 2.0;
             double viewY = sv.Offset.Y < 0.5 ? 0.0 : sv.Viewport.Height / 2.0;
 
+            if (TryGetCaretPointPx(out double caretX, out double caretY, out bool caretVisibleX, out bool caretVisibleY)
+                && caretVisibleY)
+            {
+                viewY = caretY - sv.Offset.Y;
+                if (caretVisibleX) viewX = caretX - sv.Offset.X;
+            }
+
             SetZoomAnchor(viewX, viewY, displayedZoom);
+        }
+
+        /// <summary>
+        /// Где каретка на холсте, px: её левый край по горизонтали и середина по
+        /// вертикали, и видна ли она в окне по каждой из осей. Расчёт тот же, что у
+        /// отрисовки каретки (DrawCaret): сдвиг строки по выравниванию и растяжка
+        /// пробелов по ширине учтены, лист стоит там, где его ставит отрисовка.
+        /// false — каретки нет или режим не страничный.
+        /// </summary>
+        private bool TryGetCaretPointPx(
+            out double xPx, out double centerYPx, out bool visibleX, out bool visibleY)
+        {
+            xPx = 0;
+            centerYPx = 0;
+            visibleX = false;
+            visibleY = false;
+
+            if (_parentScrollViewer is not { } sv) return false;
+            if (DocVm?.ViewMode != EditorViewMode.Page || ReadingActive || SpreadMode) return false;
+            if (_caretPara < 0 || _caretPara >= _layouts.Count) return false;
+
+            double zoom = Zoom;
+            double s = PtToPx * zoom;
+            var pl = _layouts[_caretPara];
+
+            List<PageRect> pages;
+            lock (_renderLock) { pages = _pages; }
+
+            // Сдвиг листа каретки: в ряду — место листа в сетке, один в ряду — его
+            // до-центрирование по живой ширине холста.
+            float shiftXPt;
+            float shiftYPt;
+            if (_pagesPerRow > 1)
+            {
+                (shiftXPt, shiftYPt) = PageVisualDelta(pl.PageIndex, pages);
+            }
+            else
+            {
+                shiftXPt = GetPageShiftXPt();
+                shiftYPt = 0f;
+            }
+
+            float caretXPt;
+            float caretYPt;
+            float caretHPt;
+
+            var layout = pl.Layout ?? GetOrBuildLayout(pl.Vm, (float)(_canvasWidth * PxToPt));
+
+            if (string.IsNullOrEmpty(pl.Vm.PlainText))
+            {
+                var emptyCaret = layout.HitTestPosition(0);
+                float emptyYBase = layout.Lines.Count > 0 ? layout.Lines[0].Y : 0f;
+                float alignOffset = layout.Alignment switch
+                {
+                    Writersword.Core.Models.Rendering.TextAlignment.Center => layout.TextAreaWidthPt / 2f,
+                    Writersword.Core.Models.Rendering.TextAlignment.Right => layout.TextAreaWidthPt,
+                    _ => 0f
+                };
+
+                caretXPt = pl.AbsXPt + emptyCaret.X + alignOffset;
+                caretYPt = pl.Ypt + (emptyCaret.Y - emptyYBase);
+                caretHPt = emptyCaret.Height > 0.01f ? emptyCaret.Height : FallbackLinePt;
+            }
+            else
+            {
+                int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
+                var caret = layout.HitTestPosition(pos);
+
+                float yBase = pl.LineFrom < layout.Lines.Count
+                    ? layout.Lines[pl.LineFrom].Y : 0f;
+
+                // Строка каретки — для сдвига по выравниванию.
+                int lineIdx = Math.Max(0, Math.Min(pl.LineFrom, layout.Lines.Count - 1));
+                for (int li = 0; li < layout.Lines.Count; li++)
+                {
+                    var line = layout.Lines[li];
+                    if (pos >= line.FirstCharIndex && pos <= line.LastCharIndex + 1)
+                    {
+                        lineIdx = li;
+                        break;
+                    }
+                }
+
+                float alignOffset = 0f;
+                if (layout.Lines.Count > 0)
+                {
+                    float firstLineBaked = lineIdx == 0 ? layout.FirstLineIndentPt : 0f;
+                    alignOffset = LineAlignShift(layout, lineIdx) - firstLineBaked
+                        + JustifyShiftBeforeChar(layout, lineIdx, pos);
+                }
+
+                caretXPt = pl.AbsXPt + caret.X + alignOffset;
+                caretYPt = pl.Ypt + (caret.Y - yBase);
+                caretHPt = caret.Height;
+            }
+
+            xPx = (caretXPt + shiftXPt) * s;
+            double topPx = (caretYPt + shiftYPt) * s;
+            double heightPx = caretHPt * s;
+            centerYPx = topPx + heightPx / 2.0;
+
+            visibleY = topPx >= sv.Offset.Y && topPx + heightPx <= sv.Offset.Y + sv.Viewport.Height;
+            visibleX = xPx >= sv.Offset.X && xPx <= sv.Offset.X + sv.Viewport.Width;
+            return true;
         }
 
         private void SetZoomAnchor(double viewX, double viewY, double displayedZoom)
@@ -255,13 +439,91 @@ namespace Writersword.Modules.TextEditor.Document
             _wheelZoomAnchorDocY = (viewY + sv.Offset.Y) / z;
             _wheelZoomAnchorValid = true;
 
+            CaptureZoomAnchorPage(viewX + sv.Offset.X, viewY + sv.Offset.Y, z);
+
             _lastZoomAnchorViewX = viewX;
             _lastZoomAnchorViewY = viewY;
             _lastZoomAnchorViewValid = true;
         }
 
+        /// <summary>
+        /// Лист под точкой привязки (px холста) и место точки на нём по горизонтали.
+        /// Берётся лист того же ряда, ближайший по горизонтали.
+        /// </summary>
+        private void CaptureZoomAnchorPage(double canvasXPx, double canvasYPx, double zoom)
+        {
+            _wheelZoomAnchorPage = -1;
+
+            if (DocVm?.ViewMode != EditorViewMode.Page || ReadingActive || SpreadMode) return;
+
+            List<PageRect> pages;
+            lock (_renderLock) { pages = _pages; }
+            if (pages.Count == 0) return;
+
+            double s = PtToPx * Math.Max(zoom, 0.01);
+            float xPt = (float)(canvasXPx / s);
+            float yPt = (float)(canvasYPx / s);
+
+            int best = -1;
+            float bestDy = float.MaxValue;
+            float bestDx = float.MaxValue;
+            for (int i = 0; i < pages.Count; i++)
+            {
+                var r = PageVisualRectPt(i, pages);
+                float dy = yPt < r.Top ? r.Top - yPt : yPt > r.Bottom ? yPt - r.Bottom : 0f;
+                float dx = xPt < r.Left ? r.Left - xPt : xPt > r.Right ? xPt - r.Right : 0f;
+
+                if (dy < bestDy - 0.5f || (Math.Abs(dy - bestDy) <= 0.5f && dx < bestDx))
+                {
+                    best = i;
+                    bestDy = dy;
+                    bestDx = dx;
+                }
+            }
+
+            if (best < 0) return;
+
+            _wheelZoomAnchorPage = best;
+            _wheelZoomAnchorPageXPt = xPt - PageVisualRectPt(best, pages).Left;
+        }
+
+        /// <summary>
+        /// Ставит прокрутку по точке привязки при текущем масштабе. Проход раскладки —
+        /// до расчёта: по нему холст узнаёт новую ширину, а от неё зависит, где стоит лист.
+        /// </summary>
+        private void ApplyZoomAnchorOffset()
+        {
+            UpdateLayout();
+
+            double z = Math.Max(_wheelZoomCurrent, 0.01);
+            double x = _wheelZoomAnchorDocX * z - _wheelZoomAnchorViewX;
+
+            if (_wheelZoomAnchorPage >= 0)
+            {
+                List<PageRect> pages;
+                lock (_renderLock) { pages = _pages; }
+                if (_wheelZoomAnchorPage < pages.Count)
+                {
+                    var r = PageVisualRectPt(_wheelZoomAnchorPage, pages);
+                    x = (r.Left + _wheelZoomAnchorPageXPt) * PtToPx * z - _wheelZoomAnchorViewX;
+                }
+            }
+
+            SetZoomOffsetNow(x, _wheelZoomAnchorDocY * z - _wheelZoomAnchorViewY);
+        }
+
+        /// <summary>Заказывает следующий кадр анимации, если он ещё не заказан.</summary>
+        private void RequestWheelZoomFrame(TopLevel? topLevel)
+        {
+            if (topLevel is null || _wheelZoomFrameRequested) return;
+            _wheelZoomFrameRequested = true;
+            topLevel.RequestAnimationFrame(OnWheelZoomAnimationFrame);
+        }
+
         private void OnWheelZoomAnimationFrame(TimeSpan timestamp)
         {
+            _wheelZoomFrameRequested = false;
+
             if (!_wheelZoomAnimActive) return;
 
             var docVm = DocVm;
@@ -288,14 +550,23 @@ namespace Writersword.Modules.TextEditor.Document
             _wheelZoomLastFrame = timestamp;
             _wheelZoomHasLastFrame = true;
 
-            // Масштаб догоняет цель в логарифмической шкале: одинаково на любом
-            // масштабе, без ускорения на крупном и замедления на мелком.
-            double ratio = _wheelZoomTarget / Math.Max(_wheelZoomCurrent, 0.01);
-            double k = 1.0 - Math.Exp(-dtMs / WheelZoomSmoothTauMs);
-            bool arrive = Math.Abs(Math.Log(ratio)) < 0.002;
+            // Масштаб идёт к цели в логарифмической шкале — одинаково на любом
+            // масштабе — как критически задемпфированная пружина. Шаг считается точным
+            // решением её уравнения на промежутке кадра: от длины кадра не зависит и
+            // не раскачивается. Новый щелчок меняет только цель, скорость сохраняется.
+            double logCurrent = Math.Log(Math.Max(_wheelZoomCurrent, 0.01));
+            double logTarget = Math.Log(Math.Max(_wheelZoomTarget, 0.01));
+            double offset = logCurrent - logTarget;
+            double t = dtMs / 1000.0;
+            double decay = Math.Exp(-WheelZoomSpringOmega * t);
+            double c = _wheelZoomVelocity + WheelZoomSpringOmega * offset;
+            double nextOffset = (offset + c * t) * decay;
+            _wheelZoomVelocity = (_wheelZoomVelocity - WheelZoomSpringOmega * c * t) * decay;
+
+            bool arrive = Math.Abs(nextOffset) < 0.002 && Math.Abs(_wheelZoomVelocity) < 0.05;
             double next = arrive
                 ? _wheelZoomTarget
-                : _wheelZoomCurrent * Math.Pow(ratio, k);
+                : Math.Clamp(Math.Exp(logTarget + nextOffset), WheelZoomMin, WheelZoomMax);
 
             long uiStart = Stopwatch.GetTimestamp();
             ApplyWheelZoomStep(docVm, next);
@@ -310,7 +581,7 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
-            TopLevel.GetTopLevel(this)?.RequestAnimationFrame(OnWheelZoomAnimationFrame);
+            RequestWheelZoomFrame(TopLevel.GetTopLevel(this));
         }
 
         /// <summary>
@@ -333,9 +604,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (!_wheelZoomAnchorValid) return;
 
-            SetZoomOffsetNow(
-                _wheelZoomAnchorDocX * _wheelZoomCurrent - _wheelZoomAnchorViewX,
-                _wheelZoomAnchorDocY * _wheelZoomCurrent - _wheelZoomAnchorViewY);
+            ApplyZoomAnchorOffset();
         }
 
         /// <summary>
@@ -505,6 +774,7 @@ namespace Writersword.Modules.TextEditor.Document
         private void StopWheelZoomAnimation()
         {
             _wheelZoomAnimActive = false;
+            _wheelZoomVelocity = 0;
 
             var gestureDocVm = _wheelZoomDocVm;
             _wheelZoomDocVm = null;

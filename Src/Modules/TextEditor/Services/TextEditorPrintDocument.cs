@@ -38,7 +38,8 @@ namespace Writersword.Modules.TextEditor.Services
             _document = document.RevisionView == Models.Inline.RevisionView.Original
                 ? ObjectAppearance.WithPreviousAppearance(document) ?? document
                 : document;
-            _pageSettings = ConvertPageSettings(document.PageSettings);
+            // Лист — с копии: в «Исходном документе» у последнего раздела прежний лист.
+            _pageSettings = ConvertPageSettings(_document.PageSettings);
             _renderer = new SKTextRenderer();
             // Печать идёт в выбранном виде показа исправлений, как у Word.
             _styles = new StyleResolver(
@@ -69,6 +70,16 @@ namespace Writersword.Modules.TextEditor.Services
             _pageLayout = _renderer.BuildPageLayout(_document, _pageSettings, _styles, _noteNumbering, _noteRules);
             _decorations = BuildDecorations();
 
+            // Разделы «с чётной» и «с нечётной» страницы — по печатаемому номеру листа:
+            // он известен только после раскладки, и раскладка повторяется, пока пустые
+            // листы перед разделами не встанут по номерам.
+            for (int pass = 0; pass < 2 && SettlePrintParity(); pass++)
+            {
+                _noteRules.Clear();
+                _pageLayout = _renderer.BuildPageLayout(_document, _pageSettings, _styles, _noteNumbering, _noteRules);
+                _decorations = BuildDecorations();
+            }
+
             // Номер страницы в поле узнаётся только после раскладки, а другой номер
             // может сменить ширину строки и сдвинуть листы: раскладка собирается
             // заново, пока номера в полях не совпадут с листами, — как у редактора.
@@ -78,6 +89,23 @@ namespace Writersword.Modules.TextEditor.Services
                 _pageLayout = _renderer.BuildPageLayout(_document, _pageSettings, _styles, _noteNumbering, _noteRules);
                 _decorations = BuildDecorations();
             }
+        }
+
+        /// <summary>
+        /// Сверяет пустые листы перед разделами «с чётной» и «с нечётной» страницы с
+        /// номерами готовых листов (SKTextRenderer.SettleParity). true — решение
+        /// сменилось, раскладку нужно повторить.
+        /// </summary>
+        private bool SettlePrintParity()
+        {
+            if (_renderer.LastParityBreaks.Count == 0) return false;
+
+            _renderer.ParityDecisions ??= new System.Collections.Generic.Dictionary<Guid, bool>();
+            var decorations = _decorations;
+            return SKTextRenderer.SettleParity(
+                _renderer.LastParityBreaks.ToArray(),
+                page => page >= 0 && page < decorations.Length ? decorations[page].Number : page + 1,
+                _renderer.ParityDecisions);
         }
 
         /// <summary>Сколько раз печать пересобирает раскладку ради номеров страниц в полях.</summary>
@@ -371,21 +399,35 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         private float GutterShiftPt(int pageIndex)
         {
-            if (_document.HeaderFooter?.DifferentOddEven != true) return 0f;
+            bool mirror = _document.PageSettings.MirrorMargins;
+            if (_document.HeaderFooter?.DifferentOddEven != true && !mirror) return 0f;
 
             // Переплёт у каждого раздела свой: лист раздела со своим листом сдвигается
             // на него, а не на переплёт документа.
             double gutterMm = pageIndex >= 0 && pageIndex < _pageLayout.Pages.Count
                 ? SKTextRenderer.PrintSheetGutterMm(_pageLayout.Pages[pageIndex]) ?? _pageSettings.MarginGutterMm
                 : _pageSettings.MarginGutterMm;
-            if (gutterMm <= 0) return 0f;
+
+            // Зеркальные поля: на листе с переплётом справа местами меняются и поля —
+            // левое (внутреннее) встаёт справа. Ширина текста та же, текст сдвигается
+            // на их разницу.
+            double shiftMm = Math.Max(gutterMm, 0.0);
+            if (mirror)
+            {
+                var (leftMm, rightMm) = pageIndex >= 0 && pageIndex < _pageLayout.Pages.Count
+                    && SKTextRenderer.PrintSheetSideMarginsMm(_pageLayout.Pages[pageIndex]) is { } own
+                    ? own
+                    : (_pageSettings.MarginLeftMm, _pageSettings.MarginRightMm);
+                shiftMm += leftMm - rightMm;
+            }
+            if (shiftMm == 0) return 0f;
 
             int number = pageIndex >= 0 && pageIndex < _decorations.Length
                 ? _decorations[pageIndex].Number
                 : pageIndex + 1;
             if (number % 2 != 0) return 0f;
 
-            return -(float)(gutterMm * 72.0 / 25.4);
+            return -(float)(shiftMm * 72.0 / 25.4);
         }
 
         /// <summary>

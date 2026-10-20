@@ -38,6 +38,9 @@ namespace Writersword.Modules.TextEditor.Document
             public required int PageCount { get; init; }
             public required int Columns { get; init; }
             public required float CanvasWidthPt { get; init; }
+
+            /// <summary>Ширина, по которой листы набирались в ряды.</summary>
+            public required float RowWidthPt { get; init; }
             public required float LaneWidthPt { get; init; }
             public required float BasePageWidthPt { get; init; }
             public required int MaxPerRow { get; init; }
@@ -62,6 +65,13 @@ namespace Writersword.Modules.TextEditor.Document
 
         private PageGrid? _pageGrid;
 
+        // Ширина холста, по которой ряды набирались до жеста масштаба. Пока масштаб
+        // меняется, ряды набираются по ней: ширина холста растёт с каждым кадром
+        // отдаления, и сетка перекладывала листы в ряды пошире, а растянутый снимок
+        // кадра оставался в прежней сетке — пустые листы-подложка вставали вразнобой
+        // со снимком. Центрируется сетка при этом по живой ширине.
+        private float _pageGridRowWidthPt = float.NaN;
+
         /// <summary>
         /// Сетка листов в ряд: ряды сверху вниз, в ряду листы слева направо, каждый ряд
         /// по центру холста.
@@ -75,19 +85,24 @@ namespace Writersword.Modules.TextEditor.Document
         /// таких листов, — холст бывает уже, и тогда он прокручивается.
         /// </param>
         /// <param name="maxPerRow">Больше листов в ряду не ставится.</param>
+        /// <param name="rowWidthPt">
+        /// Ширина, по которой листы набираются в ряды. Не задана — ширина холста.
+        /// </param>
         private static PageGrid BuildPageGrid(
             List<PageRect> pages, int columns, float canvasWidthPt, float laneWidthPt, float basePageWidthPt,
-            int maxPerRow)
+            int maxPerRow, float rowWidthPt = float.NaN)
         {
             int count = pages.Count;
             columns = Math.Max(1, columns);
             maxPerRow = Math.Max(1, maxPerRow);
-            float gapX = PageGapPt * 2f + laneWidthPt;
+            float gapX = PageGapXPt + laneWidthPt;
+
+            if (float.IsNaN(rowWidthPt)) rowWidthPt = canvasWidthPt;
 
             float baseWidth = basePageWidthPt > 1f ? basePageWidthPt : (count > 0 ? pages[0].WidthPt : 0f);
             float budget = Math.Max(
                 columns * baseWidth + (columns - 1) * gapX + laneWidthPt,
-                canvasWidthPt - PageGapPt * 2f);
+                rowWidthPt - PageGapPt * 2f);
             budget -= laneWidthPt;
 
             // Ряды по ширине: лист идёт в текущий ряд, пока ряд не полон по числу и
@@ -161,6 +176,7 @@ namespace Writersword.Modules.TextEditor.Document
                 PageCount = count,
                 Columns = columns,
                 CanvasWidthPt = canvasWidthPt,
+                RowWidthPt = rowWidthPt,
                 LaneWidthPt = laneWidthPt,
                 BasePageWidthPt = basePageWidthPt,
                 MaxPerRow = maxPerRow,
@@ -188,17 +204,24 @@ namespace Writersword.Modules.TextEditor.Document
             int maxPerRow = MaxPagesPerRow;
             var grid = _pageGrid;
 
+            // Вне жеста масштаба ряды набираются по живой ширине, и она же запоминается
+            // как ширина рядов на случай жеста. Во время жеста — по запомненной.
+            if (!_zooming || float.IsNaN(_pageGridRowWidthPt))
+                _pageGridRowWidthPt = canvasWidthPt;
+            float rowWidthPt = _pageGridRowWidthPt;
+
             if (grid is not null
                 && ReferenceEquals(grid.Pages, pages)
                 && grid.PageCount == pages.Count
                 && grid.Columns == _pagesPerRow
                 && Math.Abs(grid.CanvasWidthPt - canvasWidthPt) < 0.01f
+                && Math.Abs(grid.RowWidthPt - rowWidthPt) < 0.01f
                 && Math.Abs(grid.LaneWidthPt - RevisionLaneWidthPtNow) < 0.01f
                 && Math.Abs(grid.BasePageWidthPt - basePageWidthPt) < 0.01f
                 && grid.MaxPerRow == maxPerRow)
                 return grid;
 
-            grid = BuildPageGrid(pages, _pagesPerRow, canvasWidthPt, RevisionLaneWidthPtNow, basePageWidthPt, maxPerRow);
+            grid = BuildPageGrid(pages, _pagesPerRow, canvasWidthPt, RevisionLaneWidthPtNow, basePageWidthPt, maxPerRow, rowWidthPt);
             _pageGrid = grid;
             return grid;
         }

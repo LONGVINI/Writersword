@@ -474,7 +474,8 @@
 				<!-- Импорт -->
 				<StackPanel x:Name="IoImportPanel" Spacing="10">
 					<TextBox x:Name="ImportName"
-					         PlaceholderText="{x:Static res:SharedStrings.Palette_NamePlaceholder}"/>
+					         PlaceholderText="{x:Static res:SharedStrings.Palette_NamePlaceholder}"
+					         behaviors:SelectAllBehavior.Enabled="True"/>
 					<TextBox x:Name="ImportCode" AcceptsReturn="True" Height="150" TextWrapping="Wrap"
 					         PlaceholderText="{x:Static res:SharedStrings.Palette_ImportHint}"/>
 					<TextBlock x:Name="ImportError" IsVisible="False" FontSize="11" Foreground="#E0573B"/>

@@ -371,6 +371,23 @@
 				</Panel>
 			</TabItem>
 
+			<!-- ── Диаграмма (КОНТЕКСТНАЯ) ───────────────────────────────── -->
+			<!-- Видна, пока выделена диаграмма, вместе с «Форматом» и        -->
+			<!-- «Расположением». Стоит последней: индексы прочих вкладок в    -->
+			<!-- TextEditorViewModel остаются прежними.                       -->
+			<!-- IsChartTabVisible управляется из TextEditorViewModel.        -->
+			<TabItem Classes="ImageContextTab"
+			         IsVisible="{Binding IsChartTabVisible}">
+				<TabItem.Header>
+					<TextBlock Text="Диаграмма"/>
+				</TabItem.Header>
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonChartTab DataContext="{Binding Chart}"/>
+				</Panel>
+			</TabItem>
+
 		</TabControl>
 	</Border>
 </UserControl>

@@ -250,6 +250,28 @@
 		<controls:RibbonScrollContainer.RibbonContent>
 			<StackPanel Orientation="Horizontal">
 
+				<!-- ── Группа: Диаграмма (только у диаграммы) ─────────────────── -->
+				<!-- Вид, данные и оформление диаграммы правятся в её окне; то же окно
+				     открывает двойной щелчок по диаграмме. -->
+				<Border Classes="RibbonGroup" IsVisible="{Binding IsChartSelected}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Диаграмма"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="2">
+							<Button Classes="RibbonBtn" MinHeight="56" MinWidth="56"
+							        Command="{Binding EditChartCommand}"
+							        behaviours:TooltipBehavior.Tip="Изменить вид, данные и оформление диаграммы">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/>
+									<TextBlock FontSize="9" Text="Изменить" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
 				<!-- ── Группа: Форма ────────────────────────────────────────── -->
 				<!-- Одна группа на оба объекта: у фигуры это её вид, у картинки —
 				     контур, по которому картинка обрезается и идёт рамка. Линия и

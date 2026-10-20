@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
              xmlns:models="using:Writersword.Modules.Characters.Models"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
@@ -80,7 +81,8 @@
                              BorderBrush="{DynamicResource BorderDefaultBrush}"
                              BorderThickness="1"
                              CornerRadius="4"
-                             Padding="8,6"/>
+                             Padding="8,6"
+                             behaviours:SelectAllBehavior.Enabled="True"/>
                 </StackPanel>
 
                 <!-- Описание -->

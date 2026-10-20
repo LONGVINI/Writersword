@@ -621,12 +621,16 @@ namespace Writersword.Modules.TextEditor.Document
         // Возврат клавиатурного фокуса редактору после работы с лентой (поле шрифта и т.п.).
         // Caret-состояние (_caretPara/_caretChar) уже корректное — нужен только фокус Control.
         // Откладываем на следующий цикл: дропдаун ленты ещё закрывается и может перехватить фокус.
+        // Каретка не двигалась, и лист к ней не прокручивается: при выделенной диаграмме
+        // кнопки ленты иначе уносили вид туда, где каретка стояла до выделения.
         private void FocusEditorFromHost()
         {
             Dispatcher.UIThread.Post(() =>
             {
+                _logger.Debug("[FOCUS] Фокус листу извне: каретка абзац {Para}, символ {Char}, выделена картинка {Image}",
+                    _caretPara, _caretChar, _selectedImage is not null);
                 Focus();
-                ResetCaret();
+                ResetCaretNoScroll();
                 InvalidateVisual();
             }, DispatcherPriority.Background);
         }

@@ -134,6 +134,7 @@ namespace Writersword.Modules.TextEditor.Services
             ImportComments(mainPart, doc, section, resolver, numbering, listIdMap, extractedImages, warnings);
 
             ApplyFinalSectionPageSettings(body, doc, resolver, warnings);
+            doc.PageSettings.MirrorMargins = ReadMirrorMargins(mainPart);
 
             // Параметры всех разделов — до разбора абзацев: тип разрыва раздела берётся
             // у следующего раздела, а он в файле ещё впереди.

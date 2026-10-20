@@ -35,18 +35,25 @@ namespace Writersword.Modules.TextEditor.Rendering
             {
                 case GradientKind.Radial:
                 {
-                    float radius = 0.5f * Math.Max(rect.Width, rect.Height);
-                    if (radius <= 0f) radius = 1f;
-                    return SKShader.CreateRadialGradient(
-                        new SKPoint(cx, cy), radius, colors, positions, SKShaderTileMode.Clamp);
+                    // Как у подборщика цвета (RadialGradientBrush с радиусами 50% на 50%):
+                    // эллипс, вписанный в прямоугольник, а не круг по большей стороне.
+                    float radiusX = Math.Max(0.5f * rect.Width, 0.5f);
+                    float radiusY = Math.Max(0.5f * rect.Height, 0.5f);
+                    var radial = SKShader.CreateRadialGradient(
+                        new SKPoint(cx, cy), radiusX, colors, positions, SKShaderTileMode.Clamp);
+                    if (Math.Abs(radiusX - radiusY) <= 0.01f) return radial;
+                    using (radial)
+                        return radial.WithLocalMatrix(SKMatrix.CreateScale(1f, radiusY / radiusX, cx, cy));
                 }
 
                 case GradientKind.Conic:
                 {
-                    var sweep = SKShader.CreateSweepGradient(new SKPoint(cx, cy), colors, positions);
-                    if (Math.Abs(spec.AngleDeg) > 0.001)
-                        sweep = sweep.WithLocalMatrix(SKMatrix.CreateRotationDegrees((float)spec.AngleDeg, cx, cy));
-                    return sweep;
+                    // У Skia нулевой угол развёртки смотрит вправо, а у подборщика цвета
+                    // (ConicGradientBrush, как в CSS) — вверх. Без сдвига на 90 градусов
+                    // градиент на листе и в диаграмме был повёрнут против часовой
+                    // относительно образца: то, что в образце внизу, оказывалось слева.
+                    using var sweep = SKShader.CreateSweepGradient(new SKPoint(cx, cy), colors, positions);
+                    return sweep.WithLocalMatrix(SKMatrix.CreateRotationDegrees((float)spec.AngleDeg - 90f, cx, cy));
                 }
 
                 default:

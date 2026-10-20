@@ -93,13 +93,15 @@
 								     ввода: щелчок ставит курсор, запись — по Enter или
 								     уходу из поля, Esc возвращает как было. Встроенный
 								     шаблон не меняется — у него просто текст. -->
-								<StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Top" Margin="0,2,72,0">
+								<StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Top" Margin="0,0,72,0">
 									<TextBlock Text="{Binding Name}"
 									           IsVisible="{Binding IsBuiltIn}"
+									           Margin="0,2,0,0"
 									           FontSize="13" FontWeight="Medium"
 									           TextTrimming="CharacterEllipsis"
 									           Foreground="{DynamicResource TextPrimaryBrush}"/>
 									<TextBlock Text="{Binding Description}"
+									           Margin="0,1,0,0"
 									           FontSize="11"
 									           TextWrapping="Wrap" MaxLines="2"
 									           TextTrimming="CharacterEllipsis"
@@ -119,16 +121,32 @@
 									         FontSize="13" FontWeight="Medium"
 									         GotFocus="OnInlineGotFocus"
 									         LostFocus="OnInlineLostFocus"
-									         KeyDown="OnInlineKeyDown"/>
-									<TextBox Classes="tpl-inline tpl-desc"
-									         IsVisible="{Binding IsEditable}"
-									         Text="{Binding EditDescription, Mode=TwoWay}"
-									         PlaceholderText="Описание"
-									         FontSize="11" TextWrapping="Wrap" MaxHeight="34"
-									         Foreground="{DynamicResource TextSecondaryBrush}"
-									         GotFocus="OnInlineGotFocus"
-									         LostFocus="OnInlineLostFocus"
-									         KeyDown="OnInlineKeyDown"/>
+									         KeyDown="OnInlineKeyDown"
+									         behaviours:SelectAllBehavior.Enabled="True"/>
+									<!-- Пока описания нет, на его месте значок строк текста,
+									     как в шапке карточки персонажа: слово «Описание» под
+									     названием читается как само описание шаблона. Щелчок
+									     по значку ставит курсор в поле, в правке значок гаснет. -->
+									<Panel Classes="tpl-desc-slot" Background="Transparent"
+									       IsVisible="{Binding IsEditable}">
+										<TextBox Classes="tpl-inline tpl-desc"
+										         Text="{Binding EditDescription, Mode=TwoWay}"
+										         FontSize="11" TextWrapping="Wrap" MaxHeight="38"
+										         Foreground="{DynamicResource TextSecondaryBrush}"
+										         GotFocus="OnInlineGotFocus"
+										         LostFocus="OnInlineLostFocus"
+										         KeyDown="OnInlineKeyDown"
+										         behaviours:SelectAllBehavior.Enabled="True"/>
+										<Button Classes="tpl-desc-icon"
+										        Click="OnDescriptionIconClick"
+										        IsVisible="{Binding EditDescription,
+										            Converter={x:Static StringConverters.IsNullOrEmpty}}"
+										        behaviours:TooltipBehavior.Tip="Описание">
+											<PathIcon Data="M14 17H4v2h10v-2zm6-8H4v2h16V9zM4 15h16v-2H4v2zM4 5v2h16V5H4z"
+											          Width="13" Height="13"
+											          Foreground="{DynamicResource TextSecondaryBrush}"/>
+										</Button>
+									</Panel>
 								</StackPanel>
 							</Grid>
 
@@ -553,12 +571,18 @@
 			<Setter Property="Background" Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="1"/>
 			<Setter Property="BorderBrush" Value="Transparent"/>
-			<Setter Property="Padding" Value="4,1"/>
-			<Setter Property="Margin" Value="-5,0,0,0"/>
+			<Setter Property="Padding" Value="6,3"/>
+			<Setter Property="Margin" Value="-7,0,0,0"/>
 			<Setter Property="MinHeight" Value="0"/>
 			<Setter Property="CornerRadius" Value="4"/>
 		</Style>
 		<Style Selector="TextBox.tpl-inline:pointerover /template/ Border#PART_BorderElement">
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<!-- Поле описания подсвечивается наведением на всю ячейку: поверх
+		     пустого поля лежит значок, и курсор на нём гасил бы подсветку. -->
+		<Style Selector="Panel.tpl-desc-slot:pointerover TextBox.tpl-inline /template/ Border#PART_BorderElement">
 			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
 			<Setter Property="BorderBrush" Value="Transparent"/>
 		</Style>
@@ -568,6 +592,29 @@
 		</Style>
 		<Style Selector="TextBox.tpl-name">
 			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.tpl-desc-icon">
+			<Setter Property="HorizontalAlignment" Value="Left"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Margin" Value="-2,0,0,0"/>
+			<Setter Property="Padding" Value="2"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Cursor" Value="Ibeam"/>
+		</Style>
+		<Style Selector="Button.tpl-desc-icon /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.tpl-desc-icon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.tpl-desc-icon:pressed /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="Panel.tpl-desc-slot:focus-within Button.tpl-desc-icon">
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="IsHitTestVisible" Value="False"/>
 		</Style>
 
 		<Style Selector="Button.ic-depth">

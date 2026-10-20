@@ -538,7 +538,8 @@ namespace Writersword.Modules.TextEditor.Services
                 ZOrder = source.ZOrder,
                 AltText = source.AltText,
                 SourceImageFileName = source.SourceImageFileName,
-                WordDrawing = source.WordDrawing?.Clone()
+                WordDrawing = source.WordDrawing?.Clone(),
+                Chart = source.Chart?.Clone()
             };
         }
 

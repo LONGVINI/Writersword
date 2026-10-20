@@ -208,6 +208,7 @@ namespace Writersword.Modules.TextEditor.Commands
             doc.PageSettings.MarginGutterMm = restored.PageSettings.MarginGutterMm;
             doc.PageSettings.HeaderDistanceMm = restored.PageSettings.HeaderDistanceMm;
             doc.PageSettings.FooterDistanceMm = restored.PageSettings.FooterDistanceMm;
+            doc.PageSettings.MirrorMargins = restored.PageSettings.MirrorMargins;
 
             doc.ColumnSettings.ColumnCount = restored.ColumnSettings.ColumnCount;
             doc.ColumnSettings.GapMm = restored.ColumnSettings.GapMm;

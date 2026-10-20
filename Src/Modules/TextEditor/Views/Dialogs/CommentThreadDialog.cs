@@ -129,7 +129,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
                 TextWrapping = TextWrapping.Wrap,
                 MinHeight = 64,
                 MaxHeight = 200,
-                Watermark = "Ответ…"
+                PlaceholderText = "Ответ…"
             };
             BindResource(_reply, TextBox.BackgroundProperty, "BgSurfaceBrush");
             BindResource(_reply, TextBox.BorderBrushProperty, "BorderDefaultBrush");

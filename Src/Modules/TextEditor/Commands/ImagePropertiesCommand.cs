@@ -17,6 +17,8 @@ namespace Writersword.Modules.TextEditor.Commands
             public ImageState(ImageBlock i)
             {
                 Change = i.Change?.Clone();
+                ImageFileName = i.ImageFileName;
+                Chart = i.Chart;
                 WidthPt = i.WidthPt;
                 HeightPt = i.HeightPt;
                 OffsetXPt = i.OffsetXPt;
@@ -47,6 +49,15 @@ namespace Writersword.Modules.TextEditor.Commands
                 WrapPadLeftPt = i.WrapPadLeftPt;
                 WrapPadRightPt = i.WrapPadRightPt;
             }
+
+            /// <summary>Файл картинки: замена картинки отменяется вместе с видом.</summary>
+            public string ImageFileName { get; }
+
+            /// <summary>
+            /// Диаграмма. Модель после создания не меняется — правка ставит новую, — поэтому
+            /// хватает ссылки на прежнюю.
+            /// </summary>
+            public ChartModel? Chart { get; }
 
             public double WidthPt { get; }
             public double HeightPt { get; }
@@ -86,6 +97,8 @@ namespace Writersword.Modules.TextEditor.Commands
             public void ApplyTo(ImageBlock i)
             {
                 i.Change = Change?.Clone();
+                i.ImageFileName = ImageFileName;
+                i.Chart = Chart;
                 i.WidthPt = WidthPt;
                 i.HeightPt = HeightPt;
                 i.OffsetXPt = OffsetXPt;

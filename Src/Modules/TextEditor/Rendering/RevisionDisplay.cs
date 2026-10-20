@@ -116,6 +116,72 @@ namespace Writersword.Modules.TextEditor.Rendering
             return shown ?? blocks;
         }
 
+        /// <summary>
+        /// Таблица для вёрстки. В «Исходном документе» таблица со сменой оформления
+        /// верстается с прежним: двойник с теми же ячейками по сетке и Id, у которого
+        /// оформление возвращено из записи, а абзацы, вложенные таблицы и объекты ячеек —
+        /// те же, что у таблицы документа. Правка текста в такой таблице идёт в сам
+        /// документ: раскладка ячеек отдаёт абзацы документа, не двойника.
+        /// </summary>
+        public static TableBlock DisplayTable(TableBlock table, RevisionView view)
+        {
+            if (view != RevisionView.Original || table.FormatChange is not { } change) return table;
+            if (Services.DocumentCloner.CloneBlock(table) is not TableBlock twin
+                || twin.Cells.Count != table.Cells.Count)
+                return table;
+
+            for (int i = 0; i < twin.Cells.Count; i++)
+            {
+                var own = table.Cells[i];
+                var shown = twin.Cells[i];
+                shown.Paragraphs = own.Paragraphs;
+                shown.NestedTables = own.NestedTables;
+                shown.Floats = own.Floats;
+            }
+
+            Services.TableFrame.Restore(twin, change.Previous);
+            twin.FormatChange = null;
+            return twin;
+        }
+
+        /// <summary>
+        /// Параметры раздела, который кончается этим разрывом, для вёрстки листов. В
+        /// «Исходном документе» раздел со сменой параметров верстается с прежними: лист,
+        /// поля, колонки, выравнивание по высоте, рамка и номера строк — из записи
+        /// правки. Иначе — параметры самого раздела.
+        /// </summary>
+        public static Models.Page.SectionLayout? DisplaySection(BreakBlock sectionEnd, RevisionView view)
+        {
+            if (view != RevisionView.Original || sectionEnd.Section?.FormatChange is not { } change)
+                return sectionEnd.Section;
+
+            var twin = new BreakBlock { BreakType = sectionEnd.BreakType, Section = sectionEnd.Section.Clone() };
+            twin.Section.FormatChange = null;
+            Services.SectionFrame.Restore(twin, change.Previous);
+            return twin.Section;
+        }
+
+        /// <summary>
+        /// Прежние параметры последнего раздела для вёрстки «Исходного документа»: лист,
+        /// колонки и остальное из записи правки. Null — вид другой или параметры правкой
+        /// не менялись.
+        /// </summary>
+        public static (Models.Page.TextEditorPageSettings Page, Models.Page.SectionColumns Columns, Models.Page.SectionLayout Layout)?
+            DisplayFinalSection(DocumentModel document, RevisionView view)
+        {
+            if (view != RevisionView.Original || document.PageSetupChange is not { } change) return null;
+            if (Services.SectionFrame.Parse(change.Previous) is not { } look) return null;
+
+            var layout = document.FinalSection?.Clone() ?? new Models.Page.SectionLayout();
+            layout.FormatChange = null;
+            layout.Page = look.Page.Clone();
+            layout.Columns = look.Columns.Clone();
+            layout.VerticalAlignment = look.VerticalAlignment;
+            layout.PageBorders = look.PageBorders?.Clone();
+            layout.LineNumbering = look.LineNumbering?.Clone();
+            return (layout.Page, layout.Columns, layout);
+        }
+
         /// <summary>Фрагмент спрятан правкой при этом виде.</summary>
         public static bool IsRunHidden(RunProperties? props, RevisionView view)
         {

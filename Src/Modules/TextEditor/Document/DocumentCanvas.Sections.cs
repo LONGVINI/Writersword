@@ -101,7 +101,12 @@ namespace Writersword.Modules.TextEditor.Document
             var sections = new List<(int, SectionGeometry)>();
             var document = DocVm!.Document;
 
-            var documentGeometry = GeometryOf(null, ColumnFrames.FinalColumns(document));
+            // В «Исходном документе» разделы со сменой параметров верстаются с прежними
+            // (RevisionDisplay.DisplaySection).
+            var view = document.RevisionView;
+            var documentGeometry = RevisionDisplay.DisplayFinalSection(document, view) is { } previousFinal
+                ? GeometryOf(previousFinal.Page, previousFinal.Columns)
+                : GeometryOf(null, ColumnFrames.FinalColumns(document));
             float widest = documentGeometry.PageWidthPt;
 
             int start = 0;
@@ -109,7 +114,8 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 if (blocks[i] is not BreakBlock { IsSectionBreak: true } sectionBreak) continue;
 
-                var geometry = GeometryOf(sectionBreak.Section?.Page, ColumnFrames.ColumnsOf(document, sectionBreak));
+                var shown = RevisionDisplay.DisplaySection(sectionBreak, view);
+                var geometry = GeometryOf(shown?.Page, shown?.Columns ?? ColumnFrames.ColumnsOf(document, sectionBreak));
                 sections.Add((start, geometry));
                 widest = Math.Max(widest, geometry.PageWidthPt);
 
@@ -120,6 +126,37 @@ namespace Writersword.Modules.TextEditor.Document
 
             _widestSectionPageWidthPt = widest;
             return sections;
+        }
+
+        // Решения о пустых листах перед разделами «с чётной» и «с нечётной» страницы:
+        // разрыв → нужен ли пустой лист. Переходят из прохода в проход и из пересборки в
+        // пересборку (SKTextRenderer.SettleParity).
+        private readonly Dictionary<Guid, bool> _parityDecisions = new();
+
+        // Такие разрывы последнего прохода: где начался раздел и стоял ли пустой лист.
+        private readonly List<Rendering.SKTextRenderer.ParityBreak> _passParityBreaks = new();
+
+        /// <summary>
+        /// Сверяет пустые листы перед разделами «с чётной» и «с нечётной» страницы с
+        /// печатаемыми номерами листов прохода. true — решение сменилось, проход нужно
+        /// повторить.
+        /// </summary>
+        private bool SettlePageParityFromPass()
+        {
+            if (_passParityBreaks.Count == 0 || DocVm is null) return false;
+
+            var layouts = _passLayouts;
+            int pageCount = _passPages.Count;
+            if (pageCount == 0) return false;
+
+            var facts = BuildPageFacts(layouts, pageCount);
+            var decorations = Services.PageNumbering.Compute(
+                DocVm.HeaderFooter, pageCount, facts.ParagraphStartPages, facts.ChapterStartPages);
+
+            return Rendering.SKTextRenderer.SettleParity(
+                _passParityBreaks.ToArray(),
+                page => page >= 0 && page < decorations.Length ? decorations[page].Number : page + 1,
+                _parityDecisions);
         }
 
         /// <summary>Номер раздела, в который входит блок с этим индексом.</summary>

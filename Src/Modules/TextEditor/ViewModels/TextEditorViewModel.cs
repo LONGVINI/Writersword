@@ -1750,6 +1750,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (_documentViewModel is not null)
             {
                 _documentViewModel.CursorContextChanged -= OnCursorContextChanged;
+                _documentViewModel.ChartChanged -= OnChartChanged;
                 _documentViewModel.DocumentRestored -= OnDocumentRestored;
                 _documentViewModel.StructureChanged -= OnStructureChangedForNavigator;
                 _documentViewModel.ParagraphFormatChanged -= OnStructureChangedForNavigator;
@@ -1766,6 +1767,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             var docVm = new DocumentViewModel(document, _chunkManager, _autoReplace, _spellCheck);
             docVm.CursorContextChanged += OnCursorContextChanged;
+            docVm.ChartChanged += OnChartChanged;
             docVm.DocumentRestored += OnDocumentRestored;
 
             // Символы-заполнители объектов, потерявшие свою картинку, убираются до
@@ -2057,13 +2059,41 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (Ruler.CurrentSection is not null) return;
 
             var ps = document.PageSettings;
+            var (shownLeftMm, shownRightMm) = ModelToRuler(ps.MarginLeftMm + ps.MarginGutterMm, ps.MarginRightMm);
             Ruler.UpdatePageSettings(
                 widthMm: ps.GetPhysicalWidthMm(),
                 heightMm: ps.GetPhysicalHeightMm(),
-                marginLeftMm: ps.MarginLeftMm + ps.MarginGutterMm,
-                marginRightMm: ps.MarginRightMm,
+                marginLeftMm: shownLeftMm,
+                marginRightMm: shownRightMm,
                 marginTopMm: ps.MarginTopMm,
                 marginBottomMm: ps.MarginBottomMm);
+        }
+
+        // Поля листа под кареткой на линейке стоят так, как на этом листе: при
+        // зеркальных полях на листе с переплётом справа — местами наоборот, при
+        // переплёте справа — с переплётом у правого поля (RulerViewModel.MirroredSides,
+        // RightGutterMm). Документ же хранит левое поле с переплётом слева и правое.
+
+        /// <summary>Поля документа (левое с переплётом, правое) — в края линейки на листе под кареткой.</summary>
+        private (double LeftMm, double RightMm) ModelToRuler(double leftWithGutterMm, double rightMm)
+        {
+            if (Ruler.MirroredSides) return (rightMm, leftWithGutterMm);
+
+            double gutterMm = Ruler.RightGutterMm;
+            if (gutterMm > 0) return (Math.Max(0.0, leftWithGutterMm - gutterMm), rightMm + gutterMm);
+
+            return (leftWithGutterMm, rightMm);
+        }
+
+        /// <summary>Края линейки на листе под кареткой — в поля документа (левое с переплётом, правое).</summary>
+        private (double LeftWithGutterMm, double RightMm) RulerToModel(double shownLeftMm, double shownRightMm)
+        {
+            if (Ruler.MirroredSides) return (shownRightMm, shownLeftMm);
+
+            double gutterMm = Ruler.RightGutterMm;
+            if (gutterMm > 0) return (shownLeftMm + gutterMm, Math.Max(0.0, shownRightMm - gutterMm));
+
+            return (shownLeftMm, shownRightMm);
         }
 
         public void NotifyPageSettingsChanged()
@@ -2169,7 +2199,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         //
         //   0 — Главная, 1 — Вставка, 2 — Макет, 3 — Ссылки, 4 — Рецензирование,
         //   5 — Вид, 6 — Таблица, 7 — Формат, 8 — Расположение, 9 — Оглавление,
-        //   10 — Колонтитулы, 11 — Формулы.
+        //   10 — Колонтитулы, 11 — Формулы, 12 — Диаграмма.
         //
         // Числа обязаны совпадать с разметкой знак в знак: TabControl различает
         // вкладки только по месту в списке. Разошлись они однажды так — вкладку
@@ -2196,6 +2226,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private const int HeaderFooterTabIndex = 10;
         private const int FormulaTabIndex = 11;
 
+        // «Диаграмма» — третья вкладка объекта: показывается вместе с «Форматом» и
+        // «Расположением», когда выделенный объект — диаграмма, и открывается первой.
+        private const int ChartTabIndex = 12;
+
         // Вкладка, активная до автопереключения на «Формат» — восстанавливается
         // при снятии выделения картинки.
         private int _tabIndexBeforeImage = -1;
@@ -2217,6 +2251,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             TocTabIndex => Ribbon.IsTocTabVisible,
             HeaderFooterTabIndex => Ribbon.IsHeaderFooterTabVisible,
             FormulaTabIndex => Ribbon.IsFormulaTabVisible,
+            ChartTabIndex => Ribbon.IsChartTabVisible,
             _ => index >= 0 && index < TableTabIndex
         };
 
@@ -2256,6 +2291,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (selected)
             {
+                bool chart = IsSelectedChart();
+
                 if (!Ribbon.IsImageTabVisible)
                 {
                     _tabIndexBeforeImage = Ribbon.SelectedTabIndex;
@@ -2265,10 +2302,29 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     // только потом гасим табличную. Погаси её раньше — и выбранной
                     // на миг останется скрытая вкладка, а разметка этого не переживает.
                     Ribbon.IsImageTabVisible = true;
-                    Ribbon.SelectedTabIndex = ImageTabIndex;
+                    Ribbon.IsChartTabVisible = chart;
+                    Ribbon.SelectedTabIndex = chart ? ChartTabIndex : ImageTabIndex;
                     Ribbon.IsTableTabVisible = false;
                 }
+                else if (chart != Ribbon.IsChartTabVisible)
+                {
+                    // Выделение перешло с картинки на диаграмму или обратно: вкладка
+                    // диаграммы появляется и выбирается либо уходит, не оставаясь
+                    // выбранной скрытой.
+                    if (chart)
+                    {
+                        Ribbon.IsChartTabVisible = true;
+                        Ribbon.SelectedTabIndex = ChartTabIndex;
+                    }
+                    else
+                    {
+                        if (Ribbon.SelectedTabIndex == ChartTabIndex) Ribbon.SelectedTabIndex = ImageTabIndex;
+                        Ribbon.IsChartTabVisible = false;
+                    }
+                }
+
                 Ribbon.Image.SyncFromTarget();
+                if (chart) Ribbon.Chart.SyncFromTarget();
             }
             else
             {
@@ -2276,13 +2332,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 // пользователь ушёл на «Расположение», а объект перестал быть
                 // выделенным, обе гаснут — и выбранной осталась бы скрытая.
                 bool wasOnImageTab = Ribbon.SelectedTabIndex == ImageTabIndex
-                    || Ribbon.SelectedTabIndex == ImagePlacementTabIndex;
+                    || Ribbon.SelectedTabIndex == ImagePlacementTabIndex
+                    || Ribbon.SelectedTabIndex == ChartTabIndex;
 
                 // Табличную возвращаем ДО выбора: она может оказаться той самой
                 // вкладкой, на которую мы собираемся вернуться.
                 Ribbon.IsTableTabVisible = _tableTabBeforeImage;
                 if (wasOnImageTab) RestoreRibbonTab(_tabIndexBeforeImage, ImageTabIndex);
                 Ribbon.IsImageTabVisible = false;
+                Ribbon.IsChartTabVisible = false;
                 _tabIndexBeforeImage = -1;
                 _tableTabBeforeImage = false;
             }
@@ -2492,6 +2550,29 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // ли жест хоть что-то.
         private (double Top, double Bottom, double Left, double Right)? _marginDragStart;
 
+        // Края линейки в начале жеста — так, как их показывала линейка. В документ уходят
+        // только сдвинутые края: лист «Исходного документа» показывает поля раздела до
+        // правки, и несдвинутые края линейки — прежние, а не текущие поля документа.
+        private (double Left, double Right, double Top, double Bottom)? _rulerShownStart;
+
+        private const double RulerEdgeEpsMm = 1e-6;
+
+        /// <summary>
+        /// Какие края сдвинуты жестом: сравниваются края линейки сейчас и в начале жеста
+        /// (левый и правый — уже в полях документа, см. RulerToModel).
+        /// </summary>
+        private (bool Left, bool Right, bool Top, bool Bottom) MovedRulerEdges(double modelLeftMm, double modelRightMm)
+        {
+            if (_rulerShownStart is not { } start) return (true, true, true, true);
+
+            var (startLeft, startRight) = RulerToModel(start.Left, start.Right);
+            return (
+                Math.Abs(modelLeftMm - startLeft) > RulerEdgeEpsMm,
+                Math.Abs(modelRightMm - startRight) > RulerEdgeEpsMm,
+                Math.Abs(Ruler.MarginTopMm - start.Top) > RulerEdgeEpsMm,
+                Math.Abs(Ruler.MarginBottomMm - start.Bottom) > RulerEdgeEpsMm);
+        }
+
         // Колонки таблиц уже заморожены в этом жесте.
         private bool _marginDragFrozen;
 
@@ -2506,6 +2587,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 var ps = DocumentViewModel.Document.PageSettings;
                 _marginDragStart = (ps.MarginTopMm, ps.MarginBottomMm, ps.MarginLeftMm, ps.MarginRightMm);
             }
+            _rulerShownStart = (Ruler.MarginLeftMm, Ruler.MarginRightMm, Ruler.MarginTopMm, Ruler.MarginBottomMm);
             _marginDragFrozen = false;
             _marginDragMoved = false;
 
@@ -2523,6 +2605,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private void OnRulerMarginChanged(double marginLeftMm, double marginRightMm)
         {
             if (DocumentViewModel is null) return;
+
+            // Края линейки — поля этого листа; в документ — его поля.
+            (marginLeftMm, marginRightMm) = RulerToModel(marginLeftMm, marginRightMm);
 
             // Поле листа раздела: край идёт за мышью на линейке, лист перекладывается
             // по отпусканию (OnRulerMarginCommitted).
@@ -2543,9 +2628,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             double visibleLeftMm = FloorRulerLeftToGutter(marginLeftMm);
 
+            // Несдвинутые края — поля документа до жеста, а не края линейки.
+            var moved = MovedRulerEdges(marginLeftMm, marginRightMm);
+            var before = _marginDragStart ?? (
+                DocumentViewModel.Document.PageSettings.MarginTopMm,
+                DocumentViewModel.Document.PageSettings.MarginBottomMm,
+                DocumentViewModel.Document.PageSettings.MarginLeftMm,
+                DocumentViewModel.Document.PageSettings.MarginRightMm);
+
             DocumentViewModel.ShowMarginPreview(
-                Ruler.MarginTopMm, Ruler.MarginBottomMm,
-                RulerLeftToDocumentLeft(visibleLeftMm), marginRightMm);
+                moved.Top ? Ruler.MarginTopMm : before.Top,
+                moved.Bottom ? Ruler.MarginBottomMm : before.Bottom,
+                moved.Left ? RulerLeftToDocumentLeft(visibleLeftMm) : before.Left,
+                moved.Right ? marginRightMm : before.Right);
             _marginDragMoved = true;
         }
 
@@ -2578,7 +2673,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             double gutterMm = DocumentViewModel?.Document.PageSettings.MarginGutterMm ?? 0.0;
             if (gutterMm <= 0.0 || rulerLeftMm >= gutterMm) return rulerLeftMm;
 
-            Ruler.MarginLeftMm = gutterMm;
+            // Край упирается в переплёт там, где он стоит на линейке этого листа.
+            if (Ruler.MirroredSides) Ruler.MarginRightMm = gutterMm;
+            else if (Ruler.RightGutterMm <= 0) Ruler.MarginLeftMm = gutterMm;
             return gutterMm;
         }
 
@@ -2681,18 +2778,26 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (DocumentViewModel is null) return;
 
+            // Края линейки — поля этого листа; в документ — его поля.
+            (marginLeftMm, marginRightMm) = RulerToModel(marginLeftMm, marginRightMm);
+
             // Жест закончен: дальше полотно ждёт итоговой смены полей.
             DocumentViewModel.HideMarginPreview();
 
             // Лист раздела со своими полями: поля пишутся в раздел, а не в документ.
+            var movedEdges = MovedRulerEdges(marginLeftMm, marginRightMm);
+
             if (Ruler.CurrentSection is Models.Page.SectionLayout { Page: { } sectionPage })
             {
-                sectionPage.MarginTopMm = Ruler.MarginTopMm;
-                sectionPage.MarginBottomMm = Ruler.MarginBottomMm;
-                sectionPage.MarginLeftMm = Math.Max(0, marginLeftMm - sectionPage.MarginGutterMm);
-                sectionPage.MarginRightMm = marginRightMm;
+                // Только сдвинутые края: несдвинутые на листе «Исходного документа» —
+                // прежние поля, а не поля раздела.
+                if (movedEdges.Top) sectionPage.MarginTopMm = Ruler.MarginTopMm;
+                if (movedEdges.Bottom) sectionPage.MarginBottomMm = Ruler.MarginBottomMm;
+                if (movedEdges.Left) sectionPage.MarginLeftMm = Math.Max(0, marginLeftMm - sectionPage.MarginGutterMm);
+                if (movedEdges.Right) sectionPage.MarginRightMm = marginRightMm;
 
                 _marginDragStart = null;
+                _rulerShownStart = null;
                 _marginDragMoved = false;
 
                 DocumentViewModel.RaisePageSettingsChanged();
@@ -2714,6 +2819,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // промежуточные значения.
             var start = _marginDragStart
                 ?? (ps.MarginTopMm, ps.MarginBottomMm, ps.MarginLeftMm, ps.MarginRightMm);
+
+            // Несдвинутые края — поля документа до жеста: на листе «Исходного документа»
+            // линейка показывает прежние поля последнего раздела, а не текущие.
+            if (!movedEdges.Top) topMm = start.Top;
+            if (!movedEdges.Bottom) bottomMm = start.Bottom;
+            if (!movedEdges.Left) documentLeftMm = start.Left;
+            if (!movedEdges.Right) marginRightMm = start.Right;
 
             const double MarginEpsMm = 1e-6;
             bool marginsChanged =
@@ -2744,6 +2856,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
 
             _marginDragStart = null;
+            _rulerShownStart = null;
             _marginDragMoved = false;
 
             SyncRulerToDocument(DocumentViewModel.Document);
@@ -2962,9 +3075,33 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertFloatingTextBox() => DocumentViewModel?.InsertFloatingTextBox();
         public void InsertPageBreak() => DocumentViewModel?.InsertPageBreak();
         public void InsertSectionBreak(BreakType t) => DocumentViewModel?.InsertSectionBreak(t);
+        public void InsertColumnBreak() => DocumentViewModel?.InsertColumnBreak();
         public void InsertFootnote() => DocumentViewModel?.InsertFootnote();
         public void InsertEndnote() => DocumentViewModel?.InsertEndnote();
         public void InsertFormula() => DocumentViewModel?.InsertFormula();
+
+        public void InsertChart(ChartKind kind) => DocumentViewModel?.InsertChart(kind);
+
+        public void InsertComboChart() => DocumentViewModel?.InsertComboChart();
+
+        public void EditSelectedChart() => DocumentViewModel?.EditSelectedChart();
+
+        public bool IsSelectedChart() => DocumentViewModel?.IsSelectedChart() ?? false;
+
+        /// <summary>Диаграмму поправили в её окне: вкладка «Диаграмма» показывает новое состояние.</summary>
+        private void OnChartChanged()
+        {
+            if (Ribbon.IsChartTabVisible) Ribbon.Chart.SyncFromTarget();
+        }
+
+        public ChartModel? GetSelectedChart() => DocumentViewModel?.GetSelectedChart();
+
+        public void ApplySelectedChart(ChartModel chart, string description)
+            => DocumentViewModel?.ApplySelectedChart(chart, description);
+
+        public void PreviewSelectedChart(ChartModel? preview) => DocumentViewModel?.PreviewSelectedChart(preview);
+
+        public void InsertChartFromTable() => DocumentViewModel?.InsertChartFromTable();
         public void InsertReadyFormula(string latex) => DocumentViewModel?.InsertReadyFormula(latex);
         public void InsertFormulaTemplate(string latex) => DocumentViewModel?.InsertFormulaTemplate(latex);
         public void ShowFormulaHelp() => Views.Dialogs.FormulaHelpWindow.ShowHelp();
@@ -3161,6 +3298,38 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public int GetColumnCount() => DocumentViewModel?.GetSectionColumnCount() ?? 1;
 
+        public SectionSetup GetSectionSetup() => DocumentViewModel?.GetSectionSetup() ?? new SectionSetup();
+
+        public bool GetMirrorMargins() => DocumentViewModel?.GetMirrorMargins() ?? false;
+
+        public void SetMirrorMargins(bool mirror)
+        {
+            DocumentViewModel?.SetMirrorMargins(mirror);
+            if (DocumentViewModel is not null)
+                SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
+        public void SetPageSizeMm(double widthMm, double heightMm)
+        {
+            DocumentViewModel?.ApplySectionPageSizeMm(widthMm, heightMm);
+            if (DocumentViewModel is not null)
+                SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
+        public void SetColumnLayout(SectionColumns columns)
+        {
+            DocumentViewModel?.ApplySectionColumnLayout(columns);
+            if (DocumentViewModel is not null)
+                SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
+        public void SetSectionSetup(SectionSetup setup)
+        {
+            DocumentViewModel?.ApplySectionSetup(setup);
+            if (DocumentViewModel is not null)
+                SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
         public bool PageSetupToSelection
         {
             get => DocumentViewModel?.PageSetupToSelection ?? false;
@@ -3315,8 +3484,32 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var paragraphs = new List<string>();
 
             foreach (var section in DocumentViewModel.Document.Sections)
+            {
+                var context = new StatisticsContext(section);
+                bool continuesPrevious = false;
+
                 foreach (var block in section.Blocks)
-                    CollectParagraphs(block, paragraphs);
+                {
+                    // Разрыв внутри абзаца Word модель режет на кусок до разрыва и кусок
+                    // после. Word видит в этом один абзац, поэтому кусок после разрыва
+                    // дописывается к предыдущему, а не считается новым абзацем.
+                    if (block is BreakBlock { ContinuesParagraph: true })
+                    {
+                        continuesPrevious = paragraphs.Count > 0;
+                        continue;
+                    }
+
+                    if (block is ParagraphBlock para && continuesPrevious)
+                    {
+                        paragraphs[^1] += StatisticsText(para, context);
+                        continuesPrevious = false;
+                        continue;
+                    }
+
+                    continuesPrevious = false;
+                    CollectParagraphs(block, paragraphs, context);
+                }
+            }
 
             // Число страниц и строк здесь не трогается: их знает раскладка канваса и
             // присылает своим уведомлением. Прежняя единица затирала настоящее число
@@ -3325,25 +3518,97 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         /// <summary>
+        /// То, что нужно подсчёту текста раздела помимо самих абзацев: номера списков и
+        /// объекты в строке. Номера считаются тем же движком, что рисует их на листе,
+        /// и в том же порядке — по разделу целиком, сквозь таблицы.
+        /// </summary>
+        private sealed class StatisticsContext
+        {
+            public StatisticsContext(SectionModel section)
+            {
+                Markers = Rendering.ListNumberingEngine.Compute(section.Blocks);
+
+                foreach (var inline in section.InlineObjects)
+                    InlineObjects[inline.Id] = inline;
+            }
+
+            public Dictionary<ParagraphBlock, Rendering.ListMarkerInfo> Markers { get; }
+
+            public Dictionary<Guid, BlockModel> InlineObjects { get; } = new();
+        }
+
+        /// <summary>
         /// Собирает текст абзацев блока, спускаясь внутрь таблиц. Абзацы в ячейках —
         /// такой же текст документа, и Word считает их наравне с остальными: обход
         /// одних только блоков верхнего уровня занижал и слова, и знаки, и число
         /// абзацев ровно на объём таблиц.
         /// </summary>
-        private static void CollectParagraphs(BlockModel block, List<string> paragraphs)
+        private static void CollectParagraphs(BlockModel block, List<string> paragraphs, StatisticsContext context)
         {
             switch (block)
             {
                 case ParagraphBlock para:
-                    paragraphs.Add(para.GetPlainText());
+                    paragraphs.Add(StatisticsText(para, context));
                     break;
 
                 case TableBlock table:
                     foreach (var cell in table.Cells)
                         foreach (var cellParagraph in cell.ParagraphsDeep())
-                            CollectParagraphs(cellParagraph, paragraphs);
+                            CollectParagraphs(cellParagraph, paragraphs, context);
                     break;
             }
+        }
+
+        /// <summary>
+        /// Текст абзаца так, как его считает статистика Word.
+        ///
+        /// Номер пункта списка входит в текст: «12.», «•», «а)» Word считает словом, а
+        /// знаки номера и табуляцию за ним — знаками. Без номера на документе с тремя
+        /// сотнями пунктов слов выходило на три сотни меньше, чем у Word.
+        ///
+        /// Поле в строке (дата, номер страницы) — это его значение, а не символ
+        /// объекта. Картинка, фигура, формула и знак сноски в счёт не идут: Word их
+        /// словами и знаками текста не считает.
+        /// </summary>
+        private static string StatisticsText(ParagraphBlock para, StatisticsContext context)
+        {
+            var text = new StringBuilder();
+
+            foreach (var chunk in para.Chunks)
+            {
+                foreach (var run in chunk.Runs)
+                {
+                    if (!run.IsInlineObject)
+                    {
+                        text.Append(run.Text);
+                        continue;
+                    }
+
+                    if (context.InlineObjects.TryGetValue(run.InlineImageId!.Value, out var inline)
+                        && inline is FieldBlock field)
+                        text.Append(field.Result);
+                }
+            }
+
+            if (text.Length == 0 || IsWhiteSpaceOnly(text)) return text.ToString();
+
+            string? marker = context.Markers.TryGetValue(para, out var info)
+                ? info.Text
+                : para.ListProperties?.ComputedMarkerText;
+
+            if (string.IsNullOrEmpty(marker) || para.ListProperties is not { } list) return text.ToString();
+
+            var suffix = list.WordLevelAt(list.Level)?.Suffix ?? ListMarkerSuffix.Gap;
+            string separator = suffix == ListMarkerSuffix.Nothing ? string.Empty : "\t";
+
+            return marker + separator + text;
+        }
+
+        private static bool IsWhiteSpaceOnly(StringBuilder text)
+        {
+            for (int i = 0; i < text.Length; i++)
+                if (!char.IsWhiteSpace(text[i])) return false;
+            return true;
         }
 
         // ── IDisposable ───────────────────────────────────────────────────
@@ -3367,6 +3632,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (_documentViewModel is not null)
             {
                 _documentViewModel.CursorContextChanged -= OnCursorContextChanged;
+                _documentViewModel.ChartChanged -= OnChartChanged;
                 _documentViewModel.DocumentRestored -= OnDocumentRestored;
                 _documentViewModel.StructureChanged -= OnStructureChangedForNavigator;
                 _documentViewModel.ParagraphFormatChanged -= OnStructureChangedForNavigator;

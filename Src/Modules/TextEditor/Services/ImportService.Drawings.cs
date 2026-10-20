@@ -90,12 +90,34 @@ namespace Writersword.Modules.TextEditor.Services
             long extentCx = inline?.Extent?.Cx ?? anchor?.Extent?.Cx ?? 0;
             long extentCy = inline?.Extent?.Cy ?? anchor?.Extent?.Cy ?? 0;
 
+            // Диаграмма Word: данные и оформление читаются в модель диаграммы, а на листе
+            // она стоит так же, как картинка — в строке или плавающей.
+            if (graphic?.GraphicData?.Uri?.Value == ChartGraphicUri)
+            {
+                var chart = ReadChart(graphic, mainPart, extractedImages, warnings);
+                if (chart is null) return;
+
+                var chartImage = new ImageBlock
+                {
+                    WidthPt = extentCx > 0 ? extentCx / EmuPerPoint : 432,
+                    HeightPt = extentCy > 0 ? extentCy / EmuPerPoint : 252,
+                    LockAspectRatio = false,
+                    WrapMode = WrapMode.Inline,
+                    Chart = chart
+                };
+
+                PlaceDrawingObject(
+                    chartImage, (OpenXmlElement?)inline ?? anchor, anchor, graphic,
+                    chunk, section, runProps, warnings);
+                return;
+            }
+
             var blip = graphic?.GraphicData?.Descendants<Dr.Blip>().FirstOrDefault();
             string? relId = blip?.Embed?.Value;
             if (string.IsNullOrEmpty(relId))
             {
-                // Не картинка. Фигура Word (wps:wsp) переносится фигурой; диаграмма и
-                // объект OLE пропускаются молча — текста документа в них нет.
+                // Не картинка. Фигура Word (wps:wsp) переносится фигурой; объект OLE
+                // пропускается молча — текста документа в нём нет.
                 ImportWordShape(drawing, chunk, section, runProps, resolver, mainPart, extractedImages, warnings);
                 return;
             }
@@ -125,8 +147,25 @@ namespace Writersword.Modules.TextEditor.Services
             ApplyPictureGeometry(image, graphic!);
             ApplyPictureLook(image, graphic!);
 
+            PlaceDrawingObject(image, container, anchor, graphic!, chunk, section, runProps, warnings);
+        }
+
+        /// <summary>
+        /// Ставит прочитанный рисунок — картинку или диаграмму — на его место: в строку
+        /// абзаца или плавающим объектом, с подписью и свойствами рисунка Word.
+        /// </summary>
+        private void PlaceDrawingObject(
+            ImageBlock image,
+            OpenXmlElement? container,
+            Wp.Anchor? anchor,
+            Dr.Graphic graphic,
+            TextChunk chunk,
+            SectionModel section,
+            RunProperties runProps,
+            List<string> warnings)
+        {
             if (container is not null)
-                image.WordDrawing = ReadWordDrawing(container, image, graphic!);
+                image.WordDrawing = ReadWordDrawing(container, image, graphic);
 
             string? description = container is null ? null : AttributeOf(ChildByName(container, "docPr"), "descr");
             if (!string.IsNullOrWhiteSpace(description))
@@ -273,7 +312,7 @@ namespace Writersword.Modules.TextEditor.Services
         /// пропадёт и уйдёт обратно в .docx.
         /// </summary>
         private string? ExtractImagePart(
-            MainDocumentPart mainPart,
+            OpenXmlPartContainer mainPart,
             string relId,
             Dictionary<string, byte[]> extractedImages,
             List<string> warnings,

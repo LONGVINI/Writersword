@@ -443,7 +443,8 @@
 								         IsEnabled="{Binding ShowTitle}"
 								         PlaceholderText="{Binding TitlePlaceholder}"
 								         Text="{Binding Title, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-								         behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Title_Tip}"/>
+								         behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Toc_Title_Tip}"
+								         behaviours:SelectAllBehavior.Enabled="True"/>
 							</StackPanel>
 
 							<StackPanel Orientation="Horizontal" Spacing="10">

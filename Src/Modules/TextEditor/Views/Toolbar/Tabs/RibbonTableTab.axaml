@@ -1192,6 +1192,23 @@
 					</DockPanel>
 				</Border>
 
+				<!-- ── Группа: Диаграмма ────────────────────────────────── -->
+				<!-- Диаграмма по числам таблицы: выделенные ячейки или вся таблица.
+				     Первая строка с текстом — имена рядов, первый столбец — подписи. -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel" Text="Диаграмма"/>
+						<Button Command="{Binding ChartFromTableCommand}" Classes="TBtn"
+						        VerticalAlignment="Center" Padding="6 4"
+						        behaviours:TooltipBehavior.Tip="Диаграмма по данным таблицы: выделенные ячейки или вся таблица">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Width="18" Height="18" Data="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/>
+								<TextBlock FontSize="9" Text="Из таблицы" HorizontalAlignment="Center"/>
+							</StackPanel>
+						</Button>
+					</DockPanel>
+				</Border>
+
 				<!-- ── Группа: Положение ────────────────────────────────── -->
 				<!-- Направление таблицы и обтекание её текстом: то, что у Word лежит в
 				     свойствах таблицы («Направление таблицы», «Обтекание: вокруг»). -->

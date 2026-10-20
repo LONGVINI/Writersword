@@ -19,6 +19,13 @@ namespace Writersword.Modules.TextEditor.Services
     /// </summary>
     public sealed partial class ImportService
     {
+        /// <summary>Зеркальные поля документа (w:mirrorMargins в настройках Word).</summary>
+        private static bool ReadMirrorMargins(DocumentFormat.OpenXml.Packaging.MainDocumentPart mainPart)
+        {
+            var mirror = mainPart.DocumentSettingsPart?.Settings?.GetFirstChild<W.MirrorMargins>();
+            return mirror is not null && (mirror.Val is null || mirror.Val.Value);
+        }
+
         // Параметры всех разделов документа по порядку: внутренние, затем последний.
         private readonly List<W.SectionProperties?> _documentSections = new();
 

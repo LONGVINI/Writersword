@@ -850,13 +850,15 @@
 									         Text="{Binding Name, Mode=TwoWay}"
 									         IsReadOnly="{Binding IsReadOnly}"
 									         FontSize="13" FontWeight="SemiBold"
-									         PlaceholderText="Название анкеты"/>
+									         PlaceholderText="Название анкеты"
+									         behaviours:SelectAllBehavior.Enabled="True"/>
 									<TextBox
 									         Text="{Binding Description, Mode=TwoWay}"
 									         IsReadOnly="{Binding IsReadOnly}"
 									         FontSize="11"
 									         Foreground="{DynamicResource TextSecondaryBrush}"
-									         PlaceholderText="Для чего анкета — одной строкой"/>
+									         PlaceholderText="Для чего анкета — одной строкой"
+									         behaviours:SelectAllBehavior.Enabled="True"/>
 									<!-- Для кого анкета: карточка предлагает только подходящие —
 									     группе анкеты группы, персонажу анкеты персонажа. -->
 									<StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
@@ -941,7 +943,8 @@
 														         FontSize="11" FontWeight="SemiBold"
 														         MinWidth="80"
 														         Foreground="{DynamicResource TextSecondaryBrush}"
-														         PlaceholderText="Название группы"/>
+														         PlaceholderText="Название группы"
+														         behaviours:SelectAllBehavior.Enabled="True"/>
 														<!-- Уровень группы: одна, две, три полоски — кратко,
 														     подробно, глубоко. Поля под подзаголовком встают на
 														     него, если у них нет своего. Рядом — уровень словом. -->
@@ -1169,7 +1172,8 @@
 										</ToggleButton>
 										<StackPanel Classes="ps-body" IsVisible="{Binding #SecLabel.IsChecked}">
 											<TextBox x:Name="FieldNameBox" Text="{Binding Name, Mode=TwoWay}"
-											         PlaceholderText="Название поля"/>
+											         PlaceholderText="Название поля"
+											         behaviours:SelectAllBehavior.Enabled="True"/>
 											<Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
 												<ToggleButton Grid.Column="0" Classes="RibbonToggle"
 												              IsChecked="{Binding LabelBold, Mode=TwoWay}"
@@ -1296,8 +1300,10 @@
 											         behaviours:TooltipBehavior.Tip="Подписи делений"
 											         behaviours:TooltipBehavior.Description="{Binding ScaleLabelsHint}"/>
 											<Grid ColumnDefinitions="*,4,*" IsVisible="{Binding IsBipolar}">
-												<TextBox Grid.Column="0" Text="{Binding LeftPole, Mode=TwoWay}" PlaceholderText="← слева"/>
-												<TextBox Grid.Column="2" Text="{Binding RightPole, Mode=TwoWay}" PlaceholderText="справа →"/>
+												<TextBox Grid.Column="0" Text="{Binding LeftPole, Mode=TwoWay}" PlaceholderText="← слева"
+												         behaviours:SelectAllBehavior.Enabled="True"/>
+												<TextBox Grid.Column="2" Text="{Binding RightPole, Mode=TwoWay}" PlaceholderText="справа →"
+												         behaviours:SelectAllBehavior.Enabled="True"/>
 											</Grid>
 											<Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" IsVisible="{Binding IsGlyphDisplay}">
 												<TextBlock Grid.Column="0" Classes="pl" Text="Значок оценки"/>
@@ -1378,7 +1384,8 @@
 												          ItemsSource="{Binding DecimalsOptions}"
 												          SelectedItem="{Binding DecimalsValue, Mode=TwoWay}"/>
 											</Grid>
-											<TextBox Text="{Binding Unit, Mode=TwoWay}" PlaceholderText="лет, см, кг — или пусто">
+											<TextBox Text="{Binding Unit, Mode=TwoWay}" PlaceholderText="лет, см, кг — или пусто"
+											         behaviours:SelectAllBehavior.Enabled="True">
 												<TextBox.InnerLeftContent><TextBlock Classes="inner" Text="ед."/></TextBox.InnerLeftContent>
 											</TextBox>
 											<Grid ColumnDefinitions="*,4,*">
@@ -1454,8 +1461,10 @@
 											</Grid>
 										</ToggleButton>
 										<Grid Classes="ps-body" ColumnDefinitions="*,4,*" Margin="10,0,10,10" IsVisible="{Binding #SecBool.IsChecked}">
-											<TextBox Grid.Column="0" Text="{Binding TrueLabel, Mode=TwoWay}" PlaceholderText="Да"/>
-											<TextBox Grid.Column="2" Text="{Binding FalseLabel, Mode=TwoWay}" PlaceholderText="Нет"/>
+											<TextBox Grid.Column="0" Text="{Binding TrueLabel, Mode=TwoWay}" PlaceholderText="Да"
+											         behaviours:SelectAllBehavior.Enabled="True"/>
+											<TextBox Grid.Column="2" Text="{Binding FalseLabel, Mode=TwoWay}" PlaceholderText="Нет"
+											         behaviours:SelectAllBehavior.Enabled="True"/>
 										</Grid>
 									</StackPanel>
 								</Border>

@@ -201,6 +201,16 @@ namespace Writersword.Modules.TextEditor.Document
             }
             (xPt, yPt) = VisualToLogicalPt(xPt, yPt, _gesturePage);
 
+            // Правая кнопка: ставит каретку или выделяет объект, как левая, но ничего
+            // не начинает тянуть; меню откроется на отпускании (DocumentCanvas.ContextMenu).
+            // Нажатие внутри выделенного текста или ячеек выделение не трогает.
+            bool rightPress = e.GetCurrentPoint(this).Properties.IsRightButtonPressed;
+            if (rightPress && ContextPressKeepsSelection(pt, xPt, yPt))
+            {
+                e.Handled = true;
+                return;
+            }
+
             // ── Закладка оглавления ──────────────────────────────────────
             // Она нарисована над блоком, в стороне от текста, и проверяется раньше всего
             // остального: под ней может лежать нижняя строка предыдущего абзаца, и та
@@ -292,7 +302,7 @@ namespace Writersword.Modules.TextEditor.Document
             // ── Проверяем ручки таблицы ПЕРВЫМИ ─────────────────────────
             // В read-only (режим сравнения) ручки не работают: ширины колонок
             // и позиция таблицы — часть данных документа.
-            var handleHit = HitTestTableHandle(xPt, yPt);
+            var handleHit = rightPress ? default : HitTestTableHandle(xPt, yPt);
             if (handleHit.Type != TableHandleType.None && !IsEditingBlocked)
             {
                 _tableDragMode = (TableDragMode)(int)handleHit.Type;
@@ -378,7 +388,7 @@ namespace Writersword.Modules.TextEditor.Document
             // ── Ручки изменения размера и поворота выделенной картинки ────
             // Проверяем ПЕРЕД повторным выделением: клик по маркеру уже выделенной
             // картинки должен запускать ресайз или поворот, а не снимать выделение.
-            if (_selectedImage is not null && !IsEditingBlocked)
+            if (_selectedImage is not null && !IsEditingBlocked && !rightPress)
             {
                 // Маркеры ловятся в системе координат страницы самой картинки, а не той,
                 // что ближе к указателю: у картинки, лежащей мимо своего листа, это разные
@@ -388,6 +398,26 @@ namespace Writersword.Modules.TextEditor.Document
                     (float)(pt.X / zoom * PxToPt), (float)(pt.Y / zoom * PxToPt), xPt, yPt);
 
                 int corner = HitTestImageHandle(handleXPt, handleYPt);
+
+                // Кнопка «Изменить данные» у выделенной диаграммы.
+                if (corner < 0 && _selectedImage.IsChart && HitTestChartButton(handleXPt, handleYPt))
+                {
+                    var chartDoc = DocVm;
+                    var chartImage = _selectedImage;
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() => chartDoc?.RequestChartEdit(chartImage));
+                    e.Handled = true;
+                    return;
+                }
+
+                // Боковые кнопки диаграммы: элементы, стили и цвета, фильтр.
+                if (corner < 0 && _selectedImage.IsChart && HitTestChartSideButton(handleXPt, handleYPt) is int side and >= 0)
+                {
+                    var chartImage = _selectedImage;
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() => ShowChartSidePanel(chartImage, side));
+                    e.Handled = true;
+                    return;
+                }
+
                 if (corner >= 0 && _pagesPerRow > 1)
                 {
                     int selPage = SelectedImagePageIndex();
@@ -520,6 +550,33 @@ namespace Writersword.Modules.TextEditor.Document
                     _isSelecting = false;
                     _tableSelections.Clear();
 
+                    // Правая кнопка только выделяет картинку: перетаскивание не
+                    // начинается, меню откроется на отпускании.
+                    if (rightPress)
+                    {
+                        DocVm?.FireCursorContextChanged();
+                        ImageSelectionChanged?.Invoke(true);
+                        InvalidateFull();
+                        e.Handled = true;
+                        return;
+                    }
+
+                    // Двойной щелчок по диаграмме открывает окно её правки, как у Word.
+                    // Перетаскивание не начинается: второе нажатие двойного щелчка
+                    // ничего не двигает.
+                    if (e.ClickCount == 2 && ie.Block.IsChart && !IsEditingBlocked)
+                    {
+                        var chartDoc = DocVm;
+                        var chartImage = ie.Block;
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() => chartDoc?.RequestChartEdit(chartImage));
+
+                        DocVm?.FireCursorContextChanged();
+                        ImageSelectionChanged?.Invoke(true);
+                        InvalidateFull();
+                        e.Handled = true;
+                        return;
+                    }
+
                     // Плавающую картинку тащим свободно — она позиционируется смещением.
                     if (ie.Block.WrapMode != WrapMode.Inline)
                     {
@@ -650,7 +707,8 @@ namespace Writersword.Modules.TextEditor.Document
             _caretChar = ci;
             _selStartPara = pi; _selStartChar = ci;
             _selEndPara = pi; _selEndChar = ci;
-            _isSelecting = true;
+            // Правой кнопкой выделение мышью не протягивается.
+            _isSelecting = !rightPress;
             _isCellRangeSelecting = false;
             _tableSelections.Clear();
             _cellFlowRanges.Clear();
@@ -659,7 +717,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Двойной клик выделяет слово под курсором, тройной — абзац (как в Word).
             // Выделение фиксируется сразу: _isSelecting сбрасывается, чтобы движение мыши
             // после клика не схлопывало его обратно в каретку.
-            if (e.ClickCount >= 2 && pi >= 0 && pi < _layouts.Count)
+            if (e.ClickCount >= 2 && !rightPress && pi >= 0 && pi < _layouts.Count)
             {
                 string clickText = GetVmAt(pi)?.PlainText ?? string.Empty;
 
@@ -965,6 +1023,12 @@ namespace Writersword.Modules.TextEditor.Document
                 if (hoverCorner >= 0)
                 {
                     Cursor = ImageHandleCursor(hoverCorner);
+                    return;
+                }
+
+                if (HitTestChartButton(hoverXPt, hoverYPt) || HitTestChartSideButton(hoverXPt, hoverYPt) >= 0)
+                {
+                    Cursor = new Cursor(StandardCursorType.Hand);
                     return;
                 }
             }
@@ -1468,6 +1532,19 @@ namespace Writersword.Modules.TextEditor.Document
             // Лента: жестов правки здесь не начиналось, завершать нечего.
             if (ReadingRibbon) return;
 
+            // Отпущена правая кнопка: жестов она не начинала — просим меню. Событие не
+            // помечается обработанным: по нему же Avalonia поднимает ContextRequested,
+            // и меню откроется один раз, после разбора отпускания.
+            if (e.InitialPressMouseButton == MouseButton.Right)
+            {
+                e.Pointer.Capture(null);
+                _isSelecting = false;
+                StopAutoScroll();
+                UpdateSelectionContext();
+                RequestContextMenu();
+                return;
+            }
+
             if (ShapePointerReleased(e))
             {
                 e.Handled = true;
@@ -1622,6 +1699,43 @@ namespace Writersword.Modules.TextEditor.Document
         // 4 — верх-центр, 5 — право-центр, 6 — низ-центр, 7 — лево-центр, 8 — поворот.
         // Точка указателя переводится в локальную (неповёрнутую) систему картинки,
         // поэтому маркеры корректно ловятся при любом угле поворота.
+        /// <summary>
+        /// Кнопка данных выделенной диаграммы — квадратик с сеткой вплотную к
+        /// верхнему левому углу снаружи рамки, как ручка таблицы: её прямоугольник в
+        /// координатах картинки до поворота. От угловой ручки её отделяет зазор в
+        /// пункт, чтобы ручку и кнопку не путали. Размер — в пунктах листа, как у
+        /// маркеров.
+        /// </summary>
+        private static SKRect ChartButtonRect(float left, float top)
+            => new(left - ChartButtonGapPt - ChartButtonSizePt, top - ChartButtonGapPt - ChartButtonSizePt,
+                   left - ChartButtonGapPt, top - ChartButtonGapPt);
+
+        private const float ChartButtonGapPt = ImageHandleHalfPt + 1f;
+        private const float ChartButtonSizePt = 12f;
+
+        /// <summary>Попадает ли точка на кнопку «Изменить данные» выделенной диаграммы.</summary>
+        private bool HitTestChartButton(float xPt, float yPt)
+        {
+            if (_selectedImage is not { IsChart: true } || IsEditingBlocked || _imageCropMode) return false;
+
+            float pageShiftXPt = GetPageShiftXPt();
+            foreach (var ie in _images)
+            {
+                if (!ReferenceEquals(ie.Block, _selectedImage)) continue;
+
+                float left = ie.XPt + pageShiftXPt;
+                float right = left + ie.WidthPt;
+                float top = ie.Ypt;
+                float cx = (left + right) / 2f;
+                float cy = top + ie.HeightPt / 2f;
+                var (lx, ly) = RotatePointAround(xPt, yPt, cx, cy, -(float)ie.Block.RotationDeg);
+                var rect = ChartButtonRect(left, top);
+                rect.Inflate(1.5f, 1.5f);
+                return rect.Contains(lx, ly);
+            }
+            return false;
+        }
+
         private int HitTestImageHandle(float xPt, float yPt)
         {
             if (_selectedImage is null) return -1;
@@ -1894,6 +2008,10 @@ namespace Writersword.Modules.TextEditor.Document
             if (string.IsNullOrEmpty(e.Text)) return;
             if (IsEditingBlocked) { e.Handled = true; return; }
 
+            // Выделена картинка или диаграмма — правится объект, каретки не видно, и
+            // текст не печатается: иначе он уходил туда, где каретка стояла до выделения.
+            if (_selectedImage is not null) { e.Handled = true; return; }
+
             _caretLineHint = -1;
 
             if (_isCellRangeSelecting)
@@ -1946,7 +2064,12 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Любой ввод завершает отложенный зум-жест: раскладка пересобирается сразу, поэтому
             // последующие правки/undo обновляют канвас корректно (не упираются в _zooming).
-            FinishZoomImmediately();
+            // Клавиши-модификаторы сами ничего не правят и жест не завершают: зажатый Ctrl
+            // при масштабе колесом Windows повторяет автоповтором десятки раз в секунду, и
+            // каждый повтор закрывал жест посреди анимации — листы перекладывались в ряд,
+            // прокрутка уезжала на другие страницы, кадры шли полным рендером.
+            if (!IsModifierKey(e.Key))
+                FinishZoomImmediately();
 
             // Книга: клавиатура только листает. Правка в этом режиме не предусмотрена,
             // поэтому дальше нажатие не идёт — ни в горячие клавиши, ни в ввод текста.
@@ -2016,35 +2139,12 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
-            // Временный переключатель режима выделенной картинки: F — блок <-> плавающая (поверх).
-            // Постоянная панель настроек с галочками будет добавлена отдельным пушем.
-            if (_selectedImage is not null && e.Key == Key.F && e.KeyModifiers == KeyModifiers.None)
+            // Enter и Tab при выделенной картинке или диаграмме абзац не рвут и табуляцию
+            // не ставят: каретки не видно, правка ушла бы туда, где она стояла до выделения.
+            // Обтекание меняется меню правой кнопки («Обтекание»); прежнее переключение
+            // клавишей F срабатывало на русской «А» посреди набора и убрано.
+            if (_selectedImage is not null && (e.Key == Key.Enter || e.Key == Key.Tab) && !_imageCropMode)
             {
-                BeginImageEdit("Режим изображения");
-
-                // Переход в поток или из потока меняет отсчёт смещений: опора из Word
-                // с ними несовместима.
-                _selectedImage.AnchorPosition = null;
-
-                if (_selectedImage.WrapMode == WrapMode.Inline)
-                {
-                    var entry = _images.FirstOrDefault(x => ReferenceEquals(x.Block, _selectedImage));
-                    var pg = entry is not null && entry.PageIndex >= 0 && entry.PageIndex < _pages.Count
-                        ? _pages[entry.PageIndex] : null;
-                    if (entry is not null && pg is not null)
-                    {
-                        _selectedImage.OffsetXPt = entry.XPt - pg.PadLeftPt - pg.MarginLeftPt;
-                        _selectedImage.OffsetYPt = entry.Ypt - pg.Ypt - pg.PadTopPt;
-                    }
-                    _selectedImage.WrapMode = WrapMode.InFront;
-                }
-                else
-                {
-                    _selectedImage.WrapMode = WrapMode.Inline;
-                }
-                CommitImageEdit();
-                RebuildLayouts();
-                InvalidateFull();
                 e.Handled = true;
                 return;
             }
@@ -2061,6 +2161,13 @@ namespace Writersword.Modules.TextEditor.Document
 
             HandleKeyFallback(e);
         }
+
+        /// <summary>Ctrl, Shift, Alt и Win: сами по себе ничего не вводят и не правят.</summary>
+        private static bool IsModifierKey(Key key) => key is
+            Key.LeftCtrl or Key.RightCtrl or
+            Key.LeftShift or Key.RightShift or
+            Key.LeftAlt or Key.RightAlt or
+            Key.LWin or Key.RWin;
 
         private void HandleKeyFallback(KeyEventArgs e)
         {
@@ -2220,6 +2327,28 @@ namespace Writersword.Modules.TextEditor.Document
 
         private CellInfo? GetCurrentCell()
             => IsInCell(_caretPara) ? _layouts[_caretPara].Cell : null;
+
+        /// <summary>
+        /// Ячейки для диаграммы из таблицы: выделенный прямоугольник больше одной ячейки
+        /// или, без такого выделения, вся таблица под кареткой. null — каретка не в таблице.
+        /// </summary>
+        private (TableBlock Table, int FirstRow, int FirstColumn, int LastRow, int LastColumn)? GetTableChartRange()
+        {
+            foreach (var (table, selection) in _tableSelections)
+            {
+                int r0 = Math.Min(selection.sr, selection.er), r1 = Math.Max(selection.sr, selection.er);
+                int c0 = Math.Min(selection.sc, selection.ec), c1 = Math.Max(selection.sc, selection.ec);
+                if (r0 != r1 || c0 != c1) return (table, r0, c0, r1, c1);
+            }
+
+            if (GetCurrentCell() is { } cell)
+                return (cell.Table, 0, 0, cell.Table.RowCount - 1, cell.Table.ColumnCount - 1);
+
+            foreach (var table in _tableSelections.Keys)
+                return (table, 0, 0, table.RowCount - 1, table.ColumnCount - 1);
+
+            return null;
+        }
 
         /// <summary>
         /// Обновляет _activeTableBlock и уведомляет линейку о входе/выходе из ячейки.
@@ -4675,6 +4804,9 @@ namespace Writersword.Modules.TextEditor.Document
             // выше пересобирает раскладку и схлопывает выделение через SyncSel. Раньше него
             // возвращать нечего — слайсы ещё от прежнего состояния документа.
             ApplyPendingRestorePlace();
+
+            // Выделенная картинка пришла из снимка новым объектом.
+            ReattachSelectedImage();
 
             // Снапшот мог вернуть поля страницы/настройки — уведомляем VM, чтобы линейка синхронилась.
             DocVm?.RaiseDocumentRestored();

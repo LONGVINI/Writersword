@@ -17,14 +17,14 @@ namespace Writersword.Modules.TextEditor.Views
     /// <summary>
     /// Боковые панели рабочей области: навигатор слева и рецензия справа.
     ///
-    /// Панель либо стоит рядом с листами, либо выдвигается поверх них. Рядом — когда
-    /// после неё рукописи остаётся не меньше <see cref="MinCanvasPx"/>: тогда крайняя
-    /// колонка рабочей области берёт её ширину, и листы сдвигаются, а не уходят под
-    /// панель. Не хватает — панель ложится поверх листов с тенью, и тогда открыта
-    /// только одна: две выдвинутые панели в узком окне закрыли бы рукопись целиком.
-    /// Выдвинутая панель уходит по щелчку мимо неё и по Esc. Если ширины хватает на
-    /// одну пристёгнутую, пристёгивается рецензия: с ней работают, глядя в текст, а в
-    /// навигатор заглядывают на мгновение.
+    /// Навигатор стоит как область навигации Word: всегда рядом с листами, слева.
+    /// Крайняя колонка рабочей области берёт его ширину, и листы сдвигаются вправо, а
+    /// не уходят под панель. Открывают его с ленты («Ссылки» → «Навигатор»), язычка у
+    /// края у него нет.
+    ///
+    /// Рецензия стоит рядом с листами, когда после неё и навигатора рукописи остаётся
+    /// не меньше <see cref="MinCanvasPx"/>. Не хватает — она ложится поверх листов с
+    /// тенью и уходит по щелчку мимо неё и по Esc.
     ///
     /// Ширину тянут за внутренний край. Пока тянут, пристёгнутая панель растёт поверх
     /// листов, а колонка под ней меняется только по отпускании: перекладывать книгу
@@ -279,13 +279,16 @@ namespace Writersword.Modules.TextEditor.Views
 
         private double HostWidth => _workspaceHost?.Bounds.Width ?? 0;
 
-        /// <summary>Какие из открытых панелей встают рядом с листами.</summary>
+        /// <summary>
+        /// Какие из открытых панелей встают рядом с листами. Навигатор — всегда, как
+        /// область навигации Word; рецензия — если рядом с ним остаётся место рукописи.
+        /// </summary>
         private (bool Left, bool Right) DockPlan(bool leftOpen, bool rightOpen, double hostWidth)
         {
             if (hostWidth < 1) return (false, false);
 
-            bool right = rightOpen && hostWidth - _rightDrawerWidth >= MinCanvasPx;
-            bool left = leftOpen && hostWidth - _leftDrawerWidth - (right ? _rightDrawerWidth : 0) >= MinCanvasPx;
+            bool left = leftOpen;
+            bool right = rightOpen && hostWidth - _rightDrawerWidth - (left ? _leftDrawerWidth : 0) >= MinCanvasPx;
             return (left, right);
         }
 
@@ -304,7 +307,7 @@ namespace Writersword.Modules.TextEditor.Views
 
             // Выдвинутая панель не шире рабочей области за вычетом полоски листа.
             double overlayMax = Math.Max(MinDrawerPx, hostWidth - OverlayGapPx);
-            double leftWidth = leftDock ? _leftDrawerWidth : Math.Min(_leftDrawerWidth, overlayMax);
+            double leftWidth = Math.Min(_leftDrawerWidth, overlayMax);
             double rightWidth = rightDock ? _rightDrawerWidth : Math.Min(_rightDrawerWidth, overlayMax);
 
             _leftDocked = leftOpen && leftDock;
@@ -325,7 +328,9 @@ namespace Writersword.Modules.TextEditor.Views
             ShowDrawer(_rightDrawer, rightOpen, 1, ref _rightShown);
 
             bool handles = vm is not null && !reading && !vm.IsFocusMode;
-            if (_navigatorHandle is not null) _navigatorHandle.IsVisible = handles && !leftOpen;
+
+            // У навигатора язычка нет: он открывается с ленты, как область навигации Word.
+            if (_navigatorHandle is not null) _navigatorHandle.IsVisible = false;
             if (_reviewHandle is not null)
             {
                 _reviewHandle.IsVisible = handles && !rightOpen;

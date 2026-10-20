@@ -424,6 +424,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// <summary>Выделена картинка: доступна обрезка и замена файла.</summary>
         public bool IsImageSelected => _hasImage;
 
+        private bool _isChart;
+
+        /// <summary>Выделена диаграмма: показывается группа «Диаграмма» с правкой данных.</summary>
+        public bool IsChartSelected
+        {
+            get => _isChart;
+            private set => this.RaiseAndSetIfChanged(ref _isChart, value);
+        }
+
+        /// <summary>Открывает окно правки выделенной диаграммы: вид, данные, оформление.</summary>
+        public ICommand EditChartCommand { get; }
+
         /// <summary>
         /// Линия или стрелка. У них нет площади, поэтому нет заливки и скругления,
         /// зато есть наконечники.
@@ -950,6 +962,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             ToggleCropModeCommand = ReactiveCommand.Create(() =>
                 { _target.SetImageCropMode(!_isCropMode); SyncFromTarget(); });
+            EditChartCommand = ReactiveCommand.Create(() => _target.EditSelectedChart());
             FlipHorizontalCommand = ReactiveCommand.Create(() =>
                 { _target.ToggleImageFlipHorizontal(); });
             FlipVerticalCommand = ReactiveCommand.Create(() =>
@@ -1040,6 +1053,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public void SyncFromTarget()
         {
             var info = _target.GetSelectedImageInfo();
+            IsChartSelected = info is not null && _target.IsSelectedChart();
             if (info is null) return;
 
             _syncing = true;

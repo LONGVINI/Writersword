@@ -17,6 +17,31 @@ namespace Writersword.Modules.TextEditor.Services
     /// </summary>
     public sealed partial class ExportService
     {
+        /// <summary>
+        /// Зеркальные поля документа: w:mirrorMargins в настройках Word. По схеме он
+        /// стоит раньше всего, что выгрузка пишет в настройки, поэтому ставится в начало.
+        /// </summary>
+        private static void WriteMirrorMarginsSetting(DocumentFormat.OpenXml.Packaging.MainDocumentPart mainPart, DocumentModel document)
+        {
+            if (!document.PageSettings.MirrorMargins)
+            {
+                if (mainPart.DocumentSettingsPart?.Settings?.GetFirstChild<W.MirrorMargins>() is { } stale)
+                {
+                    stale.Remove();
+                    mainPart.DocumentSettingsPart.Settings.Save();
+                }
+                return;
+            }
+
+            var part = mainPart.DocumentSettingsPart ?? mainPart.AddNewPart<DocumentFormat.OpenXml.Packaging.DocumentSettingsPart>();
+            part.Settings ??= new W.Settings();
+
+            if (part.Settings.GetFirstChild<W.MirrorMargins>() is null)
+                part.Settings.PrependChild(new W.MirrorMargins());
+
+            part.Settings.Save();
+        }
+
         /// <summary>Как начинается раздел за разрывом этого вида.</summary>
         private static SectionStart StartOf(BreakType type) => type switch
         {
@@ -141,7 +166,8 @@ namespace Writersword.Modules.TextEditor.Services
                 PageNumberFormat = current?.PageNumberFormat
             };
 
-            var previous = BuildSectionLayoutProperties(layout, look.Page, look.Columns, start);
+            // Прежнее начало раздела — из записи, если оно в ней есть.
+            var previous = BuildSectionLayoutProperties(layout, look.Page, look.Columns, look.Start ?? start);
             var before = new W.PreviousSectionProperties();
             foreach (var child in previous.ChildElements)
                 before.AppendChild(child.CloneNode(true));

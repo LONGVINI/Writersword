@@ -49,10 +49,27 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// <summary>Сдвиг второй линии двойной стороны от первой; 0 — линия одна или стороны нет.</summary>
         private static float SecondLineOffset(PageBorderSide? side, bool towardPositive)
         {
-            if (side is null || !IsTwoLines(side.Style ?? "single")) return 0f;
-            float width = (float)Math.Clamp(side.WidthPt, 0.25, 12.0);
+            if (side is null) return 0f;
+            string style = side.Style ?? "single";
+            if (!IsTwoLines(style)) return 0f;
+
+            var (_, step) = TwoLineGeometry(style, (float)Math.Clamp(side.WidthPt, 0.25, 12.0));
+            return step * (towardPositive ? 1f : -1f);
+        }
+
+        /// <summary>
+        /// Толщина каждой из двух линий и шаг между их осями. У двойной линии Word
+        /// толщина из w:sz — толщина каждой линии, и просвет между ними той же
+        /// ширины: двойная в 2¼ пт занимает на листе 6¾ пт. У остальных двухлинейных
+        /// видов — две линии по трети толщины с просветом в треть.
+        /// </summary>
+        private static (float Part, float Step) TwoLineGeometry(string style, float width)
+        {
+            if (style == "double")
+                return (width, width * 2f);
+
             float part = Math.Max(width / 3f, 0.4f);
-            return part * 2f * (towardPositive ? 1f : -1f);
+            return (part, part * 2f);
         }
 
         private static bool IsTwoLines(string style)
@@ -113,10 +130,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                 return;
             }
 
-            // Двойная: две линии по трети толщины с просветом между ними.
-            float part = Math.Max(width / 3f, 0.4f);
+            // Две линии с просветом между ними (TwoLineGeometry).
+            var (part, stepPt) = TwoLineGeometry(style, width);
             paint.StrokeWidth = part;
-            float step = part * 2f * (towardPositive ? 1f : -1f);
+            float step = stepPt * (towardPositive ? 1f : -1f);
 
             canvas.DrawLine(x1, y1, x2, y2, paint);
             if (horizontal) canvas.DrawLine(x1 + secondStart, y1 + step, x2 + secondEnd, y2 + step, paint);

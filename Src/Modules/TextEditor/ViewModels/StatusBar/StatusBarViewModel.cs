@@ -350,20 +350,33 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
         /// </summary>
         public void UpdateFromParagraphs(IReadOnlyList<string> paragraphs)
         {
-            ParagraphCount = paragraphs.Count;
-
-            int chars = 0, charsNoSpaces = 0, words = 0;
+            int chars = 0, charsNoSpaces = 0, words = 0, nonEmpty = 0;
 
             foreach (string paragraph in paragraphs)
             {
-                chars += paragraph.Length;
+                bool hasText = false;
 
                 foreach (char c in paragraph)
-                    if (c != ' ' && c != '\t') charsNoSpaces++;
+                {
+                    // Разрыв строки внутри абзаца Word знаком не считает: это граница
+                    // между словами, а не символ текста.
+                    if (c == '\n' || c == '\r') continue;
+
+                    chars++;
+                    if (char.IsWhiteSpace(c)) continue;
+
+                    charsNoSpaces++;
+                    hasText = true;
+                }
+
+                // Пустой абзац — пустая строка между абзацами, абзац под одной картинкой —
+                // Word не считает абзацами: в счёт идут только абзацы с текстом.
+                if (hasText) nonEmpty++;
 
                 words += CountWords(paragraph);
             }
 
+            ParagraphCount = nonEmpty;
             CharCount = chars;
             CharCountNoSpaces = charsNoSpaces;
             WordCount = words;

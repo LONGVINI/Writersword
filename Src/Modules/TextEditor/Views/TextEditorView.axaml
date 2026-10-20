@@ -84,6 +84,12 @@
 		                        Grid.Row="0" Grid.RowSpan="3"
 		                        ZIndex="199"/>
 
+		<!-- Окно «Диаграмма» — поверх всего модуля, но под редактором цвета:
+		     кнопки цвета рядов открывают полный редактор цвета поверх него. -->
+		<dlg:ChartEditorOverlay x:Name="ChartOverlay"
+		                        Grid.Row="0" Grid.RowSpan="3"
+		                        ZIndex="198"/>
+
 		<!-- Оверлей настроек абзаца — поверх всего модуля -->
 		<dlg:ParagraphSettingsOverlay x:Name="ParagraphOverlay"
 		                              Grid.Row="0" Grid.RowSpan="3"

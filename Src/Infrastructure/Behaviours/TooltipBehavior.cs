@@ -389,6 +389,16 @@ namespace Writersword.Infrastructure.Behaviours
         {
             if (sender is not Control element) return;
 
+            // Кнопка с выпадающим меню или галереей: нажатие открывает их, и подсказка
+            // им не нужна — она открывалась одновременно с меню, оставалась висеть после
+            // него серой полоской под кнопкой (нажатие внутри меню её не гасит: меню —
+            // отдельное окно) и закрывала собой первые пункты.
+            if (element is Button { Flyout: not null })
+            {
+                HideTooltip(element);
+                return;
+            }
+
             var popup = GetPopup(element);
 
             if (popup is { IsOpen: true })

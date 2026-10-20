@@ -91,12 +91,14 @@
 					<StackPanel Spacing="4">
 						<TextBlock Classes="fieldLabel"
 						           Text="{x:Static loc:CharactersStrings.AnketaEditor_Name}"/>
-						<TextBox Classes="field" Text="{Binding Name, Mode=TwoWay}"/>
+						<TextBox Classes="field" Text="{Binding Name, Mode=TwoWay}"
+						         behaviours:SelectAllBehavior.Enabled="True"/>
 					</StackPanel>
 					<StackPanel Spacing="4">
 						<TextBlock Classes="fieldLabel"
 						           Text="{x:Static loc:CharactersStrings.AnketaEditor_Description}"/>
-						<TextBox Classes="field" Text="{Binding Description, Mode=TwoWay}"/>
+						<TextBox Classes="field" Text="{Binding Description, Mode=TwoWay}"
+						         behaviours:SelectAllBehavior.Enabled="True"/>
 					</StackPanel>
 				</StackPanel>
 
@@ -171,7 +173,8 @@
 
 											<TextBox Classes="field"
 											         Text="{Binding Description, Mode=TwoWay}"
-											         PlaceholderText="{x:Static loc:CharactersStrings.AnketaEditor_FieldHint}"/>
+											         PlaceholderText="{x:Static loc:CharactersStrings.AnketaEditor_FieldHint}"
+											         behaviours:SelectAllBehavior.Enabled="True"/>
 
 											<!-- Подписи делений: ради них шкала и осмысленна.
 											     «Вспыльчивость: спокоен, сдержан, заводится,

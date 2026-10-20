@@ -36,7 +36,12 @@ namespace Writersword.Modules.TextEditor.Document
         private const float PxToPt = 72f / 96f;
 
         // ── Константы геометрии ───────────────────────────────────────────
-        private const float PageGapPt = 15f;
+        // Зазор между листами по вертикали и поле холста над первым листом: 10 px при
+        // масштабе 100%. Растёт и уменьшается вместе с листами, как и сами листы.
+        private const float PageGapPt = 7.5f;
+
+        // Зазор между листами, стоящими в ряд: 12 px при масштабе 100%.
+        private const float PageGapXPt = 9f;
         private const float DraftPadHPt = 9f;
         private const float DraftPadWPt = 0f;
         private const float ReadingMaxPt = 510f;
@@ -416,11 +421,11 @@ namespace Writersword.Modules.TextEditor.Document
             if (pageWidthPt <= 1f) { _pagesPerRow = 1; return; }
 
             float availablePt = (float)(_canvasWidth * PxToPt);
-            float stepPt = pageWidthPt + PageGapPt * 2f + RevisionLaneWidthPtNow;
+            float stepPt = pageWidthPt + PageGapXPt + RevisionLaneWidthPtNow;
 
             // Последней странице ряда зазор справа не нужен — добавляем его к доступной
             // ширине, иначе ряд из ровно N страниц не считался бы влезающим.
-            int fit = (int)Math.Floor((availablePt + PageGapPt * 2f) / stepPt);
+            int fit = (int)Math.Floor((availablePt + PageGapXPt) / stepPt);
             _pagesPerRow = Math.Clamp(fit, 1, 12);
         }
 
@@ -866,7 +871,9 @@ namespace Writersword.Modules.TextEditor.Document
             Color = new SKColor(0xE0, 0x7B, 0x39),
             IsAntialias = true
         };
-        private double _canvasWidth;
+        // Живая ширина холста. Читается через _canvasWidth: в кадре отрисовки — та,
+        // с которой кадр записан (DocumentCanvas.ViewFrame).
+        private double _canvasWidthLive;
         private double _canvasHeight;
         private float _canvasHeightPt;
 
@@ -967,7 +974,12 @@ namespace Writersword.Modules.TextEditor.Document
                 && Math.Abs(cached.Width - textWidthPt) < 0.1f)
                 return cached.Layout;
 
-            var layout = _renderer.BuildTableLayout(table, textWidthPt, _styleResolver!, _cellFontPreview);
+            // В «Исходном документе» таблица со сменой оформления верстается с прежним
+            // (RevisionDisplay.DisplayTable); абзацы ячеек — те же, что в документе.
+            var shownTable = DocVm is null
+                ? table
+                : RevisionDisplay.DisplayTable(table, DocVm.Document.RevisionView);
+            var layout = _renderer.BuildTableLayout(shownTable, textWidthPt, _styleResolver!, _cellFontPreview);
             if (!previewActive)
                 _tableLayoutCache[table] = (textWidthPt, layout);
             return layout;
@@ -978,8 +990,11 @@ namespace Writersword.Modules.TextEditor.Document
 
         // ── Виртуализация ─────────────────────────────────────────────────
         private ScrollViewer? _parentScrollViewer;
-        private double _scrollOffsetY = 0;
-        private double _viewportHeight = 600;
+        // Живые прокрутка и высота окна. Читаются через _scrollOffsetY и
+        // _viewportHeight: в кадре отрисовки — те, с которыми кадр записан
+        // (DocumentCanvas.ViewFrame).
+        private double _scrollOffsetYLive = 0;
+        private double _viewportHeightLive = 600;
 
         // ── Каретка ───────────────────────────────────────────────────────
         // Единая для всего документа включая ячейки таблицы.
@@ -1434,9 +1449,11 @@ namespace Writersword.Modules.TextEditor.Document
         // Масштаб, в котором рисуется канвас. В чтении им распоряжается книга: лист
         // имеет постоянный размер, а окно решает лишь то, с каким увеличением его
         // показать. Приближение читателя умножается сверху.
-        private double Zoom => ReadingActive
-            ? ReadingFitScale * ReadingViewZoom
-            : (DocVm?.Zoom ?? 1.0);
+        // В кадре отрисовки — масштаб, с которым кадр записан (DocumentCanvas.ViewFrame).
+        private double Zoom => CurrentViewFrame?.Zoom
+            ?? (ReadingActive
+                ? ReadingFitScale * ReadingViewZoom
+                : (DocVm?.Zoom ?? 1.0));
 
         // Блок-якорь на который нужно переместить каретку после ближайшего rebuild.
         // Устанавливается при вставке разрыва страницы, потребляется в ScheduleRebuild.
@@ -1514,6 +1531,17 @@ namespace Writersword.Modules.TextEditor.Document
             // Каретка мигает только пока редактор в фокусе: без фокуса таймер остановлен
             // и редактор не генерирует кадры вообще — окно не перерисовывается в покое.
             LostFocus += OnLostFocusHandler;
+
+            // Лист сам прокручивает себя к каретке (ScrollToCaret). Просьбу «показать
+            // целиком», которую поднимает сам холст — фокус после закрытия меню и
+            // всплывающих окон, — прокрутка не получает: холст выше окна в разы, и
+            // такая просьба уносила вид от места, где человек работает.
+            AddHandler(RequestBringIntoViewEvent, (_, e) =>
+            {
+                if (!ReferenceEquals(e.TargetObject, this)) return;
+                e.Handled = true;
+                _logger.Debug("[SCROLL] Просьба показать холст целиком отклонена: {Rect}", e.TargetRect);
+            });
 
             AttachInputMethod();
         }
@@ -1892,7 +1920,11 @@ namespace Writersword.Modules.TextEditor.Document
             DetachUndoKeyProbe();
 
             // Анимация масштаба колесом держит кадры окна и открытый жест документа.
+            // Заказанный кадр от отсоединённого окна может не прийти — заказ снимается,
+            // иначе после возврата полотна анимация масштаба не запустилась бы.
             StopWheelZoomAnimation();
+            _wheelZoomFrameRequested = false;
+            _pageReflow = null;
             StopBookZoomAnimation(raiseVisual: false);
 
             // Отписываемся от DocumentViewModel и всех ParagraphViewModel.
@@ -1928,6 +1960,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.PasteDelegate = null;
                 _docVm.BeginEditDelegate = null;
                 _docVm.CommitEditDelegate = null;
+                _docVm.ImageEditDelegate = null;
                 _docVm.CommitRunPropertyGranularDelegate = null;
                 _docVm.CommitTextEditsDelegate = null;
                 _docVm.CommitParagraphPropertyGranularDelegate = null;
@@ -2174,19 +2207,42 @@ namespace Writersword.Modules.TextEditor.Document
 
         /// <summary>
         /// Строки набора в списке раскладок. Абзац, разрезанный между страницами, лежит
-        /// несколькими записями, и каждая приносит свою долю строк. Пустой абзац
-        /// записан диапазоном нулевой длины, но строку на листе занимает — за ним
-        /// числится одна.
+        /// несколькими записями, и каждая приносит свою долю строк.
+        ///
+        /// Строки пустых абзацев не считаются: Word их в статистику не берёт, как не
+        /// берёт и сами пустые абзацы. Строка с одной картинкой в счёт идёт — у Word
+        /// тоже. На большом документе с сотней пустых абзацев это и было всё расхождение
+        /// с Word по числу строк.
         /// </summary>
         private static int CountLayoutLines(List<ParaLayout> layouts)
         {
             int lines = 0;
             foreach (var pl in layouts)
             {
+                if (IsBlankParagraph(pl.Cell?.ParaBlock ?? pl.Vm?.Model)) continue;
+
                 int count = pl.LineTo - pl.LineFrom;
                 lines += count > 0 ? count : 1;
             }
             return lines;
+        }
+
+        /// <summary>Абзац без текста и без объектов в строке: одни пробелы или ничего.</summary>
+        private static bool IsBlankParagraph(ParagraphBlock? para)
+        {
+            if (para is null) return false;
+
+            foreach (var chunk in para.Chunks)
+            {
+                foreach (var run in chunk.Runs)
+                {
+                    if (run.IsInlineObject) return false;
+                    foreach (char c in run.Text)
+                        if (!char.IsWhiteSpace(c)) return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -2323,12 +2379,51 @@ namespace Writersword.Modules.TextEditor.Document
             PageOffsetXChanged?.Invoke(pageOffsetXPx);
         }
 
+        // Ширина самого широкого листа рядом с окном, по которой мерился холст.
+        private float _measuredNearbyWidestPt = float.NaN;
+
+        /// <summary>
+        /// Ширина самого широкого листа рядом с окном: на экране и на высоту окна выше
+        /// и ниже, пт. Вне режима страниц и без листов — лист документа.
+        /// </summary>
+        private float NearbyWidestPageWidthPt()
+        {
+            float own = GetPageWidthPt();
+            if (!SectionSheetsApply || DocVm?.ViewMode != EditorViewMode.Page || ReadingActive || SpreadMode)
+                return own;
+
+            List<PageRect> pages;
+            lock (_renderLock) { pages = _pages; }
+            if (pages.Count == 0) return own;
+
+            double s = PtToPx * Math.Max(Zoom, 0.01);
+            double viewH = _viewportHeight > 0 ? _viewportHeight : Bounds.Height;
+            float topPt = (float)((_scrollOffsetY - viewH) / s);
+            float bottomPt = (float)((_scrollOffsetY + viewH * 2.0) / s);
+
+            float widest = 0f;
+            for (int i = 0; i < pages.Count; i++)
+            {
+                var r = PageVisualRectPt(i, pages);
+                if (r.Bottom < topPt || r.Top > bottomPt) continue;
+                widest = Math.Max(widest, r.Width);
+            }
+
+            return widest > 0f ? widest : own;
+        }
+
         private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
         {
             if (sender is not ScrollViewer sv) return;
             PerfCount("ui.scroll");
             _scrollOffsetY = sv.Offset.Y;
             _viewportHeight = sv.Viewport.Height;
+
+            // К окну подъехали листы другой ширины (раздел с альбомным листом) —
+            // холст перемеряется под них.
+            if (!_zooming && !float.IsNaN(_measuredNearbyWidestPt)
+                && Math.Abs(NearbyWidestPageWidthPt() - _measuredNearbyWidestPt) > 0.5f)
+                InvalidateMeasure();
 
             // Место в документе сменилось — модуль запомнит его после паузы
             // (DocumentCanvas.ViewRestore).
@@ -2399,6 +2494,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.PasteDelegate = null;
                 _docVm.BeginEditDelegate = null;
                 _docVm.CommitEditDelegate = null;
+                _docVm.ImageEditDelegate = null;
                 _docVm.CommitRunPropertyGranularDelegate = null;
                 _docVm.CommitTextEditsDelegate = null;
                 _docVm.CommitParagraphPropertyGranularDelegate = null;
@@ -2557,6 +2653,10 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.GetSelectedImageCurrentPageDelegate = GetFloatingCurrentPage;
             DocVm.SetImageLockAspectDelegate = SetFloatingLockAspect;
             DocVm.DeleteSelectedImageDelegate = DeleteSelectedFloating;
+            DocVm.SelectedImageDelegate = () => _selectedImage;
+            DocVm.ChartPreviewDelegate = SetChartPreview;
+            DocVm.GetTableChartRangeDelegate = GetTableChartRange;
+            DocVm.ImageEditDelegate = ApplyImageEdit;
             DocVm.GetSelectedImageInfoDelegate = GetFloatingInfo;
             DocVm.SetImageRotationDelegate = SetFloatingRotation;
             DocVm.GetSelectedImageRotationDelegate = GetFloatingRotation;
@@ -3634,6 +3734,9 @@ namespace Writersword.Modules.TextEditor.Document
                 double previousZoom = _lastZoom;
                 _lastZoom = Zoom;
 
+                // Новый жест масштаба обрывает переезд листов прошлого жеста.
+                CancelPageReflow();
+
                 // Тяжёлый RebuildLayouts (пагинация всех абзацев) откладываем: во время жеста
                 // Measure/Arrange его пропускают (флаг _zooming), рендерится посчитанное ранее,
                 // масштабированное под новый зум. Полный пересчёт — после остановки.
@@ -3701,26 +3804,57 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 _zoomSettleTimer = new DispatcherTimer(DispatcherPriority.Background)
                 {
-                    Interval = TimeSpan.FromMilliseconds(140)
+                    Interval = TimeSpan.FromMilliseconds(200)
                 };
-                _zoomSettleTimer.Tick += (_, _) => FinishZoomImmediately();
+                _zoomSettleTimer.Tick += (_, _) => OnZoomSettleTick();
             }
             _zoomSettleTimer.Stop();
             _zoomSettleTimer.Start();
         }
 
+        /// <summary>
+        /// Масштаб постоял без изменений. Если анимация ещё идёт (кадр запоздал из-за
+        /// сборки мусора или тяжёлого кадра), жест не закрывается: листы переложились бы
+        /// посреди анимации, а её следующий кадр поставил бы прокрутку по прежней раскладке.
+        /// </summary>
+        private void OnZoomSettleTick()
+        {
+            if (_wheelZoomAnimActive)
+            {
+                ScheduleZoomSettle();
+                return;
+            }
+
+            FinishZoomImmediately();
+        }
+
         private void FinishZoomImmediately()
         {
             _zoomSettleTimer?.Stop();
+
+            // Жест прерывает ввод: анимация останавливается на текущем масштабе. Иначе её
+            // кадры продолжили бы держать точку привязки, снятую в раскладке до перекладки
+            // листов, и документ уехал бы на другие страницы.
+            if (_wheelZoomAnimActive)
+                StopWheelZoomAnimation();
+
             if (!_zooming) return;
-            _zooming = false;
 
             // Число листов в ряду было заморожено на время жеста. Если под итоговый
             // масштаб оно другое, листы перекладываются — место в документе держится
             // по листу, который стоял в точке привязки (DocumentCanvas.WheelZoom).
+            //
+            // Лист привязки и прежние места листов снимаются, пока жест ещё открыт:
+            // сетка листов в ряд держит на время жеста прежний состав рядов
+            // (DocumentCanvas.PageGrid). Снятые после закрытия жеста, они брались бы
+            // уже из новой сетки, и лист привязки находился бы не тот.
             int perRowBefore = _pagesPerRow;
             var (anchorViewX, anchorViewY) = SettleAnchorViewPoint();
             var pageAnchor = CapturePageAnchor(anchorViewX, anchorViewY);
+            var reflowOrigin = CapturePageReflowOrigin();
+
+            _zooming = false;
+
             UpdateEffectivePagesPerRow();
             bool perRowChanged = _pagesPerRow != perRowBefore;
 
@@ -3730,6 +3864,11 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (perRowChanged && pageAnchor is { } anchor)
                 RestorePageAnchor(anchor);
+
+            // Листы переезжают в новую сетку плавно, а не за один кадр
+            // (DocumentCanvas.PageReflow).
+            if (perRowChanged && reflowOrigin is { } origin)
+                StartPageReflow(origin);
         }
 
         private void OnParagraphsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -4099,11 +4238,17 @@ namespace Writersword.Modules.TextEditor.Document
                 // Ряд набирается по ширине листа документа (DocumentCanvas.PageGrid), и
                 // широкий лист раздела в ряду с другими лишнего места не просит. Ширина
                 // самого широкого листа нужна только как предел для ряда из него одного.
+                //
+                // Ширина берётся по листам рядом с окном, а не по самому широкому листу
+                // документа: один альбомный раздел где-нибудь в конце книги расширял
+                // холст на всех страницах, и при приближении появлялась прокрутка в
+                // пустое поле справа от листа.
                 double lanesPt = RevisionLaneWidthPtNow * (_pagesPerRow > 1 ? _pagesPerRow : 2);
                 double rowPt = GetPageWidthPt() * _pagesPerRow
-                    + PageGapPt * 2.0 * (_pagesPerRow - 1)
+                    + PageGapXPt * (_pagesPerRow - 1)
                     + lanesPt;
-                double pagesWPt = Math.Max(rowPt, WidestPageWidthPt() + lanesPt);
+                _measuredNearbyWidestPt = NearbyWidestPageWidthPt();
+                double pagesWPt = Math.Max(rowPt, _measuredNearbyWidestPt + lanesPt);
                 visualW = Math.Max(availW,
                     pagesWPt * PtToPx * zoom + PageGapPt * PtToPx * 4);
             }
@@ -5626,11 +5771,13 @@ namespace Writersword.Modules.TextEditor.Document
         private sealed class CanvasSKDrawOperation : ICustomDrawOperation
         {
             private readonly DocumentCanvas _canvas;
+            private readonly ViewFrame _frame;
             public Rect Bounds { get; }
 
-            public CanvasSKDrawOperation(DocumentCanvas canvas, Rect bounds)
+            public CanvasSKDrawOperation(DocumentCanvas canvas, Rect bounds, ViewFrame frame)
             {
                 _canvas = canvas;
+                _frame = frame;
                 Bounds = bounds;
             }
 
@@ -5670,12 +5817,19 @@ namespace Writersword.Modules.TextEditor.Document
                 // Состояние книги замораживается на весь кадр: поток интерфейса
                 // может двигать лист, пока кадр ещё рисуется (см. SpreadFrame).
                 _canvas.BeginSpreadFrame();
+
+                // Масштаб, ширина холста и прокрутка — те, с которыми кадр записан, а не
+                // те, до которых анимация масштаба дошла к началу отрисовки
+                // (DocumentCanvas.ViewFrame). Повторный проигрыш рисует ту же запись —
+                // и с теми же величинами.
+                t_viewFrame = _frame;
                 try
                 {
                     _canvas.RenderWithSKCanvas(lease.SkCanvas);
                 }
                 finally
                 {
+                    t_viewFrame = null;
                     _canvas.EndSpreadFrame();
                 }
             }

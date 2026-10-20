@@ -68,18 +68,24 @@ namespace Writersword.Modules.TextEditor.Document
             var breaks = new List<BreakBlock?>();
             bool anyDecor = false;
             int start = 0;
+            // В «Исходном документе» у разделов со сменой параметров — прежние рамка,
+            // номера строк, выравнивание по высоте и лист (RevisionDisplay.DisplaySection).
+            var view = document.RevisionView;
             for (int i = 0; i < blocks.Count; i++)
             {
                 if (blocks[i] is not BreakBlock { IsSectionBreak: true } sectionBreak) continue;
-                var layout = sectionBreak.Section;
+                var layout = RevisionDisplay.DisplaySection(sectionBreak, view);
                 sections.Add((start, layout, layout?.Page ?? document.PageSettings));
                 breaks.Add(sectionBreak);
                 anyDecor |= relevant(layout);
                 start = i + 1;
             }
-            sections.Add((start, document.FinalSection, document.PageSettings));
+
+            var previousFinal = RevisionDisplay.DisplayFinalSection(document, view);
+            var finalLayout = previousFinal?.Layout ?? document.FinalSection;
+            sections.Add((start, finalLayout, previousFinal?.Page ?? document.PageSettings));
             breaks.Add(null);
-            anyDecor |= relevant(document.FinalSection);
+            anyDecor |= relevant(finalLayout);
 
             if (!anyDecor) return null;
 
@@ -163,10 +169,20 @@ namespace Writersword.Modules.TextEditor.Document
             var document = DocVm.Document;
             var page = info?.Page ?? document.PageSettings;
             bool own = info is not null && !ReferenceEquals(page, document.PageSettings);
-            object? section = own ? info!.Layout : null;
 
-            // Колонки листа: раздела или документа.
-            var columns = info?.Break is { } sectionBreak
+            // Лист «Исходного документа» с прежними параметрами раздела — двойник
+            // (RevisionDisplay.DisplaySection): линейка показывает его поля, а сдвинутые
+            // на ней края уходят в сам раздел, у последнего раздела — в документ.
+            var realLayout = info?.Break is { } realBreak ? realBreak.Section : document.FinalSection;
+            bool previousSheet = info?.Layout is not null && !ReferenceEquals(info.Layout, realLayout);
+            object? section = !own ? null
+                : previousSheet ? (info!.Break is not null ? realLayout : null)
+                : info!.Layout;
+
+            // Колонки листа: раздела или документа; на прежнем листе — прежние.
+            var columns = previousSheet && info!.Layout!.Columns is { } previousColumns
+                ? previousColumns
+                : info?.Break is { } sectionBreak
                 ? ColumnFrames.ColumnsOf(document, sectionBreak)
                 : ColumnFrames.FinalColumns(document);
 
@@ -177,9 +193,23 @@ namespace Writersword.Modules.TextEditor.Document
                 gaps.Add(((offsets[c] + widths[c]) * 25.4 / 72.0, offsets[c + 1] * 25.4 / 72.0));
 
             // Ключ — значения, а не объект листа: поля раздела меняются на месте.
+            // Лист с переплётом справа (GutterSide): на линейке поля так, как они стоят на
+            // этом листе. При зеркальных полях они меняются местами, иначе к правому
+            // полю прибавляется переплёт.
+            bool shifted = pageIndex >= 0 && pageIndex < _pages.Count && _pages[pageIndex].GutterShiftPt != 0f;
+            bool mirrored = shifted && document.PageSettings.MirrorMargins;
+            double rightGutterMm = shifted && !mirrored ? page.MarginGutterMm : 0.0;
+
+            double shownLeftMm = mirrored ? page.MarginRightMm
+                : rightGutterMm > 0 ? page.MarginLeftMm
+                : page.MarginLeftMm + page.MarginGutterMm;
+            double shownRightMm = mirrored ? page.MarginLeftMm + page.MarginGutterMm
+                : page.MarginRightMm + rightGutterMm;
+
             string gapsKey = string.Join(";", gaps) + "|" + page.GetPhysicalWidthMm() + "x" + page.GetPhysicalHeightMm()
                 + "|" + page.MarginLeftMm + "," + page.MarginGutterMm + "," + page.MarginRightMm
-                + "," + page.MarginTopMm + "," + page.MarginBottomMm;
+                + "," + page.MarginTopMm + "," + page.MarginBottomMm
+                + "|" + mirrored + "," + rightGutterMm;
             if (_lastRulerSheet is { } last && ReferenceEquals(last.Section, section)
                 && ReferenceEquals(last.Page, page) && last.Gaps == gapsKey)
                 return;
@@ -188,9 +218,11 @@ namespace Writersword.Modules.TextEditor.Document
             RulerSheetChanged.Invoke(new ViewModels.Components.RulerSheet(
                 section,
                 page.GetPhysicalWidthMm(), page.GetPhysicalHeightMm(),
-                page.MarginLeftMm + page.MarginGutterMm, page.MarginRightMm,
+                shownLeftMm, shownRightMm,
                 page.MarginTopMm, page.MarginBottomMm,
-                gaps));
+                gaps,
+                mirrored,
+                rightGutterMm));
         }
 
         /// <summary>

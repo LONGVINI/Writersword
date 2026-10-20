@@ -364,7 +364,8 @@
                                                                  VerticalAlignment="Center"
                                                                  IsVisible="{Binding IsRenaming}"
                                                                  behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"
-                                                                 behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmRenameCommand}"/>
+                                                                 behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmRenameCommand}"
+                                                                 behaviors:SelectAllBehavior.Enabled="True"/>
                                                     </Panel>
 
                                                     <Grid Margin="8,0,8,0">
@@ -403,7 +404,8 @@
                                                              VerticalAlignment="Center"
                                                              IsVisible="{Binding IsEditingComment}"
                                                              behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsEditingComment}"
-                                                             behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmCommentCommand}"/>
+                                                             behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmCommentCommand}"
+                                                             behaviors:SelectAllBehavior.Enabled="True"/>
                                                     </Grid>
                                                 </controls:CharactersFolderHeaderPanel>
 
@@ -781,7 +783,8 @@
                                                                          Foreground="{DynamicResource TextPrimaryBrush}"
                                                                          VerticalAlignment="Stretch"
                                                                          IsVisible="{Binding IsBeingNamed}"
-                                                                         behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsBeingNamed}"/>
+                                                                         behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsBeingNamed}"
+                                                                         behaviors:SelectAllBehavior.Enabled="True"/>
                                                                 <TextBox Text="{ReflectionBinding PendingRename}"
                                                                          FontSize="12" FontWeight="Medium"
                                                                          TextAlignment="{Binding $parent[UserControl].DataContext.CardNameAlignment}"
@@ -793,7 +796,8 @@
                                                                          Foreground="{DynamicResource TextPrimaryBrush}"
                                                                          VerticalAlignment="Stretch"
                                                                          IsVisible="{Binding IsRenaming}"
-                                                                         behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"/>
+                                                                         behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"
+                                                                         behaviors:SelectAllBehavior.Enabled="True"/>
                                                                 <Button Classes="flat"
                                                                         Command="{Binding StartRenameCommand}"
                                                                         Background="Transparent"

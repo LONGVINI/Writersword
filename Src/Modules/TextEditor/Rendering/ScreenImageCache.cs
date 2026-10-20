@@ -91,6 +91,10 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public static void DrawImage(SKCanvas canvas, SKImage image, SKRect src, SKRect dst, SKPaint? paint)
         {
+            // Растр диаграммы — только заместитель: сама диаграмма рисуется вектором в
+            // разрешении холста, и подписи остаются резкими при любом масштабе.
+            if (Charts.ChartImageCache.TryDrawVector(canvas, image, src, dst, paint)) return;
+
             if (!t_active || !TryTargetSize(canvas, dst, out int width, out int height))
             {
                 canvas.DrawImage(image, src, dst, FloatingObjectRenderer.SamplingFor(canvas, src, dst), paint);

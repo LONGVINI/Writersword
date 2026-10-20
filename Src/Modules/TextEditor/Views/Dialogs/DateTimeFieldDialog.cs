@@ -44,7 +44,7 @@ namespace Writersword.Modules.TextEditor.Views.Dialogs
 
             var promptText = new TextBlock
             {
-                Text = "Дата встанет живым полем: при каждом открытии документа она станет сегодняшней, как в Word.",
+                Text = "Дата встанет живым полем: при каждом открытии документа она станет сегодняшней.",
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap
             };

@@ -240,6 +240,9 @@ namespace Writersword.Modules.TextEditor.Services
                 // Запись исправлений, включённая в документе (ExportService.Revisions).
                 WriteTrackRevisionsSetting(mainPart, document);
 
+                // Зеркальные поля: в настройках документа раньше всего остального.
+                WriteMirrorMarginsSetting(mainPart, document);
+
                 for (int s = 0; s < document.Sections.Count; s++)
                 {
                     var section = document.Sections[s];
@@ -1453,6 +1456,10 @@ namespace Writersword.Modules.TextEditor.Services
         {
             if (!ctx.InlineObjects.TryGetValue(imageId, out var image))
                 return null;
+
+            // Диаграмма в строке — свой рисунок с частью диаграммы, а не картинка.
+            if (image.Chart is not null)
+                return BuildChartDrawing(image, null, topAndBottomAnchor: false, ctx);
 
             string? relationshipId = EnsureImagePart(image, ctx);
             if (relationshipId is null) return null;
@@ -3726,7 +3733,11 @@ namespace Writersword.Modules.TextEditor.Services
         {
             if (!_inlineObjects.TryGetValue(imageId, out var image)) return null;
 
-            var picture = GetImage(image.ImageFileName);
+            // Диаграмма уходит в PDF своим растром в разрешении печати.
+            var picture = image.Chart is { } chart
+                ? Rendering.Charts.ChartImageCache.Get(
+                    chart, image.WidthPt, image.HeightPt, Rendering.Charts.ChartImageCache.PrintPixelsPerPoint, GetImage)
+                : GetImage(image.ImageFileName);
             if (picture is null) return null;
 
             // Рисунок нулевого размера у Word не виден — не виден и в PDF.
@@ -3965,7 +3976,10 @@ namespace Writersword.Modules.TextEditor.Services
                     if (piece.Image is not null)
                     {
                         var destination = SKRect.Create(cursor, baseline - piece.ImageHeight, piece.Width, piece.ImageHeight);
-                        _canvas.DrawImage(piece.Image, destination);
+                        // Общий путь картинок: диаграмма в нём уходит в PDF вектором.
+                        Rendering.ScreenImageCache.DrawImage(
+                            _canvas, piece.Image,
+                            SKRect.Create(0, 0, piece.Image.Width, piece.Image.Height), destination, null);
                         cursor += piece.Width;
                         continue;
                     }

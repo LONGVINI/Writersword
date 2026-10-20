@@ -682,8 +682,22 @@ namespace Writersword.Modules.TextEditor.Services
                 return sb.ToString();
             }
 
+            /// <summary>
+            /// Отпечаток картинки. У диаграммы файла нет, и сравнивать её по файлу нечем:
+            /// её отпечаток — сама модель (вид, данные, оформление). Без этого любая
+            /// диаграмма сравнивалась по своему Id и всегда выходила изменённой, а правка
+            /// данных в ней не находилась.
+            /// </summary>
             private string? ImageKey(ImageBlock image, bool revised)
-                => revised ? _revisedImageKey(image) : _currentImageKey(image);
+            {
+                if (image.Chart is { } chart)
+                {
+                    byte[] hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(chart.ComputeFingerprint()));
+                    return "chart:" + Convert.ToHexString(hash, 0, 16);
+                }
+
+                return revised ? _revisedImageKey(image) : _currentImageKey(image);
+            }
 
             /// <summary>
             /// Фигура по тому, что в ней есть: вид, заливка, обводка и надпись. Размер в
@@ -1949,6 +1963,8 @@ namespace Writersword.Modules.TextEditor.Services
                     _result.AdoptedImageFiles.Add(image.ImageFileName);
                 if (!string.IsNullOrWhiteSpace(image.SourceImageFileName))
                     _result.AdoptedImageFiles.Add(image.SourceImageFileName!);
+                if (!string.IsNullOrWhiteSpace(image.Chart?.BackgroundImage))
+                    _result.AdoptedImageFiles.Add(image.Chart!.BackgroundImage!);
             }
 
             // ── Слова ────────────────────────────────────────────────────────

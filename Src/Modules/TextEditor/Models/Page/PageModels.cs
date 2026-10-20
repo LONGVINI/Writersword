@@ -45,6 +45,14 @@ namespace Writersword.Modules.TextEditor.Models.Page
         /// <summary>Расстояние от нижнего края до колонтитула в мм.</summary>
         public double FooterDistanceMm { get; set; } = 12;
 
+        /// <summary>
+        /// Зеркальные поля (w:mirrorMargins у Word): левое поле — внутреннее, правое —
+        /// внешнее, и на листе с чётным номером они меняются местами вместе с переплётом,
+        /// как в развороте книги. Настройка документа: значение берётся у параметров
+        /// страницы документа, у листов разделов — их копия без силы.
+        /// </summary>
+        public bool MirrorMargins { get; set; }
+
         /// <summary>Копия настроек: все поля — значения.</summary>
         public TextEditorPageSettings Clone() => (TextEditorPageSettings)MemberwiseClone();
 

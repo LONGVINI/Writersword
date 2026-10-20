@@ -43,6 +43,23 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 vm.RefreshPageMargins();
         }
 
+        /// <summary>
+        /// Окно «Параметры раздела» открывается: параметры перечитываются из раздела под
+        /// кареткой — каретка могла уйти в другой раздел.
+        /// </summary>
+        private void OnSectionSetupFlyoutOpening(object? sender, EventArgs e)
+        {
+            if (DataContext is RibbonLayoutTabViewModel vm)
+                vm.RefreshSectionSetup();
+        }
+
+        /// <summary>Окно «Другие колонки» открывается: колонки раздела под кареткой.</summary>
+        private void OnColumnsFlyoutOpening(object? sender, EventArgs e)
+        {
+            if (DataContext is RibbonLayoutTabViewModel vm)
+                vm.RefreshColumnDialog();
+        }
+
         private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
         {
             if (DataContext is RibbonLayoutTabViewModel vm)

@@ -1,4 +1,5 @@
 ﻿using System.Windows.Input;
+using System;
 using ReactiveUI;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
@@ -83,10 +84,22 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand InsertPageBreakCommand { get; }
         public ICommand InsertSectionBreakNextPageCommand { get; }
         public ICommand InsertSectionBreakContinuousCommand { get; }
+        public ICommand InsertSectionBreakEvenPageCommand { get; }
+        public ICommand InsertSectionBreakOddPageCommand { get; }
+        public ICommand InsertColumnBreakCommand { get; }
         public ICommand InsertHyperlinkCommand { get; }
         public ICommand InsertBookmarkCommand { get; }
         public ICommand InsertCommentCommand { get; }
         public ICommand InsertFormulaCommand { get; }
+
+        /// <summary>
+        /// Новая диаграмма. Параметр — вид по имени (Column, Bar, Line, Area, Pie,
+        /// Doughnut, Scatter); без параметра — гистограмма, как первый вид у Word.
+        /// </summary>
+        public ICommand InsertChartCommand { get; }
+
+        /// <summary>Диаграмма по данным таблицы под кареткой: выделенные ячейки или вся таблица.</summary>
+        public ICommand InsertChartFromTableCommand { get; }
 
         /// <summary>Готовая формула из меню кнопки «Формула»; параметр — запись LaTeX.</summary>
         public ICommand InsertReadyFormulaCommand { get; }
@@ -175,6 +188,14 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             InsertShapeCalloutCommand = ReactiveCommand.Create(
                 () => _target.InsertShape(ShapeType.Callout));
             InsertFormulaCommand = ReactiveCommand.Create(() => _target.InsertFormula());
+            InsertChartFromTableCommand = ReactiveCommand.Create(() => _target.InsertChartFromTable());
+            InsertChartCommand = ReactiveCommand.Create<string?>(kind =>
+            {
+                if (kind == "Combo")
+                    _target.InsertComboChart();
+                else
+                    _target.InsertChart(Enum.TryParse<ChartKind>(kind, out var parsed) ? parsed : ChartKind.Column);
+            });
             InsertReadyFormulaCommand = ReactiveCommand.Create<string>(latex => _target.InsertReadyFormula(latex));
             InsertDateTimeCommand = ReactiveCommand.Create(() => _target.InsertDateTime());
             InsertPageBreakCommand = ReactiveCommand.Create(() => _target.InsertPageBreak());
@@ -182,6 +203,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 () => _target.InsertSectionBreak(BreakType.SectionNextPage));
             InsertSectionBreakContinuousCommand = ReactiveCommand.Create(
                 () => _target.InsertSectionBreak(BreakType.SectionContinuous));
+            InsertSectionBreakEvenPageCommand = ReactiveCommand.Create(
+                () => _target.InsertSectionBreak(BreakType.SectionEvenPage));
+            InsertSectionBreakOddPageCommand = ReactiveCommand.Create(
+                () => _target.InsertSectionBreak(BreakType.SectionOddPage));
+            InsertColumnBreakCommand = ReactiveCommand.Create(() => _target.InsertColumnBreak());
             InsertHyperlinkCommand = ReactiveCommand.Create(() => { });
             InsertBookmarkCommand = ReactiveCommand.Create(() => { });
             InsertCommentCommand = ReactiveCommand.Create(() => _target.InsertComment(string.Empty));

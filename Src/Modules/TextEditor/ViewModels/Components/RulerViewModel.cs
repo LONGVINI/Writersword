@@ -126,11 +126,19 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
     /// (от левого края текста) и раздел, чей это лист (null — лист документа). Поля,
     /// перетянутые на линейке, уходят в этот раздел.
     /// </summary>
+    /// <remarks>
+    /// Поля — так, как они стоят на этом листе. У листа с переплётом справа
+    /// (<paramref name="RightGutterMm"/>) переплёт прибавлен к правому полю; у листа с
+    /// зеркальными полями (<paramref name="MirroredSides"/>) поля стоят местами наоборот:
+    /// слева внешнее (правое поле документа), справа внутреннее с переплётом.
+    /// </remarks>
     public sealed record RulerSheet(
         object? Section,
         double WidthMm, double HeightMm,
         double MarginLeftMm, double MarginRightMm, double MarginTopMm, double MarginBottomMm,
-        IReadOnlyList<(double FromMm, double ToMm)> ColumnGapsMm);
+        IReadOnlyList<(double FromMm, double ToMm)> ColumnGapsMm,
+        bool MirroredSides = false,
+        double RightGutterMm = 0);
 
     public sealed class RulerViewModel : ReactiveObject
     {
@@ -845,6 +853,20 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// <summary>Раздел, чей лист сейчас на линейке; null — лист документа.</summary>
         public object? CurrentSection { get; private set; }
 
+        /// <summary>
+        /// Поля листа под кареткой стоят местами наоборот — зеркальные поля на листе с
+        /// переплётом справа: левый край линейки — правое поле документа, правый — левое
+        /// с переплётом.
+        /// </summary>
+        public bool MirroredSides { get; private set; }
+
+        /// <summary>
+        /// Переплёт листа под кареткой стоит справа (разные колонтитулы чётных и
+        /// нечётных страниц), мм; 0 — переплёт слева или его нет. Правый край линейки
+        /// показывает правое поле вместе с ним.
+        /// </summary>
+        public double RightGutterMm { get; private set; }
+
         private IReadOnlyList<(double FromMm, double ToMm)> _columnGapsMm = Array.Empty<(double, double)>();
 
         /// <summary>Промежутки между колонками раздела, мм от левого края текста.</summary>
@@ -864,6 +886,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
 
             CurrentSection = sheet.Section;
             ColumnGapsMm = sheet.ColumnGapsMm;
+            MirroredSides = sheet.MirroredSides;
+            RightGutterMm = sheet.RightGutterMm;
             UpdatePageSettings(sheet.WidthMm, sheet.HeightMm,
                 sheet.MarginLeftMm, sheet.MarginRightMm, sheet.MarginTopMm, sheet.MarginBottomMm);
         }

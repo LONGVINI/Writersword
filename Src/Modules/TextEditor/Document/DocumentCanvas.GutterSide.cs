@@ -35,6 +35,12 @@ namespace Writersword.Modules.TextEditor.Document
     /// документа на всех листах, и на альбомном листе раздела без переплёта текст
     /// уезжал влево на чужие 7 мм — к самому краю листа.
     ///
+    /// Зеркальные поля (TextEditorPageSettings.MirrorMargins) ведут себя так же, но на
+    /// листе с переплётом справа местами меняются и сами поля: левое поле — внутреннее,
+    /// и на чётном листе оно стоит справа. Ширина текста и тут не меняется, поэтому
+    /// это тот же сдвиг листа, только на переплёт и разницу полей
+    /// (<see cref="SheetShiftPt"/>).
+    ///
     /// Исключение — плавающий объект из Word, отсчитанный от края листа или от бокового
     /// поля: край бумаги с переплётом не двигается, и объект от листа стоит на месте,
     /// а от середины поля уходит на половину сдвига. Проход ставит такой объект на
@@ -55,7 +61,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void RememberGutterSides(List<ParaLayout> layouts, int pageCount)
         {
-            _gutterRightHint = GutterAlternates && AnyGutter() && pageCount > 0
+            _gutterRightHint = GutterAlternates && (AnyGutter() || MirrorMargins) && pageCount > 0
                 ? GutterRightPages(layouts, pageCount)
                 : Array.Empty<bool>();
         }
@@ -89,18 +95,38 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Раздел листа — по показанной раскладке: проход ставит объект раньше, чем
             // известны его листы, как и сторону переплёта.
-            float gutterPt = SheetGutterPt(SectionSheetOfPage(pageIndex));
-            if (gutterPt <= 0f || !GutterRightHint(pageIndex)) return 0f;
+            float shiftPt = SheetShiftPt(SectionSheetOfPage(pageIndex));
+            if (shiftPt == 0f || !GutterRightHint(pageIndex)) return 0f;
 
-            return gutterPt * (1f - anchor.HorizontalTextFollow());
+            return shiftPt * (1f - anchor.HorizontalTextFollow());
         }
 
         /// <summary>
         /// Переплёт меняет сторону по листам: режим листов и разные колонтитулы чётных и
-        /// нечётных страниц.
+        /// нечётных страниц или зеркальные поля.
         /// </summary>
         private bool GutterAlternates
-            => HeaderFootersDrawable && DocVm?.HeaderFooter?.DifferentOddEven == true;
+            => HeaderFootersDrawable && (DocVm?.HeaderFooter?.DifferentOddEven == true || MirrorMargins);
+
+        /// <summary>Зеркальные поля документа.</summary>
+        private bool MirrorMargins => DocVm?.Document.PageSettings.MirrorMargins == true;
+
+        /// <summary>
+        /// На сколько левее встаёт текст листа с переплётом справа, в пунктах: переплёт,
+        /// а при зеркальных полях ещё и разница левого (внутреннего) и правого
+        /// (внешнего) поля — они меняются местами. Может быть и меньше нуля: внешнее
+        /// поле шире внутреннего, и текст уходит вправо.
+        /// </summary>
+        private float SheetShiftPt(Models.Page.TextEditorPageSettings? sheet)
+        {
+            float shiftPt = SheetGutterPt(sheet);
+            if (!MirrorMargins) return shiftPt;
+
+            var page = SectionSheetsApply ? sheet ?? DocVm?.Document.PageSettings : DocVm?.Document.PageSettings;
+            if (page is null) return shiftPt;
+
+            return shiftPt + MmToPt(page.MarginLeftMm - page.MarginRightMm);
+        }
 
         /// <summary>
         /// Переплёт листа, в пунктах: раздела со своим листом или, без него, документа.
@@ -157,7 +183,7 @@ namespace Writersword.Modules.TextEditor.Document
             List<ParaLayout> layouts, List<PageRect> pages, List<TableEntry> tables,
             List<ImageEntry> images, List<ShapeEntry> shapes)
         {
-            if (!GutterAlternates || !AnyGutter() || pages.Count == 0)
+            if (!GutterAlternates || !(AnyGutter() || MirrorMargins) || pages.Count == 0)
                 return (layouts, pages, tables, images, shapes);
 
             bool[] right = GutterRightPages(layouts, pages.Count);
@@ -172,7 +198,7 @@ namespace Writersword.Modules.TextEditor.Document
             for (int p = 0; p < pages.Count; p++)
             {
                 if (!right[p]) continue;
-                shift[p] = -SheetGutterPt(sheets?[p].Page);
+                shift[p] = -SheetShiftPt(sheets?[p].Page);
                 anyShift |= shift[p] != 0f;
             }
             if (!anyShift) return (layouts, pages, tables, images, shapes);

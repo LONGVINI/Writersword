@@ -136,7 +136,8 @@
                                                  VerticalAlignment="Center"
                                                  Foreground="{DynamicResource TextPrimaryBrush}"
                                                  behaviours:TooltipBehavior.Tip="{Binding Name}"
-                                                 behaviours:TooltipBehavior.Description="{Binding Description}"/>
+                                                 behaviours:TooltipBehavior.Description="{Binding Description}"
+                                                 behaviours:SelectAllBehavior.Enabled="True"/>
 
 										<Border Grid.Column="1"
                                                 Background="{DynamicResource BgSurfaceBrush}"
@@ -193,7 +194,8 @@
                                              Background="Transparent"
                                              BorderThickness="0"
                                              Padding="0"
-                                             PlaceholderText="{x:Static loc:CharactersStrings.Param_DescriptionPlaceholder}"/>
+                                             PlaceholderText="{x:Static loc:CharactersStrings.Param_DescriptionPlaceholder}"
+                                             behaviours:SelectAllBehavior.Enabled="True"/>
 
 									<!-- Шкала кругляшками -->
 									<StackPanel Spacing="4" IsVisible="{Binding ShowScaleDots}">

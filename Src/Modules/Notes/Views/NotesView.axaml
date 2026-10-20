@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:vm="using:Writersword.Modules.Notes.ViewModels"
              xmlns:views="using:Writersword.Modules.Notes.Views"
              xmlns:loc="using:Writersword.Modules.Notes.Resources"
@@ -708,7 +709,8 @@
                              Text="{Binding SelectedPage.Title, Mode=TwoWay}"
                              PlaceholderText="{x:Static loc:NotesStrings.Page_TitleWatermark}"
                              IsEnabled="{Binding IsEditable}"
-                             KeyDown="OnTitleKeyDown"/>
+                             KeyDown="OnTitleKeyDown"
+                             behaviours:SelectAllBehavior.Enabled="True"/>
 
                     <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,4,0,0">
                         <TextBlock Text="{Binding SelectedPage.UpdatedAtText}"

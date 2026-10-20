@@ -105,7 +105,8 @@ namespace Writersword.Modules.TextEditor.Document
             // чужой главы человек не сможет — он не знает, где был.
             if (rememberPlace) RememberPlaceBeforeJump();
 
-            RestoreCaretState(paragraphIndex, 0);
+            // Прыжок к главе ставит заголовок у верха вида: читают то, что под ним.
+            RestoreCaretState(paragraphIndex, 0, scrollToTop: rememberPlace);
         }
 
         /// <summary>

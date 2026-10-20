@@ -47,6 +47,12 @@ namespace Writersword.Modules.TextEditor.Services
         {
             switch (block)
             {
+                case ImageBlock chartImage when chartImage.Chart is not null:
+                {
+                    var chartDrawing = BuildChartDrawing(chartImage, chartImage.AnchorPosition, topAndBottomAnchor: true, ctx);
+                    return chartDrawing is null ? null : new W.Run(chartDrawing);
+                }
+
                 case ImageBlock image:
                 {
                     string? relationshipId = EnsureImagePart(image, ctx);

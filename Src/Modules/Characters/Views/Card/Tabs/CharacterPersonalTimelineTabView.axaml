@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
              xmlns:models="using:Writersword.Modules.Characters.Models"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
@@ -62,7 +63,8 @@
                                                  Background="Transparent"
                                                  BorderThickness="0"
                                                  Padding="0"
-                                                 PlaceholderText="{x:Static loc:CharactersStrings.Field_EventTimestamp}"/>
+                                                 PlaceholderText="{x:Static loc:CharactersStrings.Field_EventTimestamp}"
+                                                 behaviours:SelectAllBehavior.Enabled="True"/>
 
                                         <!-- Название события -->
                                         <TextBox Text="{Binding Title}"
@@ -72,7 +74,8 @@
                                                  Background="Transparent"
                                                  BorderThickness="0"
                                                  Padding="0"
-                                                 PlaceholderText="{x:Static loc:CharactersStrings.Field_EventTitle}"/>
+                                                 PlaceholderText="{x:Static loc:CharactersStrings.Field_EventTitle}"
+                                                 behaviours:SelectAllBehavior.Enabled="True"/>
                                     </StackPanel>
 
                                     <!-- Кнопки: ключевое + удалить -->

@@ -147,16 +147,15 @@ namespace Writersword.Modules.TextEditor.Services
         }
 
         /// <summary>
-        /// Копия документа, в которой картинки и фигуры со сменой вида стоят в прежнем
-        /// виде, — для печати и выгрузки «Исходного документа». Null — смен вида нет,
-        /// копия не нужна.
+        /// Копия документа в прежнем виде — для печати и выгрузки «Исходного документа»:
+        /// картинки и фигуры со сменой вида, таблицы со сменой оформления, строками и
+        /// столбцами, разделы со сменой параметров — такими, какими они были до правок.
+        /// Текст копии не трогается: прежний текст показывает сам вид. Null — правок,
+        /// меняющих вид, нет, копия не нужна.
         /// </summary>
         public static DocumentModel? WithPreviousAppearance(DocumentModel document)
         {
-            bool any = false;
-            foreach (var block in RevisionService.BlockRevisions(document))
-                if (block is IAppearanceTracked { Change: not null }) { any = true; break; }
-            if (!any) return null;
+            if (!HasPreviousAppearance(document)) return null;
 
             var copy = DocumentCloner.Clone(document);
             foreach (var block in RevisionService.BlockRevisions(copy))
@@ -166,7 +165,72 @@ namespace Writersword.Modules.TextEditor.Services
                 tracked.Change = null;
             }
 
+            if (copy.Sections.Count > 0)
+            {
+                foreach (var block in copy.Sections[0].Blocks)
+                {
+                    if (block is TableBlock table)
+                    {
+                        RejectTableStructure(table);
+                    }
+                    else if (block is BreakBlock { Section.FormatChange: { } sectionChange } sectionEnd)
+                    {
+                        SectionFrame.Restore(sectionEnd, sectionChange.Previous, copy);
+                        sectionEnd.Section!.FormatChange = null;
+                    }
+                }
+            }
+
+            if (copy.PageSetupChange is { } pageChange)
+            {
+                SectionFrame.RestoreFinal(copy, pageChange.Previous);
+                copy.PageSetupChange = null;
+            }
+
             return copy;
+        }
+
+        /// <summary>Есть правки, которые меняют вид документа, а не его текст.</summary>
+        private static bool HasPreviousAppearance(DocumentModel document)
+        {
+            foreach (var block in RevisionService.BlockRevisions(document))
+                if (block is IAppearanceTracked { Change: not null }) return true;
+
+            if (document.PageSetupChange is not null) return true;
+            if (document.Sections.Count == 0) return false;
+
+            foreach (var block in document.Sections[0].Blocks)
+            {
+                if (block is BreakBlock { Section.FormatChange: not null }) return true;
+                if (block is TableBlock table && TableHasRevisions(table)) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Таблица или вложенная в неё таблица со строками, столбцами или оформлением правкой.</summary>
+        private static bool TableHasRevisions(TableBlock table)
+        {
+            if (table.FormatChange is not null || TableRevisions.HasMarks(table)) return true;
+
+            foreach (var cell in table.Cells)
+                if (cell.NestedTables is { Count: > 0 } nested)
+                    foreach (var inner in nested)
+                        if (TableHasRevisions(inner.Table)) return true;
+
+            return false;
+        }
+
+        /// <summary>Таблица и вложенные в неё таблицы — со строками, столбцами и оформлением до правок.</summary>
+        private static void RejectTableStructure(TableBlock table)
+        {
+            foreach (var cell in table.Cells)
+                if (cell.NestedTables is { Count: > 0 } nested)
+                    foreach (var inner in nested)
+                        RejectTableStructure(inner.Table);
+
+            if (table.FormatChange is not null || TableRevisions.HasMarks(table))
+                TableRevisions.RejectStructure(table);
         }
 
         /// <summary>Вид, каким объект был бы при отклонении правок: прежний, если вид сменён правкой.</summary>

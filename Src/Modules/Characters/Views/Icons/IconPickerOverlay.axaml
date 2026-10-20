@@ -234,8 +234,8 @@
 		<!-- Картинку можно бросить на всё окно: попасть броском в плитку
 		     в сорок точек тяжело. Рамка по краю показывает, что окно примет. -->
 		<Border x:Name="PickerPanel"
-		        HorizontalAlignment="Center" VerticalAlignment="Center"
-		        Margin="24" MaxHeight="720"
+		        HorizontalAlignment="Stretch" VerticalAlignment="Center"
+		        Margin="24" MaxWidth="982" MaxHeight="720"
 		        Background="{DynamicResource BgBaseBrush}"
 		        BorderBrush="{DynamicResource BorderDefaultBrush}"
 		        BorderThickness="1"
@@ -254,8 +254,14 @@
 			<Panel>
 				<!-- Две колонки: слева превью, поиск и наборы значков, справа —
 				     цвет, подложка и рамки. Так всё помещается без прокрутки:
-				     настройки не отнимают высоту у значков. -->
-				<Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="560,Auto"
+				     настройки не отнимают высоту у значков.
+
+				     Окно сжимается вместе с модулем: левая колонка уже, превью
+				     и наборы значков подстраиваются под ширину. Когда на две
+				     колонки места не хватает, настройки цвета уходят под значки
+				     (раскладку переключает код окна по его ширине). -->
+				<Grid x:Name="LayoutGrid"
+				      RowDefinitions="Auto,*,Auto" ColumnDefinitions="*,Auto"
 				      RowSpacing="14" ColumnSpacing="22">
 
 					<!-- Заголовок -->
@@ -274,11 +280,17 @@
 					     шапка блока шаблона (той же ширины, что блок в списке) или
 					     заголовок анкеты и строка списка анкет. Под ним — поиск,
 					     он относится к наборам значков и стоит над ними. -->
-					<Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,Auto,*" RowSpacing="14">
+					<Grid x:Name="IconsColumn" Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,Auto,*" RowSpacing="14">
 					<Grid Grid.Row="0" IsVisible="{Binding IsPickMode}">
-						<Panel HorizontalAlignment="Left">
+						<!-- Превью шириной в блок шаблона, а в узком окне — во
+						     всю колонку: колонка со звёздочкой и потолком 404
+						     прижата влево и сжимается вместе с окном. -->
+						<Grid>
+							<Grid.ColumnDefinitions>
+								<ColumnDefinition Width="*" MaxWidth="404"/>
+							</Grid.ColumnDefinitions>
 							<!-- Шаблон: как шапка блока -->
-							<Border Width="404" CornerRadius="10" BorderThickness="2"
+							<Border CornerRadius="10" BorderThickness="2"
 							        BorderBrush="{Binding ColorBrush}"
 							        Background="{DynamicResource BgPanelBrush}">
 								<Border.IsVisible>
@@ -308,7 +320,7 @@
 							</Border>
 
 							<!-- Анкета: заголовок листа и строка в списке анкет -->
-							<Border Width="404" CornerRadius="10" Padding="12,10"
+							<Border CornerRadius="10" Padding="12,10"
 							        BorderThickness="1"
 							        BorderBrush="{DynamicResource BorderSubtleBrush}"
 							        Background="{DynamicResource BgPanelBrush}">
@@ -348,6 +360,7 @@
 
 							<!-- Значок без места: метка, значок поля -->
 							<Border Width="64" Height="64" CornerRadius="12"
+							        HorizontalAlignment="Left"
 							        IsVisible="{Binding HasPlainPreview}"
 							        Background="{DynamicResource BgSurfaceBrush}"
 							        BorderBrush="{DynamicResource BorderSubtleBrush}"
@@ -357,7 +370,7 @@
 								                          IconBackground="{Binding Background}" IconBorder="{Binding Border}"
 								                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
 							</Border>
-						</Panel>
+						</Grid>
 					</Grid>
 
 					<!-- Поиск по наборам: по подписи, по тому, что нарисовано, по имени
@@ -380,16 +393,24 @@
 						</TextBox.InnerRightContent>
 					</TextBox>
 
-					<!-- Наборы -->
-					<ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+					<!-- Наборы. Полоса прокрутки видна всегда и стоит в своём поле
+					     справа, а не поверх крайнего ряда значков. -->
+					<ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled"
+					              VerticalScrollBarVisibility="Auto"
+					              AllowAutoHide="False"
+					              Padding="0,0,14,0">
 						<StackPanel Spacing="14">
 
 							<!-- Свои значки проекта и плитка «+» в конце ряда -->
 							<StackPanel Spacing="6">
-								<Grid ColumnDefinitions="*,Auto">
-									<TextBlock Grid.Column="0" Classes="section" Text="Свои значки"/>
+								<!-- Подсказка справа переносится, а не уходит за край,
+								     когда окно узкое -->
+								<Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+									<TextBlock Grid.Column="0" Classes="section" Text="Свои значки"
+									           VerticalAlignment="Center"/>
 									<TextBlock Grid.Column="1" Classes="hint"
 									           Text="Правый щелчок — имя или убрать"
+									           TextAlignment="Right" VerticalAlignment="Center"
 									           IsVisible="{Binding HasCustom}"/>
 								</Grid>
 								<WrapPanel Orientation="Horizontal">
@@ -414,7 +435,8 @@
 																	<TextBlock Text="Имя значка" FontSize="11"
 																	           Foreground="{DynamicResource TextSecondaryBrush}"/>
 																	<TextBox Text="{Binding EditName, Mode=TwoWay}"
-																	         KeyDown="OnRenameKeyDown"/>
+																	         KeyDown="OnRenameKeyDown"
+																	         behaviours:SelectAllBehavior.Enabled="True"/>
 																	<Button Click="OnRemoveClick" HorizontalAlignment="Left"
 																	        behaviours:TooltipBehavior.Tip="Убрать из библиотеки"
 																	        behaviours:TooltipBehavior.Description="Там, где значок уже стоит, он останется">
@@ -484,9 +506,11 @@
 					     без, цвета значка), потом быстрые цвета и «Свой
 					     цвет» — всё действует на выбранное сверху. Толщина рамки —
 					     ползунком, когда красим рамку. -->
-					<ScrollViewer Grid.Row="1" Grid.Column="1" Width="330"
+					<ScrollViewer x:Name="ColorsColumn" Grid.Row="1" Grid.Column="1" Width="344"
 					              HorizontalScrollBarVisibility="Disabled"
 					              VerticalScrollBarVisibility="Auto"
+					              AllowAutoHide="False"
+					              Padding="0,0,14,0"
 					              IsVisible="{Binding AllowColor}">
 						<StackPanel Spacing="12">
 							<TextBlock Classes="section" Text="Что красим"/>
@@ -602,7 +626,7 @@
 					</ScrollViewer>
 
 					<!-- Низ: подсказка про бросок и кнопки -->
-					<Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+					<Grid x:Name="FooterRow" Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" ColumnSpacing="12">
 						<TextBlock Grid.Column="0" Classes="hint" VerticalAlignment="Center"
 						           Text="Картинки можно просто бросить в это окно"/>
 						<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">

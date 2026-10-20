@@ -93,7 +93,8 @@
 								         VerticalContentAlignment="Center"
 								         Text="{Binding ReviewerName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
 								         behaviours:TooltipBehavior.Tip="Имя рецензента"
-								         behaviours:TooltipBehavior.Description="Этим именем подписываются новые правки. Пустое поле — имя пользователя системы. Имя общее для всех документов"/>
+								         behaviours:TooltipBehavior.Description="Этим именем подписываются новые правки. Пустое поле — имя пользователя системы. Имя общее для всех документов"
+								         behaviours:SelectAllBehavior.Enabled="True"/>
 							</StackPanel>
 						</StackPanel>
 					</DockPanel>
@@ -131,7 +132,8 @@
 											         Padding="6 2"
 											         FontSize="11"
 											         VerticalContentAlignment="Center"
-											         Text="{Binding ReviewerName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+											         Text="{Binding ReviewerName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+											         behaviours:SelectAllBehavior.Enabled="True"/>
 										</StackPanel>
 									</StackPanel>
 								</Flyout>

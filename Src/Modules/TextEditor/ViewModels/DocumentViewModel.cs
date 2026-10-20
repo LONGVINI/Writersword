@@ -3741,7 +3741,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 OffsetXPt = floating ? src.OffsetXPt + 12.0 : src.OffsetXPt,
                 OffsetYPt = floating ? src.OffsetYPt + 12.0 : src.OffsetYPt,
                 ZOrder = src.ZOrder,
-                AltText = src.AltText
+                AltText = src.AltText,
+                Chart = src.Chart?.Clone()
             };
 
             BeginEditDelegate?.Invoke("Вставка изображения");
@@ -3777,17 +3778,26 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public ImageBlock? InsertImageWithProps(byte[] data, ImageBlock template,
             double floatOffsetXPt, double floatOffsetYPt)
         {
-            if (IsReadOnly || data is null || data.Length == 0 || template is null) return null;
+            if (IsReadOnly || template is null) return null;
 
-            var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
-            if (ctx is null) return null;
+            // Диаграмма вставляется самой диаграммой: байты в буфере — только её снимок
+            // для других программ, файл ей не нужен.
+            bool chart = template.Chart is not null;
+            if (!chart && (data is null || data.Length == 0)) return null;
 
-            string fileName = $"img_{System.Guid.NewGuid():N}.png";
-            ctx.WriteFile($"TextEditor/Images/{fileName}", data);
+            string fileName = string.Empty;
+            if (!chart)
+            {
+                var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
+                if (ctx is null) return null;
 
-            // См. InsertImageBytes: файл должен лежать на диске к моменту, когда на
-            // него сошлётся кеш восстановления.
-            ctx.FlushStorage();
+                fileName = $"img_{System.Guid.NewGuid():N}.png";
+                ctx.WriteFile($"TextEditor/Images/{fileName}", data!);
+
+                // См. InsertImageBytes: файл должен лежать на диске к моменту, когда на
+                // него сошлётся кеш восстановления.
+                ctx.FlushStorage();
+            }
 
             bool floating = template.WrapMode != WrapMode.Inline;
             var image = new ImageBlock
@@ -3820,7 +3830,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 OffsetXPt = floating ? floatOffsetXPt : 0.0,
                 OffsetYPt = floating ? floatOffsetYPt : 0.0,
                 ZOrder = template.ZOrder,
-                AltText = template.AltText
+                AltText = template.AltText,
+                Chart = template.Chart?.Clone()
             };
 
             BeginEditDelegate?.Invoke("Вставка изображения");
@@ -4374,7 +4385,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ZOrder = src.ZOrder,
             AltText = src.AltText,
             SourceImageFileName = src.SourceImageFileName,
-            WordDrawing = src.WordDrawing?.Clone()
+            WordDrawing = src.WordDrawing?.Clone(),
+            Chart = src.Chart?.Clone()
         };
 
         // Оформление и положение только что вставленной фигуры.
@@ -4644,7 +4656,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     count++;
             return count;
         }
-        public void InsertSectionBreak(BreakType t) => InsertBlock(new BreakBlock { BreakType = t });
+        public void InsertSectionBreak(BreakType t) => InsertSectionBreakAtCaret(t);
         public void InsertBookmark(string name) => AddAnnotation(InlineAnnotationType.Bookmark, bookmarkName: name);
         public void InsertHyperlink(string url, string? text) => AddAnnotation(InlineAnnotationType.Hyperlink, url: url);
         /// <summary>
@@ -6339,6 +6351,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public int GetColumnCount() => GetSectionColumnCount();
 
+        public void SetPageSizeMm(double widthMm, double heightMm) => ApplySectionPageSizeMm(widthMm, heightMm);
+
+        public void SetColumnLayout(SectionColumns columns) => ApplySectionColumnLayout(columns);
+
+        public void SetSectionSetup(SectionSetup setup) => ApplySectionSetup(setup);
+
         // ── ITextEditorCommandTarget: вид ─────────────────────────────────
 
         public void SetZoom(double zoom) => Zoom = zoom;
@@ -7001,7 +7019,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     // в .docx уходит он) и картинка-заливка фигуры.
                     string?[] fileNames = block switch
                     {
-                        ImageBlock image => new[] { image.ImageFileName, image.SourceImageFileName },
+                        ImageBlock image => new[] { image.ImageFileName, image.SourceImageFileName, image.Chart?.BackgroundImage },
                         ShapeBlock shape => new[] { shape.FillImageFileName },
                         _ => Array.Empty<string?>()
                     };

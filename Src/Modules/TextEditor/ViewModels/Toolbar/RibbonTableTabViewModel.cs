@@ -844,6 +844,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
 
         // ── Сортировка ────────────────────────────────────────────────────
+        /// <summary>Диаграмма по данным таблицы: выделенные ячейки или вся таблица.</summary>
+        public ICommand ChartFromTableCommand { get; }
+
         public ICommand SortAscCommand { get; }
         public ICommand SortDescCommand { get; }
 
@@ -946,6 +949,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             ToggleEraserToolCommand = ReactiveCommand.Create(() => SetLineTool(2));
 
             // Сортировка
+            ChartFromTableCommand = ReactiveCommand.Create(() => _target.InsertChartFromTable());
             SortAscCommand = ReactiveCommand.Create(() => _target.TableSort(-1, ascending: true));
             SortDescCommand = ReactiveCommand.Create(() => _target.TableSort(-1, ascending: false));
 

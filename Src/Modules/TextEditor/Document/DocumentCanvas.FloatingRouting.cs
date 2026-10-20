@@ -57,10 +57,13 @@ namespace Writersword.Modules.TextEditor.Document
 
             string? stored = DocVm?.StoreImageFile(filePath);
             if (string.IsNullOrEmpty(stored)) return;
-            if (_selectedImage.ImageFileName == stored) return;
+            if (_selectedImage.ImageFileName == stored && !_selectedImage.IsChart) return;
 
+            // Диаграмма, заменённая картинкой, становится картинкой: на её месте рисуется
+            // файл, а не данные.
             BeginImageEdit("Замена картинки");
             _selectedImage.ImageFileName = stored!;
+            _selectedImage.Chart = null;
             CommitImageEdit();
 
             // Пропорции нового файла другие, а габарит остался прежним: раскладка
