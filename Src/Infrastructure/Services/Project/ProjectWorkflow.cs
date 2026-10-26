@@ -956,8 +956,14 @@ namespace Writersword.Infrastructure.Services.Project
 
                     // Автосохранение отброшено, модули перечитаны из файла: несохранённого
                     // нет. Отметка ставится после того, как перезагрузка модулей отработала.
+                    // Файл не перезаписывался: модули заново прочитали его, и их состояние
+                    // сразу после этого — исходное для модулей без отслеживания правок.
                     Avalonia.Threading.Dispatcher.UIThread.Post(
-                        () => capturedTab.MarkAsSaved(),
+                        () =>
+                        {
+                            capturedTab.MarkAsSaved();
+                            capturedTab.RecaptureUntrackedLoadedStates();
+                        },
                         Avalonia.Threading.DispatcherPriority.Background);
 
                     if (capturedTab.Workspace != null)

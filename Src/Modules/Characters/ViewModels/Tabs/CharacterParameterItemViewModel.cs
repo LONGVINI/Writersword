@@ -628,6 +628,127 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
 
         public void CommitInputWidth() => InputWidthCommitted?.Invoke(InputWidth);
 
+        // ── Высота поля описания ─────────────────────────────────────────
+        //
+        // Описание по умолчанию растёт по тексту. Анкета может задать высоту —
+        // своему полю (перетаскиванием нижнего края или числом) или всем
+        // описаниям сразу (особый вид анкеты).
+
+        public const double DefaultLongTextHeight = 64;
+        public const double MinInputHeight = 32;
+        public const double MaxInputHeight = 800;
+
+        /// <summary>Высота задана — у поля, иначе у анкеты; null — по тексту.</summary>
+        private double? ExplicitInputHeight =>
+            _model.InputHeight is { } h && h > 0 ? h
+            : _anketaLook?.LongTextHeight is { } a && a > 0 ? a
+            : null;
+
+        /// <summary>Высота поля описания для ручки: заданная или обычная.</summary>
+        public double InputHeight
+        {
+            get => ExplicitInputHeight ?? DefaultLongTextHeight;
+            set
+            {
+                var clamped = Math.Clamp(value, MinInputHeight, MaxInputHeight);
+                if (_model.InputHeight.HasValue && Math.Abs(_model.InputHeight.Value - clamped) < 0.5) return;
+                _model.InputHeight = clamped;
+                this.RaisePropertyChanged();
+                this.RaisePropertyChanged(nameof(InputHeightValue));
+                this.RaisePropertyChanged(nameof(InputMinHeight));
+            }
+        }
+
+        /// <summary>
+        /// Нижний предел высоты описания: обычная высота, пока высоту не задали,
+        /// иначе — наименьшая допустимая, чтобы заданная ниже обычной работала.
+        /// </summary>
+        public double InputMinHeight => ExplicitInputHeight is null ? DefaultLongTextHeight : MinInputHeight;
+
+        /// <summary>Высота для разметки: заданная или «по тексту» (без значения).</summary>
+        public object InputHeightValue => ExplicitInputHeight is { } h
+            ? h
+            : Avalonia.AvaloniaProperty.UnsetValue;
+
+        /// <summary>Высоту поля дотянули и отпустили — конструктор запоминает её в анкете.</summary>
+        public event Action<double>? InputHeightCommitted;
+
+        public void CommitInputHeight() => InputHeightCommitted?.Invoke(InputHeight);
+
+        // ── Особый вид ───────────────────────────────────────────────────
+        //
+        // Выравнивание в строке, шрифт и размеры: у поля (копия в значении,
+        // CharacterParameter.Look), иначе у анкеты (ApplyAnketaLook), иначе
+        // как в программе. «Как в программе» — это отсутствие значения у
+        // свойства разметки: тогда действует стиль.
+
+        private CharacterAnketaLook? _anketaLook;
+
+        /// <summary>
+        /// Вид анкеты, в которой показано поле. Вызывается тем, кто раскладывает
+        /// поля анкеты: карточкой персонажа, превью и конструктором.
+        /// </summary>
+        public void ApplyAnketaLook(CharacterAnketaLook? look)
+        {
+            _anketaLook = look is { IsEmpty: false } ? look : null;
+            RaiseLook();
+        }
+
+        /// <summary>Вид поля в значении изменился — разметка перечитывает его.</summary>
+        public void RaiseLook()
+        {
+            this.RaisePropertyChanged(nameof(FieldVerticalAlignment));
+            this.RaisePropertyChanged(nameof(LabelFontSizeValue));
+            this.RaisePropertyChanged(nameof(ValueFontSizeValue));
+            this.RaisePropertyChanged(nameof(FontFamilyValue));
+            this.RaisePropertyChanged(nameof(InputHeight));
+            this.RaisePropertyChanged(nameof(InputHeightValue));
+            this.RaisePropertyChanged(nameof(InputMinHeight));
+        }
+
+        /// <summary>Положение поля по высоте строки, когда соседнее поле выше.</summary>
+        public Avalonia.Layout.VerticalAlignment FieldVerticalAlignment =>
+            (CharacterLookAlign.Normalize(_model.Look?.VerticalAlign)
+             ?? CharacterLookAlign.Normalize(_anketaLook?.FieldAlign)) switch
+            {
+                CharacterLookAlign.Center => Avalonia.Layout.VerticalAlignment.Center,
+                CharacterLookAlign.Bottom => Avalonia.Layout.VerticalAlignment.Bottom,
+                _ => Avalonia.Layout.VerticalAlignment.Top
+            };
+
+        /// <summary>Размер подписи или «как в стиле».</summary>
+        public object LabelFontSizeValue =>
+            (_model.Look?.LabelFontSize ?? _anketaLook?.LabelFontSize) is { } size && size > 0
+                ? size
+                : Avalonia.AvaloniaProperty.UnsetValue;
+
+        /// <summary>Размер значения (текст, описание, число) или «как в стиле».</summary>
+        public object ValueFontSizeValue =>
+            (_model.Look?.ValueFontSize ?? _anketaLook?.ValueFontSize) is { } size && size > 0
+                ? size
+                : Avalonia.AvaloniaProperty.UnsetValue;
+
+        /// <summary>Шрифт подписи и значения или «как в стиле».</summary>
+        public object FontFamilyValue
+        {
+            get
+            {
+                var name = !string.IsNullOrWhiteSpace(_model.Look?.FontFamily)
+                    ? _model.Look!.FontFamily
+                    : _anketaLook?.FontFamily;
+                if (string.IsNullOrWhiteSpace(name)) return Avalonia.AvaloniaProperty.UnsetValue;
+
+                try
+                {
+                    return FontFamily.Parse(name.Trim());
+                }
+                catch (Exception)
+                {
+                    return Avalonia.AvaloniaProperty.UnsetValue;
+                }
+            }
+        }
+
         // ── Вид поля ─────────────────────────────────────────────────────
         //
         // Вид задаётся в анкете, а здесь он сводится к тому, что показать:

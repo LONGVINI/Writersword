@@ -261,7 +261,6 @@ namespace Writersword.Modules.Characters.ViewModels
         }
         public CharactersOnboardingViewModel OnboardingViewModel { get; }
 
-        public ObservableCollection<string> ActiveTemplateIds { get; } = new();
         public ObservableCollection<CharacterListItemViewModel> FilteredCharacters { get; } = new();
         public ObservableCollection<CharacterFolderViewModel> Folders { get; } = new();
         // ── Выделение карточек и боковая панель оформления ─────────────────
@@ -1182,12 +1181,9 @@ namespace Writersword.Modules.Characters.ViewModels
             _trash = trash;
             _avatarService = avatarService;
 
-            // Сервис персонажей нужен вкладке шаблонов, чтобы правка набора
-            // разъезжалась по карточкам, к которым он подключён.
-            TemplatesViewModel = new CharactersTemplatesViewModel(anketaService, ActiveTemplateIds, characterService, avatarService);
+            TemplatesViewModel = new CharactersTemplatesViewModel(anketaService, avatarService);
             TemplatesViewModel.OnboardingRestartRequested += () => ShowOnboarding = true;
             TemplatesViewModel.OpenAnketaRequested += OpenAnketaInDesigner;
-            TemplatesViewModel.CharactersUpdated += () => SelectedCharacterCard?.ReloadFields();
 
             AnketasViewModel = new CharactersAnketasViewModel(anketaService, characterService);
             AnketasViewModel.AnketaSaved += OnAnketaSaved;
@@ -1316,14 +1312,13 @@ namespace Writersword.Modules.Characters.ViewModels
             ShowOnboarding = false;
             if (completed)
             {
-                // Ответы о том, что пишет автор, превращаются в шаблон
-                // проекта — готовое сочетание разделов под жанр. Новые
-                // персонажи сразу получают его анкеты.
+                // Ответы о том, что пишет автор, подбирают готовое сочетание
+                // разделов под жанр: этот шаблон встаёт выбранным во вкладке
+                // шаблонов — его видно первым, когда её откроют.
                 var tags = OnboardingViewModel.GetSelectedTags().ToList();
                 var templateId = Services.CharacterBuiltInContent.RecommendTemplateId(tags);
-                if (_anketaService.GetTemplateById(templateId) != null)
-                    TemplatesViewModel.SetProjectTemplate(templateId);
                 TemplatesViewModel.Refresh();
+                TemplatesViewModel.Activate(TemplatesViewModel.FindBlock(templateId));
             }
             _logger.Information("Onboarding dismissed — can restart via Templates tab");
         }
@@ -1339,11 +1334,7 @@ namespace Writersword.Modules.Characters.ViewModels
         private void CreateCharacter()
         {
             if (IsReadOnly) return;
-            var anketas = GetActiveAnketas();
-            var character = anketas.Count > 0
-                ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: false,
-                    depths: TemplatesViewModel.GetProjectDepths())
-                : _characterService.Create(CharactersStrings.Character_DefaultName);
+            var character = _characterService.Create(CharactersStrings.Character_DefaultName);
             character.AvatarRing = ProjectRingsAll;
             AddCharacterToActiveFolderVm(character, isNaming: true);
         }
@@ -1351,11 +1342,7 @@ namespace Writersword.Modules.Characters.ViewModels
         private void CreateCharacterRandomized()
         {
             if (IsReadOnly) return;
-            var anketas = GetActiveAnketas();
-            var character = anketas.Count > 0
-                ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: true,
-                    depths: TemplatesViewModel.GetProjectDepths())
-                : _characterService.Create(CharactersStrings.Character_DefaultName);
+            var character = _characterService.Create(CharactersStrings.Character_DefaultName);
             character.AvatarRing = ProjectRingsAll;
             AddCharacterToActiveFolderVm(character, isNaming: true);
         }
@@ -1415,13 +1402,6 @@ namespace Writersword.Modules.Characters.ViewModels
             character.ImportanceLevel = level;
             _characterService.Update(character);
         }
-
-        private List<CharacterAnketa> GetActiveAnketas() =>
-            ActiveTemplateIds
-                .Select(id => _anketaService.GetById(id))
-                .Where(a => a is not null)
-                .Cast<CharacterAnketa>()
-                .ToList();
 
         private void SelectCharacter(string characterId)
         {
@@ -2030,7 +2010,6 @@ namespace Writersword.Modules.Characters.ViewModels
             MainTabIndex = MainTabIndex,
             ActiveTagFilters = ActiveTagFilters.ToList(),
             LastSearchQuery = SearchQuery,
-            ActiveTemplateIds = ActiveTemplateIds.ToList(),
             GraphOffsetX = GraphViewModel.OffsetX,
             GraphOffsetY = GraphViewModel.OffsetY,
             GraphScale = GraphViewModel.Scale,
@@ -2093,9 +2072,6 @@ namespace Writersword.Modules.Characters.ViewModels
             SearchQuery = session.LastSearchQuery ?? string.Empty;
             ActiveTagFilters.Clear();
             foreach (var tag in session.ActiveTagFilters) ActiveTagFilters.Add(tag);
-            ActiveTemplateIds.Clear();
-            foreach (var id in Services.CharacterBuiltInContent.ExpandLegacyIds(session.ActiveTemplateIds))
-                ActiveTemplateIds.Add(id);
             TemplatesViewModel.Refresh();
             ApplyFilters();
             if (!string.IsNullOrEmpty(session.LastOpenedCharacterId) &&

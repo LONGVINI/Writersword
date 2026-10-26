@@ -14,5 +14,12 @@ namespace Writersword.Core.Interfaces.Services
         bool AreDataEqual(
             Dictionary<string, object?>? data1,
             Dictionary<string, object?>? data2);
+
+        /// <summary>
+        /// Описать первое структурное расхождение двух значений (путь и оба значения)
+        /// или вернуть null, если расхождения в структуре нет.
+        /// Только для диагностики.
+        /// </summary>
+        string? DescribeFirstDifference(object? live, object? saved);
     }
 }

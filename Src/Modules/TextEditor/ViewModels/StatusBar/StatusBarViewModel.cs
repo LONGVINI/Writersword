@@ -350,36 +350,66 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
         /// </summary>
         public void UpdateFromParagraphs(IReadOnlyList<string> paragraphs)
         {
+            var items = new List<StatisticsParagraph>(paragraphs.Count);
+            foreach (string paragraph in paragraphs)
+                items.Add(new StatisticsParagraph(string.Empty, false, paragraph));
+
+            UpdateFromParagraphs(items);
+        }
+
+        /// <summary>
+        /// Абзац для статистики: номер или маркер пункта списка вместе с отделяющей
+        /// его табуляцией и текст абзаца. Номер Word считает и словом, и знаками;
+        /// маркер-значок — только знаками (<paramref name="MarkerIsWord"/>).
+        /// </summary>
+        public readonly record struct StatisticsParagraph(string Marker, bool MarkerIsWord, string Text);
+
+        /// <summary>
+        /// Считает статистику по абзацам с номерами и маркерами списков, не трогая число
+        /// страниц и строк.
+        /// </summary>
+        public void UpdateFromParagraphs(IReadOnlyList<StatisticsParagraph> paragraphs)
+        {
             int chars = 0, charsNoSpaces = 0, words = 0, nonEmpty = 0;
 
-            foreach (string paragraph in paragraphs)
+            foreach (var paragraph in paragraphs)
             {
+                // Знаки номера и табуляции за ним идут в счёт знаков, но абзацем с
+                // текстом делает абзац только его собственный текст.
+                bool markerHasText = false;
+                CountChars(paragraph.Marker, ref chars, ref charsNoSpaces, ref markerHasText);
+
                 bool hasText = false;
-
-                foreach (char c in paragraph)
-                {
-                    // Разрыв строки внутри абзаца Word знаком не считает: это граница
-                    // между словами, а не символ текста.
-                    if (c == '\n' || c == '\r') continue;
-
-                    chars++;
-                    if (char.IsWhiteSpace(c)) continue;
-
-                    charsNoSpaces++;
-                    hasText = true;
-                }
+                CountChars(paragraph.Text, ref chars, ref charsNoSpaces, ref hasText);
 
                 // Пустой абзац — пустая строка между абзацами, абзац под одной картинкой —
                 // Word не считает абзацами: в счёт идут только абзацы с текстом.
                 if (hasText) nonEmpty++;
 
-                words += CountWords(paragraph);
+                words += CountWords(paragraph.Text);
+                if (paragraph.MarkerIsWord) words += CountWords(paragraph.Marker);
             }
 
             ParagraphCount = nonEmpty;
             CharCount = chars;
             CharCountNoSpaces = charsNoSpaces;
             WordCount = words;
+        }
+
+        private static void CountChars(string text, ref int chars, ref int charsNoSpaces, ref bool hasText)
+        {
+            foreach (char c in text)
+            {
+                // Разрыв строки внутри абзаца Word знаком не считает: это граница
+                // между словами, а не символ текста.
+                if (c == '\n' || c == '\r') continue;
+
+                chars++;
+                if (char.IsWhiteSpace(c)) continue;
+
+                charsNoSpaces++;
+                hasText = true;
+            }
         }
 
         /// <summary>
@@ -393,12 +423,15 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
         }
 
         /// <summary>
-        /// Слово — последовательность без пробелов. Единственное исключение — отрезки
-        /// из одних только тире: тире прямой речи и тире вместо пропущенного сказуемого
-        /// стоят отдельными знаками, и на художественном тексте их набираются тысячи.
-        /// Прочие одиночные знаки — звёздочка разделителя, номер, отбившаяся точка —
-        /// словами считаются: ровно так их считает Word, и на рукописи в девяносто
-        /// тысяч слов это разница ровно в те несколько единиц, что расходились.
+        /// Слово — последовательность без пробелов, как у Word. Исключения сверены с
+        /// Word на проверочном документе:
+        ///   • отрезок из одних тире (длинного, короткого, цифрового) словом не
+        ///     считается — тире прямой речи и тире вместо пропущенного сказуемого стоят
+        ///     отдельными знаками, и на художественном тексте их набираются тысячи;
+        ///   • отдельный дефис «-» словом считается, как и прочие одиночные знаки —
+        ///     звёздочка разделителя, «№», отбившаяся точка;
+        ///   • в китайском и японском тексте словом считается каждый иероглиф и знак
+        ///     каны: пробелов между словами там нет.
         /// </summary>
         private static int CountWords(string text)
         {
@@ -406,21 +439,75 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
 
             int count = 0;
             foreach (Match match in Regex.Matches(text, @"\S+"))
-                if (!IsDashOnly(match.Value)) count++;
+            {
+                if (IsDashOnly(match.Value)) continue;
+                count += TokenWords(match.Value);
+            }
 
             return count;
         }
 
         /// <summary>
-        /// Отрезок состоит из одних тире. Проверяется категория знака, а не список
-        /// символов: в тексте встречаются и длинное тире, и короткое, и дефис, и все
-        /// они словами не являются.
+        /// Сколько слов в отрезке без пробелов: один, а в отрезке с иероглифами — по
+        /// одному на иероглиф и знак каны плюс по одному на каждую группу букв и цифр
+        /// между ними.
+        /// </summary>
+        private static int TokenWords(string token)
+        {
+            bool hasIdeographs = false;
+            foreach (char c in token)
+            {
+                if (IsIdeograph(c))
+                {
+                    hasIdeographs = true;
+                    break;
+                }
+            }
+
+            if (!hasIdeographs) return 1;
+
+            int count = 0;
+            bool inGroup = false;
+            foreach (char c in token)
+            {
+                if (IsIdeograph(c))
+                {
+                    count++;
+                    inGroup = false;
+                }
+                else if (char.IsLetterOrDigit(c))
+                {
+                    if (!inGroup) count++;
+                    inGroup = true;
+                }
+                else
+                {
+                    inGroup = false;
+                }
+            }
+
+            return count;
+        }
+
+        /// <summary>Иероглиф или знак японской каны: Word считает каждый отдельным словом.</summary>
+        private static bool IsIdeograph(char c) =>
+            (c >= '\u3040' && c <= '\u30FF')
+            || (c >= '\u3400' && c <= '\u4DBF')
+            || (c >= '\u4E00' && c <= '\u9FFF')
+            || (c >= '\uF900' && c <= '\uFAFF')
+            || (c >= '\uFF66' && c <= '\uFF9F');
+
+        /// <summary>
+        /// Отрезок состоит из одних тире: цифрового, короткого, длинного, черты. Дефис
+        /// и дефис-минус сюда не входят — Word считает отдельный дефис словом.
         /// </summary>
         private static bool IsDashOnly(string token)
         {
             foreach (char c in token)
-                if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.DashPunctuation)
-                    return false;
+            {
+                bool dash = c is '\u2012' or '\u2013' or '\u2014' or '\u2015' or '\u2E3A' or '\u2E3B' or '\uFE58';
+                if (!dash) return false;
+            }
 
             return true;
         }

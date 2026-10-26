@@ -194,7 +194,10 @@ namespace Writersword.Modules.TextEditor.Services
             };
 
             if (columns.Count > 1 && columns.Separator)
+            {
                 result.Separator = true;
+                WriteSeparatorColor(result, columns.SeparatorColor);
+            }
 
             if (columns.Columns is { Count: > 0 } own)
             {
@@ -304,7 +307,38 @@ namespace Writersword.Modules.TextEditor.Services
         {
             Count = Math.Max(1, columns.ColumnCount),
             GapMm = columns.GapMm,
-            Separator = columns.ShowSeparator
+            Separator = columns.ShowSeparator,
+            SeparatorColor = columns.SeparatorColor
         };
+
+        /// <summary>
+        /// Атрибут цвета черты между колонками у w:cols — в пропускаемом пространстве
+        /// wsx (DocxTextEffects): у Word черта всегда чёрная и цвета не хранит, он
+        /// атрибут пропускает и рисует свою; Writersword при открытии берёт цвет из него.
+        /// </summary>
+        internal const string SeparatorColorAttribute = "sepColor";
+
+        /// <summary>Цвет черты — атрибутом wsx у w:cols; авто (null) не пишется.</summary>
+        internal static void WriteSeparatorColor(W.Columns columns, string? color)
+        {
+            if (string.IsNullOrWhiteSpace(color)) return;
+            columns.SetAttribute(new OpenXmlAttribute(
+                "wsx", SeparatorColorAttribute, DocxTextEffects.WsxNamespace, color));
+        }
+
+        /// <summary>Цвет черты из атрибута wsx у w:cols; null — его нет (авто).</summary>
+        internal static string? ReadSeparatorColor(W.Columns? columns)
+        {
+            if (columns is null) return null;
+
+            foreach (var attribute in columns.GetAttributes())
+            {
+                if (attribute.NamespaceUri == DocxTextEffects.WsxNamespace
+                    && attribute.LocalName == SeparatorColorAttribute)
+                    return string.IsNullOrWhiteSpace(attribute.Value) ? null : attribute.Value;
+            }
+
+            return null;
+        }
     }
 }

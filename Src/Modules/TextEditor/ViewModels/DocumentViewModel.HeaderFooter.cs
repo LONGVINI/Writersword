@@ -296,14 +296,22 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetHideHeaderFooterOnChapterStart(bool value)
             => UpdateHeaderFooter("Колонтитулы у начала главы", s => s.HideHeaderFooterOnChapterStart = value);
 
-        /// <summary>Шрифт колонтитулов. Null в любом поле — поле не меняется.</summary>
+        /// <summary>
+        /// Шрифт колонтитулов. Null в любом поле — поле не меняется. Выбранное поле
+        /// действует во всех полосах: своё оформление полос и их кусков (так приходят
+        /// колонтитулы из Word) в этом поле снимается.
+        /// </summary>
         public void SetHeaderFooterFont(string? family, double? sizePt, bool? bold, bool? italic)
             => UpdateHeaderFooter("Шрифт колонтитулов", s =>
             {
+                bool setSize = sizePt is double newSize && newSize > 0;
+
                 if (family is not null) s.FontFamily = family.Length == 0 ? null : family;
                 if (sizePt is double size && size > 0) s.FontSizePt = size;
                 if (bold is bool b) s.IsBold = b;
                 if (italic is bool i) s.IsItalic = i;
+
+                s.ClearOwnFormatting(family is not null, setSize, bold is not null, italic is not null, false);
             });
 
         /// <summary>
@@ -359,7 +367,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         public void SetHeaderFooterColor(string? color)
-            => UpdateHeaderFooter("Цвет колонтитулов", s => s.TextColor = string.IsNullOrWhiteSpace(color) ? null : color);
+            => UpdateHeaderFooter("Цвет колонтитулов", s =>
+            {
+                s.TextColor = string.IsNullOrWhiteSpace(color) ? null : color;
+
+                // Цвет выбран для всех колонтитулов: свой цвет полос и кусков снимается.
+                s.ClearOwnFormatting(false, false, false, false, true);
+            });
 
         private static void StripPageNumbers(HeaderFooterSettings s)
         {
@@ -395,6 +409,24 @@ namespace Writersword.Modules.TextEditor.ViewModels
             target.Left = source.Right;
             target.Center = source.Center;
             target.Right = source.Left;
+
+            // Оформление едет вместе с текстом: куски левого места становятся кусками
+            // правого и наоборот.
+            target.Style = source.Style?.Clone();
+
+            List<HeaderFooterRun>? runs = null;
+            if (source.Runs is not null)
+            {
+                runs = new List<HeaderFooterRun>(source.Runs.Count);
+                foreach (var run in source.Runs)
+                {
+                    if (run is null) continue;
+                    var copy = run.Clone();
+                    copy.Slot = run.Slot == 0 ? 2 : run.Slot == 2 ? 0 : run.Slot;
+                    runs.Add(copy);
+                }
+            }
+            target.Runs = runs;
         }
 
         // ── Правила листов ────────────────────────────────────────────────

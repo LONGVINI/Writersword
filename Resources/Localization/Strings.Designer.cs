@@ -3002,5 +3002,113 @@ namespace Writersword.Resources.Localization {
                 return ResourceManager.GetString("Welcome_Title", resourceCulture);
             }
         }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Memory.
+        /// </summary>
+        public static string Settings_General_Memory {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Memory usage.
+        /// </summary>
+        public static string Settings_General_Memory_Level {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory_Level", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Economy.
+        /// </summary>
+        public static string Settings_General_Memory_Economy {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory_Economy", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Normal.
+        /// </summary>
+        public static string Settings_General_Memory_Normal {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory_Normal", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Fast.
+        /// </summary>
+        public static string Settings_General_Memory_Fast {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory_Fast", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Memory usage levels.
+        /// </summary>
+        public static string Settings_General_Memory_Hint_Title {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory_Hint_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Economy: inactive tabs are unloaded after a minute and the memory limit is lower; returning to such a tab takes longer because its modules load again..
+        /// </summary>
+        public static string Settings_General_Memory_Hint_Body {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory_Hint_Body", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Memory limit.
+        /// </summary>
+        public static string Settings_General_Memory_Limit {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory_Limit", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Custom memory limit.
+        /// </summary>
+        public static string Settings_General_Memory_CustomLimit {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory_CustomLimit", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на By default the limit is calculated from the computer's memory and the chosen level. Turn this on to set it yourself..
+        /// </summary>
+        public static string Settings_General_Memory_CustomLimit_Hint {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory_CustomLimit_Hint", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на {0} MB.
+        /// </summary>
+        public static string Settings_General_Memory_LimitFormat {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory_LimitFormat", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на auto.
+        /// </summary>
+        public static string Settings_General_Memory_Auto {
+            get {
+                return ResourceManager.GetString("Settings_General_Memory_Auto", resourceCulture);
+            }
+        }
     }
 }

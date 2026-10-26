@@ -240,6 +240,7 @@ namespace Writersword.Modules.TextEditor.Services
                 columns.GapMm = Math.Round(spaceTwips / TwipsPerMm, 2);
 
             columns.Separator = cols.Separator?.Value == true;
+            columns.SeparatorColor = ExportService.ReadSeparatorColor(cols);
 
             bool equal = cols.EqualWidth is null || cols.EqualWidth.Value;
             if (!equal && own.Count > 0)

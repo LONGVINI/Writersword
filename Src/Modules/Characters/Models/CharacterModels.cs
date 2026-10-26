@@ -151,6 +151,12 @@ namespace Writersword.Modules.Characters.Models
         /// подписей. Хранятся внутри анкеты и уезжают вместе с её файлом.
         /// </summary>
         public List<CharacterAnketaAsset> Assets { get; set; } = new();
+
+        /// <summary>
+        /// Особый вид анкеты: расстояние между строками, выравнивание полей,
+        /// шрифт и размеры, высота описаний. Пусто — как в программе.
+        /// </summary>
+        public CharacterAnketaLook? Look { get; set; }
     }
 
     /// <summary>
@@ -220,5 +226,41 @@ namespace Writersword.Modules.Characters.Models
         /// аватаров персонажей. Пусто — показывается значок.
         /// </summary>
         public string ImageRef { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Папка своего шаблона (CharacterTemplateFolder.Id). Пусто — шаблон
+        /// лежит в «Моих шаблонах», без папки. У встроенных папки нет.
+        /// </summary>
+        public string FolderId { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Папка своих шаблонов — как папка персонажей: название, подпись, цвет.
+    /// Порядок папок — порядок в списке; шаблоны знают свою папку сами
+    /// (CharacterTemplate.FolderId), порядок шаблонов внутри папки — их
+    /// порядок среди своих шаблонов.
+    /// </summary>
+    public class CharacterTemplateFolder
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Name { get; set; } = "Новая папка";
+
+        /// <summary>Серая подпись справа от названия папки.</summary>
+        public string Comment { get; set; } = string.Empty;
+
+        public string Color { get; set; } = "#607D8B";
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Разделы вкладки шаблонов, которые не папки: «Мои шаблоны» — свои
+    /// шаблоны без папки — и «Встроенные». Их ключи стоят рядом с ключами
+    /// папок там, где раздел помнится свёрнутым.
+    /// </summary>
+    public static class TemplateSections
+    {
+        public const string Ungrouped = "ungrouped";
+        public const string BuiltIn = "builtin";
     }
 }

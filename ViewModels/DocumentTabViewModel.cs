@@ -522,6 +522,12 @@ namespace Writersword.ViewModels
 
                 // Теперь данные всех модулей есть в файле — сравнивать есть с чем.
                 _untrackedBaselineHashes.Clear();
+                _untrackedDiffDetails.Clear();
+
+                // Файл теперь содержит текущие данные — отпечатки загрузки больше не
+                // значат «как в файле». Оставленные, они после возврата правок Ctrl+Z
+                // к загруженному состоянию скрыли бы отличие от нового файла.
+                _untrackedLoadedFingerprints.Clear();
             }
 
             _hasUnsavedChanges = false;
@@ -560,7 +566,15 @@ namespace Writersword.ViewModels
         public void AcceptModuleBaseline(IModule module)
         {
             if (module is not IChangeTrackingModule { TracksChanges: true } tracking)
+            {
+                // Модуль без отслеживания правок: запоминается отпечаток его данных
+                // сразу после загрузки — с ним сравнивается, если данные отличаются
+                // от файла только тем, что модуль перевёл их при загрузке.
+                Avalonia.Threading.Dispatcher.UIThread.Post(
+                    () => CaptureUntrackedLoadedState(module),
+                    Avalonia.Threading.DispatcherPriority.Background);
                 return;
+            }
 
             // Фоновым приоритетом и всегда отложенно: проверки событий, которые породила
             // сама загрузка (SetCustomData, создание вью), стоят в очереди с тем же
@@ -622,6 +636,7 @@ namespace Writersword.ViewModels
         {
             var hashService = App.Services.GetRequiredService<Writersword.Core.Interfaces.Services.IHashService>();
             List<string>? differing = null;
+            Dictionary<string, string>? details = null;
 
             foreach (var module in modules)
             {
@@ -633,6 +648,7 @@ namespace Writersword.ViewModels
                     continue;
 
                 bool differs;
+                object? comparedSaved = null;
 
                 if (savedData.TryGetValue(key, out var saved))
                 {
@@ -647,7 +663,39 @@ namespace Writersword.ViewModels
                     }
                     else
                     {
-                        differs = hashService.ComputeHash(current) != hashService.ComputeHash(saved);
+                        var currentHash = hashService.ComputeHash(current);
+                        differs = currentHash != hashService.ComputeHash(saved);
+                        comparedSaved = saved;
+
+                        // Файл мог быть записан прежней версией модуля: в нём остались
+                        // поля, которых в модели больше нет, и нет новых полей, которые
+                        // модель заполняет значениями по умолчанию. Живые данные без
+                        // единой правки тогда не совпадают с файлом, и вкладка ложно
+                        // светилась несохранённой. Сохранённые данные читаются в тип
+                        // живых данных так же, как модуль читает их при загрузке, и
+                        // сравниваются ещё раз.
+                        if (differs && TryReadAsLiveType(current, saved, out var savedAsLive))
+                        {
+                            differs = currentHash != hashService.ComputeHash(savedAsLive);
+                            comparedSaved = savedAsLive;
+                        }
+                    }
+
+                    // Модуль при загрузке сам переводит данные старого устройства в
+                    // новое (Characters: SchemaVersion 1 → 2, имена, идентификаторы
+                    // полей, реестр меток). Такие данные отличаются от файла без
+                    // единой правки человека. Если данные с загрузки не менялись —
+                    // правок нет: при следующем открытии модуль переведёт файл точно
+                    // так же, и кеш ради этого не нужен.
+                    if (differs && current != null)
+                    {
+                        string? loadedFingerprint;
+                        lock (_changeLock)
+                            _untrackedLoadedFingerprints.TryGetValue(key, out loadedFingerprint);
+
+                        if (loadedFingerprint != null
+                            && hashService.ComputeFingerprint(current) == loadedFingerprint)
+                            differs = false;
                     }
                 }
                 else
@@ -669,11 +717,124 @@ namespace Writersword.ViewModels
                 }
 
                 if (differs)
+                {
                     (differing ??= new List<string>()).Add(key);
+
+                    // Где именно отличие — для лога DirtyTracker. Ищется один раз,
+                    // пока модуль остаётся отличающимся: поиск разворачивает данные
+                    // в дерево целиком.
+                    string? detail;
+                    lock (_changeLock)
+                        _untrackedDiffDetails.TryGetValue(key, out detail);
+                    if (detail == null && comparedSaved != null)
+                        detail = DescribeUntrackedDifference(current, comparedSaved);
+                    (details ??= new Dictionary<string, string>(StringComparer.Ordinal))[key] = detail ?? "";
+                }
             }
 
-            _untrackedDirtyModules = differing != null ? string.Join(", ", differing) : null;
+            lock (_changeLock)
+            {
+                _untrackedDiffDetails.Clear();
+                if (details != null)
+                    foreach (var (key, detail) in details)
+                        _untrackedDiffDetails[key] = detail;
+            }
+
+            _untrackedDirtyModules = differing != null
+                ? string.Join(", ", differing.Select(key =>
+                    details != null && details.TryGetValue(key, out var detail) && detail.Length > 0
+                        ? key + " (" + detail + ")"
+                        : key))
+                : null;
             return differing != null;
+        }
+
+        // Первое найденное отличие модулей без отслеживания правок от файла.
+        private readonly Dictionary<string, string> _untrackedDiffDetails = new(StringComparer.Ordinal);
+
+        // Отпечаток данных модуля без отслеживания правок сразу после загрузки, пока
+        // файл с тех пор не перезаписывался. Совпадение с ним значит, что после
+        // загрузки данные не трогали, даже если модуль перевёл их при загрузке и они
+        // отличаются от файла (см. EvaluateUntrackedDirty).
+        private readonly Dictionary<string, string> _untrackedLoadedFingerprints = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Снять отпечаток только что загруженных данных модуля без отслеживания
+        /// правок. Только UI-поток: данные модуля читаются и сериализуются сразу,
+        /// пока в них не попала ни одна правка.
+        /// </summary>
+        private void CaptureUntrackedLoadedState(IModule module)
+        {
+            try
+            {
+                var hashService = App.Services.GetRequiredService<Writersword.Core.Interfaces.Services.IHashService>();
+                var data = module.GetCustomData();
+                if (data == null) return;
+
+                var fingerprint = hashService.ComputeFingerprint(data);
+
+                lock (_changeLock)
+                    _untrackedLoadedFingerprints[module.moduleType] = fingerprint;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to capture loaded state of {Module}", module.moduleType);
+            }
+        }
+
+        /// <summary>
+        /// Заново снять отпечатки загруженного состояния модулей без отслеживания
+        /// правок: модули перечитали данные из файла (отказ от автосохранения),
+        /// а MarkAsSaved прежние отпечатки сбросил. Только UI-поток.
+        /// </summary>
+        public void RecaptureUntrackedLoadedStates()
+        {
+            foreach (var module in ModuleContext.GetAllModules())
+            {
+                if (module is IChangeTrackingModule { TracksChanges: true })
+                    continue;
+
+                CaptureUntrackedLoadedState(module);
+            }
+        }
+
+        /// <summary>
+        /// Прочитать сохранённые данные модуля в тип его живых данных — тем же путём,
+        /// каким модуль читает их при загрузке (Newtonsoft с настройками по умолчанию).
+        /// Подходит только для модулей, отдающих данные объектом: строки и JSON-деревья
+        /// сравниваются как есть.
+        /// </summary>
+        private static bool TryReadAsLiveType(object current, object saved, out object? savedAsLive)
+        {
+            savedAsLive = null;
+
+            if (current is string || current is Newtonsoft.Json.Linq.JToken)
+                return false;
+
+            var liveType = current.GetType();
+            if (liveType.IsInstanceOfType(saved))
+                return false;
+
+            try
+            {
+                savedAsLive = saved is string savedText
+                    ? Newtonsoft.Json.JsonConvert.DeserializeObject(savedText, liveType)
+                    : Newtonsoft.Json.JsonConvert.DeserializeObject(
+                        Newtonsoft.Json.JsonConvert.SerializeObject(saved), liveType);
+                return savedAsLive != null;
+            }
+            catch (Exception ex)
+            {
+                DirtyLog.Debug(ex, "Сохранённые данные не читаются в тип {Type}", liveType.Name);
+                savedAsLive = null;
+                return false;
+            }
+        }
+
+        private static string? DescribeUntrackedDifference(object? current, object? saved)
+        {
+            var comparison = App.Services.GetService<IDataComparisonService>();
+            return comparison?.DescribeFirstDifference(current, saved);
         }
 
         /// <summary>

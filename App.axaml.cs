@@ -229,6 +229,17 @@ namespace Writersword
 
             Log.ForContext<App>().Information("Application started");
 
+            // Диагностика памяти: выключатель фоновой работы с данными (см. DiagnosticSwitches).
+            Writersword.Infrastructure.Diagnostics.DiagnosticSwitches.BackgroundWorkDisabled = string.Equals(
+                configuration["Diagnostics:DisableBackgroundWork"], "true", StringComparison.OrdinalIgnoreCase);
+
+            if (Writersword.Infrastructure.Diagnostics.DiagnosticSwitches.BackgroundWorkDisabled)
+            {
+                Log.ForContext<App>().Warning(
+                    "ДИАГНОСТИКА: фоновая работа выключена (appsettings.json, Diagnostics:DisableBackgroundWork) — " +
+                    "кеш восстановления, автосохранение и точки истории не пишутся, защиты от падения НЕТ");
+            }
+
             var services = new ServiceCollection();
 
             services.AddLogging(loggingBuilder =>
@@ -665,12 +676,22 @@ namespace Writersword
                         {
                             autoSaveService.SetInterval(TimeSpan.FromSeconds(
                                 Math.Max(0, perf.AutoSaveIntervalSeconds)));
-                            autoSaveService.IsEnabled = perf.AutoSaveEnabled;
+                            autoSaveService.IsEnabled = perf.AutoSaveEnabled
+                                && !Writersword.Infrastructure.Diagnostics.DiagnosticSwitches.BackgroundWorkDisabled;
                         }
+
+                        Writersword.Infrastructure.Services.Memory.MemoryBudget.Apply(perf);
 
                         Log.ForContext<App>().Debug(
                             "Performance settings applied: autoSave={Enabled}/{AutoSaveSec}s, cache={CacheSec}s",
                             perf.AutoSaveEnabled, perf.AutoSaveIntervalSeconds, perf.CachingIntervalSeconds);
+                        Log.ForContext<App>().Warning(
+                            "Memory budget: level={Level}, limit={Limit} MB (custom={Custom}), RAM={Ram} MB, inactive tab unload after {Timeout}",
+                            Writersword.Infrastructure.Services.Memory.MemoryBudget.Level,
+                            Writersword.Infrastructure.Services.Memory.MemoryBudget.LimitMb,
+                            Writersword.Infrastructure.Services.Memory.MemoryBudget.CustomLimitEnabled,
+                            Writersword.Infrastructure.Services.Memory.MemoryBudget.TotalRamMb,
+                            Writersword.Infrastructure.Services.Memory.MemoryBudget.InactiveTabUnloadTimeout);
                     }
                     catch (Exception ex)
                     {

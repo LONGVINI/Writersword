@@ -668,9 +668,8 @@ namespace Writersword.Modules.Characters.Services
 
             // Сохранения прежнего устройства переводятся до того, как их
             // увидит кто-то ещё: модуль следом читает из тех же данных
-            // анкеты шаблона проекта и недавние.
+            // недавние анкеты.
             var legacy = data.SchemaVersion < CharactersModuleData.CurrentSchemaVersion;
-            data.ActiveTemplateIds = CharacterBuiltInContent.ExpandLegacyIds(data.ActiveTemplateIds);
             data.RecentAnketaIds = CharacterBuiltInContent.ExpandLegacyIds(data.RecentAnketaIds);
 
             if (data.Characters != null)

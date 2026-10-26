@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
@@ -85,6 +85,18 @@ namespace Writersword.Infrastructure.Services.Storage
         /// </summary>
         private static readonly Dictionary<string, ((DateTime Write, long Length) Stamp, BackupSnapshot Snapshot)> _manifestCache =
             new(StringComparer.OrdinalIgnoreCase);
+
+        // Общие записи и строки разобранных манифестов. Точки истории почти целиком
+        // повторяют друг друга: запись, которая не менялась, в каждом манифесте та же —
+        // тот же путь, хеш, размер и дата. Без общего пула каждый манифест держал свою
+        // копию каждой записи и двух её строк: на истории в восемьдесят точек по пять
+        // тысяч записей это 410 тысяч объектов и около 140 МБ памяти (снимок кучи
+        // 2026-10-24). С пулом одинаковая запись хранится один раз. Записи из кеша,
+        // как и прежде, только читаются. Защищено _manifestCache.
+        private static readonly Dictionary<(string Path, string Hash, long Length, long Ticks, long OffsetTicks), BackupEntry> _manifestEntryPool =
+            new();
+        private static readonly Dictionary<string, string> _manifestStringPool =
+            new(StringComparer.Ordinal);
 
         public BackupService(ISettingsService settingsService)
         {
@@ -1125,7 +1137,10 @@ namespace Writersword.Infrastructure.Services.Storage
                             snapshot.Id = Path.GetFileNameWithoutExtension(file);
 
                         lock (_manifestCache)
+                        {
+                            ShareManifestEntries(snapshot);
                             _manifestCache[info.FullName] = (stamp, snapshot);
+                        }
                     }
 
                     result.Add(snapshot);
@@ -1153,9 +1168,81 @@ namespace Writersword.Infrastructure.Services.Storage
 
                 foreach (var path in gone)
                     _manifestCache.Remove(path);
+
+                // Записи ушедших точек больше никому не нужны — пул собирается заново
+                // из оставшихся, иначе он рос бы всю сессию.
+                if (gone.Count > 0)
+                    RebuildManifestPools();
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Заменить записи манифеста общими экземплярами из пула (см. _manifestEntryPool).
+        /// Вызывается под lock (_manifestCache).
+        /// </summary>
+        private static void ShareManifestEntries(BackupSnapshot snapshot)
+        {
+            var entries = snapshot.Entries;
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var entry = entries[i];
+                var key = (entry.Path, entry.Hash, entry.Length,
+                    entry.LastWriteTime.Ticks, entry.LastWriteTime.Offset.Ticks);
+
+                if (_manifestEntryPool.TryGetValue(key, out var shared))
+                {
+                    entries[i] = shared;
+                    continue;
+                }
+
+                entry.Path = ShareManifestString(entry.Path);
+                entry.Hash = ShareManifestString(entry.Hash);
+                _manifestEntryPool[key] = entry;
+            }
+
+            entries.TrimExcess();
+            snapshot.ProjectTitle = ShareManifestString(snapshot.ProjectTitle);
+        }
+
+        private static string ShareManifestString(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return value;
+
+            if (_manifestStringPool.TryGetValue(value, out var shared))
+                return shared;
+
+            _manifestStringPool[value] = value;
+            return value;
+        }
+
+        /// <summary>Собрать пулы заново из манифестов, оставшихся в кеше. Под lock (_manifestCache).</summary>
+        private static void RebuildManifestPools()
+        {
+            _manifestEntryPool.Clear();
+            _manifestStringPool.Clear();
+
+            foreach (var (_, snapshot) in _manifestCache.Values)
+            {
+                foreach (var entry in snapshot.Entries)
+                {
+                    var key = (entry.Path, entry.Hash, entry.Length,
+                        entry.LastWriteTime.Ticks, entry.LastWriteTime.Offset.Ticks);
+                    _manifestEntryPool.TryAdd(key, entry);
+                    if (!string.IsNullOrEmpty(entry.Path))
+                        _manifestStringPool.TryAdd(entry.Path, entry.Path);
+                    if (!string.IsNullOrEmpty(entry.Hash))
+                        _manifestStringPool.TryAdd(entry.Hash, entry.Hash);
+                }
+
+                if (!string.IsNullOrEmpty(snapshot.ProjectTitle))
+                    _manifestStringPool.TryAdd(snapshot.ProjectTitle, snapshot.ProjectTitle);
+            }
+
+            _manifestEntryPool.TrimExcess();
+            _manifestStringPool.TrimExcess();
         }
 
         /// <summary>

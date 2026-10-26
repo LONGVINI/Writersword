@@ -271,6 +271,17 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         private const decimal DefaultColumnGapMm = 12.5m;
 
+        // Самая узкая колонка — полдюйма, как у Word: уже в строку не встаёт и пары
+        // слов, а число колонок окна упирается в то, сколько таких влезает в ширину
+        // текста. На листе A4 с обычными полями это одиннадцать-двенадцать колонок,
+        // на узком — меньше; больше сорока пяти не бывает ни на каком листе.
+        private const decimal MinColumnWidthMm = 12.7m;
+        private const int ColumnCountLimit = 45;
+
+        // Сколько колонок у раздела в документе. Окно не урезает их при открытии, даже
+        // если такие колонки уже, чем позволяет предел: документ мог прийти извне.
+        private int _loadedColumnCount = 1;
+
         private decimal _columnCountValue = 1;
         private bool _columnsEqualWidth = true;
         private decimal _columnGapMm = DefaultColumnGapMm;
@@ -290,17 +301,80 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             get => _columnCountValue;
             set
             {
-                decimal clamped = Math.Clamp(Math.Round(value), 1m, 12m);
+                decimal clamped = Math.Clamp(Math.Round(value), 1m, MaxColumnCount);
                 bool changed = _columnCountValue != clamped;
                 _columnCountValue = clamped;
                 this.RaisePropertyChanged(nameof(ColumnCountValue));
                 this.RaisePropertyChanged(nameof(HasSeveralColumns));
-                if (changed && !_syncingColumns) RebuildColumnRows(keepWidths: false);
+                this.RaisePropertyChanged(nameof(CanEditColumnGap));
+                this.RaisePropertyChanged(nameof(ShowColumnTable));
+                this.RaisePropertyChanged(nameof(MaxColumnGapMm));
+                if (changed && !_syncingColumns)
+                {
+                    FitColumnGap();
+                    RebuildColumnRows(keepWidths: false);
+                }
             }
+        }
+
+        /// <summary>
+        /// Больше колонок, чем это число, в ширину текста не влезет: каждая была бы уже
+        /// полудюйма. Колонки раздела, открытого в окне, предел не урезает.
+        /// </summary>
+        public decimal MaxColumnCount
+        {
+            get
+            {
+                int fit = _columnsTextWidthMm > 0m
+                    ? (int)Math.Floor(_columnsTextWidthMm / MinColumnWidthMm)
+                    : ColumnCountLimit;
+                return Math.Clamp(Math.Max(fit, _loadedColumnCount), 1, ColumnCountLimit);
+            }
+        }
+
+        /// <summary>
+        /// Самый широкий промежуток у колонок одинаковой ширины, при котором каждая
+        /// колонка не уже полудюйма.
+        /// </summary>
+        public decimal MaxColumnGapMm
+        {
+            get
+            {
+                int count = (int)_columnCountValue;
+                if (count < 2 || _columnsTextWidthMm <= 0m) return 200m;
+                decimal fit = (_columnsTextWidthMm - count * MinColumnWidthMm) / (count - 1);
+                fit = Math.Floor(fit * 100m) / 100m;
+                return Math.Clamp(fit, 0m, 200m);
+            }
+        }
+
+        /// <summary>
+        /// Таблица ширин по колонкам нужна только колонкам разной ширины: у одинаковых
+        /// ширина выводится из промежутка, и править в таблице нечего.
+        /// </summary>
+        public bool ShowColumnTable => HasSeveralColumns && !_columnsEqualWidth;
+
+        /// <summary>
+        /// Сужает промежуток одинаковых колонок, если с ним колонки вышли бы уже
+        /// полудюйма, — так делает и Word, когда колонок прибавляют.
+        /// </summary>
+        private void FitColumnGap()
+        {
+            if (!_columnsEqualWidth || _columnCountValue < 2) return;
+            decimal max = MaxColumnGapMm;
+            if (_columnGapMm <= max) return;
+            _columnGapMm = max;
+            this.RaisePropertyChanged(nameof(ColumnGapMm));
         }
 
         /// <summary>Колонок больше одной: черта и ширины имеют смысл.</summary>
         public bool HasSeveralColumns => _columnCountValue > 1;
+
+        /// <summary>
+        /// Общий промежуток правится только у нескольких колонок одинаковой ширины: у
+        /// одной колонки промежутка нет, у разных — у каждой свой, в её строке.
+        /// </summary>
+        public bool CanEditColumnGap => HasSeveralColumns && _columnsEqualWidth;
 
         /// <summary>Все колонки одной ширины через один промежуток.</summary>
         public bool ColumnsEqualWidth
@@ -311,7 +385,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 if (_columnsEqualWidth == value) return;
                 _columnsEqualWidth = value;
                 this.RaisePropertyChanged(nameof(ColumnsEqualWidth));
-                if (!_syncingColumns) RebuildColumnRows(keepWidths: !value);
+                this.RaisePropertyChanged(nameof(CanEditColumnGap));
+                this.RaisePropertyChanged(nameof(ShowColumnTable));
+                if (!_syncingColumns)
+                {
+                    FitColumnGap();
+                    RebuildColumnRows(keepWidths: !value);
+                }
             }
         }
 
@@ -322,6 +402,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             set
             {
                 decimal clamped = Math.Clamp(value, 0m, 200m);
+                if (!_syncingColumns && _columnsEqualWidth && _columnCountValue > 1)
+                    clamped = Math.Min(clamped, MaxColumnGapMm);
                 bool changed = _columnGapMm != clamped;
                 _columnGapMm = clamped;
                 this.RaisePropertyChanged(nameof(ColumnGapMm));
@@ -334,6 +416,32 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             get => _columnSeparator;
             set => this.RaiseAndSetIfChanged(ref _columnSeparator, value);
+        }
+
+        // Авто-цвет черты — чёрный, как у Word. Подборщику цвета нужен код, и «авто»
+        // показывается им; в раздел чёрный уходит как «авто» (null).
+        private const string AutoSeparatorColor = "#000000";
+        private string _columnSeparatorColor = AutoSeparatorColor;
+
+        /// <summary>
+        /// Цвет черты между колонками — код подборщика: сплошной, с прозрачностью или
+        /// градиент (SectionColumns.SeparatorColor).
+        /// </summary>
+        public string ColumnSeparatorColor
+        {
+            get => _columnSeparatorColor;
+            set => this.RaiseAndSetIfChanged(ref _columnSeparatorColor,
+                string.IsNullOrWhiteSpace(value) ? AutoSeparatorColor : value);
+        }
+
+        /// <summary>Цвет черты для раздела: чёрный — это «авто», null.</summary>
+        private string? SeparatorColorForSection()
+        {
+            string color = _columnSeparatorColor;
+            if (string.Equals(color, AutoSeparatorColor, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(color, "#FF000000", StringComparison.OrdinalIgnoreCase))
+                return null;
+            return color;
         }
 
         /// <summary>Сколько ширины текста занимают колонки с промежутками — подпись окна.</summary>
@@ -361,10 +469,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 _columnsTextWidthMm = (decimal)Math.Max(setup.Page.GetTextWidthMm(), 1.0);
 
                 bool unequal = columns.Columns is { Count: > 1 };
+                _loadedColumnCount = unequal ? columns.Columns!.Count : Math.Max(1, columns.Count);
+                this.RaisePropertyChanged(nameof(MaxColumnCount));
                 ColumnCountValue = unequal ? columns.Columns!.Count : Math.Max(1, columns.Count);
                 ColumnsEqualWidth = !unequal;
                 ColumnGapMm = Math.Round((decimal)(unequal ? columns.Columns![0].SpaceAfterMm : columns.GapMm), 2);
                 ColumnSeparator = columns.Separator;
+                ColumnSeparatorColor = columns.SeparatorColor ?? AutoSeparatorColor;
 
                 ColumnRows.Clear();
                 if (unequal)
@@ -436,6 +547,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         private void UpdateColumnsTotal()
         {
+            if (_columnsEqualWidth && ColumnRows.Count > 1)
+            {
+                ColumnsTotalInfo = $"Каждая колонка — {ColumnRows[0].WidthMm:0.##} мм при ширине текста {_columnsTextWidthMm:0.#} мм";
+                return;
+            }
+
             decimal used = 0m;
             foreach (var row in ColumnRows)
                 used += row.WidthMm + (row.IsLast ? 0m : row.SpaceMm);
@@ -468,6 +585,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                     Count = count,
                     GapMm = list[0].SpaceAfterMm,
                     Separator = _columnSeparator,
+                    SeparatorColor = SeparatorColorForSection(),
                     Columns = list
                 };
             }
@@ -477,7 +595,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 {
                     Count = count,
                     GapMm = (double)_columnGapMm,
-                    Separator = count > 1 && _columnSeparator
+                    Separator = count > 1 && _columnSeparator,
+                    SeparatorColor = SeparatorColorForSection()
                 };
             }
 
@@ -504,6 +623,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 Count = 2,
                 GapMm = gap,
                 Separator = setup.Columns.Separator,
+                SeparatorColor = setup.Columns.SeparatorColor,
                 Columns = new List<SectionColumn>
                 {
                     new() { WidthMm = narrowFirst ? narrow : wide, SpaceAfterMm = gap },

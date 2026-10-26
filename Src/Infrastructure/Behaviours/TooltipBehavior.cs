@@ -288,7 +288,7 @@ namespace Writersword.Infrastructure.Behaviours
                 // поверх всего — убрать её было нечем, потому что убирать её должен был
                 // элемент, которого больше нет.
                 element.DetachedFromVisualTree += OnSourceDetached;
-                _logger.Debug("TooltipBehavior: subscribed to {Element}, tip='{Tip}'",
+                _logger.Verbose("TooltipBehavior: subscribed to {Element}, tip='{Tip}'",
                     element.GetType().Name, GetTip(element));
             }
         }
@@ -313,7 +313,7 @@ namespace Writersword.Infrastructure.Behaviours
 
             SetTimer(element, timer);
             timer.Start();
-            _logger.Debug("TooltipBehavior: timer started for {Element}, delay={Delay}ms",
+            _logger.Verbose("TooltipBehavior: timer started for {Element}, delay={Delay}ms",
                 element.GetType().Name, GetShowDelay(element));
         }
 
@@ -372,7 +372,7 @@ namespace Writersword.Infrastructure.Behaviours
         private static void OnPointerExited(object? sender, PointerEventArgs e)
         {
             if (sender is not Control element) return;
-            _logger.Debug("TooltipBehavior: pointer exited {Element}, hiding tooltip",
+            _logger.Verbose("TooltipBehavior: pointer exited {Element}, hiding tooltip",
                 element.GetType().Name);
             HideTooltip(element);
         }
@@ -403,7 +403,7 @@ namespace Writersword.Infrastructure.Behaviours
 
             if (popup is { IsOpen: true })
             {
-                _logger.Debug("TooltipBehavior: pointer pressed on {Element}, hiding tooltip",
+                _logger.Verbose("TooltipBehavior: pointer pressed on {Element}, hiding tooltip",
                     element.GetType().Name);
                 HideTooltip(element);
                 return;
@@ -426,7 +426,7 @@ namespace Writersword.Infrastructure.Behaviours
             GetTimer(element)?.Stop();
             ShowTooltip(element);
 
-            _logger.Debug("TooltipBehavior: pointer pressed on {Element}, showing tooltip",
+            _logger.Verbose("TooltipBehavior: pointer pressed on {Element}, showing tooltip",
                 element.GetType().Name);
         }
 
@@ -464,7 +464,7 @@ namespace Writersword.Infrastructure.Behaviours
                 var hotKey = service.GetHotKey(hotKeyId);
                 if (hotKey is null || hotKey.ActiveGestures.Count == 0)
                 {
-                    _logger.Debug("TooltipBehavior: hotkey not found or no gestures for id='{Id}'",
+                    _logger.Verbose("TooltipBehavior: hotkey not found or no gestures for id='{Id}'",
                         hotKeyId);
                     return null;
                 }
@@ -493,7 +493,7 @@ namespace Writersword.Infrastructure.Behaviours
         {
             if (string.IsNullOrWhiteSpace(raw))
             {
-                _logger.Debug("TooltipBehavior: ParseHotKey — empty string");
+                _logger.Verbose("TooltipBehavior: ParseHotKey — empty string");
                 return null;
             }
 
@@ -520,12 +520,12 @@ namespace Writersword.Infrastructure.Behaviours
                 if (tokens.Count > 0)
                 {
                     result.Add(tokens);
-                    _logger.Debug("TooltipBehavior: ParseHotKey — binding with {Count} tokens",
+                    _logger.Verbose("TooltipBehavior: ParseHotKey — binding with {Count} tokens",
                         tokens.Count);
                 }
             }
 
-            _logger.Debug("TooltipBehavior: ParseHotKey — total {Count} bindings from '{Raw}'",
+            _logger.Verbose("TooltipBehavior: ParseHotKey — total {Count} bindings from '{Raw}'",
                 result.Count, raw);
 
             return result.Count > 0 ? result : null;
@@ -575,7 +575,7 @@ namespace Writersword.Infrastructure.Behaviours
             var fgBrush = ResolveBrush(element, "AppTooltipForeground", new SolidColorBrush(Color.Parse("#FFFFFF")));
             var keyBadgeBrush = ResolveBrush(element, "AppTooltipKeyBackground", new SolidColorBrush(Color.Parse("#3C3C3F")));
 
-            _logger.Debug("TooltipBehavior: creating TooltipView, tip='{Tip}', description='{Description}'",
+            _logger.Verbose("TooltipBehavior: creating TooltipView, tip='{Tip}', description='{Description}'",
                 tip, description);
 
             // ParsedHotKeys устанавливается последним — RebuildHotKeys использует кисти
@@ -655,7 +655,7 @@ namespace Writersword.Infrastructure.Behaviours
                 popup.HorizontalOffset = clampedLeft - baseLeft;
                 view.ArrowHorizontalOffset = anchorCenterX - clampedLeft - 6;
 
-                _logger.Debug(
+                _logger.Verbose(
                     "TooltipBehavior: tooltip shown for {Element}, position={Position}, text='{Tip}'",
                     element.GetType().Name, goAbove ? "above" : "below", tip);
             };
@@ -683,7 +683,7 @@ namespace Writersword.Infrastructure.Behaviours
             {
                 popup.Close();
                 SetPopup(element, null);
-                _logger.Debug("TooltipBehavior: popup closed for {Element}",
+                _logger.Verbose("TooltipBehavior: popup closed for {Element}",
                     element.GetType().Name);
             }
         }

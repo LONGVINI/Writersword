@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using SkiaSharp;
+using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Rendering;
 using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.ViewModels.Blocks;
@@ -31,7 +32,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// Черта между колонками: X — от левого края листа, верх и низ — в координатах
         /// документа.
         /// </summary>
-        private readonly record struct ColumnRule(int PageIndex, float XPt, float TopPt, float BottomPt);
+        private readonly record struct ColumnRule(int PageIndex, float XPt, float TopPt, float BottomPt, string? Color = null);
 
         private List<ColumnRule> _columnRules = new();
         private List<ColumnRule> _passColumnRules = new();
@@ -46,12 +47,34 @@ namespace Writersword.Modules.TextEditor.Document
             lock (_renderLock) rules = _columnRules;
             if (rules.Count == 0) return;
 
-            using var paint = new SKPaint
+            // Авто — чёрная, а на листе с темой полотна — цвета текста темы, как буквы
+            // без своего цвета. Свой цвет черты (SectionColumns.SeparatorColor) — как
+            // задан, градиент — шейдером по длине черты.
+            var autoColor = SKTextRenderer.DefaultTextColorOverride ?? SKColors.Black;
+
+            // Черта в полпункта на экране — меньше пикселя. Сглаженная, она ложилась на
+            // один пиксель или размазывалась на два — смотря где по дробной части
+            // приходилась середина промежутка, — и черты на одном листе выглядели
+            // разной толщины. Без поворота холста черта встаёт на целые пиксели:
+            // толщина — целое число пикселей, не меньше одного (как у границ таблиц,
+            // TableBorderPainter), левый край — на границе пикселя.
+            var matrix = canvas.TotalMatrix;
+            bool axisAligned = matrix.SkewX == 0f && matrix.SkewY == 0f && matrix.ScaleX > 0f;
+            float scale = axisAligned ? matrix.ScaleX : 1f;
+            float widthPx = Math.Max(1f, MathF.Floor(ColumnRuleWidthPt * scale + 0.001f));
+
+            using var stroke = new SKPaint
             {
-                Color = SKTextRenderer.DefaultTextColorOverride ?? SKColors.Black,
+                Color = autoColor,
                 IsAntialias = true,
                 Style = SKPaintStyle.Stroke,
                 StrokeWidth = ColumnRuleWidthPt
+            };
+            using var fill = new SKPaint
+            {
+                Color = autoColor,
+                IsAntialias = false,
+                Style = SKPaintStyle.Fill
             };
 
             foreach (var rule in rules)
@@ -62,7 +85,46 @@ namespace Writersword.Modules.TextEditor.Document
 
                 var page = pages[rule.PageIndex];
                 float x = page.PadLeftPt + rule.XPt + page.GutterShiftPt;
-                canvas.DrawLine(x, rule.TopPt, x, rule.BottomPt, paint);
+
+                float left = x - ColumnRuleWidthPt / 2f;
+                float width = ColumnRuleWidthPt;
+                if (axisAligned)
+                {
+                    float leftPx = MathF.Round(x * scale + matrix.TransX - widthPx / 2f);
+                    left = (leftPx - matrix.TransX) / scale;
+                    width = widthPx / scale;
+                }
+
+                var ruleRect = new SKRect(left, rule.TopPt, left + width, rule.BottomPt);
+                SKShader? shader = null;
+                if (rule.Color is { } code)
+                {
+                    var solid = SKTextRenderer.GradientSolidColor(code, autoColor);
+                    stroke.Color = solid;
+                    fill.Color = solid;
+                    if (SKTextRenderer.IsGradient(code))
+                    {
+                        try { shader = GradientShaderFactory.BuildShader(GradientSpec.Parse(code), ruleRect); }
+                        catch { shader = null; }
+                    }
+                }
+                else
+                {
+                    stroke.Color = autoColor;
+                    fill.Color = autoColor;
+                }
+
+                stroke.Shader = shader;
+                fill.Shader = shader;
+
+                if (axisAligned)
+                    canvas.DrawRect(ruleRect, fill);
+                else
+                    canvas.DrawLine(x, rule.TopPt, x, rule.BottomPt, stroke);
+
+                stroke.Shader = null;
+                fill.Shader = null;
+                shader?.Dispose();
             }
         }
 

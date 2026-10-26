@@ -1656,6 +1656,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Ruler.MarginDragStarted += OnRulerMarginDragStarted;
             Ruler.MarginChanged += OnRulerMarginChanged;
             Ruler.MarginCommitted += OnRulerMarginCommitted;
+            Ruler.ColumnGapsCommitted += OnRulerColumnGapsCommitted;
 
             // Левый край таблицы через линейку.
             Ruler.TableLeftEdgeChanging += OnRulerTableLeftEdgeChanging;
@@ -2774,6 +2775,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // Отпустили край поля: итог жеста кладётся в документ обычным путём смены
         // полей — по нему полотно пересобирает весь документ, — затем отступы
         // поджимаются к новому краю и шаг отмены закрывается.
+        /// <summary>
+        /// Промежуток между колонками отпущен на линейке: колонки раздела под кареткой
+        /// встают по ней — колонками разной ширины.
+        /// </summary>
+        private void OnRulerColumnGapsCommitted(IReadOnlyList<(double FromMm, double ToMm)> gapsMm, double textWidthMm)
+        {
+            if (DocumentViewModel is null) return;
+
+            DocumentViewModel.ApplyCaretSectionColumnGaps(gapsMm, textWidthMm);
+            SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
         private void OnRulerMarginCommitted(double marginLeftMm, double marginRightMm)
         {
             if (DocumentViewModel is null) return;
@@ -3481,7 +3494,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (DocumentViewModel is null) return;
 
-            var paragraphs = new List<string>();
+            var paragraphs = new List<StatusBarViewModel.StatisticsParagraph>();
 
             foreach (var section in DocumentViewModel.Document.Sections)
             {
@@ -3501,7 +3514,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
                     if (block is ParagraphBlock para && continuesPrevious)
                     {
-                        paragraphs[^1] += StatisticsText(para, context);
+                        var piece = StatisticsText(para, context);
+                        paragraphs[^1] = paragraphs[^1] with
+                        {
+                            Text = paragraphs[^1].Text + piece.Marker + piece.Text
+                        };
                         continuesPrevious = false;
                         continue;
                     }
@@ -3543,7 +3560,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// одних только блоков верхнего уровня занижал и слова, и знаки, и число
         /// абзацев ровно на объём таблиц.
         /// </summary>
-        private static void CollectParagraphs(BlockModel block, List<string> paragraphs, StatisticsContext context)
+        private static void CollectParagraphs(
+            BlockModel block, List<StatusBarViewModel.StatisticsParagraph> paragraphs, StatisticsContext context)
         {
             switch (block)
             {
@@ -3560,17 +3578,22 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         /// <summary>
-        /// Текст абзаца так, как его считает статистика Word.
+        /// Текст абзаца так, как его считает статистика Word. Правила сверены с Word на
+        /// проверочном документе.
         ///
-        /// Номер пункта списка входит в текст: «12.», «•», «а)» Word считает словом, а
-        /// знаки номера и табуляцию за ним — знаками. Без номера на документе с тремя
-        /// сотнями пунктов слов выходило на три сотни меньше, чем у Word.
+        /// Номер пункта списка («12.», «а)») Word считает словом, а знаки номера и
+        /// табуляцию за ним — знаками. Маркер-значок («•», «▪», знак из шрифта Symbol)
+        /// идёт только в знаки: словом его Word не считает. Маркер с буквой («o» в
+        /// Courier New) или дефисом считается словом, как такой же знак в тексте.
+        ///
+        /// Текст, удалённый под рецензированием, и скрытый текст Word не считает ни
+        /// словами, ни знаками.
         ///
         /// Поле в строке (дата, номер страницы) — это его значение, а не символ
         /// объекта. Картинка, фигура, формула и знак сноски в счёт не идут: Word их
         /// словами и знаками текста не считает.
         /// </summary>
-        private static string StatisticsText(ParagraphBlock para, StatisticsContext context)
+        private static StatusBarViewModel.StatisticsParagraph StatisticsText(ParagraphBlock para, StatisticsContext context)
         {
             var text = new StringBuilder();
 
@@ -3578,6 +3601,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 foreach (var run in chunk.Runs)
                 {
+                    if (run.Properties is { } props && (props.Deleted is not null || props.IsHidden))
+                        continue;
+
                     if (!run.IsInlineObject)
                     {
                         text.Append(run.Text);
@@ -3590,18 +3616,39 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 }
             }
 
-            if (text.Length == 0 || IsWhiteSpaceOnly(text)) return text.ToString();
+            if (text.Length == 0 || IsWhiteSpaceOnly(text))
+                return new StatusBarViewModel.StatisticsParagraph(string.Empty, false, text.ToString());
 
             string? marker = context.Markers.TryGetValue(para, out var info)
                 ? info.Text
                 : para.ListProperties?.ComputedMarkerText;
 
-            if (string.IsNullOrEmpty(marker) || para.ListProperties is not { } list) return text.ToString();
+            if (string.IsNullOrEmpty(marker) || para.ListProperties is not { } list)
+                return new StatusBarViewModel.StatisticsParagraph(string.Empty, false, text.ToString());
 
-            var suffix = list.WordLevelAt(list.Level)?.Suffix ?? ListMarkerSuffix.Gap;
+            var wordLevel = list.WordLevelAt(list.Level);
+            var suffix = wordLevel?.Suffix ?? ListMarkerSuffix.Gap;
             string separator = suffix == ListMarkerSuffix.Nothing ? string.Empty : "\t";
 
-            return marker + separator + text;
+            bool numbered = wordLevel?.IsNumbered ?? (int)list.MarkerType >= (int)ListMarkerType.Decimal;
+            bool markerIsWord = numbered || MarkerReadsAsWord(marker);
+
+            return new StatusBarViewModel.StatisticsParagraph(marker + separator, markerIsWord, text.ToString());
+        }
+
+        /// <summary>
+        /// Маркер-значок, который Word всё же считает словом: в нём есть буква, цифра
+        /// или дефис. Значки («•», «▪», «★», знаки шрифтов Symbol и Wingdings) словом
+        /// не считаются.
+        /// </summary>
+        private static bool MarkerReadsAsWord(string marker)
+        {
+            foreach (char c in marker)
+            {
+                if (char.IsLetterOrDigit(c) || c == '-') return true;
+            }
+
+            return false;
         }
 
         private static bool IsWhiteSpaceOnly(StringBuilder text)
@@ -3624,6 +3671,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Ruler.AllColumnWidthsChanging -= OnRulerAllColumnWidthsChanging;
             Ruler.MarginChanged -= OnRulerMarginChanged;
             Ruler.MarginCommitted -= OnRulerMarginCommitted;
+            Ruler.ColumnGapsCommitted -= OnRulerColumnGapsCommitted;
             Ruler.TableLeftEdgeChanging -= OnRulerTableLeftEdgeChanging;
             Ruler.TableLeftEdgeChanged -= OnRulerTableLeftEdgeChanged;
             Ruler.TabStopsChanged -= OnRulerTabStopsChanged;

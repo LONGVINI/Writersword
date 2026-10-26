@@ -258,7 +258,18 @@ namespace Writersword.Modules.TextEditor.Services
             bool hasNumber = template.Contains(HeaderFooterSettings.PageToken, StringComparison.Ordinal);
             if (hasNumber && !decoration.NumberVisible) return null;
 
-            return template
+            return RenderTokens(template, decoration);
+        }
+
+        /// <summary>
+        /// Поля номера в куске текста заменены значениями листа. Гасит ли лист место
+        /// целиком, решает <see cref="RenderSlot"/> по всему тексту места.
+        /// </summary>
+        public static string RenderTokens(string text, PageDecoration decoration)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+
+            return text
                 .Replace(HeaderFooterSettings.PageToken, decoration.ShownNumber, StringComparison.Ordinal)
                 .Replace(HeaderFooterSettings.PagesToken,
                     decoration.TotalPages.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);

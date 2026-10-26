@@ -1696,6 +1696,14 @@ namespace Writersword.Modules.TextEditor
                                     : System.Text.Json.JsonSerializer.Serialize(_localSettings),
                         });
 
+                        // Файл, сохранённый без каретки, совпадает с базовой линией знак в
+                        // знак. Тогда базовой линией служит сама пришедшая строка: она и так
+                        // живёт в данных проекта вкладки, а вторая такая же копия — это
+                        // ещё раз весь документ в памяти (снимок кучи 2026-10-24: 24 МБ
+                        // на книгу).
+                        if (string.Equals(prepared.BaselineJson, raw, StringComparison.Ordinal))
+                            prepared.BaselineJson = raw;
+
                         prepared.RawData = raw;
 
                         // Разметка сравнения — после базовой линии и дельты: они

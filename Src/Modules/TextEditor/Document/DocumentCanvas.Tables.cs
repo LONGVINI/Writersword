@@ -1259,15 +1259,36 @@ namespace Writersword.Modules.TextEditor.Document
             // ближайший в направлении dir. Окном соседних индексов это не находилось: в таблице
             // ячейка строки ниже идёт в порядке чтения далеко. Конкретную колонку под столбцом
             // определит сам HitTest по _preferredCaretXPt.
+            //
+            // Колонки: полоса ищется только в той же колонке, что и каретка, — по
+            // горизонтали она обязана перекрываться с полосой каретки. Раньше в расчёт шли
+            // все полосы листа, и ближайшей по вертикали оказывался абзац соседней
+            // колонки, а внизу колонки — верх следующего листа: стрелка вниз со дна первой
+            // колонки уводила на другой лист мимо второй и третьей, стрелка вверх с верха
+            // второй — на прошлый лист. Колонка кончилась — переход по ходу текста, как у
+            // Word: вниз — на верх следующей колонки того же листа, вверх — на низ
+            // предыдущей (см. шаг 3).
+            var currentSlice = _layouts[_caretPara];
+            bool flowCaret = currentSlice.Cell is null;
+            var (bandLeftPt, bandRightPt) = SliceSpanPt(currentSlice);
+
+            bool SameColumn(ParaLayout p)
+            {
+                if (!flowCaret) return true;
+                var (left, right) = SliceSpanPt(p);
+                return right > bandLeftPt + 0.5f && left < bandRightPt - 0.5f;
+            }
+
+            int targetIdx = -1;
             if (float.IsNaN(bestCenterPt))
             {
-                int targetIdx = -1;
                 float bestEdge = dir > 0 ? float.MaxValue : float.MinValue;
 
                 for (int i = 0; i < _layouts.Count; i++)
                 {
                     if (i == _caretPara) continue;
                     var p = _layouts[i];
+                    if (!SameColumn(p)) continue;
                     if (dir > 0)
                     {
                         if (p.Ypt >= lineBottomPt - 0.5f && p.Ypt < bestEdge)
@@ -1278,6 +1299,32 @@ namespace Writersword.Modules.TextEditor.Document
                         float pBot = p.Ypt + p.HeightPt;
                         if (pBot <= lineTopPt + 0.5f && pBot > bestEdge)
                         { bestEdge = pBot; targetIdx = i; }
+                    }
+                }
+
+                // Шаг 3: в своей колонке на этом листе строки в нужную сторону нет —
+                // переход в соседнюю колонку того же листа по ходу текста. Полосы в
+                // раскладке идут в порядке документа: вниз — первая полоса после каретки
+                // на этом листе в другой колонке (верх следующей колонки), вверх — первая
+                // такая же перед ней (низ предыдущей). Столбец каретки переезжает вместе
+                // с колонкой: место в строке относительно колонки то же.
+                bool leavesPage = targetIdx < 0 || _layouts[targetIdx].PageIndex != currentSlice.PageIndex;
+                if (flowCaret && leavesPage)
+                {
+                    int columnIdx = -1;
+                    for (int i = _caretPara + dir; i >= 0 && i < _layouts.Count; i += dir)
+                    {
+                        var p = _layouts[i];
+                        if (p.PageIndex != currentSlice.PageIndex) break;
+                        if (SameColumn(p)) continue;
+                        columnIdx = i;
+                        break;
+                    }
+
+                    if (columnIdx >= 0)
+                    {
+                        _preferredCaretXPt += SliceSpanPt(_layouts[columnIdx]).Left - bandLeftPt;
+                        targetIdx = columnIdx;
                     }
                 }
 
@@ -1312,6 +1359,16 @@ namespace Writersword.Modules.TextEditor.Document
                 _caretPara = pi;
                 _caretChar = ci;
             }
+        }
+
+        /// <summary>
+        /// Полоса слайса по горизонтали, пт: у абзаца — от левого края его зоны на ширину
+        /// его колонки (или текста раздела), у абзаца ячейки — клип ячейки.
+        /// </summary>
+        private (float Left, float Right) SliceSpanPt(ParaLayout slice)
+        {
+            if (slice.Cell is { } cell) return (cell.ClipX, cell.ClipX + cell.ClipW);
+            return (slice.AbsXPt, slice.AbsXPt + TextWidthForBlock(slice.Vm?.Model));
         }
 
         private void ClampCaret()

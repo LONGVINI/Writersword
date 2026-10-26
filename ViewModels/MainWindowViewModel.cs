@@ -221,9 +221,27 @@ namespace Writersword.ViewModels
         // вкладка успевала выгрузиться между заходами, и каждый возврат шёл холодной
         // загрузкой — пересоздание модулей, построение вью редактора и прогрев раскладки
         // всего документа на UI-потоке, секунды заморозки.
-        private static readonly TimeSpan InactiveTabUnloadTimeout = TimeSpan.FromMinutes(2);
+        //
+        // Срок зависит от уровня расхода памяти в настройках (MemoryBudget): обычный
+        // уровень — прежние две минуты. Сверх срока действует лимит памяти: если
+        // программа занимает больше, сначала сжимается куча, а если этого мало —
+        // выгружается самая давняя неактивная вкладка, не дожидаясь срока.
+        private static TimeSpan InactiveTabUnloadTimeout =>
+            Writersword.Infrastructure.Services.Memory.MemoryBudget.InactiveTabUnloadTimeout;
         private readonly Dictionary<DocumentTabViewModel, DateTime> _tabSuspendTimes = new();
         private Avalonia.Threading.DispatcherTimer? _inactiveTabUnloadTimer;
+
+        // Когда куча последний раз сжималась из-за лимита памяти. Сжатие — полная
+        // блокирующая сборка, поэтому не чаще раза в CompactionCooldown.
+        private DateTime _lastMemoryCompactionUtc = DateTime.MinValue;
+        private bool _memoryCompactionRunning;
+        private static readonly TimeSpan CompactionCooldown = TimeSpan.FromMinutes(2);
+
+        // Память процесса сразу после последнего сжатия. Если открытый проект сам по
+        // себе больше лимита, сжатие ничего не вернёт — повторять его (а это пауза
+        // всех потоков) имеет смысл, только когда память заметно выросла с тех пор.
+        private long _workingSetAfterCompactionMb;
+        private const long CompactionGrowthMb = 256;
 
         private void StartInactiveTabUnloadTimer()
         {
@@ -263,32 +281,10 @@ namespace Writersword.ViewModels
                     if (ReferenceEquals(tab, activeTab)) continue;
                     if (DateTime.UtcNow - kvp.Value < InactiveTabUnloadTimeout) continue;
 
-                    if (tab.Workspace == null)
-                    {
-                        _tabSuspendTimes.Remove(tab);
-                        continue;
-                    }
-
-                    // Compare-режим: решение о восстановленной версии ещё не принято,
-                    // выгрузка могла бы затронуть кеш — такую вкладку не трогаем.
-                    if (tab.Context.IsInCompareMode) continue;
-
-                    // Кеш и workspace.json ушедшей вкладки пишутся отложенно. Пока запись
-                    // не выполнена, модули выгружать нельзя: сохранять стало бы нечего.
-                    var deferredKey = DocumentTabViewModel.GetDeferredSaveKey(tab);
-                    if (Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.HasPending("cache:" + deferredKey)
-                        || Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.HasPending("workspace:" + deferredKey))
-                        continue;
-
-                    _logger.LogInformation("Unloading inactive tab to free memory: {Title}", tab.Title);
-                    tab.Workspace.Deactivate();
-                    _tabSuspendTimes.Remove(tab);
-
-                    // Явная сборка после выгрузки: вьюмодели и нативные объекты Skia
-                    // (SKTextLayout, шрифты) освобождаются через финализаторы, и без
-                    // полного цикла сборки память возвращается ОС с большой задержкой.
-                    GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: false);
+                    TryUnloadInactiveTab(tab, "inactive timeout");
                 }
+
+                EnforceMemoryLimit(activeTab);
 
                 // Выгруженные и закрытые вкладки больше не держат DockControl в DockStage.
                 RefreshAliveDockLayouts();
@@ -296,6 +292,142 @@ namespace Writersword.ViewModels
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Inactive tab unload failed");
+            }
+        }
+
+        /// <summary>
+        /// Выгрузить неактивную вкладку, если это безопасно. Возвращает true, если
+        /// вкладка выгружена (или выгружать уже нечего).
+        /// </summary>
+        private bool TryUnloadInactiveTab(DocumentTabViewModel tab, string reason)
+        {
+            if (tab.Workspace == null)
+            {
+                _tabSuspendTimes.Remove(tab);
+                return true;
+            }
+
+            // Compare-режим: решение о восстановленной версии ещё не принято,
+            // выгрузка могла бы затронуть кеш — такую вкладку не трогаем.
+            if (tab.Context.IsInCompareMode) return false;
+
+            // Кеш и workspace.json ушедшей вкладки пишутся отложенно. Пока запись
+            // не выполнена, модули выгружать нельзя: сохранять стало бы нечего.
+            var deferredKey = DocumentTabViewModel.GetDeferredSaveKey(tab);
+            if (Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.HasPending("cache:" + deferredKey)
+                || Writersword.Infrastructure.WorkFlows.QuietPeriodScheduler.HasPending("workspace:" + deferredKey))
+                return false;
+
+            _logger.LogWarning("Unloading inactive tab to free memory ({Reason}): {Title}", reason, tab.Title);
+            tab.Workspace.Deactivate();
+            _tabSuspendTimes.Remove(tab);
+
+            // Явная сборка после выгрузки: вьюмодели и нативные объекты Skia
+            // (SKTextLayout, шрифты) освобождаются через финализаторы, и без
+            // полного цикла сборки память возвращается ОС с большой задержкой.
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: false);
+
+            // После выгрузки память другая — прежний замер после сжатия больше не мерило.
+            _workingSetAfterCompactionMb = 0;
+            return true;
+        }
+
+        /// <summary>
+        /// Лимит памяти (MemoryBudget.LimitMb). Если процесс занимает больше:
+        /// сначала куча сжимается и свободная память возвращается системе — после
+        /// больших фоновых работ (запись кеша, сравнение с файлом) это обычно мусор,
+        /// который сборщик не спешит отдавать. Если и после сжатия память выше
+        /// лимита — выгружается самая давняя неактивная вкладка, по одной за тик.
+        /// Открытая вкладка не выгружается никогда.
+        /// </summary>
+        private void EnforceMemoryLimit(Writersword.Core.Interfaces.WorkFlows.IDocumentTab? activeTab)
+        {
+            if (_memoryCompactionRunning) return;
+
+            long workingSetMb;
+            try
+            {
+                using var process = System.Diagnostics.Process.GetCurrentProcess();
+                workingSetMb = process.WorkingSet64 / (1024 * 1024);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Working set is not available");
+                return;
+            }
+
+            int limitMb = Writersword.Infrastructure.Services.Memory.MemoryBudget.LimitMb;
+            if (workingSetMb <= limitMb)
+            {
+                // Память вернулась под лимит — следующее превышение снова начнётся со сжатия.
+                _workingSetAfterCompactionMb = 0;
+                return;
+            }
+
+            // Сжатие — полная блокирующая сборка: на куче в гигабайт это до секунды
+            // замершего интерфейса. Оно имеет смысл, только когда в куче есть что
+            // собрать: выделенное после прошлой сборки и дыры в куче. Если программа
+            // выше лимита из-за живых данных (открытый проект сам по себе больше
+            // лимита), сжатие ничего не вернёт — его пауза была бы зря.
+            var gcInfo = GC.GetGCMemoryInfo();
+            long reclaimableMb = (GC.GetTotalMemory(false) - gcInfo.HeapSizeBytes + gcInfo.FragmentedBytes)
+                                 / (1024 * 1024);
+
+            if (DateTime.UtcNow - _lastMemoryCompactionUtc >= CompactionCooldown
+                && reclaimableMb >= CompactionGrowthMb
+                && workingSetMb > _workingSetAfterCompactionMb + CompactionGrowthMb)
+            {
+                _lastMemoryCompactionUtc = DateTime.UtcNow;
+                _memoryCompactionRunning = true;
+
+                _logger.LogWarning(
+                    "Memory above limit: {WorkingSet} MB of {Limit} MB, reclaimable about {Reclaimable} MB — compacting heap",
+                    workingSetMb, limitMb, reclaimableMb);
+
+                // Сборка запускается с пула потоков: ожидание её конца не держит
+                // UI-поток дольше самой паузы сборщика.
+                _ = System.Threading.Tasks.Task.Run(() =>
+                {
+                    try
+                    {
+                        System.Runtime.GCSettings.LargeObjectHeapCompactionMode =
+                            System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+                        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Heap compaction failed");
+                    }
+
+                    long afterMb = 0;
+                    try
+                    {
+                        using var process = System.Diagnostics.Process.GetCurrentProcess();
+                        afterMb = process.WorkingSet64 / (1024 * 1024);
+                        _logger.LogWarning("Heap compacted: {Before} MB -> {After} MB", workingSetMb, afterMb);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Working set is not available after compaction");
+                    }
+
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        _workingSetAfterCompactionMb = afterMb;
+                        _memoryCompactionRunning = false;
+                    });
+                });
+                return;
+            }
+
+            // Сжатие уже было недавно, а памяти всё равно больше лимита — выгружается
+            // вкладка, неактивная дольше всех.
+            foreach (var kvp in _tabSuspendTimes.OrderBy(k => k.Value).ToList())
+            {
+                if (ReferenceEquals(kvp.Key, activeTab)) continue;
+
+                if (TryUnloadInactiveTab(kvp.Key, $"memory {workingSetMb} MB over limit {limitMb} MB"))
+                    return;
             }
         }
 

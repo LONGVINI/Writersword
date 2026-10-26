@@ -19,6 +19,27 @@
 		<Setter Property="BorderThickness" Value="1"/>
 		<Setter Property="CornerRadius" Value="4"/>
 	</Style>
+
+	<!-- Обычная кнопка там, где её сбросили в плоскую: DockStyles.axaml
+	     снимает с каждой кнопки внутри дока фон, рамку, отступы и высоту, и
+	     кнопки диалогов в модулях выходили голым текстом. Класс standard
+	     возвращает ровно вид базовой кнопки выше. Селектор с классом сильнее
+	     сброса без класса, где бы ни стоял; стоит он до наведения, нажатия и
+	     primary — те по-прежнему берут верх. Использование: Classes="standard",
+	     для акцентной — Classes="standard primary". -->
+	<Style Selector="Button.standard">
+		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="Padding" Value="12,4"/>
+		<Setter Property="MinHeight" Value="28"/>
+		<Setter Property="VerticalContentAlignment" Value="Center"/>
+	</Style>
+	<Style Selector="Button.standard /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius" Value="4"/>
+	</Style>
 	<Style Selector="Button:pointerover /template/ ContentPresenter">
 		<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
 		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>

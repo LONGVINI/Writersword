@@ -26,7 +26,7 @@
 					<ItemsControl ItemsSource="{Binding Rows}">
 						<ItemsControl.ItemTemplate>
 							<DataTemplate x:DataType="tabs:CharacterFieldRowViewModel">
-								<ItemsControl ItemsSource="{Binding Cells}">
+								<ItemsControl ItemsSource="{Binding Cells}" Margin="{Binding RowMargin}">
 									<ItemsControl.ItemsPanel>
 										<ItemsPanelTemplate>
 											<UniformGrid Rows="1" Columns="{Binding Columns}"/>

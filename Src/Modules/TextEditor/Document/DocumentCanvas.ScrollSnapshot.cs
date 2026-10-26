@@ -163,7 +163,15 @@ namespace Writersword.Modules.TextEditor.Document
         private static readonly double RecentEditMs = 1300.0;
 
         /// <summary>Отмечает правку содержимого: см. <see cref="RecentContentEdit"/>.</summary>
-        private void MarkContentEdit() => Interlocked.Exchange(ref _lastContentEditTs, Stopwatch.GetTimestamp());
+        private void MarkContentEdit()
+        {
+            Interlocked.Exchange(ref _lastContentEditTs, Stopwatch.GetTimestamp());
+
+            // Документ поменялся под идущей фоновой пересборкой: её проход видел
+            // прежний документ и бросается — раскладку соберёт тот, кто правку сделал
+            // (DocumentCanvas.BackgroundLayout).
+            AbandonBackgroundLayout(keepDone: false);
+        }
 
         /// <summary>Правка была только что — идёт набор.</summary>
         private bool RecentContentEdit

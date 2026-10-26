@@ -26,6 +26,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
     {
         private bool _pageSetupToSelection;
 
+        // Команда идёт только к разделу под кареткой, а не ко всем разделам выделения:
+        // так работает линейка — она показывает раздел каретки.
+        private bool _pageSetupCaretOnly;
+
         /// <summary>
         /// Параметры страницы ложатся только на выделенное: раздел режется разрывами.
         /// Иначе — на весь раздел под кареткой.
@@ -65,7 +69,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// для них — непрерывные, как ставит Word.
         /// </summary>
         public void ApplySectionColumns(int count)
-            => ApplyToSections("Колонки", newPage: false, null, Math.Clamp(count, 1, 12));
+            => ApplyToSections("Колонки", newPage: false, null, Math.Clamp(count, 1, MaxSectionColumns));
+
+        // Больше колонок не бывает ни на каком листе: при полудюйме на колонку их столько
+        // влезает в самый широкий лист Word (окно колонок, RibbonLayoutTabViewModel).
+        private const int MaxSectionColumns = 45;
 
         /// <summary>
         /// Размер листа раздела под кареткой, мм, — ширина и высота листа так, как он
@@ -122,6 +130,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     settings.ColumnCount = wanted.Count;
                     settings.GapMm = wanted.GapMm;
                     settings.ShowSeparator = wanted.Count > 1 && wanted.Separator;
+                    settings.SeparatorColor = wanted.SeparatorColor;
 
                     // Колонки разной ширины последнего раздела живут в его параметрах;
                     // равные — в колонках документа.
@@ -161,17 +170,81 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     Count = list.Count,
                     GapMm = list[0].SpaceAfterMm,
                     Separator = columns.Separator,
+                    SeparatorColor = columns.SeparatorColor,
                     Columns = list
                 };
             }
 
-            int count = Math.Clamp(columns.Count, 1, 12);
+            int count = Math.Clamp(columns.Count, 1, MaxSectionColumns);
             return new SectionColumns
             {
                 Count = count,
                 GapMm = Math.Max(columns.GapMm, 0.0),
-                Separator = count > 1 && columns.Separator
+                Separator = count > 1 && columns.Separator,
+                SeparatorColor = columns.SeparatorColor
             };
+        }
+
+        /// <summary>
+        /// Колонки раздела под кареткой по промежуткам, перетянутым на линейке:
+        /// промежутки — от левого края текста, мм. Колонки становятся колонками разной
+        /// ширины (ширина каждой — от конца промежутка до начала следующего), черта
+        /// между ними остаётся какой была. Раздел не режется и на выделение не
+        /// смотрит: линейка показывает раздел каретки — его и меняет.
+        /// </summary>
+        public void ApplyCaretSectionColumnGaps(IReadOnlyList<(double FromMm, double ToMm)> gapsMm, double textWidthMm)
+        {
+            if (gapsMm.Count == 0 || textWidthMm <= 0) return;
+
+            var list = new List<SectionColumn>(gapsMm.Count + 1);
+            double start = 0.0;
+            double used = 0.0;
+            for (int i = 0; i < gapsMm.Count; i++)
+            {
+                var (fromMm, toMm) = gapsMm[i];
+                double width = Math.Round(Math.Max(fromMm - start, 1.0), 2);
+                double space = Math.Round(Math.Max(toMm - fromMm, 0.0), 2);
+                list.Add(new SectionColumn { WidthMm = width, SpaceAfterMm = space });
+                used += width + space;
+                start = toMm;
+            }
+            list.Add(new SectionColumn { WidthMm = Math.Round(Math.Max(textWidthMm - used, 1.0), 2), SpaceAfterMm = 0.0 });
+
+            bool toSelection = _pageSetupToSelection;
+            _pageSetupToSelection = false;
+            _pageSetupCaretOnly = true;
+            try
+            {
+                var current = CaretSectionColumns();
+                ApplySectionColumnLayout(new SectionColumns
+                {
+                    Count = list.Count,
+                    GapMm = list[0].SpaceAfterMm,
+                    Separator = current.Separator,
+                    SeparatorColor = current.SeparatorColor,
+                    Columns = list
+                });
+            }
+            finally
+            {
+                _pageSetupCaretOnly = false;
+                _pageSetupToSelection = toSelection;
+            }
+        }
+
+        /// <summary>Колонки раздела под кареткой.</summary>
+        private SectionColumns CaretSectionColumns()
+        {
+            var blocks = PageSetupBlocks();
+            if (blocks is null) return ColumnFrames.FinalColumns(_document);
+
+            int end = -1;
+            if (PageSetupRange(blocks) is { } range)
+                end = SectionEndAtOrAfter(blocks, range.First);
+
+            return end >= 0
+                ? ColumnFrames.ColumnsOf(_document, (BreakBlock)blocks[end])
+                : ColumnFrames.FinalColumns(_document);
         }
 
         /// <summary>Выравнивание текста раздела по высоте листа.</summary>
@@ -509,7 +582,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 Take(ActiveTable);
             }
-            else if (SelectionParagraphs.Count > 0)
+            else if (SelectionParagraphs.Count > 0 && !_pageSetupCaretOnly)
             {
                 foreach (var pvm in SelectionParagraphs) Take(pvm.Model);
             }
@@ -671,7 +744,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                             {
                                 Count = count,
                                 GapMm = layout.Columns?.GapMm ?? 12.5,
-                                Separator = count > 1 && layout.Columns?.Separator == true
+                                Separator = count > 1 && layout.Columns?.Separator == true,
+                                SeparatorColor = layout.Columns?.SeparatorColor
                             };
 
                         if (end >= last) break;

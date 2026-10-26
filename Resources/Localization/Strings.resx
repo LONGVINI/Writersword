@@ -1347,4 +1347,55 @@ Point contents:</value>
   <data name="Compare_Adopt_Confirm" xml:space="preserve">
     <value>Data from the other file will be written into this project over the current one. The previous state stays in the version history. Continue?</value>
   </data>
+  <data name="Settings_General_Memory" xml:space="preserve">
+    <value>Memory</value>
+    <comment>Section title for memory settings</comment>
+  </data>
+  <data name="Settings_General_Memory_Level" xml:space="preserve">
+    <value>Memory usage</value>
+    <comment>Label of the memory usage level selector</comment>
+  </data>
+  <data name="Settings_General_Memory_Economy" xml:space="preserve">
+    <value>Economy</value>
+    <comment>Memory level: least memory</comment>
+  </data>
+  <data name="Settings_General_Memory_Normal" xml:space="preserve">
+    <value>Normal</value>
+    <comment>Memory level: default</comment>
+  </data>
+  <data name="Settings_General_Memory_Fast" xml:space="preserve">
+    <value>Fast</value>
+    <comment>Memory level: most memory, fastest tab switching</comment>
+  </data>
+  <data name="Settings_General_Memory_Hint_Title" xml:space="preserve">
+    <value>Memory usage levels</value>
+    <comment>Hint title for memory levels</comment>
+  </data>
+  <data name="Settings_General_Memory_Hint_Body" xml:space="preserve">
+    <value>Economy: inactive tabs are unloaded after a minute and the memory limit is lower; returning to such a tab takes longer because its modules load again.
+Normal: inactive tabs are unloaded after two minutes.
+Fast: tabs stay in memory for ten minutes, switching is instant, more memory is used.
+Above the limit the program first compacts its memory, then unloads the tabs that have been inactive the longest. The open tab is never unloaded and nothing unsaved is lost.</value>
+    <comment>Hint body explaining memory levels</comment>
+  </data>
+  <data name="Settings_General_Memory_Limit" xml:space="preserve">
+    <value>Memory limit</value>
+    <comment>Label above the memory limit slider</comment>
+  </data>
+  <data name="Settings_General_Memory_CustomLimit" xml:space="preserve">
+    <value>Custom memory limit</value>
+    <comment>Checkbox enabling a custom memory limit</comment>
+  </data>
+  <data name="Settings_General_Memory_CustomLimit_Hint" xml:space="preserve">
+    <value>By default the limit is calculated from the computer's memory and the chosen level. Turn this on to set it yourself.</value>
+    <comment>Tooltip of the custom memory limit checkbox</comment>
+  </data>
+  <data name="Settings_General_Memory_LimitFormat" xml:space="preserve">
+    <value>{0} MB</value>
+    <comment>Memory limit value, {0} is megabytes</comment>
+  </data>
+  <data name="Settings_General_Memory_Auto" xml:space="preserve">
+    <value>auto</value>
+    <comment>Suffix shown when the memory limit is calculated automatically</comment>
+  </data>
 </root>

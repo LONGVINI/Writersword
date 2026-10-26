@@ -274,8 +274,17 @@ namespace Writersword.Modules.TextEditor.Document
             if (_fieldRelayoutStreak >= FieldRelayoutLimit) return;
             _fieldRelayoutStreak++;
 
+            // В листах — фоновой пересборкой: номер страницы в поле сменил ширину
+            // строки, и ради этого держать окно на время раскладки всей книги незачем
+            // (DocumentCanvas.BackgroundLayout).
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
+                if (CanLayoutInBackground)
+                {
+                    RebuildLayoutsInBackground();
+                    return;
+                }
+
                 RebuildLayouts();
                 InvalidateMeasure();
                 InvalidateFull();

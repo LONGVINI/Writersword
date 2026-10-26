@@ -253,16 +253,28 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         {
             DepthOptions.Clear();
             DepthOptions.Add(new AnketaOptionViewModel<int>(0, "Как у группы",
-                "Уровень подзаголовка, под которым стоит поле", !_field.Depth.HasValue, SetDepthOption));
+                "Видно тогда же, когда поля подзаголовка, под которым оно стоит", !_field.Depth.HasValue, SetDepthOption));
             foreach (var level in CharacterDetailLevels.All)
                 DepthOptions.Add(new AnketaOptionViewModel<int>(level, CharacterDetailLevels.NameOf(level),
-                    CharacterDetailLevels.HintOf(level), _field.Depth == level, SetDepthOption)
+                    CharacterDetailLevels.FieldHintOf(level), _field.Depth == level, SetDepthOption)
                 {
                     GlyphLevel = level
                 });
         }
 
         private void SetDepthOption(int value) => Depth = value == 0 ? null : value;
+
+        /// <summary>
+        /// Следующий уровень по кругу — щелчком по значку у поля: кратко →
+        /// подробно → глубоко → кратко. Уровень становится своим у поля;
+        /// вернуть «как у группы» — правым щелчком по значку.
+        /// </summary>
+        public void CycleDepth()
+        {
+            Depth = _effectiveDepth >= CharacterDetailLevels.Max
+                ? CharacterDetailLevels.Min
+                : _effectiveDepth + 1;
+        }
 
         private int _effectiveDepth = CharacterDetailLevels.Brief;
 
@@ -275,17 +287,21 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                 if (_effectiveDepth == value) return;
                 this.RaiseAndSetIfChanged(ref _effectiveDepth, value);
                 this.RaisePropertyChanged(nameof(DepthName));
+                this.RaisePropertyChanged(nameof(DepthTitle));
                 this.RaisePropertyChanged(nameof(DepthTip));
             }
         }
 
         public string DepthName => CharacterDetailLevels.NameOf(_effectiveDepth);
 
+        /// <summary>Заголовок подсказки значка: с какого уровня анкеты поле видно.</summary>
+        public string DepthTitle => "Видно в карточке: " + DepthName.ToLowerInvariant();
+
         /// <summary>Подсказка к значку уровня у поля: какой уровень и откуда он взялся.</summary>
-        public string DepthTip => (_field.Depth.HasValue
-                                      ? "Уровень задан самим полем. "
-                                      : "Уровень взят у группы. ")
-                                  + "Щелчок — выбрать другой. " + CharacterDetailLevels.SymbolHint;
+        public string DepthTip => CharacterDetailLevels.FieldHintOf(_effectiveDepth)
+                                  + (_field.Depth.HasValue ? "." : " (как у группы).")
+                                  + " Щелчок — следующий уровень: кратко → подробно → глубоко. "
+                                  + "Правый щелчок — все уровни и «как у группы»";
 
         private bool _isBeyondPreview;
 
@@ -538,11 +554,48 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         public void SetLabelColor(string hex)
         {
             if (string.Equals(_field.LabelColor, hex, StringComparison.OrdinalIgnoreCase)) hex = string.Empty;
+            ApplyLabelColor(hex);
+        }
+
+        private void ApplyLabelColor(string hex)
+        {
             _field.LabelColor = hex ?? string.Empty;
             foreach (var option in LabelColorOptions)
                 option.SetSelectedSilently(string.Equals(option.Hex, hex, StringComparison.OrdinalIgnoreCase));
             this.RaisePropertyChanged(nameof(LabelColor));
+            this.RaisePropertyChanged(nameof(HasLabelColor));
+            this.RaisePropertyChanged(nameof(LabelColorPick));
             NotifyEdited();
+        }
+
+        /// <summary>Цвет подписи, которым кружок показывает подпись без своего цвета.</summary>
+        private const string DefaultLabelColorHex = "#D4C4A8";
+
+        /// <summary>У подписи свой цвет; без него она — цветом темы.</summary>
+        public bool HasLabelColor => !string.IsNullOrWhiteSpace(_field.LabelColor);
+
+        /// <summary>
+        /// Цвет подписи для нашего круглого выбора цвета (ColorPickerButton):
+        /// выбранный пишется как есть, повторный выбор его не сбрасывает —
+        /// к цвету темы возвращает ResetLabelColor. Пока своего цвета нет,
+        /// кружок показывает обычный цвет подписи.
+        /// </summary>
+        public string LabelColorPick
+        {
+            get => HasLabelColor ? _field.LabelColor : DefaultLabelColorHex;
+            set
+            {
+                var hex = (value ?? string.Empty).Trim();
+                if (hex.Length == 0 || string.Equals(_field.LabelColor, hex, StringComparison.OrdinalIgnoreCase)) return;
+                ApplyLabelColor(hex);
+            }
+        }
+
+        /// <summary>Подпись — снова цветом темы.</summary>
+        public void ResetLabelColor()
+        {
+            if (!HasLabelColor) return;
+            ApplyLabelColor(string.Empty);
         }
 
         /// <summary>Значок слева от подписи; пусто — без значка.</summary>
@@ -758,7 +811,25 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
 
             this.RaisePropertyChanged(nameof(AccentColor));
             this.RaisePropertyChanged(nameof(HasAccentColor));
+            this.RaisePropertyChanged(nameof(AccentColorPick));
             NotifyEdited();
+        }
+
+        /// <summary>
+        /// Цвет поля для нашего круглого выбора цвета (ColorPickerButton):
+        /// выбранный пишется как есть, повторный выбор его не сбрасывает —
+        /// к цвету по умолчанию возвращает ResetAccent. Пока своего цвета
+        /// нет, кружок показывает цвет типа поля — им поле и рисуется.
+        /// </summary>
+        public string AccentColorPick
+        {
+            get => HasAccentColor ? _field.AccentColor : TypeColorOf(_field.Type);
+            set
+            {
+                var hex = (value ?? string.Empty).Trim();
+                if (hex.Length == 0 || string.Equals(_field.AccentColor, hex, StringComparison.OrdinalIgnoreCase)) return;
+                ApplyAccent(hex);
+            }
         }
 
         public void ResetAccent()
@@ -1178,6 +1249,8 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                     option.SetSelectedSilently(string.Equals(option.Hex, snapshot.LabelColor, StringComparison.OrdinalIgnoreCase));
                 this.RaisePropertyChanged(nameof(LabelBold));
                 this.RaisePropertyChanged(nameof(LabelColor));
+                this.RaisePropertyChanged(nameof(HasLabelColor));
+                this.RaisePropertyChanged(nameof(LabelColorPick));
                 this.RaisePropertyChanged(nameof(LabelIcon));
                 this.RaisePropertyChanged(nameof(HasLabelIcon));
             }
@@ -1233,8 +1306,161 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                 _field.InputWidth = width;
                 NotifyEdited();
             };
+
+            // Высота описания — так же: ручкой под полем.
+            preview.InputHeightCommitted += height =>
+            {
+                _field.InputHeight = height;
+                this.RaisePropertyChanged(nameof(InputHeightText));
+                NotifyEdited();
+            };
+
+            // Вид анкеты (шрифт, выравнивание, высота описаний) — общий для всех её полей.
+            preview.ApplyAnketaLook(Owner?.Look);
             return preview;
         }
+
+        /// <summary>Вид анкеты изменился — предпросмотр поля перечитывает его.</summary>
+        internal void RefreshAnketaLook() => _preview?.ApplyAnketaLook(Owner?.Look);
+
+        // ── Особый вид поля ──────────────────────────────────────────────
+        //
+        // То, что обычно не трогают: выравнивание в строке, шрифт, размеры,
+        // высота описания, отступ под строкой. Пустое — как у анкеты.
+
+        /// <summary>Выравнивание поля в строке: «как у анкеты» и три положения.</summary>
+        public IReadOnlyList<AnketaLookChoice> AlignChoices { get; } = AnketaLookChoice.FieldAlignChoices;
+
+        public AnketaLookChoice SelectedAlign
+        {
+            get => AlignChoices.FirstOrDefault(c => c.Value == CharacterLookAlign.Normalize(_field.Look?.VerticalAlign))
+                   ?? AlignChoices[0];
+            set
+            {
+                var normalized = CharacterLookAlign.Normalize(value?.Value);
+                if (CharacterLookAlign.Normalize(_field.Look?.VerticalAlign) == normalized) return;
+                EditLook(look => look.VerticalAlign = normalized);
+            }
+        }
+
+        /// <summary>Шрифт подписи и значения; пусто — как у анкеты.</summary>
+        public string LookFontFamily
+        {
+            get => _field.Look?.FontFamily ?? string.Empty;
+            set
+            {
+                var name = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+                if ((_field.Look?.FontFamily ?? null) == name) return;
+                EditLook(look => look.FontFamily = name);
+            }
+        }
+
+        /// <summary>Размер подписи строкой; пусто — как у анкеты.</summary>
+        public string LookLabelSizeText
+        {
+            get => FormatOptional(_field.Look?.LabelFontSize);
+            set
+            {
+                if (!TryParseOptional(value, out var size)) return;
+                size = size is { } s ? Math.Clamp(s, 6, 72) : null;
+                if (_field.Look?.LabelFontSize == size) return;
+                EditLook(look => look.LabelFontSize = size);
+            }
+        }
+
+        /// <summary>Размер значения строкой; пусто — как у анкеты.</summary>
+        public string LookValueSizeText
+        {
+            get => FormatOptional(_field.Look?.ValueFontSize);
+            set
+            {
+                if (!TryParseOptional(value, out var size)) return;
+                size = size is { } s ? Math.Clamp(s, 6, 72) : null;
+                if (_field.Look?.ValueFontSize == size) return;
+                EditLook(look => look.ValueFontSize = size);
+            }
+        }
+
+        /// <summary>Высота описания строкой, пт; пусто — как у анкеты или по тексту.</summary>
+        public string InputHeightText
+        {
+            get => FormatOptional(_field.InputHeight);
+            set
+            {
+                if (!TryParseOptional(value, out var height)) return;
+                height = height is { } h
+                    ? Math.Clamp(h, CharacterParameterItemViewModel.MinInputHeight, CharacterParameterItemViewModel.MaxInputHeight)
+                    : null;
+                if (_field.InputHeight == height) return;
+                _field.InputHeight = height;
+                this.RaisePropertyChanged();
+                RaiseLookState();
+                NotifyEdited();
+            }
+        }
+
+        /// <summary>Добавочный отступ под строкой этого поля строкой, пт; пусто — как у анкеты.</summary>
+        public string RowSpacingText
+        {
+            get => FormatOptional(Owner?.RowSpacingOf(this));
+            set
+            {
+                if (Owner == null || !TryParseOptional(value, out var spacing)) return;
+                spacing = spacing is { } s ? Math.Clamp(s, 0, 200) : null;
+                Owner.SetRowSpacing(this, spacing);
+                this.RaisePropertyChanged();
+                RaiseLookState();
+            }
+        }
+
+        /// <summary>У поля есть особый вид — заголовок раздела отмечен точкой.</summary>
+        public bool HasCustomLook =>
+            _field.Look is { IsEmpty: false } ||
+            _field.InputHeight.HasValue ||
+            Owner?.RowSpacingOf(this) is not null;
+
+        /// <summary>Вернуть полю вид анкеты: убрать всё особое, в том числе отступ строки.</summary>
+        public void ResetLook()
+        {
+            if (!HasCustomLook) return;
+
+            _field.Look = null;
+            _field.InputHeight = null;
+            Owner?.SetRowSpacing(this, null, record: false);
+            RaiseLookProperties();
+            NotifyEdited();
+        }
+
+        private void EditLook(Action<CharacterFieldLook> change)
+        {
+            var look = _field.Look?.Clone() ?? new CharacterFieldLook();
+            change(look);
+            _field.Look = look.IsEmpty ? null : look;
+            RaiseLookProperties();
+            NotifyEdited();
+        }
+
+        private void RaiseLookProperties()
+        {
+            this.RaisePropertyChanged(nameof(SelectedAlign));
+            this.RaisePropertyChanged(nameof(LookFontFamily));
+            this.RaisePropertyChanged(nameof(LookLabelSizeText));
+            this.RaisePropertyChanged(nameof(LookValueSizeText));
+            this.RaisePropertyChanged(nameof(InputHeightText));
+            this.RaisePropertyChanged(nameof(RowSpacingText));
+            RaiseLookState();
+        }
+
+        private void RaiseLookState() => this.RaisePropertyChanged(nameof(HasCustomLook));
+
+        /// <summary>Отступ строки поменяли извне (отмена, другое поле той же строки).</summary>
+        internal void RaiseRowSpacing()
+        {
+            this.RaisePropertyChanged(nameof(RowSpacingText));
+            RaiseLookState();
+        }
+
+        public bool IsLongText => _field.Type == CharacterParameterType.LongText;
 
         // ── Сохранение ───────────────────────────────────────────────────
 

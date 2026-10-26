@@ -37,16 +37,16 @@ namespace Writersword.Modules.TextEditor.Services
         /// <summary>Внутренние разрывы разделов: параметры раздела и индекс блока, с которого начинается следующий раздел.</summary>
         private readonly List<(W.SectionProperties SectPr, int NextStartBlock)> _sectionBreaks = new();
 
-        /// <summary>Полоса колонтитула Word, разобранная на три места.</summary>
+        /// <summary>
+        /// Полоса колонтитула Word, разобранная на три места. Оформление полосы
+        /// (<see cref="HeaderFooterBand.Style"/>) до конца разбора хранится полным —
+        /// оформлением, которого в полосе больше всего; куски с другим — поверх него.
+        /// Так полосы разных разделов сравниваются честно, а шрифт колонтитулов документа
+        /// выбирается потом.
+        /// </summary>
         private sealed class DocxBand
         {
             public HeaderFooterBand Band { get; } = new();
-
-            /// <summary>Первый ран с текстом — по нему берётся шрифт колонтитулов.</summary>
-            public W.Run? FirstTextRun { get; set; }
-
-            /// <summary>Абзац первого рана с текстом.</summary>
-            public W.Paragraph? FirstTextParagraph { get; set; }
 
             public bool IsEmpty => Band.IsEmpty;
 
@@ -199,7 +199,7 @@ namespace Writersword.Modules.TextEditor.Services
                 StartNumber = first.Start ?? 1
             };
 
-            ApplyBandFont(settings, baseSection, first, resolver);
+            ApplyBandFont(settings, baseSection, first);
 
             // Правила разделов: каждое изменение против предыдущего раздела — правило
             // от первого абзаца раздела.
@@ -298,7 +298,26 @@ namespace Writersword.Modules.TextEditor.Services
             if (anchorsLost)
                 warnings.Add("Часть разделов начинается не абзацем — их правила колонтитулов не перенесены.");
 
+            NormalizeBandStyles(settings);
             return settings;
+        }
+
+        /// <summary>
+        /// Оформление полос — от полного к отличиям от шрифта колонтитулов документа:
+        /// полоса, набранная им же, своего оформления не хранит. Куски полос заданы
+        /// поверх оформления полосы и от этого не меняются.
+        /// </summary>
+        private static void NormalizeBandStyles(HeaderFooterSettings settings)
+        {
+            var documentFont = settings.BaseFont;
+
+            foreach (var band in settings.AllBands())
+            {
+                if (band?.Style is null) continue;
+
+                var font = band.FontOf(documentFont);
+                band.Style = HeaderFooterStyle.Difference(font, documentFont);
+            }
         }
 
         /// <summary>Текст колонтитулов раздела копией полос.</summary>
@@ -357,11 +376,14 @@ namespace Writersword.Modules.TextEditor.Services
             return PageNumberFormat.Arabic;
         }
 
-        /// <summary>Шрифт колонтитулов — по первому рану с текстом в полосах образца.</summary>
-        private static void ApplyBandFont(
-            HeaderFooterSettings settings, DocxSection baseSection, DocxSection first, DocxFormatResolver resolver)
+        /// <summary>
+        /// Шрифт колонтитулов документа — оформление первой непустой полосы образца:
+        /// обычного нижнего, обычного верхнего, затем первой страницы и чётных. У
+        /// остальных полос, набранных иначе, остаётся своё оформление.
+        /// </summary>
+        private static void ApplyBandFont(HeaderFooterSettings settings, DocxSection baseSection, DocxSection first)
         {
-            DocxBand? source = null;
+            HeaderFooterStyle? source = null;
             foreach (var band in new[]
                      {
                          baseSection.DefaultFooter, baseSection.DefaultHeader,
@@ -369,24 +391,30 @@ namespace Writersword.Modules.TextEditor.Services
                          baseSection.EvenFooter, baseSection.EvenHeader
                      })
             {
-                if (band.FirstTextRun is not null && band.FirstTextParagraph is not null)
+                if (!band.IsEmpty && band.Band.Style is { } style)
                 {
-                    source = band;
+                    source = style;
                     break;
                 }
             }
 
             if (source is null) return;
 
-            var effPara = resolver.ResolveEffectiveParagraph(source.FirstTextParagraph!);
-            var run = resolver.ResolveEffectiveRun(source.FirstTextRun!, effPara);
-
-            if (!string.IsNullOrWhiteSpace(run.FontFamily)) settings.FontFamily = run.FontFamily;
-            if (run.FontSizePt is double size && size > 0) settings.FontSizePt = size;
-            settings.IsBold = run.Bold ?? false;
-            settings.IsItalic = run.Italic ?? false;
-            if (!string.IsNullOrWhiteSpace(run.TextColor)) settings.TextColor = run.TextColor;
+            if (!string.IsNullOrWhiteSpace(source.FontFamily)) settings.FontFamily = source.FontFamily;
+            if (source.FontSizePt is double size && size > 0) settings.FontSizePt = size;
+            settings.IsBold = source.IsBold ?? false;
+            settings.IsItalic = source.IsItalic ?? false;
+            if (!string.IsNullOrWhiteSpace(source.TextColor)) settings.TextColor = source.TextColor;
         }
+
+        /// <summary>Оформление рана Word глазами колонтитула.</summary>
+        private static HeaderFooterFont BandFont(RunFormat run)
+            => new(
+                string.IsNullOrWhiteSpace(run.FontFamily) ? null : run.FontFamily,
+                run.FontSizePt is double size && size > 0 ? size : 0,
+                run.Bold ?? false,
+                run.Italic ?? false,
+                string.IsNullOrWhiteSpace(run.TextColor) ? null : run.TextColor);
 
         // ── Разбор части колонтитула ──────────────────────────────────────
 
@@ -426,7 +454,7 @@ namespace Writersword.Modules.TextEditor.Services
         private static DocxBand ParseBand(OpenXmlElement root, DocxFormatResolver resolver)
         {
             var result = new DocxBand();
-            var lines = new[] { new List<string>(), new List<string>(), new List<string>() };
+            var lines = new[] { new List<BandText>(), new List<BandText>(), new List<BandText>() };
 
             foreach (var p in root.Descendants<W.Paragraph>())
             {
@@ -435,32 +463,231 @@ namespace Writersword.Modules.TextEditor.Services
                 if (p.Ancestors<AlternateContentFallback>().Any()) continue;
 
                 var effPara = resolver.ResolveEffectiveParagraph(p);
-                var segments = ReadParagraphSegments(p, out var firstRun);
+                var segments = ReadParagraphSegments(p);
 
-                if (firstRun is not null && result.FirstTextRun is null)
+                // Оформление кусков — по их ранам, в оформлении этого абзаца.
+                var fonts = new Dictionary<W.Run, HeaderFooterFont>(ReferenceEqualityComparer.Instance);
+                foreach (var segment in segments)
                 {
-                    result.FirstTextRun = firstRun;
-                    result.FirstTextParagraph = p;
+                    foreach (var piece in segment.Text.Pieces)
+                    {
+                        if (piece.Run is not { } run) continue;
+
+                        if (!fonts.TryGetValue(run, out var font))
+                        {
+                            font = BandFont(resolver.ResolveEffectiveRun(run, effPara));
+                            fonts[run] = font;
+                        }
+
+                        piece.Font = font;
+                    }
                 }
 
                 var slots = AssignSlots(p, effPara, segments);
                 for (int slot = 0; slot < 3; slot++)
                 {
-                    string text = slots[slot].Trim();
+                    var text = slots[slot].Trimmed();
                     if (text.Length > 0) lines[slot].Add(text);
                 }
             }
 
-            result.Band.Left = string.Join("\n", lines[0]);
-            result.Band.Center = string.Join("\n", lines[1]);
-            result.Band.Right = string.Join("\n", lines[2]);
+            var joined = new BandText[3];
+            for (int slot = 0; slot < 3; slot++)
+            {
+                joined[slot] = new BandText();
+                for (int i = 0; i < lines[slot].Count; i++)
+                {
+                    if (i > 0) joined[slot].Append("\n", null);
+                    joined[slot].Append(lines[slot][i]);
+                }
+            }
+
+            FillBand(result.Band, joined);
             return result;
+        }
+
+        /// <summary>
+        /// Текст и оформление полосы из кусков трёх мест. Оформление полосы — то, каким
+        /// набрано больше всего знаков; куски с другим становятся кусками полосы.
+        /// </summary>
+        private static void FillBand(HeaderFooterBand band, BandText[] slots)
+        {
+            band.Left = slots[0].ToString();
+            band.Center = slots[1].ToString();
+            band.Right = slots[2].ToString();
+
+            // Кусок без своего рана (пробел между кусками, перевод строки, поле без
+            // результата) берёт оформление соседа: сперва того, что перед ним.
+            foreach (var slot in slots)
+            {
+                HeaderFooterFont? previous = null;
+                foreach (var piece in slot.Pieces)
+                {
+                    if (piece.Font is null) piece.Font = previous;
+                    else previous = piece.Font;
+                }
+
+                HeaderFooterFont? next = null;
+                for (int i = slot.Pieces.Count - 1; i >= 0; i--)
+                {
+                    var piece = slot.Pieces[i];
+                    if (piece.Font is null) piece.Font = next;
+                    else next = piece.Font;
+                }
+            }
+
+            var weights = new Dictionary<HeaderFooterFont, int>();
+            var order = new List<HeaderFooterFont>();
+            foreach (var slot in slots)
+            {
+                foreach (var piece in slot.Pieces)
+                {
+                    if (piece.Font is not { } font) continue;
+
+                    int weight = 0;
+                    foreach (char ch in piece.Text)
+                        if (!char.IsWhiteSpace(ch)) weight++;
+
+                    if (weights.TryGetValue(font, out int existing))
+                    {
+                        weights[font] = existing + weight;
+                    }
+                    else
+                    {
+                        weights[font] = weight;
+                        order.Add(font);
+                    }
+                }
+            }
+
+            if (order.Count == 0) return;
+
+            var dominant = order[0];
+            foreach (var font in order)
+                if (weights[font] > weights[dominant]) dominant = font;
+
+            band.Style = new HeaderFooterStyle
+            {
+                FontFamily = dominant.FontFamily,
+                FontSizePt = dominant.FontSizePt > 0 ? dominant.FontSizePt : null,
+                IsBold = dominant.IsBold,
+                IsItalic = dominant.IsItalic,
+                TextColor = dominant.TextColor
+            };
+
+            var bandFont = band.FontOf(default);
+
+            for (int slot = 0; slot < 3; slot++)
+            {
+                var merged = new List<(string Text, HeaderFooterFont Font)>();
+                foreach (var piece in slots[slot].Pieces)
+                {
+                    if (piece.Text.Length == 0) continue;
+
+                    var font = piece.Font ?? dominant;
+                    if (merged.Count > 0 && merged[^1].Font == font)
+                        merged[^1] = (merged[^1].Text + piece.Text, font);
+                    else
+                        merged.Add((piece.Text, font));
+                }
+
+                if (merged.TrueForAll(m => m.Font == dominant)) continue;
+
+                band.Runs ??= new List<HeaderFooterRun>();
+                foreach (var (text, font) in merged)
+                {
+                    band.Runs.Add(new HeaderFooterRun
+                    {
+                        Slot = slot,
+                        Text = text,
+                        Style = HeaderFooterStyle.Difference(font, bandFont)
+                    });
+                }
+            }
+        }
+
+        /// <summary>Кусок текста места с раном Word, из которого он пришёл, и его оформлением.</summary>
+        private sealed class BandPiece
+        {
+            public string Text { get; set; } = string.Empty;
+            public W.Run? Run { get; init; }
+            public HeaderFooterFont? Font { get; set; }
+        }
+
+        /// <summary>Текст места кусками: у каждого куска свой ран Word и своё оформление.</summary>
+        private sealed class BandText
+        {
+            public List<BandPiece> Pieces { get; } = new();
+
+            public int Length { get; private set; }
+
+            /// <summary>Последний знак. Пустой текст — '\0'.</summary>
+            public char LastChar => Pieces.Count == 0 ? '\0' : Pieces[^1].Text[^1];
+
+            public void Append(string text, W.Run? run)
+            {
+                if (string.IsNullOrEmpty(text)) return;
+
+                if (Pieces.Count > 0 && Pieces[^1].Font is null && ReferenceEquals(Pieces[^1].Run, run))
+                    Pieces[^1].Text += text;
+                else
+                    Pieces.Add(new BandPiece { Text = text, Run = run });
+
+                Length += text.Length;
+            }
+
+            public void Append(BandText other)
+            {
+                foreach (var piece in other.Pieces)
+                    AddPiece(piece.Text, piece.Run, piece.Font);
+            }
+
+            private void AddPiece(string text, W.Run? run, HeaderFooterFont? font)
+            {
+                if (string.IsNullOrEmpty(text)) return;
+                Pieces.Add(new BandPiece { Text = text, Run = run, Font = font });
+                Length += text.Length;
+            }
+
+            /// <summary>Без пробелов в начале и в конце — как string.Trim, куски сохраняют оформление.</summary>
+            public BandText Trimmed()
+            {
+                string all = ToString();
+                int start = 0;
+                while (start < all.Length && char.IsWhiteSpace(all[start])) start++;
+                int end = all.Length;
+                while (end > start && char.IsWhiteSpace(all[end - 1])) end--;
+
+                var result = new BandText();
+                int at = 0;
+                foreach (var piece in Pieces)
+                {
+                    int pieceStart = at;
+                    int pieceEnd = at + piece.Text.Length;
+                    at = pieceEnd;
+
+                    int from = Math.Max(pieceStart, start);
+                    int to = Math.Min(pieceEnd, end);
+                    if (to > from)
+                        result.AddPiece(piece.Text.Substring(from - pieceStart, to - from), piece.Run, piece.Font);
+                }
+
+                return result;
+            }
+
+            public override string ToString()
+            {
+                var sb = new StringBuilder(Length);
+                foreach (var piece in Pieces)
+                    sb.Append(piece.Text);
+                return sb.ToString();
+            }
         }
 
         /// <summary>Кусок абзаца между табуляциями. Slot — место, заданное выравнивающей табуляцией.</summary>
         private sealed class BandSegment
         {
-            public StringBuilder Text { get; } = new();
+            public BandText Text { get; } = new();
             public int? Slot { get; init; }
         }
 
@@ -477,19 +704,18 @@ namespace Writersword.Modules.TextEditor.Services
         /// Текст абзаца кусками между табуляциями. Поля PAGE и NUMPAGES — живыми полями,
         /// прочие поля — их последним результатом.
         /// </summary>
-        private static List<BandSegment> ReadParagraphSegments(W.Paragraph p, out W.Run? firstTextRun)
+        private static List<BandSegment> ReadParagraphSegments(W.Paragraph p)
         {
             var segments = new List<BandSegment> { new() };
             var fields = new List<BandField>();
-            W.Run? first = null;
 
-            void Append(string text)
+            void Append(string text, W.Run? source)
             {
                 // Код поля и результат живого поля в текст не идут.
                 foreach (var f in fields)
                     if (!f.InResult || f.Token is not null) return;
 
-                segments[^1].Text.Append(text);
+                segments[^1].Text.Append(text, source);
             }
 
             void Walk(OpenXmlElement element)
@@ -507,7 +733,8 @@ namespace Writersword.Modules.TextEditor.Services
                             string? token = FieldToken(simple.Instruction?.Value);
                             if (token is not null)
                             {
-                                Append(token);
+                                // Оформление поля — как у рана его результата.
+                                Append(token, simple.Descendants<W.Run>().FirstOrDefault());
                             }
                             else
                             {
@@ -535,7 +762,7 @@ namespace Writersword.Modules.TextEditor.Services
                                             {
                                                 top.Emitted = true;
                                                 fields.RemoveAt(fields.Count - 1);
-                                                Append(top.Token);
+                                                Append(top.Token, run);
                                                 fields.Add(top);
                                             }
                                         }
@@ -551,7 +778,7 @@ namespace Writersword.Modules.TextEditor.Services
                                             if (!top.Emitted)
                                             {
                                                 string? token = top.Token ?? FieldToken(top.Code.ToString());
-                                                if (token is not null) Append(token);
+                                                if (token is not null) Append(token, run);
                                             }
                                         }
                                         break;
@@ -563,13 +790,7 @@ namespace Writersword.Modules.TextEditor.Services
 
                                     case W.Text text:
                                         if (text.Text.Length > 0)
-                                        {
-                                            int before = segments[^1].Text.Length;
-                                            Append(text.Text);
-                                            if (first is null && segments[^1].Text.Length > before
-                                                && text.Text.Trim().Length > 0)
-                                                first = run;
-                                        }
+                                            Append(text.Text, run);
                                         break;
 
                                     case W.TabChar:
@@ -588,7 +809,7 @@ namespace Writersword.Modules.TextEditor.Services
                                     }
 
                                     case W.Break br when br.Type is null || br.Type.Value == W.BreakValues.TextWrapping:
-                                        Append("\n");
+                                        Append("\n", run);
                                         break;
                                 }
                             }
@@ -606,7 +827,6 @@ namespace Writersword.Modules.TextEditor.Services
             }
 
             Walk(p);
-            firstTextRun = first;
             return segments;
         }
 
@@ -630,16 +850,16 @@ namespace Writersword.Modules.TextEditor.Services
         /// выравнивающие табуляции — по своему выравниванию; обычные табуляции — по
         /// позициям табуляции абзаца; абзац без табуляций — по выравниванию.
         /// </summary>
-        private static string[] AssignSlots(W.Paragraph p, EffectiveParagraph effPara, List<BandSegment> segments)
+        private static BandText[] AssignSlots(W.Paragraph p, EffectiveParagraph effPara, List<BandSegment> segments)
         {
-            var slots = new[] { new StringBuilder(), new StringBuilder(), new StringBuilder() };
+            var slots = new[] { new BandText(), new BandText(), new BandText() };
 
-            void Put(int slot, string text)
+            void Put(int slot, BandText text)
             {
                 if (text.Length == 0) return;
-                var sb = slots[Math.Clamp(slot, 0, 2)];
-                if (sb.Length > 0 && sb[^1] != '\n') sb.Append(' ');
-                sb.Append(text);
+                var target = slots[Math.Clamp(slot, 0, 2)];
+                if (target.Length > 0 && target.LastChar != '\n') target.Append(" ", null);
+                target.Append(text);
             }
 
             var cell = p.Ancestors<W.TableCell>().FirstOrDefault();
@@ -654,15 +874,15 @@ namespace Writersword.Modules.TextEditor.Services
                     : index == 0 ? 0 : index == count - 1 ? 2 : 1;
 
                 foreach (var segment in segments)
-                    Put(cellSlot, segment.Text.ToString());
+                    Put(cellSlot, segment.Text);
 
-                return slots.Select(s => s.ToString()).ToArray();
+                return slots;
             }
 
             if (segments.Count == 1)
             {
-                Put(JustificationSlot(effPara), segments[0].Text.ToString());
-                return slots.Select(s => s.ToString()).ToArray();
+                Put(JustificationSlot(effPara), segments[0].Text);
+                return slots;
             }
 
             // Позиции табуляции абзаца по порядку: k-я табуляция ведёт к k-й позиции.
@@ -708,10 +928,10 @@ namespace Writersword.Modules.TextEditor.Services
                     currentSlot = segment.Slot ?? 0;
                 }
 
-                Put(currentSlot, segment.Text.ToString());
+                Put(currentSlot, segment.Text);
             }
 
-            return slots.Select(s => s.ToString()).ToArray();
+            return slots;
         }
 
         private static int JustificationSlot(EffectiveParagraph effPara)

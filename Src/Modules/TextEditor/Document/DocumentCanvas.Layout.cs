@@ -788,7 +788,20 @@ namespace Writersword.Modules.TextEditor.Document
         private Dictionary<ParagraphBlock, float> _wrapAnchorIn = new();
         private Dictionary<ParagraphBlock, float> _wrapAnchorOut = new();
 
+        /// <summary>Пересборка листов целиком, сразу (DocumentCanvas.BackgroundLayout — по частям).</summary>
         private void RebuildPageMode()
+        {
+            foreach (var _ in RebuildPageModeSteps(null)) { }
+        }
+
+        /// <summary>
+        /// Пересборка листов шагами: <paramref name="shouldYield"/> спрашивается между
+        /// блоками документа, и пока он отвечает «пора», работа отдаётся диспетчеру и
+        /// продолжается со следующего вызова (DocumentCanvas.BackgroundLayout). Без него
+        /// — до конца за один вызов, как раньше. Брошенная на полпути пересборка
+        /// (_abandonPass) ничего не публикует: наружу уходит только законченная.
+        /// </summary>
+        private IEnumerable<bool> RebuildPageModeSteps(Func<bool>? shouldYield)
         {
             // Первый проход: без якорей и без полного набора картинок (они собираются
             // по ходу). Даёт стартовые позиции абзацев и полный список картинок.
@@ -804,7 +817,7 @@ namespace Writersword.Modules.TextEditor.Document
             _publishPassResults = false;
             try
             {
-                RebuildPageModeConverge();
+                foreach (var step in RebuildPageModeConvergeSteps(shouldYield)) yield return step;
 
                 // Колонтитулы печатаются не на всех листах — место под них у каждого
                 // листа своё и известно только по готовой раскладке. Вышло другим, чем
@@ -817,7 +830,7 @@ namespace Writersword.Modules.TextEditor.Document
                     _wrapAnchorIn.Clear();
                     _wrapAnchorOut = new Dictionary<ParagraphBlock, float>();
 
-                    RebuildPageModeConverge();
+                    foreach (var step in RebuildPageModeConvergeSteps(shouldYield)) yield return step;
                 }
 
                 // Разделы «с чётной» и «с нечётной» страницы встают по печатаемому номеру
@@ -830,16 +843,17 @@ namespace Writersword.Modules.TextEditor.Document
                     _wrapAnchorIn.Clear();
                     _wrapAnchorOut = new Dictionary<ParagraphBlock, float>();
 
-                    RebuildPageModeConverge();
+                    foreach (var step in RebuildPageModeConvergeSteps(shouldYield)) yield return step;
                 }
             }
             finally
             {
                 // Итоговая раскладка отдаётся рендеру ровно один раз — в том числе если
                 // проход упал: иначе канвас остался бы с раскладкой прошлой пересборки,
-                // а флаг публикации навсегда выключенным.
+                // а флаг публикации навсегда выключенным. Брошенная фоновая пересборка
+                // недоделана — её не показывают, на листах остаётся прежняя раскладка.
                 _publishPassResults = true;
-                PublishPassResults();
+                if (!_abandonPass) PublishPassResults();
                 _wrapZoneImagesOverride = null;
                 _wrapZoneShapesOverride = null;
             }
@@ -850,6 +864,12 @@ namespace Writersword.Modules.TextEditor.Document
         /// в полях прохода — публикует его вызывающий.
         /// </summary>
         private void RebuildPageModeConverge()
+        {
+            foreach (var _ in RebuildPageModeConvergeSteps(null)) { }
+        }
+
+        /// <summary>Проходы до сходимости шагами — см. <see cref="RebuildPageModeSteps"/>.</summary>
+        private IEnumerable<bool> RebuildPageModeConvergeSteps(Func<bool>? shouldYield)
         {
             int maxWrapIterations =
                 (_imageDragging || _imageResizing || _imageRotating
@@ -864,7 +884,7 @@ namespace Writersword.Modules.TextEditor.Document
             // уточняющих, каждый из которых раскладывает весь документ.
             if (maxWrapIterations > 1 && TryWarmWrapStart())
             {
-                RebuildPageModePass();
+                foreach (var step in RebuildPageModePassSteps(shouldYield)) yield return step;
 
                 // Зоны тёплого прохода построены по объектам прошлой раскладки. Сошёлся он,
                 // только если набор и места обтекаемых объектов те же: удалённая или
@@ -884,7 +904,7 @@ namespace Writersword.Modules.TextEditor.Document
                         (_wrapAnchorIn, _wrapAnchorOut) = (_wrapAnchorOut, _wrapAnchorIn);
                         _wrapAnchorOut.Clear();
 
-                        RebuildPageModePass();
+                        foreach (var step in RebuildPageModePassSteps(shouldYield)) yield return step;
 
                         bool converged = WrapAnchorsConverged(ConvergedTolPt)
                             && FlowFloatsSettled(
@@ -899,10 +919,10 @@ namespace Writersword.Modules.TextEditor.Document
                 }
 
                 RememberWarmWrap();
-                return;
+                yield break;
             }
 
-            RebuildPageModePass();
+            foreach (var step in RebuildPageModePassSteps(shouldYield)) yield return step;
 
             var firstPassImages = _passImages;
             var firstPassShapes = _passShapes;
@@ -932,7 +952,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (!hasWrapImages)
             {
                 ForgetWarmWrap();
-                return;
+                yield break;
             }
 
             // Итерации до сходимости: якорь каждого абзаца берём из позиции, замеренной
@@ -955,7 +975,7 @@ namespace Writersword.Modules.TextEditor.Document
                 (_wrapAnchorIn, _wrapAnchorOut) = (_wrapAnchorOut, _wrapAnchorIn);
                 _wrapAnchorOut.Clear();
 
-                RebuildPageModePass();
+                foreach (var step in RebuildPageModePassSteps(shouldYield)) yield return step;
 
                 // Сошлось, если каждый замер этого прохода совпал с поданным якорем.
                 bool converged = true;
@@ -1397,6 +1417,12 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void RebuildPageModePass()
         {
+            foreach (var _ in RebuildPageModePassSteps(null)) { }
+        }
+
+        /// <summary>Один проход раскладки шагами — см. <see cref="RebuildPageModeSteps"/>.</summary>
+        private IEnumerable<bool> RebuildPageModePassSteps(Func<bool>? shouldYield)
+        {
             _passParityBreaks.Clear();
 
             // Удаляем из кеша записи параграфов которых больше нет в документе.
@@ -1433,6 +1459,7 @@ namespace Writersword.Modules.TextEditor.Document
             float[] colOffsets = startGeometry.ColumnOffsetsPt;
             float[] colWidths = startGeometry.ColumnWidthsPt;
             bool colSeparator = startGeometry.ColumnSeparator;
+            string? colSeparatorColor = startGeometry.ColumnSeparatorColor;
             int colIndex = 0;
 
             float fullTextWidthPt = Math.Max(pageWidthPt - ml - mr, 1f);
@@ -1466,6 +1493,7 @@ namespace Writersword.Modules.TextEditor.Document
                 colOffsets = geometry.ColumnOffsetsPt;
                 colWidths = geometry.ColumnWidthsPt;
                 colSeparator = geometry.ColumnSeparator;
+                colSeparatorColor = geometry.ColumnSeparatorColor;
                 colIndex = 0;
                 textWidthPt = colWidths[0];
                 textXPt = pageXPt + ml + colOffsets[0];
@@ -1640,7 +1668,7 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     newColumnRules.Add(new ColumnRule(
                         pageIdx, ml + ColumnFrames.SeparatorX(colOffsets, colWidths, c),
-                        colTopYPt, bottomPt));
+                        colTopYPt, bottomPt, colSeparatorColor));
                 }
             }
 
@@ -1747,6 +1775,10 @@ namespace Writersword.Modules.TextEditor.Document
 
             for (int bi = partialPass ? _partialFromBlock : 0; bi < blocks.Count; bi++)
             {
+                // Фоновая пересборка отдаёт ход диспетчеру между блоками: ввод и кадры
+                // идут, пока документ раскладывается (DocumentCanvas.BackgroundLayout).
+                if (shouldYield is not null && shouldYield()) yield return false;
+
                 // Частичный проход кончается, как только поток ушёл за последний
                 // нужный лист: дальше видимой области вёрстка не нужна.
                 if (partialPass && pageIdx > _partialToPage) break;

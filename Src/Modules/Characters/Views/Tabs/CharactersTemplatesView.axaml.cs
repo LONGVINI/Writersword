@@ -4,6 +4,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -18,16 +19,16 @@ using Writersword.Modules.Characters.Views;
 namespace Writersword.Modules.Characters.Views.Tabs
 {
     /// <summary>
-    /// Шаблоны блоками. Перетаскивание — своей обработкой указателя, как у
-    /// карточек персонажей и галереи, а не DragDrop: за курсором едет
-    /// «призрак», полоска показывает место вставки. Блоки двигают за шапку,
-    /// значки анкет — внутри своего блока.
+    /// Шаблоны блоками. Перетаскивание — своей обработкой указателя, а не
+    /// DragDrop. Свои блоки двигают ровно как карточки персонажей: зажать в
+    /// любом месте блока и повести — блок приподнимается, за курсором едет его
+    /// призрак, соседи расступаются и доезжают до новых мест. Значки анкет
+    /// двигают внутри своего блока: за курсором призрак, полоска показывает
+    /// место вставки.
     /// </summary>
     public partial class CharactersTemplatesView : UserControl
     {
         private static readonly ILogger _logger = Log.ForContext<CharactersTemplatesView>();
-
-        private readonly DispatcherTimer _applyResultTimer;
 
         public CharactersTemplatesView()
         {
@@ -49,12 +50,15 @@ namespace Writersword.Modules.Characters.Views.Tabs
             BlocksScroll.AddHandler(PointerPressedEvent, OnBlocksAreaPressed,
                 Avalonia.Interactivity.RoutingStrategies.Bubble, handledEventsToo: true);
 
-            _applyResultTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-            _applyResultTimer.Tick += (_, _) =>
-            {
-                _applyResultTimer.Stop();
-                ApplyResult.IsVisible = false;
-            };
+            // Перетаскивание блоков слушается на погружении, как у карточек
+            // персонажей: нажатие видно раньше кнопок и полей блока, но не
+            // гасится — быстрый щелчок доходит до них как обычно.
+            AddHandler(PointerPressedEvent, OnBlockDragPressed, RoutingStrategies.Tunnel);
+            AddHandler(PointerMovedEvent, OnBlockDragMoved, RoutingStrategies.Tunnel);
+            AddHandler(PointerReleasedEvent, OnBlockDragReleased, RoutingStrategies.Tunnel);
+            AddHandler(PointerWheelChangedEvent, OnBlockDragWheel, RoutingStrategies.Tunnel);
+            AddHandler(PointerCaptureLostEvent, OnBlockDragCaptureLost, RoutingStrategies.Bubble, handledEventsToo: true);
+            AddHandler(KeyDownEvent, OnBlockDragKeyDown, RoutingStrategies.Tunnel);
         }
 
         private CharactersTemplatesViewModel? Vm => DataContext as CharactersTemplatesViewModel;
@@ -93,8 +97,32 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private static TemplateBlockViewModel? BlockOf(object? sender) =>
             (sender as Control)?.DataContext as TemplateBlockViewModel;
 
-        private Control? ContainerOf(TemplateBlockViewModel block) =>
-            (CustomList.ContainerFromItem(block) ?? BuiltInList.ContainerFromItem(block)) as Control;
+        /// <summary>
+        /// Показанные разделы: модель, список блоков раздела и сам раздел —
+        /// шапка вместе с блоками.
+        /// </summary>
+        private IEnumerable<(TemplateFolderViewModel Folder, ItemsControl List, Control Section)> Sections()
+        {
+            if (Vm is not { } vm) yield break;
+
+            for (int i = 0; i < vm.Folders.Count; i++)
+            {
+                if (FoldersList.ContainerFromIndex(i) is not Control section) continue;
+                var list = section.GetVisualDescendants()
+                    .OfType<ItemsControl>()
+                    .FirstOrDefault(c => c.Classes.Contains("tpl-blocks"));
+                if (list == null) continue;
+                yield return (vm.Folders[i], list, section);
+            }
+        }
+
+        private Control? ContainerOf(TemplateBlockViewModel block)
+        {
+            foreach (var (_, list, _) in Sections())
+                if (list.ContainerFromItem(block) is Control container)
+                    return container;
+            return null;
+        }
 
         private static void ClosePopupOf(object? sender) =>
             (sender as Control)?.FindLogicalAncestorOfType<Popup>()?.Close();
@@ -107,16 +135,18 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (Vm?.CreateTemplate() is { } block) ShowBlock(block, openCustomize: true);
         }
 
-        private void OnApplyToAllClick(object? sender, RoutedEventArgs e)
+        /// <summary>Новая папка — в конце папок, список прокручивается к ней, поле названия открыто.</summary>
+        private void OnNewFolderClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
-            if (Vm is not { } vm) return;
+            if (Vm?.CreateFolder() is not { } folder) return;
 
-            var touched = vm.ApplyProjectToAll();
-            ApplyResultText.Text = touched > 0 ? "Добавлено персонажам: " + touched : "Уже у всех";
-            ApplyResult.IsVisible = true;
-            _applyResultTimer.Stop();
-            _applyResultTimer.Start();
+            Dispatcher.UIThread.Post(() =>
+            {
+                foreach (var (model, _, section) in Sections())
+                    if (ReferenceEquals(model, folder))
+                        section.BringIntoView();
+            }, DispatcherPriority.Background);
         }
 
         /// <summary>
@@ -125,6 +155,11 @@ namespace Writersword.Modules.Characters.Views.Tabs
         /// </summary>
         private void ShowBlock(TemplateBlockViewModel block, bool openCustomize)
         {
+            // Свёрнутая папка раскрывается: иначе блок встал бы туда, где его
+            // не видно.
+            if (Vm?.FolderOf(block) is { IsExpanded: false } folder)
+                folder.IsExpanded = true;
+
             Dispatcher.UIThread.Post(() =>
             {
                 if (ContainerOf(block) is not { } container) return;
@@ -254,13 +289,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
             Focus();
         }
 
-        /// <summary>Библиотека значков проекта — посмотреть, пополнить, убрать лишнее.</summary>
-        private void OnIconLibraryClick(object? sender, RoutedEventArgs e)
-        {
-            e.Handled = true;
-            Icons.IconPickerOverlay.Find(this)?.ShowLibrary();
-        }
-
         // ── Картинка броском ─────────────────────────────────────────────
         //
         // Картинку шаблона бросают прямо на плитку картинки. У встроенного
@@ -365,12 +393,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (BlockOf(sender) is { } block) Vm?.ClearImage(block.Id);
         }
 
-        private void OnStarClick(object? sender, RoutedEventArgs e)
-        {
-            e.Handled = true;
-            if (BlockOf(sender) is { } block) Vm?.SetProjectTemplate(block.Id);
-        }
-
         private void OnExpandClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
@@ -383,11 +405,16 @@ namespace Writersword.Modules.Characters.Views.Tabs
             BlockOf(sender)?.ToggleExpanded();
         }
 
+        /// <summary>
+        /// Дублировать: копия встаёт в конец своих шаблонов, становится
+        /// выбранной, список прокручивается к ней, а курсор встаёт в её
+        /// название — копию почти всегда сразу переименовывают.
+        /// </summary>
         private void OnDuplicateClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
             if (BlockOf(sender) is { } block && Vm?.DuplicateTemplate(block.Id) is { } copy)
-                ShowBlock(copy, openCustomize: false);
+                ShowBlock(copy, openCustomize: true);
         }
 
         private void OnDeleteClick(object? sender, RoutedEventArgs e)
@@ -395,6 +422,75 @@ namespace Writersword.Modules.Characters.Views.Tabs
             e.Handled = true;
             ClosePopupOf(sender);
             if (BlockOf(sender) is { } block) Vm?.DeleteTemplate(block.Id);
+        }
+
+        /// <summary>Скрыть шаблон или вернуть: скрытый стоит на месте бледнее, но поиск и списки его не видят.</summary>
+        private void OnHideClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (BlockOf(sender) is { } block) Vm?.ToggleHidden(block);
+        }
+
+        // ── Папки ────────────────────────────────────────────────────────
+
+        private static TemplateFolderViewModel? FolderOfSender(object? sender) =>
+            (sender as Control)?.DataContext as TemplateFolderViewModel;
+
+        /// <summary>Щелчок по шапке делает папку текущей: новый шаблон встанет в неё.</summary>
+        private void OnFolderHeadPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (FolderOfSender(sender) is not { } folder) return;
+            if (!e.GetCurrentPoint(sender as Visual).Properties.IsLeftButtonPressed) return;
+            Vm?.SelectFolder(folder);
+        }
+
+        private void OnFolderRenameKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (FolderOfSender(sender) is not { } folder) return;
+
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                folder.ConfirmRename();
+                LeaveInline();
+            }
+            else if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                folder.CancelRename();
+                LeaveInline();
+            }
+        }
+
+        private void OnFolderRenameLostFocus(object? sender, FocusChangedEventArgs e) =>
+            FolderOfSender(sender)?.ConfirmRename();
+
+        private void OnFolderCommentKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (FolderOfSender(sender) is not { } folder) return;
+
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                folder.ConfirmComment();
+                LeaveInline();
+            }
+            else if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                folder.CancelComment();
+                LeaveInline();
+            }
+        }
+
+        private void OnFolderCommentLostFocus(object? sender, FocusChangedEventArgs e) =>
+            FolderOfSender(sender)?.ConfirmComment();
+
+        private void OnDeleteFolderClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            ClosePopupOf(sender);
+            if (FolderOfSender(sender) is { IsCustom: true } folder) Vm?.DeleteFolder(folder.Id);
         }
 
         // ── Анкеты в блоке ───────────────────────────────────────────────
@@ -498,16 +594,15 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 Vm?.OpenAnketa(item.Id);
         }
 
-        // ── Перетаскивание ───────────────────────────────────────────────
+        // ── Перетаскивание значков анкет ─────────────────────────────────
 
-        private enum DragKind { Block, Icon }
+        private enum DragKind { Icon }
 
         private sealed class DragState
         {
             public required DragKind Kind { get; init; }
             public required Control Source { get; init; }
             public required Point Start { get; init; }
-            public TemplateBlockViewModel? Block { get; init; }
             public TemplateAnketaItemViewModel? Icon { get; init; }
             public bool Active { get; set; }
             public int Index { get; set; } = -1;
@@ -543,137 +638,20 @@ namespace Writersword.Modules.Characters.Views.Tabs
             Ghost.IsVisible = false;
             InsertMark.IsVisible = false;
 
-            if (!drag.Active)
-            {
-                // Нажали и отпустили на месте: по шапке — выбрать блок.
-                if (commit && drag.Kind == DragKind.Block && drag.Block is { IsActive: false } block)
-                    Vm?.Activate(block);
-                return;
-            }
+            if (!drag.Active) return;
 
-            if (drag.Block != null) drag.Block.IsDragSource = false;
             if (drag.Icon != null) drag.Icon.IsDragSource = false;
 
             if (!commit || drag.Index < 0 || Vm is not { } vm) return;
 
-            if (drag.Kind == DragKind.Block && drag.Block != null)
-                vm.MoveTemplate(drag.Block.Id, drag.Index);
-            else if (drag.Kind == DragKind.Icon && drag.Icon != null)
+            if (drag.Kind == DragKind.Icon && drag.Icon != null)
                 vm.MoveAnketa(drag.Icon.TemplateId, drag.Icon.Id, drag.Index);
         }
 
-        private void CancelDrag() => FinishDrag(commit: false);
-
-        // Блок — за шапку
-
-        private void OnHeadPressed(object? sender, PointerPressedEventArgs e)
+        private void CancelDrag()
         {
-            if (sender is not Control head || BlockOf(sender) is not { } block) return;
-            if (!e.GetCurrentPoint(head).Properties.IsLeftButtonPressed) return;
-
-            _drag = new DragState
-            {
-                Kind = DragKind.Block,
-                Source = head,
-                Start = e.GetPosition(DragLayer),
-                Block = block
-            };
-
-            e.Pointer.Capture(head);
-            e.Handled = true;
-        }
-
-        private void OnHeadMoved(object? sender, PointerEventArgs e)
-        {
-            if (_drag is not { Kind: DragKind.Block, Block: { } block } drag) return;
-
-            var p = e.GetPosition(DragLayer);
-            if (!drag.Active)
-            {
-                if (Math.Abs(p.X - drag.Start.X) < 5 && Math.Abs(p.Y - drag.Start.Y) < 5) return;
-
-                // Встроенные шаблоны стоят на своих местах.
-                if (!block.IsEditable) return;
-
-                drag.Active = true;
-                block.IsDragSource = true;
-                BeginGhost(block.Icon, block.IconColor, block.Name, block.IconBackground, Models.CharacterIconLook.Tile, block.IconBorder);
-            }
-
-            MoveGhost(p);
-            PlaceBlockMark(drag, p);
-            AutoScroll(e);
-            e.Handled = true;
-        }
-
-        private void OnHeadReleased(object? sender, PointerReleasedEventArgs e)
-        {
-            if (_drag is not { Kind: DragKind.Block }) return;
-
-            FinishDrag(commit: true);
-            e.Pointer.Capture(null);
-            e.Handled = true;
-        }
-
-        private void OnHeadCaptureLost(object? sender, PointerCaptureLostEventArgs e)
-        {
-            if (_drag is { Kind: DragKind.Block }) CancelDrag();
-        }
-
-        /// <summary>
-        /// Место блока среди своих: перед блоком, левее середины которого
-        /// курсор в его ряду, иначе в конец. Полоска встаёт у края блока.
-        /// </summary>
-        private void PlaceBlockMark(DragState drag, Point p)
-        {
-            if (Vm is not { } vm) return;
-
-            var blocks = vm.CustomBlocks;
-            var rects = new List<(int Index, Rect Rect)>();
-            for (int i = 0; i < blocks.Count; i++)
-            {
-                if (!blocks[i].IsMatch) continue;
-                if (CustomList.ContainerFromIndex(i) is not Control c) continue;
-                var border = c.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Classes.Contains("tpl-block"));
-                if (border == null) continue;
-                var tl = border.TranslatePoint(new Point(0, 0), DragLayer);
-                if (tl.HasValue) rects.Add((i, new Rect(tl.Value, border.Bounds.Size)));
-            }
-
-            if (rects.Count == 0)
-            {
-                drag.Index = -1;
-                InsertMark.IsVisible = false;
-                return;
-            }
-
-            var target = blocks.Count;
-            Rect anchor = rects[^1].Rect;
-            bool after = true;
-            foreach (var (index, r) in rects)
-            {
-                if (p.Y < r.Top || (p.Y <= r.Bottom && p.X < r.X + r.Width / 2))
-                {
-                    target = index;
-                    anchor = r;
-                    after = false;
-                    break;
-                }
-            }
-
-            var from = blocks.IndexOf(drag.Block!);
-            if (target == from || target == from + 1)
-            {
-                drag.Index = -1;
-                InsertMark.IsVisible = false;
-                return;
-            }
-
-            drag.Index = target;
-            InsertMark.Height = anchor.Height;
-            Canvas.SetLeft(InsertMark, after ? anchor.Right + 4 : anchor.X - 7);
-            Canvas.SetTop(InsertMark, anchor.Y);
-            InsertMark.IsVisible = true;
+            FinishDrag(commit: false);
+            CancelBlockDrag();
         }
 
         // Значок анкеты — внутри выбранного блока
@@ -695,7 +673,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 Kind = DragKind.Icon,
                 Source = tile,
                 Start = e.GetPosition(DragLayer),
-                Block = null,
                 Icon = item
             };
 
@@ -797,18 +774,605 @@ namespace Writersword.Modules.Characters.Views.Tabs
             InsertMark.IsVisible = true;
         }
 
-        /// <summary>У краёв списка он прокручивается сам — до дальних блоков можно дотащить.</summary>
-        private void AutoScroll(PointerEventArgs e)
-        {
-            const double edge = 40;
-            const double step = 16;
+        // ── Перетаскивание блоков — как карточки персонажей ──────────────
+        //
+        // Нажатие на свой блок сразу приподнимает его тенью. Если указатель
+        // увели раньше паузы удержания — это щелчок или выделение текста, а не
+        // перетаскивание: блок отпускается, нажатие достаётся кнопкам и полям.
+        // После паузы и сдвига за порог блок становится местом-заглушкой, за
+        // курсором едет призрак, а сам блок переезжает в списке на ячейку под
+        // курсором — соседи расступаются и доезжают до новых мест (FLIP). В
+        // проект порядок уходит одним шагом по отпусканию; Esc и потеря захвата
+        // возвращают блок на прежнее место. Встроенные шаблоны стоят на месте.
 
-            var p = e.GetPosition(BlocksScroll);
+        private const double BlockDragThreshold = 8.0;
+        private const long BlockDragHoldDelayMs = 90;
+        private const long BlockPreviewThrottleMs = 100;
+
+        private sealed class BlockDragState
+        {
+            public required TemplateBlockViewModel Block { get; init; }
+            public required Border BlockBorder { get; init; }
+            public required Point Start { get; init; }
+            public required Point GrabOffset { get; init; }
+            public required long PressTick { get; init; }
+            public bool Active { get; set; }
+            public TemplateFolderViewModel? OriginalFolder { get; set; }
+            public int OriginalIndex { get; set; } = -1;
+            public IPointer? Pointer { get; set; }
+        }
+
+        private BlockDragState? _blockDrag;
+        private Border? _pickedBlock;
+        private long _lastBlockPreviewTick;
+        private Point _lastBlockDragPos;
+        private DispatcherTimer? _blockScrollTimer;
+        private double _blockScrollVelocity;
+
+        private void OnBlockDragPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (_drag != null || _blockDrag != null) return;
+            if (Vm is not { } vm) return;
+            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+            if (CharactersReadOnlyGate.IsReadOnly(this)) return;
+
+            Border? blockBorder = null;
+            for (var v = e.Source as Visual; v != null && !ReferenceEquals(v, this); v = v.GetVisualParent())
+            {
+                // Полоса прокрутки — прокрутка, значки анкет таскаются сами,
+                // а в поле, где уже пишут, ведут мышью ради выделения текста.
+                if (v is ScrollBar) return;
+                if (v is Panel panel && panel.Classes.Contains("tpl-ic")) return;
+                if (v is TextBox { IsFocused: true }) return;
+
+                if (v is Border border && border.Classes.Contains("tpl-block"))
+                {
+                    blockBorder = border;
+                    break;
+                }
+            }
+
+            if (blockBorder?.DataContext is not TemplateBlockViewModel block) return;
+            if (!block.IsEditable || vm.FolderOf(block) is not { IsBuiltIn: false }) return;
+
+            _blockDrag = new BlockDragState
+            {
+                Block = block,
+                BlockBorder = blockBorder,
+                Start = e.GetPosition(DragLayer),
+                GrabOffset = e.GetPosition(blockBorder),
+                PressTick = Environment.TickCount64
+            };
+
+            SetPickedBlock(blockBorder);
+        }
+
+        private void OnBlockDragMoved(object? sender, PointerEventArgs e)
+        {
+            if (_blockDrag is not { } drag) return;
+
+            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            {
+                CancelBlockDrag();
+                return;
+            }
+
+            var pos = e.GetPosition(DragLayer);
+
+            if (!drag.Active)
+            {
+                var delta = pos - drag.Start;
+                var beyond = Math.Abs(delta.X) >= BlockDragThreshold || Math.Abs(delta.Y) >= BlockDragThreshold;
+
+                // Увели раньше паузы удержания — щелчок или выделение текста.
+                if (beyond && Environment.TickCount64 - drag.PressTick < BlockDragHoldDelayMs)
+                {
+                    ClearPickedBlock();
+                    _blockDrag = null;
+                    return;
+                }
+
+                if (!beyond) return;
+
+                StartBlockDrag(drag, e);
+                if (_blockDrag == null) return;
+            }
+
+            _lastBlockDragPos = pos;
+            MoveBlockGhost(drag, pos);
+            UpdateBlockScrollVelocity(pos);
+
+            var now = Environment.TickCount64;
+            if (now - _lastBlockPreviewTick >= BlockPreviewThrottleMs)
+            {
+                _lastBlockPreviewTick = now;
+                UpdateBlockPreview(drag, pos);
+            }
+
+            e.Handled = true;
+        }
+
+        private void StartBlockDrag(BlockDragState drag, PointerEventArgs e)
+        {
+            if (Vm is not { } vm)
+            {
+                CancelBlockDrag();
+                return;
+            }
+
+            drag.OriginalFolder = vm.FolderOf(drag.Block);
+            drag.OriginalIndex = drag.OriginalFolder?.Blocks.IndexOf(drag.Block) ?? -1;
+            if (drag.OriginalFolder == null || drag.OriginalIndex < 0)
+            {
+                CancelBlockDrag();
+                return;
+            }
+
+            drag.Active = true;
+            drag.Pointer = e.Pointer;
+
+            // Захват — только теперь: при простом щелчке захват на вкладке
+            // гасил бы щелчки кнопок блока. Заодно он отбирает указатель у
+            // поля названия, если блок взяли за него.
+            e.Pointer.Capture(this);
+
+            // Поле названия или описания, за которое взяли блок, отпускает
+            // фокус: ввод в нём закончен, и Esc достаётся перетаскиванию.
+            LeaveInline();
+
+            ClearPickedBlock();
+            ShowBlockGhost(drag, e.GetPosition(DragLayer));
+            drag.Block.IsDragSource = true;
+
+            _lastBlockPreviewTick = Environment.TickCount64;
+            StartBlockAutoScroll();
+        }
+
+        private void OnBlockDragReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (_blockDrag is not { } drag) return;
+            _blockDrag = null;
+
+            if (!drag.Active)
+            {
+                // Щелчок: выбор блока и кнопки отработают своим чередом.
+                ClearPickedBlock();
+                return;
+            }
+
+            // Место под курсором в момент отпускания — даже если троттлинг
+            // пересчёта ещё не успел до него дойти.
+            UpdateBlockPreview(drag, e.GetPosition(DragLayer));
+
+            EndBlockDragVisuals(drag);
+            Vm?.CommitArrangement();
+
+            e.Handled = true;
+            e.Pointer.Capture(null);
+        }
+
+        private void OnBlockDragCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+        {
+            // Захват теряют и поля внутри блока, когда его забирает вкладка, —
+            // это не повод отменять. Отменяет только потеря захвата самой вкладкой.
+            if (!ReferenceEquals(e.Source, this)) return;
+            if (_blockDrag is { Active: true }) CancelBlockDrag();
+        }
+
+        private void OnBlockDragKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Escape || _blockDrag is not { Active: true }) return;
+
+            CancelBlockDrag();
+            e.Handled = true;
+        }
+
+        private void OnBlockDragWheel(object? sender, PointerWheelEventArgs e)
+        {
+            if (_blockDrag is not { Active: true } drag) return;
+
             var offset = BlocksScroll.Offset;
-            if (p.Y < edge && offset.Y > 0)
-                BlocksScroll.Offset = offset.WithY(Math.Max(0, offset.Y - step));
-            else if (p.Y > BlocksScroll.Bounds.Height - edge)
-                BlocksScroll.Offset = offset.WithY(offset.Y + step);
+            var maxY = Math.Max(0, BlocksScroll.Extent.Height - BlocksScroll.Viewport.Height);
+            BlocksScroll.Offset = offset.WithY(Math.Clamp(offset.Y - e.Delta.Y * 60.0, 0, maxY));
+
+            var pos = e.GetPosition(DragLayer);
+            _lastBlockDragPos = pos;
+            MoveBlockGhost(drag, pos);
+
+            var now = Environment.TickCount64;
+            if (now - _lastBlockPreviewTick >= BlockPreviewThrottleMs)
+            {
+                _lastBlockPreviewTick = now;
+                UpdateBlockPreview(drag, pos);
+            }
+
+            e.Handled = true;
+        }
+
+        /// <summary>
+        /// Отменить перетаскивание блока: блок возвращается на прежнее место,
+        /// соседи доезжают обратно. До старта — просто снять тень.
+        /// </summary>
+        private void CancelBlockDrag()
+        {
+            var drag = _blockDrag;
+            _blockDrag = null;
+            ClearPickedBlock();
+            if (drag is not { Active: true }) return;
+
+            EndBlockDragVisuals(drag);
+
+            if (Vm is { } vm && drag.OriginalFolder != null && drag.OriginalIndex >= 0)
+            {
+                var current = vm.FolderOf(drag.Block);
+                var index = current?.Blocks.IndexOf(drag.Block) ?? -1;
+                if (!ReferenceEquals(current, drag.OriginalFolder) || index != drag.OriginalIndex)
+                {
+                    var snapshot = SnapshotBlockPositions();
+                    vm.PreviewPlaceBlock(drag.Block, drag.OriginalFolder, drag.OriginalIndex);
+                    BeginBlockFlip(snapshot);
+                }
+            }
+
+            drag.Pointer?.Capture(null);
+        }
+
+        private void EndBlockDragVisuals(BlockDragState drag)
+        {
+            SetDragOverFolder(null);
+            drag.Block.IsDragSource = false;
+            BlockGhost.IsVisible = false;
+            StopBlockAutoScroll();
+        }
+
+        private void SetPickedBlock(Border border)
+        {
+            ClearPickedBlock();
+            _pickedBlock = border;
+            if (!border.Classes.Contains("picked")) border.Classes.Add("picked");
+        }
+
+        private void ClearPickedBlock()
+        {
+            if (_pickedBlock == null) return;
+            _pickedBlock.Classes.Remove("picked");
+            _pickedBlock = null;
+        }
+
+        // Призрак
+
+        private void ShowBlockGhost(BlockDragState drag, Point pos)
+        {
+            var block = drag.Block;
+
+            BlockGhost.Width = drag.BlockBorder.Bounds.Width > 0 ? drag.BlockBorder.Bounds.Width : 404;
+            BlockGhost.BorderBrush = block.ColorBrush;
+
+            BlockGhostBadge.Icon = block.Icon;
+            BlockGhostBadge.IconColor = block.IconColor;
+            BlockGhostBadge.IconBackground = block.IconBackground;
+            BlockGhostBadge.IconBorder = block.IconBorder;
+            BlockGhostBadge.IsVisible = !block.HasImage;
+
+            BlockGhostImage.Source = block.Image;
+            BlockGhostImageHost.IsVisible = block.HasImage;
+
+            BlockGhostName.Text = block.Name;
+            BlockGhostDescription.Text = block.Description;
+            BlockGhostDescription.IsVisible = !string.IsNullOrWhiteSpace(block.Description);
+
+            MoveBlockGhost(drag, pos);
+            BlockGhost.IsVisible = true;
+        }
+
+        /// <summary>
+        /// Призрак держится за то же место, за которое взяли блок: по ширине
+        /// он совпадает с блоком, а по высоте — короче (только шапка), поэтому
+        /// курсор не уходит ниже его середины.
+        /// </summary>
+        private void MoveBlockGhost(BlockDragState drag, Point pos)
+        {
+            var ghostHeight = BlockGhost.Bounds.Height > 0 ? BlockGhost.Bounds.Height : 92;
+            Canvas.SetLeft(BlockGhost, pos.X - drag.GrabOffset.X);
+            Canvas.SetTop(BlockGhost, pos.Y - Math.Min(drag.GrabOffset.Y, ghostHeight / 2.0));
+        }
+
+        // Место под курсором
+
+        /// <summary>
+        /// Место под курсором — как у карточек. Сначала раздел: тот, в чьей
+        /// полосе курсор (между разделами — ближний; встроенные блоков не
+        /// принимают, и над ними берётся ближний свой). Свёрнутый раздел
+        /// подсвечивается, и блок уходит в его конец. В развёрнутом блок
+        /// держится строки курсора и встаёт в ячейку, над которой курсор:
+        /// левее всех — в первую ячейку строки, правее всех — в последнюю, а
+        /// в чужом разделе правее последней ячейки последней строки — в
+        /// конец. Строку меняет только движение по вертикали. Заглушка самого
+        /// блока — обычная ячейка: курсор над ней ничего не двигает. Пустой
+        /// раздел принимает блок первым.
+        /// </summary>
+        private void UpdateBlockPreview(BlockDragState drag, Point pos)
+        {
+            if (Vm is not { } vm) return;
+            if (vm.FolderOf(drag.Block) is not { } current) return;
+
+            (TemplateFolderViewModel Folder, ItemsControl List, Rect Rect)? best = null;
+            var bestDistance = double.MaxValue;
+            foreach (var (folder, list, section) in Sections())
+            {
+                if (!folder.AcceptsBlocks || !section.IsEffectivelyVisible) continue;
+                if (section.Bounds.Height <= 1) continue;
+
+                var tl = section.TranslatePoint(new Point(0, 0), DragLayer);
+                if (!tl.HasValue) continue;
+
+                var rect = new Rect(tl.Value, section.Bounds.Size);
+                var distance = pos.Y < rect.Top ? rect.Top - pos.Y : pos.Y > rect.Bottom ? pos.Y - rect.Bottom : 0;
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = (folder, list, rect);
+                }
+            }
+            if (best is not { } target) return;
+
+            var targetFolder = target.Folder;
+            var sameFolder = ReferenceEquals(targetFolder, current);
+
+            // Свёрнутый раздел: подсветка шапки, блок — в конец раздела.
+            if (!targetFolder.ShowBlocks)
+            {
+                SetDragOverFolder(targetFolder);
+                if (sameFolder) return;
+
+                var collapsedSnapshot = SnapshotBlockPositions();
+                vm.PreviewPlaceBlock(drag.Block, targetFolder, targetFolder.Blocks.Count);
+                BeginBlockFlip(collapsedSnapshot);
+                return;
+            }
+
+            SetDragOverFolder(null);
+
+            var cells = new List<(int Index, Rect Rect)>();
+            for (int i = 0; i < targetFolder.Blocks.Count; i++)
+            {
+                if (target.List.ContainerFromIndex(i) is not Control container) continue;
+                if (container.Bounds.Width <= 1 || container.Bounds.Height <= 1) continue;
+                var tl = container.TranslatePoint(new Point(0, 0), DragLayer);
+                if (tl.HasValue) cells.Add((i, new Rect(tl.Value, container.Bounds.Size)));
+            }
+
+            if (cells.Count == 0)
+            {
+                // Пустой раздел (или в нём всё спрятано поиском) — блок первым.
+                if (sameFolder) return;
+
+                var emptySnapshot = SnapshotBlockPositions();
+                vm.PreviewPlaceBlock(drag.Block, targetFolder, 0);
+                BeginBlockFlip(emptySnapshot);
+                return;
+            }
+
+            // Строки — по верхнему краю ячеек.
+            var rows = cells
+                .GroupBy(c => Math.Round(c.Rect.Top))
+                .OrderBy(g => g.Key)
+                .Select(g => g.OrderBy(c => c.Rect.X).ToList())
+                .ToList();
+
+            List<(int Index, Rect Rect)>? row = null;
+            var rowDistance = double.MaxValue;
+            foreach (var candidate in rows)
+            {
+                var top = candidate.Min(c => c.Rect.Top);
+                var bottom = candidate.Max(c => c.Rect.Bottom);
+                var distance = pos.Y < top ? top - pos.Y : pos.Y > bottom ? pos.Y - bottom : 0;
+                if (distance < rowDistance)
+                {
+                    rowDistance = distance;
+                    row = candidate;
+                }
+            }
+            if (row == null) return;
+
+            int index;
+            if (pos.X < row[0].Rect.Right)
+                index = row[0].Index;
+            else
+            {
+                index = row[^1].Index;
+                var beyond = true;
+                foreach (var cell in row)
+                {
+                    if (pos.X < cell.Rect.Right)
+                    {
+                        index = cell.Index;
+                        beyond = false;
+                        break;
+                    }
+                }
+
+                // Правее последней ячейки последней строки чужого раздела —
+                // в его конец, а не на место последнего блока.
+                if (beyond && !sameFolder && ReferenceEquals(row, rows[^1]))
+                    index = targetFolder.Blocks.Count;
+            }
+
+            if (sameFolder && targetFolder.Blocks.IndexOf(drag.Block) == index) return;
+
+            var snapshot = SnapshotBlockPositions();
+            vm.PreviewPlaceBlock(drag.Block, targetFolder, index);
+            BeginBlockFlip(snapshot);
+        }
+
+        /// <summary>Подсветить шапку свёрнутого раздела, над которым тащат блок; null — снять.</summary>
+        private void SetDragOverFolder(TemplateFolderViewModel? folder)
+        {
+            if (Vm is not { } vm) return;
+            foreach (var f in vm.Folders)
+                f.IsDragOver = ReferenceEquals(f, folder);
+        }
+
+        // FLIP
+
+        private IEnumerable<(TemplateBlockViewModel Block, Border Border)> LiveCustomBlocks()
+        {
+            foreach (var (folder, list, _) in Sections())
+            {
+                if (folder.IsBuiltIn) continue;
+
+                for (int i = 0; i < folder.Blocks.Count; i++)
+                {
+                    if (list.ContainerFromIndex(i) is not Control container) continue;
+                    var border = container.GetVisualDescendants()
+                        .OfType<Border>()
+                        .FirstOrDefault(b => b.Classes.Contains("tpl-block"));
+                    if (border?.DataContext is TemplateBlockViewModel block)
+                        yield return (block, border);
+                }
+            }
+        }
+
+        // Видимые места блоков вместе с текущим сдвигом: блок, который ещё
+        // доезжает, начнёт следующий доезд оттуда, где его видно. Места —
+        // относительно всего списка разделов: блок, переехавший в другой
+        // раздел, доезжает через границу разделов.
+        private Dictionary<TemplateBlockViewModel, Point> SnapshotBlockPositions()
+        {
+            var result = new Dictionary<TemplateBlockViewModel, Point>();
+            foreach (var (block, border) in LiveCustomBlocks())
+            {
+                var pt = border.TranslatePoint(new Point(0, 0), FoldersList);
+                if (pt.HasValue) result[block] = pt.Value;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Доезд после перестановки — как у карточек: раскладка прогоняется
+        /// сразу, каждый сдвинутый блок ставится сдвигом туда, где его было
+        /// видно, и на следующем кадре едет к нулю. Сбрасывается только тот
+        /// сдвиг, который поставлен здесь: если блок уже получил новый, его
+        /// доведёт новый доезд.
+        /// </summary>
+        private void BeginBlockFlip(Dictionary<TemplateBlockViewModel, Point> before)
+        {
+            if (before.Count == 0) return;
+
+            UpdateLayout();
+
+            var toAnimate = new List<(TranslateTransform Transform, double Dx, double Dy)>();
+
+            foreach (var (block, border) in LiveCustomBlocks())
+            {
+                if (border.RenderTransform is not TranslateTransform tt) continue;
+
+                if (!before.TryGetValue(block, out var was))
+                {
+                    if (tt.X != 0.0 || tt.Y != 0.0)
+                    {
+                        tt.X = 0.0;
+                        tt.Y = 0.0;
+                    }
+                    continue;
+                }
+
+                double oldX = tt.X, oldY = tt.Y;
+                var saved = tt.Transitions;
+                tt.Transitions = null;
+                tt.X = 0.0;
+                tt.Y = 0.0;
+
+                var now = border.TranslatePoint(new Point(0, 0), FoldersList);
+                if (!now.HasValue)
+                {
+                    tt.X = oldX;
+                    tt.Y = oldY;
+                    tt.Transitions = saved;
+                    continue;
+                }
+
+                var dx = was.X - now.Value.X;
+                var dy = was.Y - now.Value.Y;
+
+                if (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5)
+                {
+                    tt.X = oldX;
+                    tt.Y = oldY;
+                    tt.Transitions = saved;
+                    continue;
+                }
+
+                tt.X = dx;
+                tt.Y = dy;
+                tt.Transitions = saved;
+                toAnimate.Add((tt, dx, dy));
+            }
+
+            if (toAnimate.Count == 0) return;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                foreach (var (tt, dx, dy) in toAnimate)
+                    if (tt.X == dx && tt.Y == dy) { tt.X = 0.0; tt.Y = 0.0; }
+            }, DispatcherPriority.Render);
+        }
+
+        // Автопрокрутка: чем ближе курсор к верхнему или нижнему краю списка,
+        // тем быстрее он едет — и пока курсор стоит у края, тоже.
+
+        private void StartBlockAutoScroll()
+        {
+            if (_blockScrollTimer == null)
+            {
+                _blockScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+                _blockScrollTimer.Tick += OnBlockAutoScrollTick;
+            }
+            _blockScrollVelocity = 0;
+            _blockScrollTimer.Start();
+        }
+
+        private void StopBlockAutoScroll()
+        {
+            _blockScrollTimer?.Stop();
+            _blockScrollVelocity = 0;
+        }
+
+        private void UpdateBlockScrollVelocity(Point pos)
+        {
+            _blockScrollVelocity = 0;
+            var tl = BlocksScroll.TranslatePoint(new Point(0, 0), DragLayer);
+            if (!tl.HasValue) return;
+
+            const double zone = 90.0;
+            const double maxSpeed = 24.0;
+            var top = tl.Value.Y;
+            var bottom = top + BlocksScroll.Bounds.Height;
+
+            if (pos.Y < top + zone)
+                _blockScrollVelocity = -maxSpeed * Math.Clamp((top + zone - pos.Y) / zone, 0, 1);
+            else if (pos.Y > bottom - zone)
+                _blockScrollVelocity = maxSpeed * Math.Clamp((pos.Y - (bottom - zone)) / zone, 0, 1);
+        }
+
+        private void OnBlockAutoScrollTick(object? sender, EventArgs e)
+        {
+            if (_blockDrag is not { Active: true } drag || Math.Abs(_blockScrollVelocity) < 0.5) return;
+
+            var offset = BlocksScroll.Offset;
+            var maxY = Math.Max(0, BlocksScroll.Extent.Height - BlocksScroll.Viewport.Height);
+            var newY = Math.Clamp(offset.Y + _blockScrollVelocity, 0, maxY);
+            if (Math.Abs(newY - offset.Y) < 0.1) return;
+
+            BlocksScroll.Offset = offset.WithY(newY);
+            MoveBlockGhost(drag, _lastBlockDragPos);
+
+            var now = Environment.TickCount64;
+            if (now - _lastBlockPreviewTick >= BlockPreviewThrottleMs)
+            {
+                _lastBlockPreviewTick = now;
+                UpdateBlockPreview(drag, _lastBlockDragPos);
+            }
         }
     }
 }

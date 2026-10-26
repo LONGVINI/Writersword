@@ -126,6 +126,9 @@ namespace Writersword.Modules.TextEditor.Models.Page
 
         /// <summary>Показывать разделительную линию между колонками.</summary>
         public bool ShowSeparator { get; set; } = false;
+
+        /// <summary>Цвет разделительной линии — код подборщика цвета; null — авто (чёрная).</summary>
+        public string? SeparatorColor { get; set; }
     }
 
     /// <summary>

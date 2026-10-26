@@ -2344,11 +2344,12 @@ namespace Writersword.Modules.TextEditor.Document
 
             var (dxPt, _) = PageVisualDelta(pageIdx, pages);
 
-            // Лист с переплётом справа держит текст левее на ширину переплёта: ноль
-            // линейки уезжает вместе с ним, и её поля встают по тексту этого листа.
-            float gutterShiftPt = pageIdx >= 0 && pageIdx < pages.Count
-                ? pages[pageIdx].GutterShiftPt
-                : 0f;
+            // Сдвиг листа с переплётом справа (PageRect.GutterShiftPt) сюда не входит:
+            // бумага стоит на месте, левее уходит только текст, а это линейка уже знает
+            // по полям листа (NotifyRulerSheet: левое поле без переплёта, правое — с
+            // ним). Раньше сдвиг клали и сюда, и линейка на чётных листах уезжала влево
+            // на ширину переплёта дважды: её поля вставали левее текста, а справа ей не
+            // хватало листа.
 
             // Левый край — у самого листа каретки. Лист раздела другой ширины стоит по
             // центру холста своей шириной, левее или правее листа документа: от края
@@ -2358,7 +2359,7 @@ namespace Writersword.Modules.TextEditor.Document
                 ? pages[pageIdx].PadLeftPt
                 : _layoutPageXPt;
 
-            return (pageLeftPt + dxPt + gutterShiftPt) * PtToPx * Zoom
+            return (pageLeftPt + dxPt) * PtToPx * Zoom
                    - (_parentScrollViewer?.Offset.X ?? 0);
         }
 
@@ -3762,6 +3763,22 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // Лист или колонки раздела сменились командой (поля, размер, ориентация,
+            // колонки, линейка). Кеш раскладок не чистится: он проверяется по ширине, и
+            // абзацы других разделов, где ничего не менялось, остаются готовыми. Раньше
+            // кеш чистился целиком, и смена колонок одного раздела перешейпливала всю
+            // книгу, а затем раскладывала её синхронно — по десять секунд на клик.
+            // Теперь как после жеста по полю: видимые листы встают сразу, остальной
+            // документ догоняет прогревом (SettleMarginChange). В чтении лист считается
+            // по окну, и там по-прежнему полный сброс ниже.
+            if (e.PropertyName == nameof(DocumentViewModel.PageSettings) && !ReadingActive && !SpreadMode)
+            {
+                UpdateHeaderFooterReserve();
+                InvalidateCellLayoutCaches();
+                SettleMarginChange();
+                return;
+            }
+
             if (e.PropertyName is nameof(DocumentViewModel.ViewMode)
                                or nameof(DocumentViewModel.ReadingFlow)
                                or nameof(DocumentViewModel.IsSpreadReading)
@@ -4089,7 +4106,12 @@ namespace Writersword.Modules.TextEditor.Document
             // отмены ждут готовой раскладки — у них полная идёт сразу, как прежде.
             if (quickUpdated && _pendingFocusBlock is null && _pendingCaretRestore is null)
             {
-                _typingRebuild = runRebuild;
+                // В листах раскладка после паузы в наборе — фоновая: листы
+                // перекладываются порциями, и окно не замирает на время раскладки всей
+                // книги (DocumentCanvas.BackgroundLayout).
+                _typingRebuild = CanLayoutInBackground
+                    ? () => RebuildLayoutsInBackground(AfterTypingBackgroundRebuild)
+                    : runRebuild;
                 _typingRebuildTimer ??= CreateTypingRebuildTimer();
                 _typingRebuildTimer.Stop();
                 _typingRebuildTimer.Start();
@@ -4193,7 +4215,13 @@ namespace Writersword.Modules.TextEditor.Document
             // лейаутов. Все содержательные изменения (ввод, форматирование, таблицы,
             // смена документа, ширины, режима, стилей) идут через прямые вызовы
             // RebuildLayouts либо меняют поля отпечатка — пропуск безопасен.
-            if (!_zooming && !LayoutsMatchCurrentState())
+            // Идёт фоновая пересборка: раскладку собирает она, measure её не
+            // перебивает. Сменилась ширина холста — пересборка начинается заново.
+            if (BackgroundLayoutRunning)
+            {
+                RestartBackgroundLayoutIfWidthChanged();
+            }
+            else if (!_zooming && !LayoutsMatchCurrentState())
             {
                 // Холодный кеш большого документа: синхронный пересчёт зашейпил бы
                 // тысячи абзацев и заблокировал UI-поток на секунды. Вместо этого
@@ -4715,8 +4743,13 @@ namespace Writersword.Modules.TextEditor.Document
                     warmupMs, DocVm?.Paragraphs.Count ?? 0);
             }
 
-            // Пересчёт через measure: раскладка соберётся из тёплого кеша.
-            InvalidateMeasure();
+            // Пересчёт из тёплого кеша. В листах — фоновой пересборкой: проход по всей
+            // книге идёт порциями, окно не замирает (DocumentCanvas.BackgroundLayout).
+            // В остальных режимах — через measure, как раньше.
+            if (CanLayoutInBackground)
+                RebuildLayoutsInBackground();
+            else
+                InvalidateMeasure();
             InvalidateFull();
 
             // Проход по номерам оглавления мог прийти во время прогрева и уйти ни с чем:
@@ -4727,6 +4760,10 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void RebuildLayouts()
         {
+            // Раскладка собирается сразу — идущая по частям бросается: эта свежее
+            // (DocumentCanvas.BackgroundLayout).
+            AbandonBackgroundLayout(keepDone: false);
+
             long perfTs = PerfNow();
             try
             {
@@ -4739,6 +4776,16 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         private void RebuildLayoutsCore()
+        {
+            foreach (var _ in RebuildLayoutsCoreSteps(null)) { }
+        }
+
+        /// <summary>
+        /// Пересборка раскладки шагами: в режиме листов проход отдаёт ход диспетчеру,
+        /// когда <paramref name="shouldYield"/> ответит «пора» (DocumentCanvas.BackgroundLayout).
+        /// Без него — целиком за один вызов.
+        /// </summary>
+        private IEnumerable<bool> RebuildLayoutsCoreSteps(Func<bool>? shouldYield)
         {
             if (DocVm is null)
             {
@@ -4761,7 +4808,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _layoutsFingerprintParagraphCount = -1;
                 _layoutsFingerprintWidth = double.NaN;
                 _layoutsFingerprintViewMode = (EditorViewMode)(-1);
-                return;
+                yield break;
             }
 
             if (_styleResolver is null)
@@ -4782,6 +4829,10 @@ namespace Writersword.Modules.TextEditor.Document
             if (SpreadMode) ComputeSpreadPageSize();
             SyncReadingShapeSignature();
 
+            // Ширины абзацев — по нынешним параметрам разделов, до ворот прогрева
+            // (DocumentCanvas.Sections, PredictSectionTextWidths).
+            PredictSectionTextWidths();
+
             // Ворота холодного пересчёта для ПРЯМЫХ вызовов (смена зума, структуры,
             // подписок во время загрузки документа): при холодном кеше полный проход
             // зашейпил бы тысячи абзацев синхронно на UI-потоке (~секунда), в обход
@@ -4790,7 +4841,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (ShouldWarmupBeforeRebuild())
             {
                 StartLayoutWarmup();
-                return;
+                yield break;
             }
 
             // Диагностика провисаний UI-потока: полный пересчёт раскладки выполняется
@@ -4816,7 +4867,7 @@ namespace Writersword.Modules.TextEditor.Document
             switch (DocVm.ViewMode)
             {
                 case EditorViewMode.Page:
-                    RebuildPageMode();
+                    foreach (var step in RebuildPageModeSteps(shouldYield)) yield return step;
                     break;
                 case EditorViewMode.Draft:
                 case EditorViewMode.Web:

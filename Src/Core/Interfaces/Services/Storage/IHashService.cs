@@ -21,5 +21,15 @@
         /// <param name="text">Текст для хеширования</param>
         /// <returns>SHA256 хеш в виде строки (64 символа)</returns>
         string ComputeHashFromString(string text);
+
+        /// <summary>
+        /// Быстрый отпечаток данных: объект сериализуется (Newtonsoft, настройки по
+        /// умолчанию) прямо в SHA256, без нормализации и без промежуточных строк.
+        /// Одинаков для одного и того же состояния объекта одного типа; для сравнения
+        /// данных разного вида (объект и JSON-строка) не годится — для этого ComputeHash.
+        /// </summary>
+        /// <param name="data">Данные для отпечатка</param>
+        /// <returns>SHA256 в виде строки (64 символа)</returns>
+        string ComputeFingerprint(object? data);
     }
 }

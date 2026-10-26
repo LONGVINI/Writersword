@@ -12,6 +12,7 @@ using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Settings;
+using Writersword.Infrastructure.Services.Memory;
 
 namespace Writersword.ViewModels.Settings
 {
@@ -39,6 +40,10 @@ namespace Writersword.ViewModels.Settings
         private string _cachingInterval;
         private bool _autoSaveEnabled;
         private string _autoSaveInterval;
+
+        private MemoryLevelOption _selectedMemoryLevel;
+        private bool _customMemoryLimitEnabled;
+        private int _customMemoryLimitMb;
 
         // ── Язык ─────────────────────────────────────────────────────────
 
@@ -164,6 +169,102 @@ namespace Writersword.ViewModels.Settings
             }
         }
 
+        // ── Память ────────────────────────────────────────────────────────
+
+        /// <summary>Уровни расхода оперативной памяти.</summary>
+        public List<MemoryLevelOption> MemoryLevels { get; } = new()
+        {
+            new MemoryLevelOption(Strings.Settings_General_Memory_Economy, MemoryLevel.Economy),
+            new MemoryLevelOption(Strings.Settings_General_Memory_Normal, MemoryLevel.Normal),
+            new MemoryLevelOption(Strings.Settings_General_Memory_Fast, MemoryLevel.Fast)
+        };
+
+        /// <summary>
+        /// Выбранный уровень. Применяется сразу: срок жизни неактивных вкладок и
+        /// посчитанный лимит меняются на следующем тике выгрузки.
+        /// </summary>
+        public MemoryLevelOption SelectedMemoryLevel
+        {
+            get => _selectedMemoryLevel;
+            set
+            {
+                if (value == null || _selectedMemoryLevel == value) return;
+                this.RaiseAndSetIfChanged(ref _selectedMemoryLevel, value);
+                SavePerformanceSettings();
+                RaiseMemoryLimitChanged();
+            }
+        }
+
+        /// <summary>
+        /// Свой лимит памяти (дополнительная настройка). Пока выключено, ползунок
+        /// показывает лимит, посчитанный от объёма памяти и уровня. При включении
+        /// ползунок начинает с этого же значения.
+        /// </summary>
+        public bool CustomMemoryLimitEnabled
+        {
+            get => _customMemoryLimitEnabled;
+            set
+            {
+                if (_customMemoryLimitEnabled == value) return;
+                if (value && _customMemoryLimitMb < MemoryBudget.MinLimitMb)
+                    _customMemoryLimitMb = MemoryBudget.AutoLimitMb(_selectedMemoryLevel.Level);
+
+                this.RaiseAndSetIfChanged(ref _customMemoryLimitEnabled, value);
+                SavePerformanceSettings();
+                RaiseMemoryLimitChanged();
+            }
+        }
+
+        /// <summary>Наименьшее значение ползунка лимита, МБ.</summary>
+        public double MemoryLimitMinimum => MemoryBudget.MinLimitMb;
+
+        /// <summary>Наибольшее значение ползунка лимита — вся память компьютера, МБ.</summary>
+        public double MemoryLimitMaximum => MemoryBudget.SliderMaximumMb;
+
+        /// <summary>Шаг ползунка лимита, МБ.</summary>
+        public double MemoryLimitStep => MemoryBudget.LimitStepMb;
+
+        /// <summary>
+        /// Значение ползунка: свой лимит, если он включён, иначе посчитанный.
+        /// Двигать ползунок можно только при включённом своём лимите.
+        /// </summary>
+        public double MemoryLimitMb
+        {
+            get => _customMemoryLimitEnabled
+                ? _customMemoryLimitMb
+                : MemoryBudget.AutoLimitMb(_selectedMemoryLevel.Level);
+            set
+            {
+                if (!_customMemoryLimitEnabled) return;
+
+                int mb = MemoryBudget.RoundToStep((int)Math.Round(value));
+                mb = Math.Clamp(mb, MemoryBudget.MinLimitMb, MemoryBudget.SliderMaximumMb);
+                if (mb == _customMemoryLimitMb) return;
+
+                _customMemoryLimitMb = mb;
+                SavePerformanceSettings();
+                RaiseMemoryLimitChanged();
+            }
+        }
+
+        /// <summary>Подпись значения лимита: «1024 МБ» или «1024 МБ · авто».</summary>
+        public string MemoryLimitText
+        {
+            get
+            {
+                var text = string.Format(Strings.Settings_General_Memory_LimitFormat, (int)MemoryLimitMb);
+                return _customMemoryLimitEnabled
+                    ? text
+                    : text + " · " + Strings.Settings_General_Memory_Auto;
+            }
+        }
+
+        private void RaiseMemoryLimitChanged()
+        {
+            this.RaisePropertyChanged(nameof(MemoryLimitMb));
+            this.RaisePropertyChanged(nameof(MemoryLimitText));
+        }
+
         // ── Конструктор ───────────────────────────────────────────────────
 
         public GeneralSettingsViewModel()
@@ -195,6 +296,11 @@ namespace Writersword.ViewModels.Settings
             _cachingInterval = perf.CachingIntervalSeconds.ToString();
             _autoSaveEnabled = perf.AutoSaveEnabled;
             _autoSaveInterval = perf.AutoSaveIntervalSeconds.ToString();
+
+            _selectedMemoryLevel = MemoryLevels.Find(o => (int)o.Level == perf.MemoryLevel)
+                                   ?? MemoryLevels.Find(o => o.Level == MemoryLevel.Normal)!;
+            _customMemoryLimitEnabled = perf.CustomMemoryLimitEnabled;
+            _customMemoryLimitMb = perf.CustomMemoryLimitMb;
         }
 
         // ── Применение язык / тема ────────────────────────────────────────
@@ -309,10 +415,16 @@ namespace Writersword.ViewModels.Settings
                     CachingEnabled = _cachingEnabled,
                     CachingIntervalSeconds = ParseInterval(_cachingInterval, 10),
                     AutoSaveEnabled = _autoSaveEnabled,
-                    AutoSaveIntervalSeconds = ParseInterval(_autoSaveInterval, 120)
+                    AutoSaveIntervalSeconds = ParseInterval(_autoSaveInterval, 120),
+                    MemoryLevel = (int)_selectedMemoryLevel.Level,
+                    CustomMemoryLimitEnabled = _customMemoryLimitEnabled,
+                    CustomMemoryLimitMb = _customMemoryLimitMb
                 };
                 _settingsService.SaveModuleSettings("performance", settings);
                 _settingsService.Save();
+
+                // Бюджет памяти применяется сразу: выгрузка вкладок читает его на каждом тике.
+                MemoryBudget.Apply(settings);
             }
             catch (Exception ex)
             {
@@ -378,6 +490,19 @@ namespace Writersword.ViewModels.Settings
         {
             DisplayName = displayName;
             Code = code;
+        }
+    }
+
+    /// <summary>Уровень расхода памяти — отображаемое название и значение.</summary>
+    public class MemoryLevelOption
+    {
+        public string DisplayName { get; }
+        public MemoryLevel Level { get; }
+
+        public MemoryLevelOption(string displayName, MemoryLevel level)
+        {
+            DisplayName = displayName;
+            Level = level;
         }
     }
 

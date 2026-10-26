@@ -373,6 +373,7 @@ namespace Writersword.Modules.Characters.Services
             if (template == null || template.IsBuiltIn) return;
 
             _templates.Remove(template);
+            _hiddenTemplateIds.Remove(id);
         }
 
         public void MoveTemplate(string id, int index)
@@ -419,6 +420,323 @@ namespace Writersword.Modules.Characters.Services
             }
 
             _logger.Debug("Templates loaded: {Count}", _templates.Count);
+        }
+
+        public void ArrangeTemplates(IReadOnlyList<(string Id, string FolderId)> order)
+        {
+            if (IsReadOnly("Templates arrange")) return;
+            if (order == null) return;
+
+            var custom = _templates.Where(t => !t.IsBuiltIn).ToList();
+            var arranged = new List<CharacterTemplate>(custom.Count);
+
+            foreach (var (id, folderId) in order)
+            {
+                var template = custom.FirstOrDefault(t => t.Id == id);
+                if (template == null || arranged.Contains(template)) continue;
+
+                template.FolderId = folderId ?? string.Empty;
+                arranged.Add(template);
+            }
+
+            foreach (var template in custom)
+                if (!arranged.Contains(template))
+                    arranged.Add(template);
+
+            // Встроенные держатся впереди, свои — следом в новом порядке.
+            var builtIn = _templates.Where(t => t.IsBuiltIn).ToList();
+            _templates.Clear();
+            _templates.AddRange(builtIn);
+            _templates.AddRange(arranged);
+        }
+
+        // ── Папки шаблонов ────────────────────────────────────────────────
+        //
+        // Папка — только место на вкладке шаблонов: персонажу шаблон
+        // подключают одинаково, в какой бы папке он ни лежал. Шаблон знает
+        // свою папку сам; папку, которой больше нет, он считает отсутствующей
+        // и лежит в «Моих шаблонах».
+
+        private readonly List<CharacterTemplateFolder> _templateFolders = new();
+
+        public IReadOnlyList<CharacterTemplateFolder> GetTemplateFolders() => _templateFolders;
+
+        public CharacterTemplateFolder CreateTemplateFolder(string name)
+        {
+            var folder = new CharacterTemplateFolder
+            {
+                Name = string.IsNullOrWhiteSpace(name) ? "Новая папка" : name.Trim()
+            };
+
+            if (IsReadOnly("Template folder create")) return folder;
+
+            _templateFolders.Add(folder);
+            _logger.Debug("Template folder created: {Name}", folder.Name);
+            return folder;
+        }
+
+        public void UpdateTemplateFolder(CharacterTemplateFolder folder)
+        {
+            if (folder == null) return;
+            if (IsReadOnly("Template folder update")) return;
+
+            var index = _templateFolders.FindIndex(f => f.Id == folder.Id);
+            if (index < 0) return;
+            _templateFolders[index] = folder;
+        }
+
+        public void DeleteTemplateFolder(string id)
+        {
+            if (IsReadOnly("Template folder delete")) return;
+
+            var folder = _templateFolders.FirstOrDefault(f => f.Id == id);
+            if (folder == null) return;
+
+            // Шаблоны папки не пропадают вместе с ней: они уходят в конец
+            // «Моих шаблонов» в том порядке, в каком лежали в папке.
+            var moved = _templates.Where(t => !t.IsBuiltIn && t.FolderId == id).ToList();
+            foreach (var template in moved)
+            {
+                template.FolderId = string.Empty;
+                _templates.Remove(template);
+            }
+            _templates.AddRange(moved);
+
+            _templateFolders.Remove(folder);
+            _collapsedTemplateFolderIds.Remove(id);
+            _logger.Debug("Template folder deleted: {Name}, templates moved: {Count}", folder.Name, moved.Count);
+        }
+
+        /// <summary>
+        /// Сдвинуть раздел вкладки шаблонов на shift мест: свою папку, «Мои
+        /// шаблоны» или «Встроенные» — порядок разделов любой. Свои папки в
+        /// своём списке следуют за порядком разделов.
+        /// </summary>
+        public void MoveTemplateFolder(string id, int shift)
+        {
+            if (IsReadOnly("Template folder move")) return;
+            if (string.IsNullOrEmpty(id)) return;
+
+            NormalizeTemplateSectionOrder();
+
+            var from = _templateSectionOrder.IndexOf(id);
+            if (from < 0) return;
+
+            var to = Math.Clamp(from + shift, 0, _templateSectionOrder.Count - 1);
+            if (to == from) return;
+
+            _templateSectionOrder.RemoveAt(from);
+            _templateSectionOrder.Insert(to, id);
+            SyncTemplateFoldersToSectionOrder();
+        }
+
+        public void LoadTemplateFolders(List<CharacterTemplateFolder> folders)
+        {
+            _templateFolders.Clear();
+            if (folders != null)
+                _templateFolders.AddRange(folders.Where(f => f != null && !string.IsNullOrEmpty(f.Id)));
+
+            // Порядок разделов — от этих же папок: прежний принадлежал
+            // другому проекту. Свой порядок приходит следом, LoadTemplateSectionOrder.
+            _templateSectionOrder.Clear();
+        }
+
+        // ── Заготовки полей ───────────────────────────────────────────────
+        //
+        // Встроенные заготовки — из кода (CharacterFieldPresets), свои — из
+        // проекта: их сохраняют из полей анкет. Своя заготовка с тем же
+        // названием и типом заменяется — так её и обновляют.
+
+        private readonly List<CharacterFieldPreset> _fieldPresets = new();
+
+        public IReadOnlyList<CharacterFieldPreset> GetFieldPresets() =>
+            _fieldPresets.Concat(CharacterFieldPresets.BuiltIn).ToList();
+
+        public IReadOnlyList<CharacterFieldPreset> GetCustomFieldPresets() => _fieldPresets;
+
+        public CharacterFieldPreset? SaveFieldPreset(CharacterAnketaField field)
+        {
+            if (field == null) return null;
+            if (IsReadOnly("Field preset save")) return null;
+
+            var copy = JsonConvert.DeserializeObject<CharacterAnketaField>(JsonConvert.SerializeObject(field))!;
+            copy.Key = string.Empty;
+            copy.FieldId = string.Empty;
+            copy.GroupName = string.Empty;
+            copy.Order = 0;
+            copy.Depth = null;
+
+            var name = string.IsNullOrWhiteSpace(copy.Name) ? "Поле" : copy.Name.Trim();
+            copy.Name = name;
+
+            var existing = _fieldPresets.FirstOrDefault(p =>
+                p.Field.Type == copy.Type &&
+                string.Equals(p.Name, name, StringComparison.CurrentCultureIgnoreCase));
+            if (existing != null)
+            {
+                existing.Field = copy;
+                _logger.Debug("Field preset updated: {Name}", name);
+                return existing;
+            }
+
+            var preset = new CharacterFieldPreset { Name = name, Hint = "Своя заготовка", Field = copy };
+            _fieldPresets.Insert(0, preset);
+            _logger.Debug("Field preset saved: {Name}", name);
+            return preset;
+        }
+
+        public void DeleteFieldPreset(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            if (IsReadOnly("Field preset delete")) return;
+
+            _fieldPresets.RemoveAll(p => p.Id == id);
+        }
+
+        public void LoadFieldPresets(List<CharacterFieldPreset> presets)
+        {
+            _fieldPresets.Clear();
+            if (presets == null) return;
+
+            foreach (var preset in presets)
+            {
+                if (preset?.Field == null || string.IsNullOrEmpty(preset.Id)) continue;
+                preset.IsBuiltIn = false;
+                _fieldPresets.Add(preset);
+            }
+        }
+
+        // ── Порядок разделов вкладки шаблонов ─────────────────────────────
+        //
+        // Разделы — свои папки, «Мои шаблоны» и «Встроенные» — стоят в любом
+        // порядке. Ключи двух последних — TemplateSections. Раздел, которого
+        // в сохранённом порядке нет, встаёт на место по умолчанию: «Мои
+        // шаблоны» — первыми, новая папка — перед «Встроенными», если те
+        // последние, иначе в самый конец, «Встроенные» — последними.
+
+        private readonly List<string> _templateSectionOrder = new();
+
+        public IReadOnlyList<string> GetTemplateSectionOrder()
+        {
+            NormalizeTemplateSectionOrder();
+            return _templateSectionOrder;
+        }
+
+        public void LoadTemplateSectionOrder(List<string> ids)
+        {
+            _templateSectionOrder.Clear();
+            if (ids != null)
+                _templateSectionOrder.AddRange(ids.Where(i => !string.IsNullOrEmpty(i)));
+
+            NormalizeTemplateSectionOrder();
+            SyncTemplateFoldersToSectionOrder();
+        }
+
+        /// <summary>
+        /// Свести порядок разделов к тем, что есть: удалённые папки уходят,
+        /// повторы тоже, недостающие разделы встают на места по умолчанию.
+        /// </summary>
+        private void NormalizeTemplateSectionOrder()
+        {
+            var known = new HashSet<string>(StringComparer.Ordinal)
+            {
+                TemplateSections.Ungrouped,
+                TemplateSections.BuiltIn
+            };
+            foreach (var folder in _templateFolders) known.Add(folder.Id);
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            _templateSectionOrder.RemoveAll(id => !known.Contains(id) || !seen.Add(id));
+
+            if (!seen.Contains(TemplateSections.Ungrouped))
+            {
+                _templateSectionOrder.Insert(0, TemplateSections.Ungrouped);
+                seen.Add(TemplateSections.Ungrouped);
+            }
+
+            foreach (var folder in _templateFolders)
+            {
+                if (!seen.Add(folder.Id)) continue;
+
+                var builtIn = _templateSectionOrder.IndexOf(TemplateSections.BuiltIn);
+                if (builtIn >= 0 && builtIn == _templateSectionOrder.Count - 1)
+                    _templateSectionOrder.Insert(builtIn, folder.Id);
+                else
+                    _templateSectionOrder.Add(folder.Id);
+            }
+
+            if (!seen.Contains(TemplateSections.BuiltIn))
+                _templateSectionOrder.Add(TemplateSections.BuiltIn);
+        }
+
+        /// <summary>Свои папки в своём списке — в том же порядке, что и среди разделов.</summary>
+        private void SyncTemplateFoldersToSectionOrder()
+        {
+            var position = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < _templateSectionOrder.Count; i++)
+                position[_templateSectionOrder[i]] = i;
+
+            var sorted = _templateFolders
+                .OrderBy(f => position.TryGetValue(f.Id, out var i) ? i : int.MaxValue)
+                .ToList();
+
+            _templateFolders.Clear();
+            _templateFolders.AddRange(sorted);
+        }
+
+        // ── Скрытые шаблоны и свёрнутые разделы ───────────────────────────
+        //
+        // Скрытым бывает и встроенный шаблон, поэтому скрытие хранится
+        // списком опознавателей, а не в самом шаблоне: встроенные каждый
+        // запуск собираются из кода заново.
+
+        private readonly HashSet<string> _hiddenTemplateIds = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _collapsedTemplateFolderIds = new(StringComparer.Ordinal);
+
+        public bool IsTemplateHidden(string id) =>
+            !string.IsNullOrEmpty(id) && _hiddenTemplateIds.Contains(id);
+
+        public void SetTemplateHidden(string id, bool hidden)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            if (IsReadOnly("Template hide")) return;
+
+            if (hidden) _hiddenTemplateIds.Add(id);
+            else _hiddenTemplateIds.Remove(id);
+        }
+
+        public IReadOnlyCollection<string> GetHiddenTemplateIds() => _hiddenTemplateIds;
+
+        public void LoadHiddenTemplateIds(List<string> ids)
+        {
+            _hiddenTemplateIds.Clear();
+            if (ids != null)
+                foreach (var id in ids.Where(i => !string.IsNullOrEmpty(i)))
+                    _hiddenTemplateIds.Add(id);
+        }
+
+        public bool IsTemplateFolderCollapsed(string id) =>
+            !string.IsNullOrEmpty(id) && _collapsedTemplateFolderIds.Contains(id);
+
+        // Свёрнутость — вид, а не содержимое: в режиме сравнения раздел
+        // сворачивают и разворачивают свободно, как и любую другую часть
+        // экрана.
+        public void SetTemplateFolderCollapsed(string id, bool collapsed)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+
+            if (collapsed) _collapsedTemplateFolderIds.Add(id);
+            else _collapsedTemplateFolderIds.Remove(id);
+        }
+
+        public IReadOnlyCollection<string> GetCollapsedTemplateFolderIds() => _collapsedTemplateFolderIds;
+
+        public void LoadCollapsedTemplateFolderIds(List<string> ids)
+        {
+            _collapsedTemplateFolderIds.Clear();
+            if (ids != null)
+                foreach (var id in ids.Where(i => !string.IsNullOrEmpty(i)))
+                    _collapsedTemplateFolderIds.Add(id);
         }
 
         /// <summary>

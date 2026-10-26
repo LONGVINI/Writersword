@@ -22,6 +22,10 @@ namespace Writersword.Modules.Characters.Controls
     /// </summary>
     public class AnketaIconStrip : Control
     {
+        // Значок анкеты без подписи: название узнают только из подсказки,
+        // поэтому она появляется быстрее обычной (900 мс).
+        public const int TipDelayMs = 450;
+
         public static readonly StyledProperty<IReadOnlyList<AnketaGlyph>?> ItemsProperty =
             AvaloniaProperty.Register<AnketaIconStrip, IReadOnlyList<AnketaGlyph>?>(nameof(Items));
 
@@ -125,7 +129,8 @@ namespace Writersword.Modules.Characters.Controls
 
             var glyph = items[index];
             var rect = RectOf(index, Columns(Bounds.Width));
-            TooltipBehavior.ShowSpot(this, glyph.Id + "#" + index, rect.Center.X, glyph.Name, glyph.Description);
+            TooltipBehavior.ShowSpot(this, glyph.Id + "#" + index, rect.Center.X, glyph.Name, glyph.Description,
+                delayMs: TipDelayMs);
         }
 
         protected override void OnPointerExited(PointerEventArgs e)

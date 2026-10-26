@@ -1,4 +1,5 @@
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Newtonsoft.Json;
 using ReactiveUI;
@@ -565,6 +566,148 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                 PickerItems.Add(new AnketaPickItemViewModel(anketa, Sheets.Any(s => s.AnketaId == anketa.Id)));
             }
         }
+
+        // ── Заготовки полей ──────────────────────────────────────────────
+
+        /// <summary>Порядок типов в списке заготовок — тот же, что у кнопок «Добавить поле».</summary>
+        private static readonly CharacterParameterType[] PresetTypeOrder =
+        {
+            CharacterParameterType.Numeric,
+            CharacterParameterType.Number,
+            CharacterParameterType.StateList,
+            CharacterParameterType.MultiChoice,
+            CharacterParameterType.Boolean,
+            CharacterParameterType.Color,
+            CharacterParameterType.Text,
+            CharacterParameterType.LongText
+        };
+
+        /// <summary>Меню «Заготовки»: свои сверху, встроенные — по типам, с подзаголовками.</summary>
+        public ObservableCollection<FieldPresetItemViewModel> PresetItems { get; } = new();
+
+        private string _presetQuery = string.Empty;
+
+        /// <summary>Поиск в меню заготовок: по названию, пояснению и вариантам.</summary>
+        public string PresetQuery
+        {
+            get => _presetQuery;
+            set
+            {
+                if (_presetQuery == value) return;
+                this.RaiseAndSetIfChanged(ref _presetQuery, value ?? string.Empty);
+                RefreshPresets();
+            }
+        }
+
+        public void OpenPresets()
+        {
+            _presetQuery = string.Empty;
+            this.RaisePropertyChanged(nameof(PresetQuery));
+            RefreshPresets();
+        }
+
+        public void RefreshPresets()
+        {
+            PresetItems.Clear();
+
+            var words = _presetQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            bool Matches(CharacterFieldPreset preset)
+            {
+                var text = preset.Name + " " + preset.Hint + " " + preset.Field.StatesRaw + " "
+                           + AnketaFieldEditorViewModel.TypeLabelOf(preset.Field.Type);
+                return words.All(w => text.Contains(w, StringComparison.CurrentCultureIgnoreCase));
+            }
+
+            var presets = _anketaService.GetFieldPresets().Where(Matches).ToList();
+
+            var custom = presets.Where(p => !p.IsBuiltIn).ToList();
+            if (custom.Count > 0)
+            {
+                PresetItems.Add(FieldPresetItemViewModel.Header("Свои"));
+                foreach (var preset in custom) PresetItems.Add(new FieldPresetItemViewModel(preset));
+            }
+
+            foreach (var type in PresetTypeOrder)
+            {
+                var ofType = presets.Where(p => p.IsBuiltIn && p.Field.Type == type).ToList();
+                if (ofType.Count == 0) continue;
+
+                PresetItems.Add(FieldPresetItemViewModel.Header(AnketaFieldEditorViewModel.TypeLabelOf(type)));
+                foreach (var preset in ofType) PresetItems.Add(new FieldPresetItemViewModel(preset));
+            }
+        }
+
+        /// <summary>
+        /// Новое поле из заготовки на открытом листе — туда же, куда встало
+        /// бы новое поле: в выбранное свободное место или строкой за выбранной.
+        /// </summary>
+        public AnketaFieldEditorViewModel? AddPresetField(string presetId)
+        {
+            if (_activeSheet is not { IsEditable: true } sheet) return null;
+
+            var preset = _anketaService.GetFieldPresets().FirstOrDefault(p => p.Id == presetId);
+            return preset == null ? null : sheet.AddFieldFromPreset(preset.Field);
+        }
+
+        /// <summary>Сохранить поле своей заготовкой: в списке оно встанет среди своих.</summary>
+        public bool SaveFieldAsPreset(AnketaFieldEditorViewModel field)
+        {
+            var saved = _anketaService.SaveFieldPreset(field.Snapshot());
+            if (saved == null) return false;
+
+            RefreshPresets();
+            return true;
+        }
+
+        public void DeletePreset(string presetId)
+        {
+            _anketaService.DeleteFieldPreset(presetId);
+            RefreshPresets();
+        }
+    }
+
+    /// <summary>Строка меню заготовок: подзаголовок типа или сама заготовка.</summary>
+    public class FieldPresetItemViewModel
+    {
+        private FieldPresetItemViewModel(string title)
+        {
+            IsHeader = true;
+            Title = title;
+        }
+
+        public FieldPresetItemViewModel(CharacterFieldPreset preset)
+        {
+            Id = preset.Id;
+            Name = preset.Name;
+            Hint = preset.Hint;
+            IsCustom = !preset.IsBuiltIn;
+            TypeLabel = AnketaFieldEditorViewModel.TypeLabelOf(preset.Field.Type);
+            TypeIcon = AnketaFieldEditorViewModel.TypeIconPath(preset.Field.Type);
+
+            var color = Color.Parse(AnketaFieldEditorViewModel.TypeColorOf(preset.Field.Type));
+            TypeBrush = new SolidColorBrush(color);
+            TypeSoftBrush = new SolidColorBrush(Color.FromArgb(0x33, color.R, color.G, color.B));
+        }
+
+        public static FieldPresetItemViewModel Header(string title) => new(title);
+
+        public bool IsHeader { get; }
+        public bool IsItem => !IsHeader;
+        public string Title { get; } = string.Empty;
+
+        public string Id { get; } = string.Empty;
+        public string Name { get; } = string.Empty;
+        public string Hint { get; } = string.Empty;
+
+        /// <summary>Своя заготовка — её можно удалить.</summary>
+        public bool IsCustom { get; }
+
+        /// <summary>Тип словом — в своих, где типы вперемешку.</summary>
+        public string TypeLabel { get; } = string.Empty;
+
+        public string TypeIcon { get; } = string.Empty;
+        public IBrush? TypeBrush { get; }
+        public IBrush? TypeSoftBrush { get; }
     }
 
     /// <summary>Анкета в меню открытия листа.</summary>
@@ -831,14 +974,23 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             this.RaisePropertyChanged(nameof(Description));
 
             _assets = (draft.Assets ?? new List<CharacterAnketaAsset>()).ToList();
+            _look = draft.Look is { IsEmpty: false } look ? look.Clone() : null;
+            RaiseAnketaLookProperties();
 
             _fields.Clear();
             foreach (var field in draft.Fields)
                 CreateEditor(field);
 
+            // Строка полей без единого поля — бывшее пустое место под поле:
+            // пустых мест на листе больше нет, их заменило свободное место у
+            // конца строки и под строками.
             Rows.Clear();
             foreach (var row in draft.Layout)
+            {
+                if (row.Kind == CharacterAnketaRowKind.Fields && row.Cells.All(key => FieldByKey(key) == null))
+                    continue;
                 Rows.Add(new AnketaLayoutRowViewModel(this, row));
+            }
 
             RebuildGlyphChoices();
             this.RaisePropertyChanged(nameof(HasRows));
@@ -1016,6 +1168,7 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                 if (_selectedField != null)
                 {
                     _selectedField.IsSelected = true;
+                    ClearSlot();
                     SelectedRow = RowOf(_selectedField);
                 }
                 this.RaisePropertyChanged(nameof(HasSelectedField));
@@ -1038,7 +1191,106 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                 if (_selectedRow != null) _selectedRow.IsSelected = false;
                 this.RaiseAndSetIfChanged(ref _selectedRow, value);
                 if (_selectedRow != null) _selectedRow.IsSelected = true;
+
+                // Выбрали другую строку — свободное место прежней уже не выбрано.
+                if (value != null && !ReferenceEquals(value, _slotRow)) ClearSlot();
             }
+        }
+
+        // ── Свободное место ──────────────────────────────────────────────
+        //
+        // Новое поле ставят не только броском: можно выбрать свободное место
+        // — в конце строки, где ещё есть место, или под всеми строками — и
+        // добавить поле лентой. Выбрано не больше одного места.
+
+        private AnketaLayoutRowViewModel? _slotRow;
+        private bool _isEndSlotSelected;
+
+        /// <summary>Выбрано место под всеми строками: новое поле встанет туда новой строкой.</summary>
+        public bool IsEndSlotSelected
+        {
+            get => _isEndSlotSelected;
+            private set => this.RaiseAndSetIfChanged(ref _isEndSlotSelected, value);
+        }
+
+        // ── Перетаскивание поля: места ───────────────────────────────────
+
+        private bool _isFieldDragging;
+
+        /// <summary>
+        /// Поле тащат: на листе видны все места, куда его можно поставить, —
+        /// каждое поле (на него — поменяться местами, к его левому краю —
+        /// встать перед ним), свободные места в концах строк и новая строка
+        /// внизу. Остальное приглушено.
+        /// </summary>
+        public bool IsFieldDragging
+        {
+            get => _isFieldDragging;
+            set
+            {
+                if (_isFieldDragging == value) return;
+                this.RaiseAndSetIfChanged(ref _isFieldDragging, value);
+
+                // Пока тащат, у каждой строки все три места равной ширины:
+                // поля стоят на своих, свободные видны рядом пустыми.
+                foreach (var row in Rows) row.RaiseLayoutColumns();
+            }
+        }
+
+        private bool _isEndSlotDropTarget;
+
+        /// <summary>Тащимое поле над местом новой строки внизу.</summary>
+        public bool IsEndSlotDropTarget
+        {
+            get => _isEndSlotDropTarget;
+            set => this.RaiseAndSetIfChanged(ref _isEndSlotDropTarget, value);
+        }
+
+        /// <summary>
+        /// Поменять два поля местами — в одной строке или в разных. Строки
+        /// сохраняют число полей, двигаются только сами поля.
+        /// </summary>
+        public void SwapFields(AnketaLayoutCellViewModel from, AnketaLayoutCellViewModel to)
+        {
+            if (IsReadOnly || ReferenceEquals(from, to)) return;
+            if (from.Field is not { } moving || to.Field is not { } other) return;
+
+            from.Field = other;
+            to.Field = moving;
+
+            SelectedField = moving;
+            SelectedRow = to.Row;
+            RecordChange(null);
+        }
+
+        /// <summary>Выбрать свободное место в конце строки: новое поле встанет туда, рядом с её полями.</summary>
+        public void SelectSlot(AnketaLayoutRowViewModel row)
+        {
+            if (IsReadOnly || !row.CanTakeMore) return;
+
+            SelectedField = null;
+            SelectedRow = row;
+            ClearSlot();
+            _slotRow = row;
+            row.IsSlotSelected = true;
+        }
+
+        /// <summary>Выбрать место под всеми строками: новое поле встанет туда новой строкой.</summary>
+        public void SelectEndSlot()
+        {
+            if (IsReadOnly) return;
+
+            SelectedField = null;
+            SelectedRow = null;
+            ClearSlot();
+            IsEndSlotSelected = true;
+        }
+
+        private void ClearSlot()
+        {
+            if (_slotRow != null) _slotRow.IsSlotSelected = false;
+            _slotRow = null;
+            IsEndSlotSelected = false;
         }
 
         private AnketaLayoutRowViewModel? RowOf(AnketaFieldEditorViewModel field) =>
@@ -1095,51 +1347,73 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         }
 
         /// <summary>
-        /// Новое поле — в пустую ячейку выбранной строки, а если её нет — новой
+        /// Новое поле — в выбранное свободное место: в конец строки, рядом с
+        /// её полями, или под всеми строками. Места не выбрано — новой
         /// строкой за выбранной.
         /// </summary>
         public AnketaFieldEditorViewModel? AddField(CharacterParameterType type)
         {
             if (IsReadOnly) return null;
+            return AddFieldFrom(NewField(type));
+        }
 
-            var field = NewField(type);
+        /// <summary>
+        /// Новое поле из заготовки — со всеми её настройками, туда же, куда
+        /// встало бы новое поле. Ключ, идентификатор, группа и уровень у него
+        /// свои, по месту.
+        /// </summary>
+        public AnketaFieldEditorViewModel? AddFieldFromPreset(CharacterAnketaField template)
+        {
+            if (IsReadOnly || template == null) return null;
+
+            var field = JsonConvert.DeserializeObject<CharacterAnketaField>(JsonConvert.SerializeObject(template))!;
+            field.FieldId = string.Empty;
+            field.GroupName = string.Empty;
+            field.Order = 0;
+            field.Depth = null;
+            return AddFieldFrom(field);
+        }
+
+        private AnketaFieldEditorViewModel AddFieldFrom(CharacterAnketaField field)
+        {
             field.Key = NewKey();
             var editor = CreateEditor(field);
 
-            var target = _selectedRow is { IsFields: true } row
-                ? row.Cells.FirstOrDefault(c => !c.HasField)
-                : null;
-
-            if (target == null)
+            AnketaLayoutRowViewModel row;
+            if (_slotRow is { CanTakeMore: true } slot && Rows.Contains(slot))
             {
-                var newRow = new AnketaLayoutRowViewModel(this, new CharacterAnketaRow { Cells = new List<string> { string.Empty } });
-                Rows.Insert(InsertIndex(), newRow);
-                target = newRow.Cells[0];
+                row = slot;
+            }
+            else
+            {
+                row = NewFieldsRow();
+                Rows.Insert(_isEndSlotSelected ? Rows.Count : InsertIndex(), row);
             }
 
-            ApplyPreviewDepth(editor, target.Row);
-            target.Field = editor;
+            ApplyPreviewDepth(editor, row);
+            row.Cells.Add(new AnketaLayoutCellViewModel(row, editor));
             SelectedField = editor;
             this.RaisePropertyChanged(nameof(HasRows));
             RecordChange(null);
             return editor;
         }
 
-        /// <summary>Пустая строка на одну, две или три ячейки — за выбранной.</summary>
-        public void AddRow(int columns)
-        {
-            if (IsReadOnly) return;
+        /// <summary>Строка полей без полей — под поле, которое сейчас в неё встанет.</summary>
+        private AnketaLayoutRowViewModel NewFieldsRow() =>
+            new(this, new CharacterAnketaRow { Cells = new List<string>() });
 
-            columns = Math.Clamp(columns, 1, CharacterAnketaLayout.MaxColumns);
-            var row = new AnketaLayoutRowViewModel(this, new CharacterAnketaRow
-            {
-                Cells = Enumerable.Repeat(string.Empty, columns).ToList()
-            });
-            Rows.Insert(InsertIndex(), row);
-            SelectedField = null;
-            SelectedRow = row;
+        /// <summary>
+        /// Строка осталась без полей — её больше нет: пустых строк на листе
+        /// не бывает.
+        /// </summary>
+        private void RemoveIfEmpty(AnketaLayoutRowViewModel row)
+        {
+            if (!row.IsFields || row.Cells.Count > 0) return;
+
+            if (ReferenceEquals(_selectedRow, row)) SelectedRow = null;
+            if (ReferenceEquals(_slotRow, row)) ClearSlot();
+            Rows.Remove(row);
             this.RaisePropertyChanged(nameof(HasRows));
-            RecordChange(null);
         }
 
         /// <summary>Подзаголовок группы — за выбранной строкой.</summary>
@@ -1168,47 +1442,6 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             return row;
         }
 
-        /// <summary>
-        /// Сменить число колонок строки. Поля сохраняют порядок; не
-        /// поместившиеся уходят новыми строками под ней — ничего не теряется.
-        /// </summary>
-        public void SetColumns(AnketaLayoutRowViewModel row, int columns)
-        {
-            if (IsReadOnly || !row.IsFields) return;
-
-            columns = Math.Clamp(columns, 1, CharacterAnketaLayout.MaxColumns);
-            if (row.Cells.Count == columns) return;
-
-            if (columns > row.Cells.Count)
-            {
-                while (row.Cells.Count < columns) row.Cells.Add(new AnketaLayoutCellViewModel(row, null));
-            }
-            else
-            {
-                var fields = row.Cells.Where(c => c.HasField).Select(c => c.Field!).ToList();
-                var keep = fields.Take(columns).ToList();
-                var rest = fields.Skip(columns).ToList();
-
-                row.Cells.Clear();
-                foreach (var field in keep) row.Cells.Add(new AnketaLayoutCellViewModel(row, field));
-                while (row.Cells.Count < columns) row.Cells.Add(new AnketaLayoutCellViewModel(row, null));
-
-                var index = Rows.IndexOf(row) + 1;
-                for (int i = 0; i < rest.Count; i += columns)
-                {
-                    var extra = new AnketaLayoutRowViewModel(this, new CharacterAnketaRow());
-                    extra.Cells.Clear();
-                    foreach (var field in rest.Skip(i).Take(columns))
-                        extra.Cells.Add(new AnketaLayoutCellViewModel(extra, field));
-                    while (extra.Cells.Count < columns) extra.Cells.Add(new AnketaLayoutCellViewModel(extra, null));
-                    Rows.Insert(index++, extra);
-                }
-            }
-
-            row.RaiseColumns();
-            RecordChange(null);
-        }
-
         /// <summary>Удалить строку вместе с её полями. Значения у персонажей останутся.</summary>
         public void DeleteRow(AnketaLayoutRowViewModel row)
         {
@@ -1221,6 +1454,7 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             }
 
             if (ReferenceEquals(_selectedRow, row)) SelectedRow = null;
+            if (ReferenceEquals(_slotRow, row)) ClearSlot();
             Rows.Remove(row);
             this.RaisePropertyChanged(nameof(HasRows));
             RecordChange(null);
@@ -1242,15 +1476,95 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             RecordChange(null);
         }
 
-        /// <summary>Перенести поле в другую ячейку; поле, что там стояло, встаёт на его место.</summary>
-        public void MoveField(AnketaLayoutCellViewModel from, AnketaLayoutCellViewModel to)
-        {
-            if (IsReadOnly || ReferenceEquals(from, to) || !from.HasField) return;
+        /// <summary>
+        /// Поле можно поставить рядом с другим: в своей строке — всегда, в
+        /// чужой — пока в ней меньше трёх полей. Ставить рядом с самим собой
+        /// незачем.
+        /// </summary>
+        public bool CanPlaceBeside(AnketaLayoutCellViewModel from, AnketaLayoutCellViewModel target) =>
+            !IsReadOnly
+            && from.HasField
+            && !ReferenceEquals(from, target)
+            && (ReferenceEquals(from.Row, target.Row) || target.Row.Cells.Count < CharacterAnketaLayout.MaxColumns);
 
-            var moving = from.Field;
-            from.Field = to.Field;
-            to.Field = moving;
-            SelectedField = moving;
+        /// <summary>
+        /// Место поля рядом с другим: индекс в строке цели, на который оно
+        /// встанет, или -1, если от броска ничего не изменится.
+        /// </summary>
+        public int BesideIndex(AnketaLayoutCellViewModel from, AnketaLayoutCellViewModel target, bool after)
+        {
+            if (!CanPlaceBeside(from, target)) return -1;
+
+            var row = target.Row;
+            var index = row.Cells.IndexOf(target) + (after ? 1 : 0);
+            if (!ReferenceEquals(from.Row, row)) return index;
+
+            var fromIndex = row.Cells.IndexOf(from);
+            if (index > fromIndex) index--;
+            return index == fromIndex ? -1 : index;
+        }
+
+        /// <summary>
+        /// Поставить поле рядом с другим — перед ним или после. Строка цели
+        /// растёт, строка, откуда ушло поле, сжимается, а без полей исчезает.
+        /// </summary>
+        public void PlaceFieldBeside(AnketaLayoutCellViewModel from, AnketaLayoutCellViewModel target, bool after)
+        {
+            var index = BesideIndex(from, target, after);
+            if (index < 0 || from.Field is not { } field) return;
+
+            var source = from.Row;
+            var row = target.Row;
+
+            if (ReferenceEquals(source, row))
+            {
+                source.Cells.Move(source.Cells.IndexOf(from), index);
+            }
+            else
+            {
+                source.Cells.Remove(from);
+                row.Cells.Insert(index, new AnketaLayoutCellViewModel(row, field));
+                RemoveIfEmpty(source);
+            }
+
+            SelectedField = field;
+            SelectedRow = row;
+            RecordChange(null);
+        }
+
+        /// <summary>
+        /// Бросок поля между строками ничего не меняет: поле одно в своей
+        /// строке и встало бы ровно туда же.
+        /// </summary>
+        public bool IsNewRowNoop(AnketaLayoutCellViewModel from, int index)
+        {
+            var at = Rows.IndexOf(from.Row);
+            return from.Row.Cells.Count == 1 && (index == at || index == at + 1);
+        }
+
+        /// <summary>
+        /// Поставить поле отдельной строкой — на место index среди строк
+        /// (до того, как оно уйдёт со своего). Строка, откуда ушло поле,
+        /// сжимается, а без полей исчезает.
+        /// </summary>
+        public void PlaceFieldInNewRow(AnketaLayoutCellViewModel from, int index)
+        {
+            if (IsReadOnly || from.Field is not { } field) return;
+
+            index = Math.Clamp(index, 0, Rows.Count);
+            if (IsNewRowNoop(from, index)) return;
+
+            var source = from.Row;
+            var row = NewFieldsRow();
+            row.Cells.Add(new AnketaLayoutCellViewModel(row, field));
+            Rows.Insert(index, row);
+
+            source.Cells.Remove(from);
+            RemoveIfEmpty(source);
+
+            SelectedField = field;
+            SelectedRow = row;
+            this.RaisePropertyChanged(nameof(HasRows));
             RecordChange(null);
         }
 
@@ -1261,13 +1575,15 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             var cell = CellOf(field);
             if (cell == null) return;
 
-            cell.Field = null;
+            var row = cell.Row;
+            row.Cells.Remove(cell);
             _fields.Remove(field.Key);
             if (ReferenceEquals(_selectedField, field)) SelectedField = null;
+            RemoveIfEmpty(row);
             RecordChange(null);
         }
 
-        /// <summary>Копия поля со всеми настройками — в свободную ячейку той же строки или строкой ниже.</summary>
+        /// <summary>Копия поля со всеми настройками — рядом с ним, если в строке есть место, иначе строкой ниже.</summary>
         public AnketaFieldEditorViewModel? DuplicateField(AnketaFieldEditorViewModel source)
         {
             if (IsReadOnly) return null;
@@ -1281,15 +1597,18 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             field.Name = string.IsNullOrWhiteSpace(field.Name) ? string.Empty : field.Name + " (копия)";
             var editor = CreateEditor(field);
 
-            var target = row.Cells.FirstOrDefault(c => !c.HasField);
-            if (target == null)
+            if (row.CanTakeMore)
             {
-                var newRow = new AnketaLayoutRowViewModel(this, new CharacterAnketaRow { Cells = new List<string> { string.Empty } });
+                var at = row.Cells.IndexOf(CellOf(source)!) + 1;
+                row.Cells.Insert(at, new AnketaLayoutCellViewModel(row, editor));
+            }
+            else
+            {
+                var newRow = NewFieldsRow();
+                newRow.Cells.Add(new AnketaLayoutCellViewModel(newRow, editor));
                 Rows.Insert(Rows.IndexOf(row) + 1, newRow);
-                target = newRow.Cells[0];
             }
 
-            target.Field = editor;
             SelectedField = editor;
             RecordChange(null);
             return editor;
@@ -1386,6 +1705,166 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             RecordChange(null);
         }
 
+        // ── Особый вид анкеты ────────────────────────────────────────────
+        //
+        // Расстояние между строками, выравнивание полей, шрифт и размеры,
+        // высота описаний — для всей анкеты. Поле и строка могут задать своё.
+
+        private CharacterAnketaLook? _look;
+
+        /// <summary>Особый вид анкеты; null — как в программе.</summary>
+        public CharacterAnketaLook? Look => _look;
+
+        public IReadOnlyList<AnketaLookChoice> AnketaAlignChoices { get; } = AnketaLookChoice.AnketaAlignChoices;
+
+        public AnketaLookChoice SelectedFieldAlign
+        {
+            get => AnketaAlignChoices.FirstOrDefault(c => c.Value == CharacterLookAlign.Normalize(_look?.FieldAlign))
+                   ?? AnketaAlignChoices[0];
+            set
+            {
+                var normalized = CharacterLookAlign.Normalize(value?.Value);
+                if (CharacterLookAlign.Normalize(_look?.FieldAlign) == normalized) return;
+                EditAnketaLook(look => look.FieldAlign = normalized, "align");
+            }
+        }
+
+        public string LookRowSpacingText
+        {
+            get => FormatLook(_look?.RowSpacing);
+            set
+            {
+                if (!TryParseLook(value, 0, 200, out var spacing) || _look?.RowSpacing == spacing) return;
+                EditAnketaLook(look => look.RowSpacing = spacing, "row-spacing");
+            }
+        }
+
+        public string LookFontFamily
+        {
+            get => _look?.FontFamily ?? string.Empty;
+            set
+            {
+                var name = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+                if (_look?.FontFamily == name) return;
+                EditAnketaLook(look => look.FontFamily = name, "font");
+            }
+        }
+
+        public string LookLabelSizeText
+        {
+            get => FormatLook(_look?.LabelFontSize);
+            set
+            {
+                if (!TryParseLook(value, 6, 72, out var size) || _look?.LabelFontSize == size) return;
+                EditAnketaLook(look => look.LabelFontSize = size, "label-size");
+            }
+        }
+
+        public string LookValueSizeText
+        {
+            get => FormatLook(_look?.ValueFontSize);
+            set
+            {
+                if (!TryParseLook(value, 6, 72, out var size) || _look?.ValueFontSize == size) return;
+                EditAnketaLook(look => look.ValueFontSize = size, "value-size");
+            }
+        }
+
+        public string LookLongTextHeightText
+        {
+            get => FormatLook(_look?.LongTextHeight);
+            set
+            {
+                if (!TryParseLook(value, CharacterParameterItemViewModel.MinInputHeight,
+                        CharacterParameterItemViewModel.MaxInputHeight, out var height)
+                    || _look?.LongTextHeight == height) return;
+                EditAnketaLook(look => look.LongTextHeight = height, "long-height");
+            }
+        }
+
+        /// <summary>У анкеты есть особый вид — заголовок раздела отмечен точкой.</summary>
+        public bool HasCustomLook => _look is { IsEmpty: false };
+
+        /// <summary>Вернуть анкете вид программы. Свой вид полей и отступы строк остаются.</summary>
+        public void ResetAnketaLook()
+        {
+            if (IsReadOnly || _look == null) return;
+
+            _look = null;
+            ApplyAnketaLookEverywhere();
+            RaiseAnketaLookProperties();
+            RecordChange(null);
+        }
+
+        private void EditAnketaLook(Action<CharacterAnketaLook> change, string mergeKey)
+        {
+            if (IsReadOnly)
+            {
+                RaiseAnketaLookProperties();
+                return;
+            }
+
+            var look = _look?.Clone() ?? new CharacterAnketaLook();
+            change(look);
+            _look = look.IsEmpty ? null : look;
+
+            ApplyAnketaLookEverywhere();
+            RaiseAnketaLookProperties();
+            RecordChange("look:" + mergeKey);
+        }
+
+        /// <summary>Вид анкеты дошёл до предпросмотров полей и отступов строк.</summary>
+        private void ApplyAnketaLookEverywhere()
+        {
+            foreach (var editor in _fields.Values) editor.RefreshAnketaLook();
+            foreach (var row in Rows) row.RaiseRowMargin();
+        }
+
+        private void RaiseAnketaLookProperties()
+        {
+            this.RaisePropertyChanged(nameof(Look));
+            this.RaisePropertyChanged(nameof(SelectedFieldAlign));
+            this.RaisePropertyChanged(nameof(LookRowSpacingText));
+            this.RaisePropertyChanged(nameof(LookFontFamily));
+            this.RaisePropertyChanged(nameof(LookLabelSizeText));
+            this.RaisePropertyChanged(nameof(LookValueSizeText));
+            this.RaisePropertyChanged(nameof(LookLongTextHeightText));
+            this.RaisePropertyChanged(nameof(HasCustomLook));
+        }
+
+        private static string FormatLook(double? value) =>
+            value.HasValue ? value.Value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : string.Empty;
+
+        /// <summary>Число из поля особого вида: пусто — null, иначе в пределах.</summary>
+        private static bool TryParseLook(string? text, double min, double max, out double? value)
+        {
+            value = null;
+            var raw = (text ?? string.Empty).Trim().Replace(',', '.');
+            if (raw.Length == 0) return true;
+            if (!double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var parsed)) return false;
+            value = Math.Clamp(parsed, min, max);
+            return true;
+        }
+
+        /// <summary>Отступ под строкой поля; null — как у анкеты.</summary>
+        internal double? RowSpacingOf(AnketaFieldEditorViewModel field) =>
+            Rows.FirstOrDefault(r => r.Cells.Any(c => ReferenceEquals(c.Field, field)))?.SpacingAfter;
+
+        /// <summary>Задать отступ под строкой поля. Остальные поля строки узнают о нём.</summary>
+        internal void SetRowSpacing(AnketaFieldEditorViewModel field, double? spacing, bool record = true)
+        {
+            if (IsReadOnly) return;
+
+            var row = Rows.FirstOrDefault(r => r.Cells.Any(c => ReferenceEquals(c.Field, field)));
+            if (row == null || row.SpacingAfter == spacing) return;
+
+            row.SpacingAfter = spacing;
+            foreach (var cell in row.Cells) cell.Field?.RaiseRowSpacing();
+
+            if (record) RecordChange("row-spacing:" + row.Id);
+        }
+
         // ── Сборка ───────────────────────────────────────────────────────
 
         /// <summary>
@@ -1411,7 +1890,8 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                 IconColor = _iconColor,
                 IconBackground = _iconBackground,
                 IconBorder = _iconBorder,
-                Assets = _assets.Select(a => new CharacterAnketaAsset { Id = a.Id, Name = a.Name, Glyph = a.Glyph }).ToList()
+                Assets = _assets.Select(a => new CharacterAnketaAsset { Id = a.Id, Name = a.Name, Glyph = a.Glyph }).ToList(),
+                Look = _look is { IsEmpty: false } ? _look.Clone() : null
             };
 
             var order = 0;
@@ -1647,6 +2127,7 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             Kind = row.Kind;
             _title = row.Title ?? string.Empty;
             _depth = CharacterDetailLevels.Clamp(row.Depth);
+            _spacingAfter = row.Kind == CharacterAnketaRowKind.Fields ? row.SpacingAfter : null;
 
             if (Kind == CharacterAnketaRowKind.Group)
                 foreach (var level in CharacterDetailLevels.All)
@@ -1659,12 +2140,22 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
                         GlyphLevel = level
                     });
 
+            // В строке — только поля: пустых мест под поле больше нет.
             if (Kind == CharacterAnketaRowKind.Fields)
+                foreach (var key in row.Cells)
+                {
+                    if (Cells.Count >= CharacterAnketaLayout.MaxColumns) break;
+                    if (sheet.FieldByKey(key) is { } field)
+                        Cells.Add(new AnketaLayoutCellViewModel(this, field));
+                }
+
+            Cells.CollectionChanged += (_, _) =>
             {
-                var keys = row.Cells.Count == 0 ? new List<string> { string.Empty } : row.Cells;
-                foreach (var key in keys.Take(CharacterAnketaLayout.MaxColumns))
-                    Cells.Add(new AnketaLayoutCellViewModel(this, sheet.FieldByKey(key)));
-            }
+                this.RaisePropertyChanged(nameof(Columns));
+                this.RaisePropertyChanged(nameof(LayoutColumns));
+                this.RaisePropertyChanged(nameof(CanTakeMore));
+                if (!CanTakeMore) IsSlotSelected = false;
+            };
         }
 
         /// <summary>Опознаватель строки на время работы — для склейки правок заголовка.</summary>
@@ -1726,17 +2217,36 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             internal set => this.RaiseAndSetIfChanged(ref _isBeyondPreview, value);
         }
 
+        /// <summary>Колонок столько, сколько полей в строке: ширина делится между ними поровну.</summary>
         public int Columns => Math.Max(1, Cells.Count);
-        public bool IsOneColumn => Columns == 1;
-        public bool IsTwoColumns => Columns == 2;
-        public bool IsThreeColumns => Columns == 3;
 
-        internal void RaiseColumns()
+        /// <summary>
+        /// Колонок на листе: столько, сколько полей, а пока поле тащат — все
+        /// три, чтобы свободные места строки были видны рядом с занятыми.
+        /// </summary>
+        public int LayoutColumns => _sheet.IsFieldDragging && IsFields ? CharacterAnketaLayout.MaxColumns : Columns;
+
+        internal void RaiseLayoutColumns() => this.RaisePropertyChanged(nameof(LayoutColumns));
+
+        /// <summary>В строке есть место ещё под одно поле — в её конце свободное место.</summary>
+        public bool CanTakeMore => IsFields && Cells.Count < CharacterAnketaLayout.MaxColumns;
+
+        private bool _isSlotSelected;
+
+        /// <summary>Выбрано свободное место в конце строки: новое поле из ленты встанет сюда.</summary>
+        public bool IsSlotSelected
         {
-            this.RaisePropertyChanged(nameof(Columns));
-            this.RaisePropertyChanged(nameof(IsOneColumn));
-            this.RaisePropertyChanged(nameof(IsTwoColumns));
-            this.RaisePropertyChanged(nameof(IsThreeColumns));
+            get => _isSlotSelected;
+            internal set => this.RaiseAndSetIfChanged(ref _isSlotSelected, value);
+        }
+
+        private bool _isSlotDropTarget;
+
+        /// <summary>Тащимое поле над свободным местом в конце строки.</summary>
+        public bool IsSlotDropTarget
+        {
+            get => _isSlotDropTarget;
+            set => this.RaiseAndSetIfChanged(ref _isSlotDropTarget, value);
         }
 
         private bool _isSelected;
@@ -1749,12 +2259,41 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
         {
             Kind = Kind,
             Title = _title,
-            Cells = IsFields ? Cells.Select(c => c.Field?.Key ?? string.Empty).ToList() : new List<string>(),
-            Depth = IsGroup ? _depth : CharacterDetailLevels.Brief
+            Cells = IsFields ? Cells.Where(c => c.Field != null).Select(c => c.Field!.Key).ToList() : new List<string>(),
+            Depth = IsGroup ? _depth : CharacterDetailLevels.Brief,
+            SpacingAfter = IsFields ? _spacingAfter : null
         };
+
+        // ── Отступ под строкой ───────────────────────────────────────────
+
+        private double? _spacingAfter;
+
+        /// <summary>Свой отступ под строкой, пт; null — как у анкеты.</summary>
+        public double? SpacingAfter
+        {
+            get => _spacingAfter;
+            internal set
+            {
+                if (_spacingAfter == value) return;
+                _spacingAfter = value;
+                RaiseRowMargin();
+            }
+        }
+
+        /// <summary>Поля строки на листе: обычный зазор плюс отступ строки или анкеты.</summary>
+        public Avalonia.Thickness RowMargin
+        {
+            get
+            {
+                var extra = IsFields ? (_spacingAfter ?? _sheet.Look?.RowSpacing ?? 0) : 0;
+                return new Avalonia.Thickness(0, 1, 0, 1 + Math.Max(0, extra));
+            }
+        }
+
+        internal void RaiseRowMargin() => this.RaisePropertyChanged(nameof(RowMargin));
     }
 
-    /// <summary>Ячейка строки на листе: поле или пустое место под поле.</summary>
+    /// <summary>Ячейка строки на листе — место одного поля.</summary>
     public class AnketaLayoutCellViewModel : ReactiveObject
     {
         public AnketaLayoutCellViewModel(AnketaLayoutRowViewModel row, AnketaFieldEditorViewModel? field)
@@ -1773,15 +2312,19 @@ namespace Writersword.Modules.Characters.ViewModels.Anketas
             {
                 this.RaiseAndSetIfChanged(ref _field, value);
                 this.RaisePropertyChanged(nameof(HasField));
-                this.RaisePropertyChanged(nameof(IsEmpty));
             }
         }
 
         public bool HasField => _field != null;
-        public bool IsEmpty => _field == null;
 
         private bool _isDropTarget;
-        public bool IsDropTarget { get => _isDropTarget; set => this.RaiseAndSetIfChanged(ref _isDropTarget, value); }
+
+        /// <summary>Тащимое поле над этим: отпущенное, поменяется с ним местами.</summary>
+        public bool IsDropTarget
+        {
+            get => _isDropTarget;
+            set => this.RaiseAndSetIfChanged(ref _isDropTarget, value);
+        }
     }
 
     /// <summary>Значок в выборе значка подписи или оценки.</summary>

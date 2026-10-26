@@ -213,6 +213,7 @@ namespace Writersword.Modules.TextEditor.Commands
             doc.ColumnSettings.ColumnCount = restored.ColumnSettings.ColumnCount;
             doc.ColumnSettings.GapMm = restored.ColumnSettings.GapMm;
             doc.ColumnSettings.ShowSeparator = restored.ColumnSettings.ShowSeparator;
+            doc.ColumnSettings.SeparatorColor = restored.ColumnSettings.SeparatorColor;
 
             // Последний раздел сверх листа и колонок: рамка, номера строк, начало счёта.
             doc.FinalSection = restored.FinalSection?.Clone();

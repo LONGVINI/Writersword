@@ -65,6 +65,11 @@ namespace Writersword.Infrastructure.WorkFlows
         /// </summary>
         public static void Schedule(string key, Func<Task> work)
         {
+            // Диагностика: запись кеша восстановления выключена (DiagnosticSwitches).
+            if (Writersword.Infrastructure.Diagnostics.DiagnosticSwitches.BackgroundWorkDisabled
+                && key.StartsWith("cache:", StringComparison.Ordinal))
+                return;
+
             if (!_pending.ContainsKey(key))
                 _order.Add(key);
 
@@ -155,6 +160,7 @@ namespace Writersword.Infrastructure.WorkFlows
         private static async Task RunOneAsync(string key, Func<Task> work)
         {
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            long allocatedBefore = GC.GetTotalAllocatedBytes(false);
             Writersword.Infrastructure.Diagnostics.SwitchProfiler.SetStage("отложенное задание " + key);
 
             try
@@ -172,9 +178,13 @@ namespace Writersword.Infrastructure.WorkFlows
                     "после отложенного задания " + key);
 
                 // Диагностика: сколько заняло отложенное задание целиком (не только
-                // UI-поток). Долгие задания видны рядом с сообщениями сторожа UI.
-                if (stopwatch.ElapsedMilliseconds >= 100)
-                    Log.Warning("Deferred work {Key} took {ElapsedMs}ms", key, stopwatch.ElapsedMilliseconds);
+                // UI-поток) и сколько памяти выделено за это время. Выделенное —
+                // по всему процессу: параллельная работа других потоков тоже попадёт
+                // сюда, но гигабайты мусора от самого задания видны сразу.
+                long allocatedMb = (GC.GetTotalAllocatedBytes(false) - allocatedBefore) / (1024 * 1024);
+                if (stopwatch.ElapsedMilliseconds >= 100 || allocatedMb >= 50)
+                    Log.Warning("Deferred work {Key} took {ElapsedMs}ms, выделено {AllocatedMb} МБ",
+                        key, stopwatch.ElapsedMilliseconds, allocatedMb);
             }
         }
     }

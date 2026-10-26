@@ -168,6 +168,13 @@ namespace Writersword.Modules.Characters.Models
         private double? _inputWidth;
         public double? InputWidth { get => _inputWidth; set => Set(ref _inputWidth, value); }
 
+        private double? _inputHeight;
+        public double? InputHeight { get => _inputHeight; set => Set(ref _inputHeight, value); }
+
+        private CharacterFieldLook? _look;
+        /// <summary>Особый вид поля — копия из анкеты (CopyDisplay).</summary>
+        public CharacterFieldLook? Look { get => _look; set => Set(ref _look, value); }
+
         // Подпись и число — тоже копия определения из анкеты (CopyDisplay).
 
         private bool _labelBold;

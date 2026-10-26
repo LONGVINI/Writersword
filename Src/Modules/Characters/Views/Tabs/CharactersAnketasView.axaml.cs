@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Writersword.Modules.Characters.Controls;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Models.Enums;
@@ -284,6 +285,16 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private void OnSheetTabCaptureLost(object? sender, PointerCaptureLostEventArgs e) => CancelDrag();
 
         /// <summary>Строка меню уровня у поля: уровень встаёт, меню закрывается.</summary>
+        /// <summary>Щелчок по значку уровня у поля — следующий уровень по кругу, без меню.</summary>
+        private void OnDepthBadgeClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if ((sender as Control)?.DataContext is not AnketaLayoutCellViewModel { Field: { } field } cell) return;
+            if (!cell.Row.Sheet.IsEditable) return;
+
+            field.CycleDepth();
+        }
+
         private void OnDepthChoiceClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
@@ -475,6 +486,14 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         // ── Лента ────────────────────────────────────────────────────────
 
+        /// <summary>Особый вид поля — вернуть вид анкеты.</summary>
+        private void OnResetFieldLookClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if ((sender as Control)?.DataContext is AnketaFieldEditorViewModel field)
+                field.ResetLook();
+        }
+
         private void OnUndoClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
@@ -510,16 +529,27 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (sheet.AddField(type) != null) FocusFieldName();
         }
 
-        private void OnAddRowClick(object? sender, RoutedEventArgs e)
+        /// <summary>
+        /// Свободное место в конце строки: выбрать его — новое поле из ленты
+        /// встанет сюда, рядом с полями строки.
+        /// </summary>
+        private void OnSlotClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
+            if ((sender as Control)?.DataContext is not AnketaLayoutRowViewModel row) return;
 
-            if (sender is not Control { Tag: string tag }) return;
-            if (!int.TryParse(tag, out var columns)) return;
+            row.Sheet.SelectSlot(row);
+            Focus(NavigationMethod.Pointer);
+        }
+
+        /// <summary>Место под всеми строками: выбрать его — новое поле встанет туда новой строкой.</summary>
+        private void OnEndSlotClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
             if (Sheet is not { IsEditable: true } sheet) return;
 
-            sheet.AddRow(columns);
-            BringRowIntoView(sheet.SelectedRow);
+            sheet.SelectEndSlot();
+            Focus(NavigationMethod.Pointer);
         }
 
         private void OnAddGroupClick(object? sender, RoutedEventArgs e)
@@ -556,6 +586,67 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 FieldHintBox.Focus();
                 FieldHintBox.CaretIndex = FieldHintBox.Text?.Length ?? 0;
             }, DispatcherPriority.Background);
+        }
+
+        /// <summary>Подпись выбранного поля — снова цветом темы.</summary>
+        private void OnResetLabelColorClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (Sheet is not { IsEditable: true } sheet || sheet.SelectedField is not { } field) return;
+            field.ResetLabelColor();
+        }
+
+        /// <summary>Цвет выбранного поля — снова цвет по умолчанию, цвет его типа.</summary>
+        private void OnResetAccentClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (Sheet is not { IsEditable: true } sheet || sheet.SelectedField is not { } field) return;
+            field.ResetAccent();
+        }
+
+        // ── Заготовки полей ──────────────────────────────────────────────
+
+        private FlyoutBase? _presetsFlyout;
+
+        private void OnPresetsOpening(object? sender, EventArgs e)
+        {
+            _presetsFlyout = sender as FlyoutBase;
+            Vm?.OpenPresets();
+        }
+
+        /// <summary>Поле из заготовки — туда же, куда новое; меню закрывается, курсор — в название.</summary>
+        private void OnPickPresetClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if ((sender as Control)?.DataContext is not FieldPresetItemViewModel { IsItem: true } item) return;
+            if (Vm is not { } vm) return;
+
+            _presetsFlyout?.Hide();
+            if (vm.AddPresetField(item.Id) != null) FocusFieldName();
+        }
+
+        private void OnDeletePresetClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if ((sender as Control)?.DataContext is not FieldPresetItemViewModel { IsCustom: true } item) return;
+            Vm?.DeletePreset(item.Id);
+        }
+
+        /// <summary>
+        /// Выбранное поле — своей заготовкой. Надпись на кнопке на миг
+        /// сменяется на «Сохранено»: иначе не видно, что что-то случилось.
+        /// </summary>
+        private void OnSavePresetClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (Sheet?.SelectedField is not { } field || Vm is not { } vm) return;
+            if (!vm.SaveFieldAsPreset(field)) return;
+
+            if (sender is not Button { Content: TextBlock caption }) return;
+
+            var text = caption.Text;
+            caption.Text = "Сохранено";
+            DispatcherTimer.RunOnce(() => caption.Text = text, TimeSpan.FromMilliseconds(1400));
         }
 
         private void OnDuplicateFieldClick(object? sender, RoutedEventArgs e)
@@ -680,21 +771,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         // ── Строки ───────────────────────────────────────────────────────
 
-        private void OnColumnsClick(object? sender, RoutedEventArgs e)
-        {
-            e.Handled = true;
-
-            if (sender is not ToggleButton { Tag: string tag } toggle) return;
-            if (!int.TryParse(tag, out var columns)) return;
-            if (toggle.DataContext is not AnketaLayoutRowViewModel row) return;
-
-            row.Sheet.SetColumns(row, columns);
-
-            // Повторный щелчок по уже выбранному числу колонок снял бы отметку:
-            // привязка односторонняя, значение во вьюмодели при этом не меняется.
-            toggle.SetCurrentValue(ToggleButton.IsCheckedProperty, (bool?)(row.Columns == columns));
-        }
-
         private void OnDeleteRowClick(object? sender, RoutedEventArgs e)
         {
             e.Handled = true;
@@ -761,9 +837,9 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private void OnCellGripMoved(object? sender, PointerEventArgs e)
         {
             if (_drag is not { Kind: DragKind.Cell } drag) return;
-            if (!Track(drag, e, out _)) return;
+            if (!Track(drag, e, out var p)) return;
 
-            UpdateCellTarget(drag, e);
+            UpdateCellPlacement(drag, p);
             AutoScroll(e);
             e.Handled = true;
         }
@@ -899,36 +975,92 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
                 if (files == null || files.Count == 0) return;
 
-                byte[] data;
-                await using (var stream = await files[0].OpenReadAsync())
-                using (var memory = new MemoryStream())
-                {
-                    await stream.CopyToAsync(memory);
-                    data = memory.ToArray();
-                }
-
-                if (data.Length == 0 || data.Length > MaxGlyphFileBytes)
-                {
-                    _logger.Warning("Glyph import: unsupported size {Size}", data.Length);
-                    return;
-                }
-
-                var glyph = CharacterGlyphs.FromFile(data, files[0].Name);
-                if (glyph == null)
-                {
-                    _logger.Warning("Glyph import: '{Name}' is not an icon", files[0].Name);
-                    return;
-                }
-
-                var added = sheet.AddAsset(glyph, Path.GetFileNameWithoutExtension(files[0].Name));
-                if (added == null || field == null) return;
-
-                if (target == GlyphTargetRating) field.RatingGlyph = added;
-                else field.LabelIcon = added;
+                await ImportGlyphAsync(sheet, field, target, files[0]);
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "Glyph import failed");
+            }
+        }
+
+        /// <summary>
+        /// Свой значок из файла — в значки анкеты и сразу полю: значком у
+        /// подписи или значком оценки. SVG встаёт фигурой, которая красится
+        /// цветом поля, PNG и JPG — картинкой.
+        /// </summary>
+        private async Task ImportGlyphAsync(AnketaSheetViewModel sheet, AnketaFieldEditorViewModel? field,
+            string target, IStorageFile file)
+        {
+            byte[] data;
+            await using (var stream = await file.OpenReadAsync())
+            using (var memory = new MemoryStream())
+            {
+                await stream.CopyToAsync(memory);
+                data = memory.ToArray();
+            }
+
+            if (data.Length == 0 || data.Length > MaxGlyphFileBytes)
+            {
+                _logger.Warning("Glyph import: unsupported size {Size}", data.Length);
+                return;
+            }
+
+            var glyph = CharacterGlyphs.FromFile(data, file.Name);
+            if (glyph == null)
+            {
+                _logger.Warning("Glyph import: '{Name}' is not an icon", file.Name);
+                return;
+            }
+
+            var added = sheet.AddAsset(glyph, Path.GetFileNameWithoutExtension(file.Name));
+            if (added == null || field == null) return;
+
+            if (target == GlyphTargetRating) field.RatingGlyph = added;
+            else field.LabelIcon = added;
+        }
+
+        // ── Значок подписи и оценки броском ──────────────────────────────
+        //
+        // Файл значка часто уже лежит в открытой рядом папке: его бросают
+        // прямо на строку значка в панели свойств или на кнопку значка на
+        // ленте — без окна выбора и диалога. Цель — в Tag: label или rating.
+
+        private void OnGlyphDragOver(object? sender, DragEventArgs e)
+        {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
+            var accepts = Sheet is { IsEditable: true, SelectedField: not null } && Icons.IconImport.HasFiles(e);
+            e.DragEffects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
+            (sender as Control)?.Classes.Set("drop", accepts);
+            e.Handled = true;
+        }
+
+        private void OnGlyphDragLeave(object? sender, DragEventArgs e)
+        {
+            (sender as Control)?.Classes.Set("drop", false);
+            e.Handled = true;
+        }
+
+        private async void OnGlyphDrop(object? sender, DragEventArgs e)
+        {
+            if (CharactersReadOnlyGate.RejectDrop(sender, e)) return;
+
+            e.Handled = true;
+            (sender as Control)?.Classes.Set("drop", false);
+
+            if (Sheet is not { IsEditable: true } sheet || sheet.SelectedField is not { } field) return;
+
+            var target = (sender as Control)?.Tag as string == GlyphTargetRating ? GlyphTargetRating : GlyphTargetLabel;
+            var files = Icons.IconImport.DroppedIconFiles(e);
+            if (files.Count == 0) return;
+
+            try
+            {
+                await ImportGlyphAsync(sheet, field, target, files[0]);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Glyph drop failed");
             }
         }
 
@@ -969,10 +1101,27 @@ namespace Writersword.Modules.Characters.Views.Tabs
             public AnketaSheetViewModel? Sheet;
             public AnketaLayoutRowViewModel? Row;
             public AnketaLayoutCellViewModel? Cell;
+            /// <summary>Поле, рядом с которым встанет перетаскиваемое; null — не рядом.</summary>
             public AnketaLayoutCellViewModel? TargetCell;
+
+            /// <summary>Встанет после TargetCell, а не перед ним.</summary>
+            public bool BesideAfter;
+
+            /// <summary>Поле, с которым тащимое поменяется местами; null — не обмен.</summary>
+            public AnketaLayoutCellViewModel? SwapCell;
+
+            /// <summary>Строка, чьё свободное место сейчас под курсором.</summary>
+            public AnketaLayoutRowViewModel? SlotRow;
+
+            /// <summary>Пустое место строки под курсором — подсвечено.</summary>
+            public Border? PlaceBorder;
+
             public Control? SourceVisual;
 
-            /// <summary>Место вставки листа или строки; -1 — бросок ничего не меняет.</summary>
+            /// <summary>
+            /// Место вставки листа или строки, а у поля — место его новой
+            /// строки; -1 — бросок ничего не меняет.
+            /// </summary>
             public int Index = -1;
         }
 
@@ -1017,6 +1166,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 case DragKind.Cell:
                     if (drag.SourceVisual != null) drag.SourceVisual.Opacity = 0.4;
                     GhostText.Text = drag.Cell!.Field?.DisplayName ?? string.Empty;
+                    drag.Sheet!.IsFieldDragging = true;
                     break;
             }
 
@@ -1055,7 +1205,21 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (drag.Sheet != null) drag.Sheet.IsDragSource = false;
             if (drag.Row != null) drag.Row.IsDragSource = false;
             drag.SourceVisual?.ClearValue(OpacityProperty);
-            if (drag.TargetCell != null) drag.TargetCell.IsDropTarget = false;
+
+            // Места поля гаснут, а выбранное запоминается до снятия подсветки.
+            var swapCell = drag.SwapCell;
+            var besideCell = drag.TargetCell;
+            var besideAfter = drag.BesideAfter;
+            var newRowIndex = drag.Index;
+            if (drag.Kind == DragKind.Cell)
+            {
+                ClearCellPlacement(drag);
+                if (drag.Sheet != null) drag.Sheet.IsFieldDragging = false;
+                drag.SwapCell = swapCell;
+                drag.TargetCell = besideCell;
+                drag.BesideAfter = besideAfter;
+                drag.Index = newRowIndex;
+            }
 
             if (!commit || !drag.Active || Vm is not { } vm) return;
 
@@ -1069,8 +1233,16 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     drag.Sheet!.MoveRow(drag.Row!, drag.Index);
                     break;
 
+                case DragKind.Cell when drag.SwapCell != null:
+                    drag.Sheet!.SwapFields(drag.Cell!, drag.SwapCell);
+                    break;
+
                 case DragKind.Cell when drag.TargetCell != null:
-                    drag.Sheet!.MoveField(drag.Cell!, drag.TargetCell);
+                    drag.Sheet!.PlaceFieldBeside(drag.Cell!, drag.TargetCell, drag.BesideAfter);
+                    break;
+
+                case DragKind.Cell when drag.Index >= 0:
+                    drag.Sheet!.PlaceFieldInNewRow(drag.Cell!, drag.Index);
                     break;
             }
         }
@@ -1170,31 +1342,184 @@ namespace Writersword.Modules.Characters.Views.Tabs
             DropLine.IsVisible = true;
         }
 
-        /// <summary>Ячейка того же листа под курсором — туда встанет поле, её поле — на его место.</summary>
-        private void UpdateCellTarget(DragState drag, PointerEventArgs e)
+        /// <summary>
+        /// Место поля под курсором. Пока поле тащат, на листе видны все места
+        /// (IsFieldDragging), и курсор выбирает одно из них:
+        ///   • другое поле — поменяться с ним местами (поле подсвечено);
+        ///   • левый край другого поля — встать перед ним, поля строки
+        ///     сдвинутся вправо (вертикальная чёрточка); в чужой строке — пока
+        ///     в ней меньше трёх полей, иначе это обмен;
+        ///   • пустое место строки (у каждой строки на это время три места
+        ///     равной ширины) — встать последним в ней;
+        ///   • «Новая строка» внизу — отдельной строкой в конце листа;
+        ///   • верхний и нижний край строки, промежуток между строками,
+        ///     подзаголовок — отдельной строкой здесь (горизонтальная
+        ///     чёрточка).
+        /// Место, от которого ничего не изменится, не подсвечивается.
+        /// </summary>
+        private void UpdateCellPlacement(DragState drag, Point p)
         {
-            AnketaLayoutCellViewModel? target = null;
+            ClearCellPlacement(drag);
 
-            if (this.InputHitTest(e.GetPosition(this)) is Visual hit)
+            var sheet = drag.Sheet!;
+            var rows = sheet.Rows;
+
+            // «Новая строка» под всеми строками
+            if (RectInLayer(EndSlot) is { } endRect && endRect.Contains(p))
             {
-                foreach (var visual in hit.GetSelfAndVisualAncestors())
+                if (!sheet.IsNewRowNoop(drag.Cell!, rows.Count))
                 {
-                    if (visual is not Control control) continue;
-                    if (!control.Classes.Contains("cell")) continue;
+                    drag.Index = rows.Count;
+                    sheet.IsEndSlotDropTarget = true;
+                }
+                return;
+            }
 
-                    if (control.DataContext is AnketaLayoutCellViewModel cell &&
-                        !ReferenceEquals(cell, drag.Cell) &&
-                        ReferenceEquals(cell.Row.Sheet, drag.Sheet))
-                        target = cell;
-                    break;
+            var rects = new Rect?[rows.Count];
+            var hit = -1;
+            var next = rows.Count;
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                rects[i] = RectInLayer(RowsList.ContainerFromIndex(i) as Control);
+                if (rects[i] is not { } r) continue;
+
+                if (hit < 0 && p.Y >= r.Top && p.Y < r.Bottom) hit = i;
+                if (next == rows.Count && p.Y < r.Top) next = i;
+            }
+
+            if (hit < 0)
+            {
+                ShowNewRowPlace(drag, next, rects);
+                return;
+            }
+
+            var rowRect = rects[hit]!.Value;
+            var row = rows[hit];
+
+            if (row.IsGroup)
+            {
+                ShowNewRowPlace(drag, p.Y < rowRect.Center.Y ? hit : hit + 1, rects);
+                return;
+            }
+
+            var edge = Math.Min(8.0, rowRect.Height / 5);
+            if (p.Y < rowRect.Top + edge)
+            {
+                ShowNewRowPlace(drag, hit, rects);
+                return;
+            }
+            if (p.Y >= rowRect.Bottom - edge)
+            {
+                ShowNewRowPlace(drag, hit + 1, rects);
+                return;
+            }
+
+            if (RowsList.ContainerFromIndex(hit) is not Control container) return;
+
+            // Пустое место строки — поле встанет последним в ней. Пустые —
+            // места после её полей; под полями места заняты.
+            foreach (var visual in container.GetVisualDescendants())
+            {
+                if (visual is not Border place || !place.Classes.Contains("empty-place")) continue;
+                if (!int.TryParse(place.Tag as string, out var placeIndex) || placeIndex < row.Cells.Count) continue;
+                if (RectInLayer(place) is not { } placeRect || !placeRect.Contains(p)) continue;
+                if (row.Cells.Count == 0) return;
+
+                var last = row.Cells[^1];
+                if (sheet.BesideIndex(drag.Cell!, last, after: true) < 0) return;
+
+                drag.TargetCell = last;
+                drag.BesideAfter = true;
+                drag.SlotRow = row;
+                drag.PlaceBorder = place;
+                place.Classes.Set("drop", true);
+                return;
+            }
+
+            // Поле строки под курсором, а мимо полей — ближнее к нему.
+            AnketaLayoutCellViewModel? target = null;
+            Rect targetRect = default;
+            var best = double.MaxValue;
+
+            foreach (var visual in container.GetVisualDescendants())
+            {
+                if (visual is not Border border || !border.Classes.Contains("cell")) continue;
+                if (border.DataContext is not AnketaLayoutCellViewModel cell) continue;
+                if (RectInLayer(border) is not { } r) continue;
+
+                var distance = p.X < r.Left ? r.Left - p.X : p.X > r.Right ? p.X - r.Right : 0;
+                if (distance < best)
+                {
+                    best = distance;
+                    target = cell;
+                    targetRect = r;
                 }
             }
 
-            if (ReferenceEquals(drag.TargetCell, target)) return;
+            if (target == null || ReferenceEquals(target, drag.Cell)) return;
 
-            if (drag.TargetCell != null) drag.TargetCell.IsDropTarget = false;
-            drag.TargetCell = target;
-            if (target != null) target.IsDropTarget = true;
+            // Левый край поля — встать перед ним, остальные сдвинутся вправо.
+            var leftZone = targetRect.Left + targetRect.Width * 0.3;
+            if (p.X < leftZone && sheet.BesideIndex(drag.Cell!, target, after: false) >= 0)
+            {
+                drag.TargetCell = target;
+                drag.BesideAfter = false;
+
+                DropLine.Width = 3;
+                DropLine.Height = targetRect.Height;
+                Canvas.SetLeft(DropLine, targetRect.Left - 2);
+                Canvas.SetTop(DropLine, targetRect.Y);
+                DropLine.IsVisible = true;
+                return;
+            }
+
+            // Само поле — поменяться местами.
+            if (target.HasField)
+            {
+                drag.SwapCell = target;
+                target.IsDropTarget = true;
+            }
+        }
+
+        /// <summary>Снять выбранное место: подсветку поля, свободного места, новой строки и чёрточку.</summary>
+        private void ClearCellPlacement(DragState drag)
+        {
+            if (drag.SwapCell != null) drag.SwapCell.IsDropTarget = false;
+            if (drag.SlotRow != null) drag.SlotRow.IsSlotDropTarget = false;
+            if (drag.Sheet != null) drag.Sheet.IsEndSlotDropTarget = false;
+            drag.PlaceBorder?.Classes.Set("drop", false);
+
+            drag.SwapCell = null;
+            drag.SlotRow = null;
+            drag.PlaceBorder = null;
+            drag.TargetCell = null;
+            drag.BesideAfter = false;
+            drag.Index = -1;
+            DropLine.IsVisible = false;
+        }
+
+        /// <summary>Чёрточка места новой строки поля: перед строкой index или под всеми.</summary>
+        private void ShowNewRowPlace(DragState drag, int index, Rect?[] rects)
+        {
+            Rect? last = null;
+            foreach (var r in rects)
+                if (r.HasValue) last = r;
+
+            if (last == null || drag.Sheet!.IsNewRowNoop(drag.Cell!, index))
+            {
+                DropLine.IsVisible = false;
+                return;
+            }
+
+            var y = index < rects.Length && rects[index] is { } before ? before.Y - 2 : last.Value.Bottom;
+
+            drag.Index = index;
+            DropLine.Width = Math.Max(0, last.Value.Width);
+            DropLine.Height = 3;
+            Canvas.SetLeft(DropLine, last.Value.X);
+            Canvas.SetTop(DropLine, y - 0.5);
+            DropLine.IsVisible = true;
         }
 
         /// <summary>У краёв листа он прокручивается сам — дотащить можно до любой строки.</summary>

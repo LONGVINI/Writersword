@@ -274,14 +274,14 @@
 														   FormatString="0.##" ClipValueToMinMax="True"
 														   Value="{Binding GutterMm, Mode=TwoWay}"
 														   behaviours:TooltipBehavior.Tip="Полоса под сшивку у корешка: прибавляется к полю. При разных колонтитулах чётных и нечётных страниц переплёт на нечётных листах слева, на чётных справа"/>
-											<CheckBox Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Content="Зеркальные поля" FontSize="11"
+											<CheckBox Classes="compact" Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Content="Зеркальные поля"
 											          IsChecked="{Binding MirrorMargins, Mode=TwoWay}"
 											          behaviours:TooltipBehavior.Tip="Левое поле становится внутренним, правое — внешним: на чётных листах они меняются местами вместе с переплётом, как в развороте книги. Настройка всего документа"/>
 											<StackPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2" Margin="0 4 0 0">
-												<TextBlock Text="Применить" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
-												<RadioButton Content="Ко всему разделу" FontSize="11"
+												<TextBlock Text="Область применения" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+												<RadioButton Classes="compact" Content="Ко всему разделу"
 												             IsChecked="{Binding ApplyToSection, Mode=TwoWay}"/>
-												<RadioButton Content="Только к выделенному" FontSize="11"
+												<RadioButton Classes="compact" Content="Только к выделенному"
 												             IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
 												             behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом со своими полями"/>
 											</StackPanel>
@@ -339,7 +339,7 @@
 													</ComboBox>
 												</Grid>
 
-												<CheckBox Content="Нумерация строк" FontSize="11"
+												<CheckBox Classes="compact" Content="Нумерация строк"
 												          IsChecked="{Binding LineNumbersOn, Mode=TwoWay}"/>
 												<Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="6" ColumnSpacing="8"
 												      IsEnabled="{Binding LineNumbersOn}" Margin="16 0 0 0">
@@ -419,28 +419,27 @@
 												<StackPanel Spacing="4" IsEnabled="{Binding HasBorder}">
 													<TextBlock Text="Стороны" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
 													<WrapPanel Orientation="Horizontal">
-														<CheckBox Content="Сверху" FontSize="11" Margin="0 0 10 0" IsChecked="{Binding BorderTop, Mode=TwoWay}"/>
-														<CheckBox Content="Снизу"  FontSize="11" Margin="0 0 10 0" IsChecked="{Binding BorderBottom, Mode=TwoWay}"/>
-														<CheckBox Content="Слева"  FontSize="11" Margin="0 0 10 0" IsChecked="{Binding BorderLeft, Mode=TwoWay}"/>
-														<CheckBox Content="Справа" FontSize="11" IsChecked="{Binding BorderRight, Mode=TwoWay}"/>
+														<CheckBox Classes="compact" Content="Сверху" Margin="0 0 10 0" IsChecked="{Binding BorderTop, Mode=TwoWay}"/>
+														<CheckBox Classes="compact" Content="Снизу"  Margin="0 0 10 0" IsChecked="{Binding BorderBottom, Mode=TwoWay}"/>
+														<CheckBox Classes="compact" Content="Слева"  Margin="0 0 10 0" IsChecked="{Binding BorderLeft, Mode=TwoWay}"/>
+														<CheckBox Classes="compact" Content="Справа" IsChecked="{Binding BorderRight, Mode=TwoWay}"/>
 													</WrapPanel>
-													<CheckBox Content="Под текстом" FontSize="11"
+													<CheckBox Classes="compact" Content="Под текстом"
 													          IsChecked="{Binding BorderBehind, Mode=TwoWay}"
 													          behaviours:TooltipBehavior.Tip="Рамка рисуется под текстом и картинками; иначе — поверх них"/>
 												</StackPanel>
 
 												<StackPanel Spacing="2">
-													<TextBlock Text="Применить" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-													<RadioButton Content="Ко всему разделу" FontSize="11"
+													<TextBlock Text="Область применения" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+													<RadioButton Classes="compact" Content="Ко всему разделу"
 													             IsChecked="{Binding ApplyToSection, Mode=TwoWay}"/>
-													<RadioButton Content="Только к выделенному" FontSize="11"
+													<RadioButton Classes="compact" Content="Только к выделенному"
 													             IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
 													             behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом со своими параметрами"/>
 												</StackPanel>
-												<Button Classes="RibbonBtn" HorizontalAlignment="Right"
-												        Command="{Binding ApplySectionSetupCommand}">
-													<TextBlock Text="Применить" FontSize="11"/>
-												</Button>
+												<Button Classes="standard primary" HorizontalAlignment="Right" Margin="0 4 0 0"
+												        Content="Применить"
+												        Command="{Binding ApplySectionSetupCommand}"/>
 											</StackPanel>
 										</ScrollViewer>
 									</Flyout>
@@ -553,14 +552,14 @@
 																	   FormatString="0.##" ClipValueToMinMax="True"
 																	   Value="{Binding GutterMm, Mode=TwoWay}"
 																	   behaviours:TooltipBehavior.Tip="Полоса под сшивку у корешка: прибавляется к полю. При разных колонтитулах чётных и нечётных страниц переплёт на нечётных листах слева, на чётных справа"/>
-														<CheckBox Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Content="Зеркальные поля" FontSize="11"
+														<CheckBox Classes="compact" Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Content="Зеркальные поля"
 														          IsChecked="{Binding MirrorMargins, Mode=TwoWay}"
 														          behaviours:TooltipBehavior.Tip="Левое поле становится внутренним, правое — внешним: на чётных листах они меняются местами вместе с переплётом, как в развороте книги. Настройка всего документа"/>
 														<StackPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2" Margin="0 4 0 0">
-															<TextBlock Text="Применить" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
-															<RadioButton Content="Ко всему разделу" FontSize="11"
+															<TextBlock Text="Область применения" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+															<RadioButton Classes="compact" Content="Ко всему разделу"
 															             IsChecked="{Binding ApplyToSection, Mode=TwoWay}"/>
-															<RadioButton Content="Только к выделенному" FontSize="11"
+															<RadioButton Classes="compact" Content="Только к выделенному"
 															             IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
 															             behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом со своими полями"/>
 														</StackPanel>
@@ -618,7 +617,7 @@
 																</ComboBox>
 															</Grid>
 
-															<CheckBox Content="Нумерация строк" FontSize="11"
+															<CheckBox Classes="compact" Content="Нумерация строк"
 															          IsChecked="{Binding LineNumbersOn, Mode=TwoWay}"/>
 															<Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="6" ColumnSpacing="8"
 															      IsEnabled="{Binding LineNumbersOn}" Margin="16 0 0 0">
@@ -698,28 +697,27 @@
 															<StackPanel Spacing="4" IsEnabled="{Binding HasBorder}">
 																<TextBlock Text="Стороны" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
 																<WrapPanel Orientation="Horizontal">
-																	<CheckBox Content="Сверху" FontSize="11" Margin="0 0 10 0" IsChecked="{Binding BorderTop, Mode=TwoWay}"/>
-																	<CheckBox Content="Снизу"  FontSize="11" Margin="0 0 10 0" IsChecked="{Binding BorderBottom, Mode=TwoWay}"/>
-																	<CheckBox Content="Слева"  FontSize="11" Margin="0 0 10 0" IsChecked="{Binding BorderLeft, Mode=TwoWay}"/>
-																	<CheckBox Content="Справа" FontSize="11" IsChecked="{Binding BorderRight, Mode=TwoWay}"/>
+																	<CheckBox Classes="compact" Content="Сверху" Margin="0 0 10 0" IsChecked="{Binding BorderTop, Mode=TwoWay}"/>
+																	<CheckBox Classes="compact" Content="Снизу"  Margin="0 0 10 0" IsChecked="{Binding BorderBottom, Mode=TwoWay}"/>
+																	<CheckBox Classes="compact" Content="Слева"  Margin="0 0 10 0" IsChecked="{Binding BorderLeft, Mode=TwoWay}"/>
+																	<CheckBox Classes="compact" Content="Справа" IsChecked="{Binding BorderRight, Mode=TwoWay}"/>
 																</WrapPanel>
-																<CheckBox Content="Под текстом" FontSize="11"
+																<CheckBox Classes="compact" Content="Под текстом"
 																          IsChecked="{Binding BorderBehind, Mode=TwoWay}"
 																          behaviours:TooltipBehavior.Tip="Рамка рисуется под текстом и картинками; иначе — поверх них"/>
 															</StackPanel>
 
 															<StackPanel Spacing="2">
-																<TextBlock Text="Применить" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-																<RadioButton Content="Ко всему разделу" FontSize="11"
+																<TextBlock Text="Область применения" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+																<RadioButton Classes="compact" Content="Ко всему разделу"
 																             IsChecked="{Binding ApplyToSection, Mode=TwoWay}"/>
-																<RadioButton Content="Только к выделенному" FontSize="11"
+																<RadioButton Classes="compact" Content="Только к выделенному"
 																             IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
 																             behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом со своими параметрами"/>
 															</StackPanel>
-															<Button Classes="RibbonBtn" HorizontalAlignment="Right"
-															        Command="{Binding ApplySectionSetupCommand}">
-																<TextBlock Text="Применить" FontSize="11"/>
-															</Button>
+															<Button Classes="standard primary" HorizontalAlignment="Right" Margin="0 4 0 0"
+															        Content="Применить"
+															        Command="{Binding ApplySectionSetupCommand}"/>
 														</StackPanel>
 													</ScrollViewer>
 												</Flyout>
@@ -785,67 +783,87 @@
 								<Button.Flyout>
 									<Flyout Placement="Bottom" ShowMode="Standard" Opening="OnColumnsFlyoutOpening">
 										<ScrollViewer MaxHeight="560" HorizontalScrollBarVisibility="Disabled">
-											<StackPanel Width="310" Spacing="8" Margin="4">
-												<Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="6" ColumnSpacing="8">
-													<TextBlock Grid.Row="0" Grid.Column="0" Text="Число колонок" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-													<NumericUpDown Grid.Row="0" Grid.Column="1" Classes="Ribbon" Width="96"
-													               Minimum="1" Maximum="12" Increment="1"
+											<StackPanel Width="320" Spacing="10" Margin="4">
+												<Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+													<TextBlock Grid.Column="0" Text="Число колонок" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+													<NumericUpDown Grid.Column="1" Classes="Ribbon" Width="96"
+													               Minimum="1" Maximum="{Binding MaxColumnCount}" Increment="1"
 													               FormatString="0" ClipValueToMinMax="True"
 													               Value="{Binding ColumnCountValue, Mode=TwoWay}"/>
-													<TextBlock Grid.Row="1" Grid.Column="0" Text="Промежуток, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-													<NumericUpDown Grid.Row="1" Grid.Column="1" Classes="Ribbon" Width="96"
-													               Minimum="0" Maximum="200" Increment="0.5"
-													               FormatString="0.##" ClipValueToMinMax="True"
-													               IsEnabled="{Binding ColumnsEqualWidth}"
-													               Value="{Binding ColumnGapMm, Mode=TwoWay}"/>
 												</Grid>
-												<CheckBox Content="Колонки одинаковой ширины" FontSize="11"
-												          IsEnabled="{Binding HasSeveralColumns}"
-												          IsChecked="{Binding ColumnsEqualWidth, Mode=TwoWay}"/>
-												<CheckBox Content="Черта между колонками" FontSize="11"
-												          IsEnabled="{Binding HasSeveralColumns}"
-												          IsChecked="{Binding ColumnSeparator, Mode=TwoWay}"/>
-
-												<Grid ColumnDefinitions="*,96,96" ColumnSpacing="8">
-													<TextBlock Grid.Column="0" Text="Колонка" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-													<TextBlock Grid.Column="1" Text="Ширина, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-													<TextBlock Grid.Column="2" Text="Промежуток, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+												<!-- Черта и её цвет. Цвет — стандартной кнопкой подборщика: сплошной, с
+												     прозрачностью, градиент (полный подборщик — правой кнопкой). -->
+												<Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding HasSeveralColumns}">
+													<CheckBox Grid.Column="0" Classes="compact" Content="Черта между колонками"
+													          IsChecked="{Binding ColumnSeparator, Mode=TwoWay}"/>
+													<controls:ColorPickerButton Grid.Column="1" Width="20" Height="20" VerticalAlignment="Center"
+													                            HexColor="{Binding ColumnSeparatorColor, Mode=TwoWay}"
+													                            IsEnabled="{Binding ColumnSeparator}"
+													                            behaviours:TooltipBehavior.Tip="Цвет черты"
+													                            behaviours:TooltipBehavior.Description="У Word черта между колонками всегда чёрная: в .docx цвет сохраняется для Writersword, Word покажет чёрную"/>
 												</Grid>
-												<ItemsControl ItemsSource="{Binding ColumnRows}">
-													<ItemsControl.ItemTemplate>
-														<DataTemplate DataType="vm:ColumnRowViewModel">
-															<Grid ColumnDefinitions="*,96,96" ColumnSpacing="8" Margin="0 2">
-																<TextBlock Grid.Column="0" Text="{Binding Title}" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-																<NumericUpDown Grid.Column="1" Classes="Ribbon" Width="96"
-																               Minimum="1" Maximum="1000" Increment="1"
-																               FormatString="0.##" ClipValueToMinMax="True"
-																               IsEnabled="{Binding IsEditable}"
-																               Value="{Binding WidthMm, Mode=TwoWay}"/>
-																<NumericUpDown Grid.Column="2" Classes="Ribbon" Width="96"
-																               Minimum="0" Maximum="200" Increment="0.5"
-																               FormatString="0.##" ClipValueToMinMax="True"
-																               IsVisible="{Binding HasSpace}"
-																               IsEnabled="{Binding IsSpaceEditable}"
-																               Value="{Binding SpaceMm, Mode=TwoWay}"/>
-															</Grid>
-														</DataTemplate>
-													</ItemsControl.ItemTemplate>
-												</ItemsControl>
-												<TextBlock Text="{Binding ColumnsTotalInfo}" FontSize="10" TextWrapping="Wrap"
-												           Foreground="{DynamicResource TextMutedBrush}"/>
 
-												<StackPanel Spacing="2">
-													<TextBlock Text="Применить" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-													<RadioButton Content="Ко всему разделу" FontSize="11"
+												<!-- Ширина колонок — одним блоком: флажок «одинаковой ширины» решает, как
+												     задаются числа под ним. Одинаковые колонки задаются одним промежутком, а
+												     ширина каждой выводится из него; у разных ширина и промежуток — у каждой
+												     колонки свои, в таблице. Поэтому под флажком видно только то, что в его
+												     состоянии правится. -->
+												<Border Background="{DynamicResource BgSurfaceBrush}"
+												        BorderBrush="{DynamicResource BorderSubtleBrush}"
+												        BorderThickness="1" CornerRadius="6" Padding="10 8"
+												        IsVisible="{Binding HasSeveralColumns}">
+													<StackPanel Spacing="8">
+														<TextBlock Text="Ширина колонок" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+														<CheckBox Classes="compact" Content="Все одинаковой ширины"
+														          IsChecked="{Binding ColumnsEqualWidth, Mode=TwoWay}"/>
+														<Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding CanEditColumnGap}">
+															<TextBlock Grid.Column="0" Text="Промежуток, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+															<NumericUpDown Grid.Column="1" Classes="Ribbon" Width="96"
+															               Minimum="0" Maximum="{Binding MaxColumnGapMm}" Increment="0.5"
+															               FormatString="0.##" ClipValueToMinMax="True"
+															               Value="{Binding ColumnGapMm, Mode=TwoWay}"/>
+														</Grid>
+														<Grid ColumnDefinitions="*,96,96" ColumnSpacing="8" IsVisible="{Binding ShowColumnTable}">
+															<TextBlock Grid.Column="0" Text="Колонка" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+															<TextBlock Grid.Column="1" Text="Ширина, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+															<TextBlock Grid.Column="2" Text="Промежуток, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+														</Grid>
+														<ItemsControl ItemsSource="{Binding ColumnRows}" IsVisible="{Binding ShowColumnTable}">
+															<ItemsControl.ItemTemplate>
+																<DataTemplate DataType="vm:ColumnRowViewModel">
+																	<Grid ColumnDefinitions="*,96,96" ColumnSpacing="8" Margin="0 2">
+																		<TextBlock Grid.Column="0" Text="{Binding Title}" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+																		<NumericUpDown Grid.Column="1" Classes="Ribbon" Width="96"
+																		               Minimum="1" Maximum="1000" Increment="1"
+																		               FormatString="0.##" ClipValueToMinMax="True"
+																		               IsEnabled="{Binding IsEditable}"
+																		               Value="{Binding WidthMm, Mode=TwoWay}"/>
+																		<NumericUpDown Grid.Column="2" Classes="Ribbon" Width="96"
+																		               Minimum="0" Maximum="200" Increment="0.5"
+																		               FormatString="0.##" ClipValueToMinMax="True"
+																		               IsVisible="{Binding HasSpace}"
+																		               IsEnabled="{Binding IsSpaceEditable}"
+																		               Value="{Binding SpaceMm, Mode=TwoWay}"/>
+																	</Grid>
+																</DataTemplate>
+															</ItemsControl.ItemTemplate>
+														</ItemsControl>
+														<TextBlock Text="{Binding ColumnsTotalInfo}" FontSize="10" TextWrapping="Wrap"
+														           Foreground="{DynamicResource TextMutedBrush}"/>
+													</StackPanel>
+												</Border>
+
+												<StackPanel Spacing="4">
+													<TextBlock Text="Область применения" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+													<RadioButton Classes="compact" Content="Ко всему разделу"
 													             IsChecked="{Binding ApplyToSection, Mode=TwoWay}"/>
-													<RadioButton Content="Только к выделенному" FontSize="11"
+													<RadioButton Classes="compact" Content="Только к выделенному"
 													             IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
 													             behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом со своими колонками; разрывы — непрерывные"/>
 												</StackPanel>
-												<Button Classes="RibbonBtn" HorizontalAlignment="Right"
-												        Command="{Binding ApplyColumnsCommand}">
-													<TextBlock Text="Применить" FontSize="11"/>
-												</Button>
+												<Button Classes="standard primary" HorizontalAlignment="Right" Margin="0 4 0 0"
+												        Content="Применить"
+												        Command="{Binding ApplyColumnsCommand}"/>
 											</StackPanel>
 										</ScrollViewer>
 									</Flyout>
@@ -903,67 +921,87 @@
 											<Button.Flyout>
 												<Flyout Placement="Bottom" ShowMode="Standard" Opening="OnColumnsFlyoutOpening">
 													<ScrollViewer MaxHeight="560" HorizontalScrollBarVisibility="Disabled">
-														<StackPanel Width="310" Spacing="8" Margin="4">
-															<Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="6" ColumnSpacing="8">
-																<TextBlock Grid.Row="0" Grid.Column="0" Text="Число колонок" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-																<NumericUpDown Grid.Row="0" Grid.Column="1" Classes="Ribbon" Width="96"
-																               Minimum="1" Maximum="12" Increment="1"
+														<StackPanel Width="320" Spacing="10" Margin="4">
+															<Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+																<TextBlock Grid.Column="0" Text="Число колонок" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+																<NumericUpDown Grid.Column="1" Classes="Ribbon" Width="96"
+																               Minimum="1" Maximum="{Binding MaxColumnCount}" Increment="1"
 																               FormatString="0" ClipValueToMinMax="True"
 																               Value="{Binding ColumnCountValue, Mode=TwoWay}"/>
-																<TextBlock Grid.Row="1" Grid.Column="0" Text="Промежуток, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-																<NumericUpDown Grid.Row="1" Grid.Column="1" Classes="Ribbon" Width="96"
-																               Minimum="0" Maximum="200" Increment="0.5"
-																               FormatString="0.##" ClipValueToMinMax="True"
-																               IsEnabled="{Binding ColumnsEqualWidth}"
-																               Value="{Binding ColumnGapMm, Mode=TwoWay}"/>
 															</Grid>
-															<CheckBox Content="Колонки одинаковой ширины" FontSize="11"
-															          IsEnabled="{Binding HasSeveralColumns}"
-															          IsChecked="{Binding ColumnsEqualWidth, Mode=TwoWay}"/>
-															<CheckBox Content="Черта между колонками" FontSize="11"
-															          IsEnabled="{Binding HasSeveralColumns}"
-															          IsChecked="{Binding ColumnSeparator, Mode=TwoWay}"/>
-
-															<Grid ColumnDefinitions="*,96,96" ColumnSpacing="8">
-																<TextBlock Grid.Column="0" Text="Колонка" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-																<TextBlock Grid.Column="1" Text="Ширина, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-																<TextBlock Grid.Column="2" Text="Промежуток, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+															<!-- Черта и её цвет. Цвет — стандартной кнопкой подборщика: сплошной, с
+															     прозрачностью, градиент (полный подборщик — правой кнопкой). -->
+															<Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding HasSeveralColumns}">
+																<CheckBox Grid.Column="0" Classes="compact" Content="Черта между колонками"
+																          IsChecked="{Binding ColumnSeparator, Mode=TwoWay}"/>
+																<controls:ColorPickerButton Grid.Column="1" Width="20" Height="20" VerticalAlignment="Center"
+																                            HexColor="{Binding ColumnSeparatorColor, Mode=TwoWay}"
+																                            IsEnabled="{Binding ColumnSeparator}"
+																                            behaviours:TooltipBehavior.Tip="Цвет черты"
+																                            behaviours:TooltipBehavior.Description="У Word черта между колонками всегда чёрная: в .docx цвет сохраняется для Writersword, Word покажет чёрную"/>
 															</Grid>
-															<ItemsControl ItemsSource="{Binding ColumnRows}">
-																<ItemsControl.ItemTemplate>
-																	<DataTemplate DataType="vm:ColumnRowViewModel">
-																		<Grid ColumnDefinitions="*,96,96" ColumnSpacing="8" Margin="0 2">
-																			<TextBlock Grid.Column="0" Text="{Binding Title}" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-																			<NumericUpDown Grid.Column="1" Classes="Ribbon" Width="96"
-																			               Minimum="1" Maximum="1000" Increment="1"
-																			               FormatString="0.##" ClipValueToMinMax="True"
-																			               IsEnabled="{Binding IsEditable}"
-																			               Value="{Binding WidthMm, Mode=TwoWay}"/>
-																			<NumericUpDown Grid.Column="2" Classes="Ribbon" Width="96"
-																			               Minimum="0" Maximum="200" Increment="0.5"
-																			               FormatString="0.##" ClipValueToMinMax="True"
-																			               IsVisible="{Binding HasSpace}"
-																			               IsEnabled="{Binding IsSpaceEditable}"
-																			               Value="{Binding SpaceMm, Mode=TwoWay}"/>
-																		</Grid>
-																	</DataTemplate>
-																</ItemsControl.ItemTemplate>
-															</ItemsControl>
-															<TextBlock Text="{Binding ColumnsTotalInfo}" FontSize="10" TextWrapping="Wrap"
-															           Foreground="{DynamicResource TextMutedBrush}"/>
 
-															<StackPanel Spacing="2">
-																<TextBlock Text="Применить" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-																<RadioButton Content="Ко всему разделу" FontSize="11"
+															<!-- Ширина колонок — одним блоком: флажок «одинаковой ширины» решает, как
+															     задаются числа под ним. Одинаковые колонки задаются одним промежутком, а
+															     ширина каждой выводится из него; у разных ширина и промежуток — у каждой
+															     колонки свои, в таблице. Поэтому под флажком видно только то, что в его
+															     состоянии правится. -->
+															<Border Background="{DynamicResource BgSurfaceBrush}"
+															        BorderBrush="{DynamicResource BorderSubtleBrush}"
+															        BorderThickness="1" CornerRadius="6" Padding="10 8"
+															        IsVisible="{Binding HasSeveralColumns}">
+																<StackPanel Spacing="8">
+																	<TextBlock Text="Ширина колонок" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+																	<CheckBox Classes="compact" Content="Все одинаковой ширины"
+																	          IsChecked="{Binding ColumnsEqualWidth, Mode=TwoWay}"/>
+																	<Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding CanEditColumnGap}">
+																		<TextBlock Grid.Column="0" Text="Промежуток, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+																		<NumericUpDown Grid.Column="1" Classes="Ribbon" Width="96"
+																		               Minimum="0" Maximum="{Binding MaxColumnGapMm}" Increment="0.5"
+																		               FormatString="0.##" ClipValueToMinMax="True"
+																		               Value="{Binding ColumnGapMm, Mode=TwoWay}"/>
+																	</Grid>
+																	<Grid ColumnDefinitions="*,96,96" ColumnSpacing="8" IsVisible="{Binding ShowColumnTable}">
+																		<TextBlock Grid.Column="0" Text="Колонка" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+																		<TextBlock Grid.Column="1" Text="Ширина, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+																		<TextBlock Grid.Column="2" Text="Промежуток, мм" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+																	</Grid>
+																	<ItemsControl ItemsSource="{Binding ColumnRows}" IsVisible="{Binding ShowColumnTable}">
+																		<ItemsControl.ItemTemplate>
+																			<DataTemplate DataType="vm:ColumnRowViewModel">
+																				<Grid ColumnDefinitions="*,96,96" ColumnSpacing="8" Margin="0 2">
+																					<TextBlock Grid.Column="0" Text="{Binding Title}" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+																					<NumericUpDown Grid.Column="1" Classes="Ribbon" Width="96"
+																					               Minimum="1" Maximum="1000" Increment="1"
+																					               FormatString="0.##" ClipValueToMinMax="True"
+																					               IsEnabled="{Binding IsEditable}"
+																					               Value="{Binding WidthMm, Mode=TwoWay}"/>
+																					<NumericUpDown Grid.Column="2" Classes="Ribbon" Width="96"
+																					               Minimum="0" Maximum="200" Increment="0.5"
+																					               FormatString="0.##" ClipValueToMinMax="True"
+																					               IsVisible="{Binding HasSpace}"
+																					               IsEnabled="{Binding IsSpaceEditable}"
+																					               Value="{Binding SpaceMm, Mode=TwoWay}"/>
+																				</Grid>
+																			</DataTemplate>
+																		</ItemsControl.ItemTemplate>
+																	</ItemsControl>
+																	<TextBlock Text="{Binding ColumnsTotalInfo}" FontSize="10" TextWrapping="Wrap"
+																	           Foreground="{DynamicResource TextMutedBrush}"/>
+																</StackPanel>
+															</Border>
+
+															<StackPanel Spacing="4">
+																<TextBlock Text="Область применения" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+																<RadioButton Classes="compact" Content="Ко всему разделу"
 																             IsChecked="{Binding ApplyToSection, Mode=TwoWay}"/>
-																<RadioButton Content="Только к выделенному" FontSize="11"
+																<RadioButton Classes="compact" Content="Только к выделенному"
 																             IsChecked="{Binding ApplyToSelection, Mode=TwoWay}"
 																             behaviours:TooltipBehavior.Tip="Выделенные абзацы (без выделения — абзац под кареткой) становятся отдельным разделом со своими колонками; разрывы — непрерывные"/>
 															</StackPanel>
-															<Button Classes="RibbonBtn" HorizontalAlignment="Right"
-															        Command="{Binding ApplyColumnsCommand}">
-																<TextBlock Text="Применить" FontSize="11"/>
-															</Button>
+															<Button Classes="standard primary" HorizontalAlignment="Right" Margin="0 4 0 0"
+															        Content="Применить"
+															        Command="{Binding ApplyColumnsCommand}"/>
 														</StackPanel>
 													</ScrollViewer>
 												</Flyout>

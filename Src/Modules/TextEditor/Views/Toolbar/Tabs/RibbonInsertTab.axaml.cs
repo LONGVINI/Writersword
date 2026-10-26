@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Markup.Xaml;
@@ -12,6 +12,15 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
     public partial class RibbonInsertTab : UserControl
     {
         private RibbonScrollContainer? _scrollContainer;
+
+        /// <summary>
+        /// Сетка выбора таблицы уже прикреплена к кнопкам. Вкладка ленты снимается с
+        /// экрана и возвращается на него при каждом переключении вкладок, и каждое
+        /// возвращение прикрепляло к кнопке ещё одно всплывающее окно со своей сеткой.
+        /// Щелчок по кнопке открывал их все разом, выбор размера закрывал только одно,
+        /// остальные оставались на экране, и из них можно было вставить ещё таблицы.
+        /// </summary>
+        private bool _tablePickerAttached;
 
         public RibbonInsertTab()
         {
@@ -28,7 +37,12 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         {
             base.OnAttachedToVisualTree(e);
             _scrollContainer = this.FindControl<RibbonScrollContainer>("ScrollContainer");
-            SetupTablePicker();
+
+            if (!_tablePickerAttached)
+            {
+                SetupTablePicker();
+                _tablePickerAttached = true;
+            }
         }
 
         private void SetupTablePicker()
@@ -58,7 +72,7 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                     vm.InsertTableWithSize(rows, cols);
             };
 
-            // ���� ����� �� �������� ���������� � ���������� fallback.
+            // Берём кисти из ресурсов приложения с безопасным fallback.
             IBrush bgBrush = Brushes.White;
             IBrush bordBrush = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
 

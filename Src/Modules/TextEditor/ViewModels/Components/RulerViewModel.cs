@@ -140,6 +140,19 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         bool MirroredSides = false,
         double RightGutterMm = 0);
 
+    /// <summary>За что взяли промежуток между колонками на линейке.</summary>
+    public enum RulerColumnGapPart
+    {
+        /// <summary>Левый край: меняется колонка слева и сам промежуток.</summary>
+        LeftEdge,
+
+        /// <summary>Правый край: меняется колонка справа и сам промежуток.</summary>
+        RightEdge,
+
+        /// <summary>Середина: промежуток едет целиком, его ширина та же.</summary>
+        Whole
+    }
+
     public sealed class RulerViewModel : ReactiveObject
     {
         private RulerUnits _units;
@@ -882,7 +895,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// </summary>
         public void ShowSheet(RulerSheet sheet)
         {
-            if (_marginDragActive) return;
+            if (_marginDragActive || _columnGapDragActive) return;
 
             CurrentSection = sheet.Section;
             ColumnGapsMm = sheet.ColumnGapsMm;
@@ -893,6 +906,122 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         }
 
         private bool _marginDragActive;
+
+        // ── Промежутки между колонками ────────────────────────────────────
+        // Промежуток тянут за край или за середину, как у Word. Край меняет ширину
+        // соседней колонки и самого промежутка, середина двигает промежуток целиком:
+        // колонка с одной стороны шире, с другой уже. Пока тянут, меняется только
+        // линейка; на отпускании колонки раздела под кареткой встают по новым
+        // промежуткам — уже как колонки разной ширины, и флажок «Все одинаковой
+        // ширины» в окне «Другие колонки» снят сам: окно читает колонки раздела.
+
+        /// <summary>Самая узкая колонка при перетаскивании промежутка, мм: полдюйма, как у Word.</summary>
+        public const double MinColumnWidthMm = 12.7;
+
+        private bool _columnGapDragActive;
+        private int _draggingGapIndex = -1;
+        private RulerColumnGapPart _draggingGapPart;
+        private (double FromMm, double ToMm)[] _gapsAtDragStart = Array.Empty<(double, double)>();
+        private double _gapGrabOffsetMm;
+        private bool _gapDragMoved;
+
+        /// <summary>Тянут промежуток между колонками.</summary>
+        public bool IsColumnGapDragActive => _columnGapDragActive;
+
+        /// <summary>
+        /// Промежуток отпущен: промежутки от левого края текста и ширина текста, мм.
+        /// </summary>
+        public event Action<IReadOnlyList<(double FromMm, double ToMm)>, double>? ColumnGapsCommitted;
+
+        /// <summary>Ширина текста листа под кареткой на линейке, мм.</summary>
+        private double ShownTextWidthMm => Math.Max(PageWidthMm - MarginLeftMm - MarginRightMm, 0.0);
+
+        /// <summary>
+        /// Начало жеста по промежутку номер <paramref name="index"/>; <paramref name="grabMm"/> —
+        /// где его взяли, мм от левого края текста.
+        /// </summary>
+        public void BeginColumnGapDrag(int index, RulerColumnGapPart part, double grabMm)
+        {
+            if (index < 0 || index >= _columnGapsMm.Count) return;
+
+            var start = new (double FromMm, double ToMm)[_columnGapsMm.Count];
+            for (int i = 0; i < start.Length; i++) start[i] = _columnGapsMm[i];
+
+            _gapsAtDragStart = start;
+            _draggingGapIndex = index;
+            _draggingGapPart = part;
+            _gapGrabOffsetMm = grabMm - start[index].FromMm;
+            _gapDragMoved = false;
+            _columnGapDragActive = true;
+        }
+
+        /// <summary>Промежуток ведёт мышь: <paramref name="positionMm"/> — от левого края текста.</summary>
+        public void UpdateColumnGapDrag(double positionMm)
+        {
+            if (!_columnGapDragActive) return;
+
+            int index = _draggingGapIndex;
+            var gaps = ((double FromMm, double ToMm)[])_gapsAtDragStart.Clone();
+            var (from, to) = gaps[index];
+            double previousEnd = index > 0 ? gaps[index - 1].ToMm : 0.0;
+            double nextStart = index + 1 < gaps.Length ? gaps[index + 1].FromMm : ShownTextWidthMm;
+
+            switch (_draggingGapPart)
+            {
+                case RulerColumnGapPart.LeftEdge:
+                    from = ClampOrKeep(SnapMm(positionMm), previousEnd + MinColumnWidthMm, to, from);
+                    break;
+
+                case RulerColumnGapPart.RightEdge:
+                    to = ClampOrKeep(SnapMm(positionMm), from, nextStart - MinColumnWidthMm, to);
+                    break;
+
+                default:
+                    double width = to - from;
+                    double moved = ClampOrKeep(SnapMm(positionMm - _gapGrabOffsetMm),
+                        previousEnd + MinColumnWidthMm, nextStart - MinColumnWidthMm - width, from);
+                    from = moved;
+                    to = moved + width;
+                    break;
+            }
+
+            gaps[index] = (from, to);
+
+            var current = _columnGapsMm;
+            if (current.Count == gaps.Length
+                && Math.Abs(current[index].FromMm - from) < 0.001
+                && Math.Abs(current[index].ToMm - to) < 0.001)
+                return;
+
+            _gapDragMoved = true;
+            ColumnGapsMm = gaps;
+        }
+
+        /// <summary>Промежуток отпущен: колонки раздела встают по линейке, если его сдвинули.</summary>
+        public void EndColumnGapDrag()
+        {
+            if (!_columnGapDragActive) return;
+
+            _columnGapDragActive = false;
+            _draggingGapIndex = -1;
+
+            bool moved = _gapDragMoved;
+            _gapDragMoved = false;
+            if (moved) ColumnGapsCommitted?.Invoke(_columnGapsMm, ShownTextWidthMm);
+        }
+
+        /// <summary>Место на линейке по делениям, мм; без привязки — как есть.</summary>
+        private double SnapMm(double mm)
+        {
+            if (!IsSnapEnabled) return mm;
+            double step = UnitsToMm(SnapStep);
+            return step > 0 ? Math.Round(mm / step) * step : mm;
+        }
+
+        // Предел, который уже не соблюдён (колонка пришла из файла уже предела), не
+        // двигает край вовсе: иначе он перескочил бы на место, которого никто не просил.
+        private static double ClampOrKeep(double value, double min, double max, double original)
+            => min > max ? original : Math.Clamp(value, min, max);
 
         public void UpdatePageSettings(
             double widthMm, double heightMm,

@@ -6782,6 +6782,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _document.ColumnSettings.ColumnCount = imported.ColumnSettings.ColumnCount;
             _document.ColumnSettings.GapMm = imported.ColumnSettings.GapMm;
             _document.ColumnSettings.ShowSeparator = imported.ColumnSettings.ShowSeparator;
+            _document.ColumnSettings.SeparatorColor = imported.ColumnSettings.SeparatorColor;
             _document.FinalSection = imported.FinalSection;
 
             // Правила вёрстки Word переезжают вместе с текстом: без них документ,
@@ -7787,6 +7788,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 && a.IsSmallCaps == b.IsSmallCaps
                 && a.CharacterSpacing == b.CharacterSpacing
                 && a.CharacterScale == b.CharacterScale
+                && a.KerningMinSizePt == b.KerningMinSizePt
                 && a.BaselineOffset == b.BaselineOffset
                 && a.IsHidden == b.IsHidden
                 && a.IsOutline == b.IsOutline

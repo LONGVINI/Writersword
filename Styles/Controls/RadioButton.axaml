@@ -1,0 +1,128 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+	<!-- Переключатель «один из нескольких» в цветах приложения. Без этого стиля
+	     RadioButton оставался стандартным Fluent: выбранный кружок красился
+	     системным синим, а рядом стоящие флажки — акцентом приложения, и в одном
+	     окне выходило два разных цвета выбора. Вид — как у CheckBox.axaml: рамка
+	     и подложка панели, у выбранного — заливка акцентом и белая точка. -->
+	<Style Selector="RadioButton">
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="FontSize" Value="{DynamicResource FontSizeS}"/>
+	</Style>
+
+	<Style Selector="RadioButton:pointerover /template/ ContentPresenter">
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+	</Style>
+
+	<Style Selector="RadioButton:disabled">
+		<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+	</Style>
+
+	<!-- Невыбранный: кольцо цвета рамки на подложке панели. -->
+	<Style Selector="RadioButton /template/ Ellipse#OuterEllipse">
+		<Setter Property="Stroke" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="Fill" Value="{DynamicResource BgPanelBrush}"/>
+	</Style>
+	<Style Selector="RadioButton:pointerover /template/ Ellipse#OuterEllipse">
+		<Setter Property="Stroke" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="Fill" Value="{DynamicResource BgHoverBrush}"/>
+	</Style>
+	<Style Selector="RadioButton:pressed /template/ Ellipse#OuterEllipse">
+		<Setter Property="Stroke" Value="{DynamicResource AccentPressedBrush}"/>
+		<Setter Property="Fill" Value="{DynamicResource BgBaseBrush}"/>
+	</Style>
+	<Style Selector="RadioButton:disabled /template/ Ellipse#OuterEllipse">
+		<Setter Property="Stroke" Value="{DynamicResource BorderSubtleBrush}"/>
+		<Setter Property="Fill" Value="{DynamicResource BgSurfaceBrush}"/>
+	</Style>
+
+	<!-- Выбранный: круг акцента и белая точка в нём. -->
+	<Style Selector="RadioButton:checked /template/ Ellipse#CheckOuterEllipse">
+		<Setter Property="Stroke" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="Fill" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="RadioButton:checked:pointerover /template/ Ellipse#CheckOuterEllipse">
+		<Setter Property="Stroke" Value="{DynamicResource AccentHoverBrush}"/>
+		<Setter Property="Fill" Value="{DynamicResource AccentHoverBrush}"/>
+	</Style>
+	<Style Selector="RadioButton:checked:pressed /template/ Ellipse#CheckOuterEllipse">
+		<Setter Property="Stroke" Value="{DynamicResource AccentPressedBrush}"/>
+		<Setter Property="Fill" Value="{DynamicResource AccentPressedBrush}"/>
+	</Style>
+	<Style Selector="RadioButton:checked:disabled /template/ Ellipse#CheckOuterEllipse">
+		<Setter Property="Stroke" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="Fill" Value="{DynamicResource BorderDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="RadioButton:checked /template/ Ellipse#CheckGlyph">
+		<Setter Property="Fill" Value="White"/>
+		<Setter Property="Stroke" Value="White"/>
+	</Style>
+	<Style Selector="RadioButton:checked:pointerover /template/ Ellipse#CheckGlyph">
+		<Setter Property="Fill" Value="White"/>
+		<Setter Property="Stroke" Value="White"/>
+	</Style>
+	<Style Selector="RadioButton:checked:pressed /template/ Ellipse#CheckGlyph">
+		<Setter Property="Fill" Value="White"/>
+		<Setter Property="Stroke" Value="White"/>
+	</Style>
+	<Style Selector="RadioButton:checked:disabled /template/ Ellipse#CheckGlyph">
+		<Setter Property="Fill" Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="Stroke" Value="{DynamicResource BgSurfaceBrush}"/>
+	</Style>
+	<!-- Уменьшенный переключатель: Classes="compact", пара к уменьшенному флажку
+	     (CheckBox.axaml). Шаблон свой по той же причине: штатный держит высоту в
+	     тридцать две точки. Части названы иначе, чем у штатного (Ring, Dot), чтобы
+	     стили штатного выше их не задевали. -->
+	<Style Selector="RadioButton.compact">
+		<Setter Property="MinHeight"           Value="20"/>
+		<Setter Property="MinWidth"            Value="0"/>
+		<Setter Property="Padding"             Value="0"/>
+		<Setter Property="FontSize"            Value="11"/>
+		<Setter Property="Foreground"          Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="HorizontalAlignment" Value="Left"/>
+		<Setter Property="Cursor"              Value="Hand"/>
+		<Setter Property="Template">
+			<ControlTemplate>
+				<Grid ColumnDefinitions="Auto,*" Background="Transparent">
+					<Panel Grid.Column="0" Width="14" Height="14" VerticalAlignment="Center">
+						<Ellipse Name="Ring"
+						         StrokeThickness="1"
+						         Stroke="{DynamicResource BorderDefaultBrush}"
+						         Fill="{DynamicResource BgPanelBrush}"/>
+						<Ellipse Name="Dot"
+						         Width="6" Height="6"
+						         Fill="White"
+						         HorizontalAlignment="Center"
+						         VerticalAlignment="Center"
+						         IsVisible="False"/>
+					</Panel>
+					<ContentPresenter Grid.Column="1"
+					                  Margin="7 0 0 0"
+					                  Content="{TemplateBinding Content}"
+					                  Foreground="{TemplateBinding Foreground}"
+					                  FontSize="{TemplateBinding FontSize}"
+					                  VerticalAlignment="Center"/>
+				</Grid>
+			</ControlTemplate>
+		</Setter>
+	</Style>
+	<Style Selector="RadioButton.compact:pointerover /template/ Ellipse#Ring">
+		<Setter Property="Stroke" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="RadioButton.compact:checked /template/ Ellipse#Ring">
+		<Setter Property="Stroke" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="Fill"   Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="RadioButton.compact:checked:pointerover /template/ Ellipse#Ring">
+		<Setter Property="Stroke" Value="{DynamicResource AccentHoverBrush}"/>
+		<Setter Property="Fill"   Value="{DynamicResource AccentHoverBrush}"/>
+	</Style>
+	<Style Selector="RadioButton.compact:checked /template/ Ellipse#Dot">
+		<Setter Property="IsVisible" Value="True"/>
+	</Style>
+	<Style Selector="RadioButton.compact:disabled">
+		<Setter Property="Opacity" Value="0.45"/>
+	</Style>
+</Styles>

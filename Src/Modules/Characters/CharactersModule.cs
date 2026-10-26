@@ -491,8 +491,6 @@ namespace Writersword.Modules.Characters
             _viewModel?.EnsureValidNamesForSave();
             var data = _characterService.GetModuleData();
             data.Relationships = _relationshipService.GetAll().ToList();
-            data.ActiveTemplateIds = _viewModel?.ActiveTemplateIds.ToList() ?? new List<string>();
-            data.ProjectTemplateId = _viewModel?.TemplatesViewModel.ProjectTemplateId;
             data.Folders = _viewModel?.GetFolders() ?? new List<CharacterFolder>();
             data.IsFirstLaunch = false;
             if (_anketaService is CharacterAnketaService as_)
@@ -503,6 +501,11 @@ namespace Writersword.Modules.Characters
                 // ссылающийся на анкету из чужого проекта, был бы списком
                 // пустых мест.
                 data.Templates = as_.GetCustomTemplates().ToList();
+                data.TemplateFolders = as_.GetTemplateFolders().ToList();
+                data.TemplateSectionOrder = as_.GetTemplateSectionOrder().ToList();
+                data.FieldPresets = as_.GetCustomFieldPresets().ToList();
+                data.HiddenTemplateIds = as_.GetHiddenTemplateIds().ToList();
+                data.CollapsedTemplateFolderIds = as_.GetCollapsedTemplateFolderIds().ToList();
                 data.RecentAnketaIds = as_.GetRecentAnketaIds().ToList();
             }
             data.CustomIcons = _viewModel?.IconLibrary.GetForSave() ?? new List<CharacterIconEntry>();
@@ -578,6 +581,11 @@ namespace Writersword.Modules.Characters
                 {
                     as_.LoadCustomAnketas(moduleData.CustomAnketas ?? new List<CharacterAnketa>());
                     as_.LoadTemplates(moduleData.Templates ?? new List<CharacterTemplate>());
+                    as_.LoadTemplateFolders(moduleData.TemplateFolders ?? new List<CharacterTemplateFolder>());
+                    as_.LoadTemplateSectionOrder(moduleData.TemplateSectionOrder ?? new List<string>());
+                    as_.LoadFieldPresets(moduleData.FieldPresets ?? new List<CharacterFieldPreset>());
+                    as_.LoadHiddenTemplateIds(moduleData.HiddenTemplateIds ?? new List<string>());
+                    as_.LoadCollapsedTemplateFolderIds(moduleData.CollapsedTemplateFolderIds ?? new List<string>());
                     as_.LoadRecentAnketas(moduleData.RecentAnketaIds ?? new List<string>());
                 }
 
@@ -593,11 +601,6 @@ namespace Writersword.Modules.Characters
                         _logger.Warning("SetCustomData: no folders in module data, default folders will be used");
                     }
 
-                    _viewModel.ActiveTemplateIds.Clear();
-                    foreach (var id in moduleData.ActiveTemplateIds ?? new List<string>())
-                        _viewModel.ActiveTemplateIds.Add(id);
-
-                    _viewModel.TemplatesViewModel.ProjectTemplateId = moduleData.ProjectTemplateId;
                     _viewModel.IconLibrary.Load(moduleData.CustomIcons);
 
                     _viewModel.CancelLoad();

@@ -1,0 +1,102 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Anketas"
+             xmlns:fields="using:Writersword.Modules.Characters.Views.Fields"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             x:Class="Writersword.Modules.Characters.Views.Fields.AnketaLookPanel"
+             x:DataType="vm:AnketaSheetViewModel">
+
+	<!-- Особый вид всей анкеты: то, что обычно не трогают. Свёрнут по
+	     умолчанию и стоит в самом низу панели — для тех, кому нужно
+	     выровнять анкету до пикселя. Пустое поле — как в программе. -->
+	<Border Classes="ps">
+		<StackPanel>
+			<ToggleButton x:Name="SecAnketaLook" Classes="ps-head" IsChecked="False">
+				<Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+					<TextBlock Text="Особый вид анкеты"/>
+					<Ellipse Grid.Column="1" Width="6" Height="6"
+					         Fill="{DynamicResource AccentDefaultBrush}"
+					         VerticalAlignment="Center"
+					         IsVisible="{Binding HasCustomLook}"/>
+					<PathIcon Grid.Column="2" Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" Width="9" Height="9"/>
+				</Grid>
+			</ToggleButton>
+			<StackPanel Classes="ps-body" IsVisible="{Binding #SecAnketaLook.IsChecked}"
+			            IsEnabled="{Binding IsEditable}">
+				<TextBlock Text="Обычно не нужно. Для всех полей анкеты; поле и строка могут задать своё. Пустое — как в программе"
+				           FontSize="10" TextWrapping="Wrap"
+				           Foreground="{DynamicResource TextMutedBrush}"/>
+
+				<Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+				      ColumnSpacing="8" RowSpacing="6">
+					<TextBlock Grid.Row="0" Grid.Column="0" Text="Поля в строке" FontSize="11" VerticalAlignment="Center"
+					           Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch" FontSize="12"
+					          ItemsSource="{Binding AnketaAlignChoices}"
+					          SelectedItem="{Binding SelectedFieldAlign, Mode=TwoWay}"
+					          behaviours:TooltipBehavior.Tip="Положение полей в строке"
+					          behaviours:TooltipBehavior.Description="Когда соседнее поле выше — например, описание рядом со шкалой — короткое поле встаёт сверху, по центру или снизу строки"/>
+
+					<TextBlock Grid.Row="1" Grid.Column="0" Text="Между строками" FontSize="11" VerticalAlignment="Center"
+					           Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<TextBox Grid.Row="1" Grid.Column="1"
+					         Text="{Binding LookRowSpacingText, Mode=TwoWay}"
+					         PlaceholderText="обычно"
+					         behaviours:SelectAllBehavior.Enabled="True"
+					         behaviours:TooltipBehavior.Tip="Расстояние между строками"
+					         behaviours:TooltipBehavior.Description="Добавка к обычному зазору под каждой строкой полей, пт. У строки может быть своя — в особом виде её поля">
+						<TextBox.InnerRightContent><TextBlock Classes="inner" Text="пт"/></TextBox.InnerRightContent>
+					</TextBox>
+
+					<TextBlock Grid.Row="2" Grid.Column="0" Text="Высота описаний" FontSize="11" VerticalAlignment="Center"
+					           Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<TextBox Grid.Row="2" Grid.Column="1"
+					         Text="{Binding LookLongTextHeightText, Mode=TwoWay}"
+					         PlaceholderText="по тексту"
+					         behaviours:SelectAllBehavior.Enabled="True"
+					         behaviours:TooltipBehavior.Tip="Высота полей описания"
+					         behaviours:TooltipBehavior.Description="Всем описаниям анкеты, пт. Пусто — описание растёт по тексту. У поля может быть своя высота — ручкой под ним">
+						<TextBox.InnerRightContent><TextBlock Classes="inner" Text="пт"/></TextBox.InnerRightContent>
+					</TextBox>
+
+					<TextBlock Grid.Row="3" Grid.Column="0" Text="Шрифт" FontSize="11" VerticalAlignment="Center"
+					           Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<ComboBox Grid.Row="3" Grid.Column="1" HorizontalAlignment="Stretch" FontSize="12"
+					          IsEditable="True"
+					          ItemsSource="{x:Static fields:FontChoices.Names}"
+					          Text="{Binding LookFontFamily, Mode=TwoWay}"
+					          PlaceholderText="как в программе"
+					          MaxDropDownHeight="320"/>
+
+					<TextBlock Grid.Row="4" Grid.Column="0" Text="Размер подписей" FontSize="11" VerticalAlignment="Center"
+					           Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<TextBox Grid.Row="4" Grid.Column="1"
+					         Text="{Binding LookLabelSizeText, Mode=TwoWay}"
+					         PlaceholderText="обычный"
+					         behaviours:SelectAllBehavior.Enabled="True">
+						<TextBox.InnerRightContent><TextBlock Classes="inner" Text="пт"/></TextBox.InnerRightContent>
+					</TextBox>
+
+					<TextBlock Grid.Row="5" Grid.Column="0" Text="Размер значений" FontSize="11" VerticalAlignment="Center"
+					           Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<TextBox Grid.Row="5" Grid.Column="1"
+					         Text="{Binding LookValueSizeText, Mode=TwoWay}"
+					         PlaceholderText="обычный"
+					         behaviours:SelectAllBehavior.Enabled="True"
+					         behaviours:TooltipBehavior.Tip="Размер значений"
+					         behaviours:TooltipBehavior.Description="Текст, описание и число, пт">
+						<TextBox.InnerRightContent><TextBlock Classes="inner" Text="пт"/></TextBox.InnerRightContent>
+					</TextBox>
+				</Grid>
+
+				<Button Classes="standard" HorizontalAlignment="Left"
+				        IsEnabled="{Binding HasCustomLook}"
+				        Click="OnResetClick"
+				        behaviours:TooltipBehavior.Tip="Вид как в программе"
+				        behaviours:TooltipBehavior.Description="Убирает особый вид анкеты. Свой вид полей и отступы строк остаются">
+					<TextBlock Text="Сбросить" FontSize="12"/>
+				</Button>
+			</StackPanel>
+		</StackPanel>
+	</Border>
+</UserControl>

@@ -245,6 +245,7 @@ namespace Writersword.Modules.TextEditor.Services
                 settings.ColumnCount = Math.Max(1, columns.Count);
                 settings.GapMm = columns.GapMm;
                 settings.ShowSeparator = columns.Separator;
+                settings.SeparatorColor = columns.SeparatorColor;
                 if (document.FinalSection is { Columns: not null } final) final.Columns = null;
             }
 
@@ -321,6 +322,7 @@ namespace Writersword.Modules.TextEditor.Services
             if (countA != countB) return false;
             if (countA <= 1) return true;
             if ((a.Separator && a.Count > 1) != (b.Separator && b.Count > 1)) return false;
+            if (a.Separator && !string.Equals(a.SeparatorColor, b.SeparatorColor, StringComparison.OrdinalIgnoreCase)) return false;
 
             bool unequalA = a.Columns is { Count: > 1 };
             bool unequalB = b.Columns is { Count: > 1 };

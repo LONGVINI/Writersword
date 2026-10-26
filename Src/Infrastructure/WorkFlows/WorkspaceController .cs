@@ -198,7 +198,10 @@ namespace Writersword.Infrastructure.Workspace
                 .Any(s => _tab.ModuleContext.GetModule(s.ModuleType) == null);
 
             var allModulesNow = _tab.ModuleContext.GetAllModules();
-            if (allModulesNow.Count > 0 && willCreateNewModules)
+            // Диагностика: кеш восстановления выключен (DiagnosticSwitches) — данные
+            // модулей при смене воркмода не собираются.
+            if (allModulesNow.Count > 0 && willCreateNewModules
+                && !Writersword.Infrastructure.Diagnostics.DiagnosticSwitches.BackgroundWorkDisabled)
             {
                 var cacheService = App.Services.GetRequiredService<IProjectCacheService>();
 
@@ -303,6 +306,8 @@ namespace Writersword.Infrastructure.Workspace
                 var pid = pendingCacheProjectId;
                 _ = Task.Run(async () =>
                 {
+                    var collectStopwatch = System.Diagnostics.Stopwatch.StartNew();
+                    long allocatedBefore = GC.GetTotalAllocatedBytes(false);
                     try
                     {
                         // Сбор данных модулей на фоновом потоке: сериализация сотен
@@ -333,6 +338,14 @@ namespace Writersword.Infrastructure.Workspace
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Async cache save failed after WorkMode switch");
+                    }
+                    finally
+                    {
+                        long allocatedMb = (GC.GetTotalAllocatedBytes(false) - allocatedBefore) / (1024 * 1024);
+                        if (allocatedMb >= 50 || collectStopwatch.ElapsedMilliseconds >= 100)
+                            _logger.LogWarning(
+                                "WorkMode switch cache: {ElapsedMs}ms, выделено {AllocatedMb} МБ",
+                                collectStopwatch.ElapsedMilliseconds, allocatedMb);
                     }
                 });
             }

@@ -29,8 +29,14 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
     /// ряда «+». Показываются первые десять, остальное раскрывается на месте.
     /// Встроенный шаблон неизменен: правка уходит в его свою копию.
     ///
-    /// Один из шаблонов — шаблон проекта: его анкеты получает каждый новый
-    /// персонаж. Остальные анкеты добавляются персонажу в карточке, ниже.
+    /// Свои шаблоны лежат по папкам, как персонажи: по умолчанию сверху «Мои
+    /// шаблоны» — без папки, — за ними папки, внизу «Встроенные»; порядок
+    /// разделов любой, его меняют стрелками в шапках. Блоки
+    /// перетаскивают между любыми разделами, кроме встроенного. Скрытый
+    /// шаблон остаётся на своём месте, только бледнее, а в поиске и в
+    /// списке шаблонов карточки его нет.
+    ///
+    /// Персонажу шаблон подключают в его карточке.
     /// </summary>
     public class CharactersTemplatesViewModel : ReactiveObject
     {
@@ -40,24 +46,25 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
         public const int CollapsedLimit = 10;
 
         private readonly ICharacterAnketaService _anketaService;
-
-        // Анкеты, которые получает каждый новый персонаж. Это и есть шаблон
-        // проекта в действии: шаблон проекта задаёт их состав.
-        private readonly ObservableCollection<string> _activeTemplateIds;
-
-        private readonly ICharacterService? _characterService;
         private readonly ICharacterAvatarService? _avatarService;
 
-        public ObservableCollection<TemplateBlockViewModel> CustomBlocks { get; } = new();
-        public ObservableCollection<TemplateBlockViewModel> BuiltInBlocks { get; } = new();
+        /// <summary>
+        /// Разделы вкладки по порядку: «Мои шаблоны» (свои без папки), папки,
+        /// «Встроенные». Порядок любой — его хранит проект.
+        /// </summary>
+        public ObservableCollection<TemplateFolderViewModel> Folders { get; } = new();
 
-        private IEnumerable<TemplateBlockViewModel> AllBlocks => CustomBlocks.Concat(BuiltInBlocks);
+        private readonly TemplateFolderViewModel _ungrouped;
+        private readonly TemplateFolderViewModel _builtIn;
 
-        public bool HasCustom => CustomBlocks.Count > 0;
+        private IEnumerable<TemplateBlockViewModel> AllBlocks => Folders.SelectMany(f => f.Blocks);
 
         private string _searchQuery = string.Empty;
 
-        /// <summary>Поиск по шаблонам: название, описание и названия их анкет.</summary>
+        /// <summary>
+        /// Поиск по шаблонам: название, описание и названия их анкет. Скрытые
+        /// шаблоны поиском не находятся.
+        /// </summary>
         public string SearchQuery
         {
             get => _searchQuery;
@@ -65,13 +72,24 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
             {
                 if (_searchQuery == value) return;
                 this.RaiseAndSetIfChanged(ref _searchQuery, value ?? string.Empty);
+                this.RaisePropertyChanged(nameof(IsSearching));
                 ApplySearch();
             }
         }
 
+        /// <summary>Идёт поиск: разделы показывают найденное и свёрнутыми.</summary>
+        public bool IsSearching => !string.IsNullOrWhiteSpace(_searchQuery);
+
         private void ApplySearch()
         {
             foreach (var block in AllBlocks) block.ApplySearch(_searchQuery);
+            RefreshFolderStates();
+        }
+
+        private void RefreshFolderStates()
+        {
+            for (int i = 0; i < Folders.Count; i++)
+                Folders[i].RefreshState(canMoveUp: i > 0, canMoveDown: i + 1 < Folders.Count);
         }
 
         public ReactiveCommand<Unit, Unit> RestartOnboardingCommand { get; }
@@ -81,138 +99,19 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
         /// <summary>Открыть анкету в редакторе анкет.</summary>
         public event Action<string>? OpenAnketaRequested;
 
-        /// <summary>Анкеты шаблона проекта разнесены по персонажам — карточке пора перечитать поля.</summary>
-        public event Action? CharactersUpdated;
-
         public CharactersTemplatesViewModel(
             ICharacterAnketaService anketaService,
-            ObservableCollection<string> activeTemplateIds,
-            ICharacterService? characterService = null,
             ICharacterAvatarService? avatarService = null)
         {
             _anketaService = anketaService;
-            _activeTemplateIds = activeTemplateIds;
-            _characterService = characterService;
             _avatarService = avatarService;
 
             RestartOnboardingCommand = ReactiveCommand.Create(() => OnboardingRestartRequested?.Invoke());
 
-            _activeTemplateIds.CollectionChanged += (_, _) => RaiseProject();
+            _ungrouped = new TemplateFolderViewModel(this, TemplateSections.Ungrouped, "Мои шаблоны");
+            _builtIn = new TemplateFolderViewModel(this, TemplateSections.BuiltIn, "Встроенные");
 
             Refresh();
-        }
-
-        // ── Шаблон проекта ───────────────────────────────────────────────
-
-        private string? _projectTemplateId;
-
-        /// <summary>
-        /// Шаблон проекта. Хранится в данных проекта; пусто — шаблон не выбран,
-        /// и новые персонажи получают анкеты, отмеченные раньше по одной.
-        /// </summary>
-        public string? ProjectTemplateId
-        {
-            get => _projectTemplateId;
-            set
-            {
-                if (_projectTemplateId == value) return;
-                this.RaiseAndSetIfChanged(ref _projectTemplateId, value);
-                foreach (var block in AllBlocks)
-                    block.IsProject = block.Id == value;
-                RaiseProject();
-            }
-        }
-
-        public string ProjectCaption
-        {
-            get
-            {
-                var template = _projectTemplateId == null ? null : _anketaService.GetTemplateById(_projectTemplateId);
-                if (template != null) return template.Name;
-                return _activeTemplateIds.Count > 0 ? "Свой набор анкет" : "Не выбран";
-            }
-        }
-
-        public string ProjectAnketasCaption
-        {
-            get
-            {
-                var names = _activeTemplateIds
-                    .Select(id => _anketaService.GetById(id)?.Name)
-                    .Where(n => !string.IsNullOrWhiteSpace(n))
-                    .ToList();
-                return names.Count == 0 ? "Без анкет" : string.Join(" · ", names);
-            }
-        }
-
-        public bool HasProject => _activeTemplateIds.Count > 0;
-
-        private void RaiseProject()
-        {
-            this.RaisePropertyChanged(nameof(ProjectCaption));
-            this.RaisePropertyChanged(nameof(ProjectAnketasCaption));
-            this.RaisePropertyChanged(nameof(HasProject));
-        }
-
-        /// <summary>
-        /// Сделать шаблон шаблоном проекта: каждый новый персонаж будет
-        /// получать его анкеты. Уже созданных это не трогает — для них есть
-        /// «Применить к созданным».
-        /// </summary>
-        public void SetProjectTemplate(string templateId)
-        {
-            var template = _anketaService.GetTemplateById(templateId);
-            if (template == null) return;
-
-            ProjectTemplateId = template.Id;
-            SyncActiveAnketas(template);
-        }
-
-        private void SyncActiveAnketas(CharacterTemplate template)
-        {
-            _activeTemplateIds.Clear();
-            foreach (var id in template.AnketaIds)
-                if (_anketaService.GetById(id) != null && !_activeTemplateIds.Contains(id))
-                    _activeTemplateIds.Add(id);
-        }
-
-        /// <summary>
-        /// Подключить анкеты шаблона проекта всем уже созданным персонажам.
-        /// Подключённое раньше остаётся на месте, заполненное не трогается.
-        /// </summary>
-        public int ApplyProjectToAll()
-        {
-            if (_characterService == null) return 0;
-
-            var anketas = _activeTemplateIds
-                .Select(id => _anketaService.GetById(id))
-                .Where(a => a != null)
-                .Cast<CharacterAnketa>()
-                .ToList();
-
-            // Глубина из шаблона проекта ставится только анкетам, которые он
-            // подключает сейчас: у подключённых раньше её выбрал автор.
-            var depths = GetProjectDepths();
-
-            int touched = 0;
-            foreach (var character in _characterService.GetAll().ToList())
-            {
-                bool changed = false;
-                foreach (var anketa in anketas)
-                {
-                    if (character.AttachedAnketaIds.Contains(anketa.Id)) continue;
-                    _characterService.ApplyAnketa(character.Id, anketa, false);
-                    if (depths.TryGetValue(anketa.Id, out var depth) &&
-                        CharacterDetailLevels.StoredFor(character, anketa.Id) == null)
-                        _characterService.SetAnketaDepth(character.Id, anketa.Id, depth);
-                    changed = true;
-                }
-                if (changed) touched++;
-            }
-
-            _logger.Debug("Project template applied to {Count} characters", touched);
-            if (touched > 0) CharactersUpdated?.Invoke();
-            return touched;
         }
 
         // ── Блоки ────────────────────────────────────────────────────────
@@ -228,6 +127,11 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
 
         public void Activate(TemplateBlockViewModel? block)
         {
+            // Шаблон выбрали — его папка становится текущей: новый шаблон
+            // встанет туда же, где работают.
+            if (block != null && FolderOf(block) is { IsBuiltIn: false } folder)
+                SelectFolder(folder);
+
             if (ReferenceEquals(_activeBlock, block)) return;
 
             _activeBlock?.SetActive(false);
@@ -241,43 +145,197 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
         /// </summary>
         public void Refresh()
         {
+            // Разделы — в порядке проекта: папки, «Мои шаблоны» и «Встроенные»
+            // вперемешку, как их расставили. Папки существующих разделов
+            // остаются теми же объектами.
+            var folders = _anketaService.GetTemplateFolders();
+            var byId = new Dictionary<string, TemplateFolderViewModel>(StringComparer.Ordinal)
+            {
+                [_ungrouped.Id] = _ungrouped,
+                [_builtIn.Id] = _builtIn
+            };
+            foreach (var folder in folders)
+            {
+                var section = Folders.FirstOrDefault(f => f.Id == folder.Id)
+                              ?? new TemplateFolderViewModel(this, folder);
+                section.Update(folder);
+                byId[folder.Id] = section;
+            }
+
+            var sections = new List<TemplateFolderViewModel>();
+            foreach (var id in _anketaService.GetTemplateSectionOrder())
+                if (byId.Remove(id, out var ordered))
+                    sections.Add(ordered);
+
+            // Раздел, которого порядок не знает, не пропадает: «Мои шаблоны»
+            // встают первыми, папки и «Встроенные» — в конец.
+            if (byId.Remove(_ungrouped.Id, out var ungrouped)) sections.Insert(0, ungrouped);
+            foreach (var folder in folders)
+                if (byId.Remove(folder.Id, out var rest))
+                    sections.Add(rest);
+            if (byId.Remove(_builtIn.Id, out var builtIn)) sections.Add(builtIn);
+
+            SyncCollection(Folders, sections);
+
+            // Блоки: свой шаблон лежит в своей папке, а если такой папки нет
+            // — в «Моих шаблонах». Блок, переехавший в другую папку, остаётся
+            // тем же объектом: выбор и раскрытие при переезде не теряются.
+            var folderIds = folders.Select(f => f.Id).ToHashSet(StringComparer.Ordinal);
+            var pool = new Dictionary<string, TemplateBlockViewModel>(StringComparer.Ordinal);
+            foreach (var block in AllBlocks) pool[block.Id] = block;
+
             var templates = _anketaService.GetTemplates();
-            SyncBlocks(CustomBlocks, templates.Where(t => !t.IsBuiltIn).ToList());
-            SyncBlocks(BuiltInBlocks, templates.Where(t => t.IsBuiltIn).ToList());
+            foreach (var section in Folders)
+            {
+                IEnumerable<CharacterTemplate> list = section.IsBuiltIn
+                    ? templates.Where(t => t.IsBuiltIn)
+                    : section.IsUngrouped
+                        ? templates.Where(t => !t.IsBuiltIn && (string.IsNullOrEmpty(t.FolderId) || !folderIds.Contains(t.FolderId)))
+                        : templates.Where(t => !t.IsBuiltIn && t.FolderId == section.Id);
+
+                var blocks = new List<TemplateBlockViewModel>();
+                foreach (var template in list)
+                {
+                    if (!pool.TryGetValue(template.Id, out var block))
+                    {
+                        block = new TemplateBlockViewModel(template.Id, template.IsBuiltIn, this);
+                        pool[template.Id] = block;
+                    }
+                    block.IsHidden = _anketaService.IsTemplateHidden(template.Id);
+                    block.Update(template);
+                    blocks.Add(block);
+                }
+
+                SyncCollection(section.Blocks, blocks);
+                section.SetExpandedSilently(!_anketaService.IsTemplateFolderCollapsed(section.Id));
+            }
 
             if (_activeBlock != null && !AllBlocks.Contains(_activeBlock))
                 ActiveBlock = null;
 
-            this.RaisePropertyChanged(nameof(HasCustom));
+            if (_activeFolder != null && !Folders.Contains(_activeFolder))
+                SelectFolder(null);
+
             ApplySearch();
-            RaiseProject();
         }
 
-        private void SyncBlocks(ObservableCollection<TemplateBlockViewModel> blocks, List<CharacterTemplate> templates)
+        /// <summary>
+        /// Свести коллекцию к нужному составу на месте: оставшиеся элементы не
+        /// пересоздаются, лишние уходят, недостающие встают на свои места.
+        /// </summary>
+        private static void SyncCollection<T>(ObservableCollection<T> collection, IList<T> target) where T : class
         {
-            var ids = templates.Select(t => t.Id).ToHashSet();
-            for (int i = blocks.Count - 1; i >= 0; i--)
-                if (!ids.Contains(blocks[i].Id))
-                    blocks.RemoveAt(i);
+            for (int i = collection.Count - 1; i >= 0; i--)
+                if (!target.Contains(collection[i]))
+                    collection.RemoveAt(i);
 
-            for (int i = 0; i < templates.Count; i++)
+            for (int i = 0; i < target.Count; i++)
             {
-                var template = templates[i];
-                var existing = blocks.FirstOrDefault(b => b.Id == template.Id);
-                if (existing == null)
-                {
-                    existing = new TemplateBlockViewModel(template.Id, template.IsBuiltIn, this);
-                    blocks.Insert(Math.Min(i, blocks.Count), existing);
-                }
-                else
-                {
-                    var from = blocks.IndexOf(existing);
-                    if (from != i) blocks.Move(from, i);
-                }
+                if (i < collection.Count && ReferenceEquals(collection[i], target[i])) continue;
 
-                existing.IsProject = template.Id == _projectTemplateId;
-                existing.Update(template);
+                var from = collection.IndexOf(target[i]);
+                if (from >= 0) collection.Move(from, i);
+                else collection.Insert(Math.Min(i, collection.Count), target[i]);
             }
+        }
+
+        /// <summary>Раздел, в котором лежит блок.</summary>
+        public TemplateFolderViewModel? FolderOf(TemplateBlockViewModel block) =>
+            Folders.FirstOrDefault(f => f.Blocks.Contains(block));
+
+        // ── Папки ────────────────────────────────────────────────────────
+
+        private TemplateFolderViewModel? _activeFolder;
+
+        /// <summary>
+        /// Текущая папка — та, по которой щёлкнули последней или в которой
+        /// выбран шаблон. Новый шаблон встаёт в неё; встроенные текущими не
+        /// бывают.
+        /// </summary>
+        public void SelectFolder(TemplateFolderViewModel? folder)
+        {
+            if (folder is { IsBuiltIn: true }) folder = null;
+            if (ReferenceEquals(_activeFolder, folder)) return;
+
+            if (_activeFolder != null) _activeFolder.IsSelected = false;
+            _activeFolder = folder;
+            if (_activeFolder != null) _activeFolder.IsSelected = true;
+        }
+
+        /// <summary>Новая папка — в конце папок, сразу с полем названия.</summary>
+        public TemplateFolderViewModel? CreateFolder()
+        {
+            var names = new HashSet<string>(_anketaService.GetTemplateFolders().Select(f => f.Name), StringComparer.CurrentCultureIgnoreCase);
+            var name = "Новая папка";
+            for (int i = 2; names.Contains(name); i++) name = "Новая папка " + i;
+
+            var created = _anketaService.CreateTemplateFolder(name);
+            Refresh();
+
+            var folder = Folders.FirstOrDefault(f => f.Id == created.Id);
+            if (folder == null) return null;
+
+            SelectFolder(folder);
+            folder.IsRenaming = true;
+            return folder;
+        }
+
+        private void EditFolder(string folderId, Action<CharacterTemplateFolder> change)
+        {
+            var source = _anketaService.GetTemplateFolders().FirstOrDefault(f => f.Id == folderId);
+            if (source == null) return;
+
+            var copy = new CharacterTemplateFolder
+            {
+                Id = source.Id,
+                Name = source.Name,
+                Comment = source.Comment,
+                Color = source.Color,
+                CreatedAt = source.CreatedAt
+            };
+            change(copy);
+
+            _anketaService.UpdateTemplateFolder(copy);
+            Refresh();
+        }
+
+        internal void RenameFolder(string folderId, string name) =>
+            EditFolder(folderId, f => f.Name = string.IsNullOrWhiteSpace(name) ? "Папка" : name.Trim());
+
+        internal void SetFolderComment(string folderId, string comment) =>
+            EditFolder(folderId, f => f.Comment = comment?.Trim() ?? string.Empty);
+
+        internal void SetFolderColor(string folderId, string color) =>
+            EditFolder(folderId, f => f.Color = string.IsNullOrWhiteSpace(color) ? "#607D8B" : color);
+
+        /// <summary>Удалить папку: её шаблоны уходят в конец «Моих шаблонов».</summary>
+        public void DeleteFolder(string folderId)
+        {
+            _anketaService.DeleteTemplateFolder(folderId);
+            Refresh();
+        }
+
+        internal void MoveFolder(string folderId, int shift)
+        {
+            _anketaService.MoveTemplateFolder(folderId, shift);
+            Refresh();
+        }
+
+        internal void SetFolderCollapsed(string folderId, bool collapsed) =>
+            _anketaService.SetTemplateFolderCollapsed(folderId, collapsed);
+
+        // ── Скрытые шаблоны ──────────────────────────────────────────────
+
+        /// <summary>
+        /// Скрыть шаблон или вернуть: скрытый стоит на своём месте бледнее, а
+        /// в поиске и в списке шаблонов карточки его нет.
+        /// </summary>
+        public void ToggleHidden(TemplateBlockViewModel block)
+        {
+            _anketaService.SetTemplateHidden(block.Id, !block.IsHidden);
+            block.IsHidden = _anketaService.IsTemplateHidden(block.Id);
+            block.ApplySearch(_searchQuery);
+            RefreshFolderStates();
         }
 
         private TemplateBlockViewModel? BlockOf(string templateId) =>
@@ -293,9 +351,7 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
         public bool CanUseImages => _avatarService != null;
 
         /// <summary>
-        /// Правка шаблона: копия меняется, сохраняется сразу, блок обновляется,
-        /// а если это шаблон проекта — вслед меняется и состав анкет для новых
-        /// персонажей.
+        /// Правка шаблона: копия меняется, сохраняется сразу, блок обновляется.
         ///
         /// Встроенный шаблон неизменен: правка уходит в его свою копию, она
         /// встаёт среди своих шаблонов и становится выбранной. Возвращается
@@ -320,7 +376,8 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
                 IconBackground = source.IconBackground,
                 IconBorder = source.IconBorder,
                 FrameColor = source.FrameColor,
-                ImageRef = source.ImageRef
+                ImageRef = source.ImageRef,
+                FolderId = source.FolderId ?? string.Empty
             };
 
             if (!change(copy)) return null;
@@ -329,19 +386,10 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
 
             _anketaService.UpdateTemplate(copy);
             BlockOf(copy.Id)?.Update(copy);
-
-            if (copy.Id == _projectTemplateId)
-                SyncActiveAnketas(copy);
-
-            RaiseProject();
             return copy.Id;
         }
 
-        /// <summary>
-        /// Своя копия встроенного шаблона с уже внесённой правкой. Если
-        /// встроенный был шаблоном проекта, им становится копия — её и
-        /// собирались править под проект.
-        /// </summary>
+        /// <summary>Своя копия встроенного шаблона с уже внесённой правкой.</summary>
         private string EditBuiltIn(CharacterTemplate source, CharacterTemplate changed)
         {
             var created = _anketaService.CreateTemplate(NextName(source.Name + " (копия)"));
@@ -354,10 +402,8 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
             created.IconBorder = changed.IconBorder;
             created.FrameColor = changed.FrameColor;
             created.ImageRef = changed.ImageRef;
+            created.FolderId = string.Empty;
             _anketaService.UpdateTemplate(created);
-
-            if (source.Id == _projectTemplateId)
-                SetProjectTemplate(created.Id);
 
             Refresh();
             Activate(BlockOf(created.Id));
@@ -533,18 +579,6 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
             });
         }
 
-        /// <summary>Глубины анкет шаблона — для анкет, которые подключаются новым персонажам.</summary>
-        public IReadOnlyDictionary<string, int> GetProjectDepths()
-        {
-            var template = string.IsNullOrEmpty(_projectTemplateId)
-                ? null
-                : _anketaService.GetTemplateById(_projectTemplateId);
-
-            return template?.AnketaDepths != null
-                ? new Dictionary<string, int>(template.AnketaDepths)
-                : new Dictionary<string, int>();
-        }
-
         /// <summary>
         /// Переставить анкету внутри шаблона: index — место до удаления со
         /// старого, как его показывает полоска вставки.
@@ -565,27 +599,59 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
             });
 
         /// <summary>
-        /// Переставить свой шаблон: index — место до удаления со старого, как
-        /// его показывает полоска вставки.
+        /// Перестановка на лету, пока блок тащат: двигается только то, что на
+        /// экране, — блок встаёт в раздел folder на место index, соседи
+        /// расступаются. В проект порядок уходит одним шагом по отпусканию —
+        /// CommitArrangement. Встроенный раздел блоков не принимает.
         /// </summary>
-        public void MoveTemplate(string templateId, int index)
+        public void PreviewPlaceBlock(TemplateBlockViewModel block, TemplateFolderViewModel folder, int index)
         {
-            var block = CustomBlocks.FirstOrDefault(b => b.Id == templateId);
-            if (block == null) return;
+            if (folder.IsBuiltIn || !block.IsEditable) return;
+            if (FolderOf(block) is not { } from) return;
 
-            var from = CustomBlocks.IndexOf(block);
-            if (index > from) index--;
-            index = Math.Clamp(index, 0, CustomBlocks.Count - 1);
-            if (index == from) return;
+            if (ReferenceEquals(from, folder))
+            {
+                var current = folder.Blocks.IndexOf(block);
+                var to = Math.Clamp(index, 0, folder.Blocks.Count - 1);
+                if (current >= 0 && to != current) folder.Blocks.Move(current, to);
+            }
+            else
+            {
+                from.Blocks.Remove(block);
+                folder.Blocks.Insert(Math.Clamp(index, 0, folder.Blocks.Count), block);
+            }
 
-            _anketaService.MoveTemplate(templateId, index);
-            CustomBlocks.Move(from, index);
+            RefreshFolderStates();
         }
 
-        /// <summary>Новый шаблон — сразу выбранный, чтобы в него можно было добавлять анкеты.</summary>
+        /// <summary>
+        /// Записать в проект раскладку своих шаблонов такой, какой её видно:
+        /// порядок разделов сверху вниз и порядок блоков в каждом.
+        /// </summary>
+        public void CommitArrangement()
+        {
+            var order = new List<(string Id, string FolderId)>();
+            foreach (var folder in Folders)
+            {
+                if (folder.IsBuiltIn) continue;
+                var folderId = folder.IsUngrouped ? string.Empty : folder.Id;
+                foreach (var block in folder.Blocks)
+                    order.Add((block.Id, folderId));
+            }
+
+            _anketaService.ArrangeTemplates(order);
+            Refresh();
+        }
+
+        /// <summary>
+        /// Новый шаблон — в конце текущей папки (или «Моих шаблонов»), сразу
+        /// выбранный, чтобы в него можно было добавлять анкеты.
+        /// </summary>
         public TemplateBlockViewModel? CreateTemplate()
         {
             var template = _anketaService.CreateTemplate(NextName("Новый шаблон"));
+            template.FolderId = _activeFolder is { IsCustom: true } ? _activeFolder.Id : string.Empty;
+            _anketaService.UpdateTemplate(template);
             Refresh();
 
             var block = BlockOf(template.Id);
@@ -593,7 +659,11 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
             return block;
         }
 
-        /// <summary>Копия шаблона — своя, её можно править. Так правят встроенные.</summary>
+        /// <summary>
+        /// Копия шаблона — своя, её можно править. Так правят встроенные.
+        /// Встаёт в конец той же папки; копия встроенного — в конец «Моих
+        /// шаблонов».
+        /// </summary>
         public TemplateBlockViewModel? DuplicateTemplate(string templateId)
         {
             var source = _anketaService.GetTemplateById(templateId);
@@ -609,12 +679,8 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
             copy.IconBorder = source.IconBorder;
             copy.FrameColor = source.FrameColor;
             copy.ImageRef = source.ImageRef;
+            copy.FolderId = source.IsBuiltIn ? string.Empty : source.FolderId ?? string.Empty;
             _anketaService.UpdateTemplate(copy);
-
-            // Копия встроенного шаблона проекта становится шаблоном проекта:
-            // её и собирались править под проект.
-            if (source.IsBuiltIn && source.Id == _projectTemplateId)
-                SetProjectTemplate(copy.Id);
 
             Refresh();
 
@@ -629,10 +695,6 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
             if (template == null || template.IsBuiltIn) return;
 
             _anketaService.DeleteTemplate(templateId);
-
-            // Анкеты шаблона проекта остаются за проектом: удаляется набор,
-            // а не то, что новые персонажи уже получают.
-            if (ProjectTemplateId == templateId) ProjectTemplateId = null;
 
             Refresh();
         }
@@ -745,21 +807,26 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
         public bool HasImage => _image != null;
         public bool HasNoImage => _image == null;
 
-        private bool _isProject;
-        public bool IsProject
+        private bool _isMatch = true;
+        public bool IsMatch { get => _isMatch; private set => this.RaiseAndSetIfChanged(ref _isMatch, value); }
+
+        private bool _isHidden;
+
+        /// <summary>
+        /// Шаблон скрыт: стоит на своём месте бледнее, а в поиске и в списке
+        /// шаблонов карточки его нет.
+        /// </summary>
+        public bool IsHidden
         {
-            get => _isProject;
-            set
+            get => _isHidden;
+            internal set
             {
-                this.RaiseAndSetIfChanged(ref _isProject, value);
-                this.RaisePropertyChanged(nameof(ProjectTip));
+                this.RaiseAndSetIfChanged(ref _isHidden, value);
+                this.RaisePropertyChanged(nameof(HideTip));
             }
         }
 
-        public string ProjectTip => _isProject ? "Шаблон проекта" : "Сделать шаблоном проекта";
-
-        private bool _isMatch = true;
-        public bool IsMatch { get => _isMatch; private set => this.RaiseAndSetIfChanged(ref _isMatch, value); }
+        public string HideTip => _isHidden ? "Показать шаблон" : "Скрыть шаблон";
 
         private bool _isDragSource;
         public bool IsDragSource { get => _isDragSource; set => this.RaiseAndSetIfChanged(ref _isDragSource, value); }
@@ -860,8 +927,8 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
             IconBorder = template.IconBorder ?? string.Empty;
             FrameColor = template.FrameColor ?? string.Empty;
             // Цвет — код цвета программы: одноцвет или градиент. Им красятся
-            // значок с подложкой, если она не своя, а рамка блока и ленточка
-            // шаблона проекта — им же, если у рамки нет своего цвета. Сам значок рисует AnketaIconBadge в
+            // значок с подложкой, если она не своя, а рамка блока — им же,
+            // если у рамки нет своего цвета. Сам значок рисует AnketaIconBadge в
             // виде плитки: тот же, что в окне значков, поэтому превью там
             // совпадает с шапкой блока.
             ColorBrush = AnketaIconBadge.BrushOf(string.IsNullOrWhiteSpace(FrameColor) ? IconColor : FrameColor);
@@ -900,9 +967,11 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
 
         public void ApplySearch(string query)
         {
+            // Скрытый шаблон поиском не находится — но без поиска он на месте.
             IsMatch = string.IsNullOrWhiteSpace(query) ||
-                      query.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                          .All(word => _searchText.Contains(word, StringComparison.CurrentCultureIgnoreCase));
+                      (!_isHidden &&
+                       query.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                           .All(word => _searchText.Contains(word, StringComparison.CurrentCultureIgnoreCase)));
         }
 
         /// <summary>
@@ -1186,5 +1255,277 @@ namespace Writersword.Modules.Characters.ViewModels.Templates
         public string Hint { get; }
 
         public bool IsSelected { get; }
+    }
+
+    /// <summary>
+    /// Раздел вкладки шаблонов — как папка персонажей: шапка с цветом,
+    /// названием, подписью, числом шаблонов и стрелкой сворачивания, под ней
+    /// блоки. Бывает трёх видов: своя папка (её переименовывают, красят,
+    /// двигают вверх и вниз, удаляют), «Мои шаблоны» — свои шаблоны без
+    /// папки — и «Встроенные». Два последних не правятся, но вверх и вниз
+    /// двигаются, как папки.
+    /// </summary>
+    public class TemplateFolderViewModel : ReactiveObject
+    {
+        private readonly CharactersTemplatesViewModel _owner;
+
+        /// <summary>Своя папка.</summary>
+        public TemplateFolderViewModel(CharactersTemplatesViewModel owner, CharacterTemplateFolder folder)
+            : this(owner, folder.Id, folder.Name)
+        {
+            IsCustom = true;
+            Update(folder);
+        }
+
+        /// <summary>Раздел без папки: «Мои шаблоны» или «Встроенные».</summary>
+        public TemplateFolderViewModel(CharactersTemplatesViewModel owner, string id, string name)
+        {
+            _owner = owner;
+            Id = id;
+            _name = name;
+            IsUngrouped = id == TemplateSections.Ungrouped;
+            IsBuiltIn = id == TemplateSections.BuiltIn;
+
+            Blocks.CollectionChanged += (_, _) =>
+            {
+                this.RaisePropertyChanged(nameof(Count));
+                this.RaisePropertyChanged(nameof(IsEmpty));
+                this.RaisePropertyChanged(nameof(ShowEmptyHint));
+            };
+
+            ToggleExpandCommand = ReactiveCommand.Create(() => { IsExpanded = !IsExpanded; });
+            SelectOrRenameCommand = ReactiveCommand.Create(() =>
+            {
+                if (IsSelected && IsCustom) IsRenaming = true;
+                else _owner.SelectFolder(this);
+            });
+            ConfirmRenameCommand = ReactiveCommand.Create(ConfirmRename);
+            StartEditCommentCommand = ReactiveCommand.Create(() =>
+            {
+                if (IsCustom) IsEditingComment = true;
+            });
+            ConfirmCommentCommand = ReactiveCommand.Create(ConfirmComment);
+            MoveUpCommand = ReactiveCommand.Create(() => _owner.MoveFolder(Id, -1));
+            MoveDownCommand = ReactiveCommand.Create(() => _owner.MoveFolder(Id, 1));
+        }
+
+        /// <summary>Ключ раздела: Id папки или TemplateSections.</summary>
+        public string Id { get; }
+
+        public bool IsCustom { get; }
+        public bool IsUngrouped { get; }
+        public bool IsBuiltIn { get; }
+
+        /// <summary>Раздел принимает перетащенные блоки — все, кроме встроенного.</summary>
+        public bool AcceptsBlocks => !IsBuiltIn;
+
+        public ObservableCollection<TemplateBlockViewModel> Blocks { get; } = new();
+
+        public int Count => Blocks.Count;
+
+        public bool IsEmpty => Blocks.Count == 0;
+
+        // ── Шапка ────────────────────────────────────────────────────────
+
+        private string _name;
+
+        /// <summary>
+        /// Название. Поле правки пишет сюда по буквам, а в проект название
+        /// уходит по Enter или уходу из поля — ConfirmRename.
+        /// </summary>
+        public string Name
+        {
+            get => _name;
+            set => this.RaiseAndSetIfChanged(ref _name, value ?? string.Empty);
+        }
+
+        private string _savedName = string.Empty;
+
+        private string _comment = string.Empty;
+
+        /// <summary>Серая подпись справа от названия; в проект — по ConfirmComment.</summary>
+        public string Comment
+        {
+            get => _comment;
+            set => this.RaiseAndSetIfChanged(ref _comment, value ?? string.Empty);
+        }
+
+        private string _savedComment = string.Empty;
+
+        private string _color = "#607D8B";
+
+        /// <summary>Цвет папки — кружок в начале шапки, как у папок персонажей.</summary>
+        public string Color
+        {
+            get => _color;
+            set
+            {
+                if (_color == value) return;
+                this.RaiseAndSetIfChanged(ref _color, value ?? string.Empty);
+                if (IsCustom && !_updating) _owner.SetFolderColor(Id, _color);
+            }
+        }
+
+        private bool _updating;
+
+        internal void Update(CharacterTemplateFolder folder)
+        {
+            _updating = true;
+            try
+            {
+                if (!_isRenaming) Name = folder.Name;
+                if (!_isEditingComment) Comment = folder.Comment ?? string.Empty;
+                Color = string.IsNullOrWhiteSpace(folder.Color) ? "#607D8B" : folder.Color;
+                _savedName = folder.Name;
+                _savedComment = folder.Comment ?? string.Empty;
+            }
+            finally
+            {
+                _updating = false;
+            }
+        }
+
+        private bool _isRenaming;
+        public bool IsRenaming
+        {
+            get => _isRenaming;
+            set
+            {
+                if (value && !IsCustom) return;
+                if (value && !_isRenaming) _savedName = _name;
+                this.RaiseAndSetIfChanged(ref _isRenaming, value);
+            }
+        }
+
+        private bool _isEditingComment;
+        public bool IsEditingComment
+        {
+            get => _isEditingComment;
+            set
+            {
+                if (value && !IsCustom) return;
+                if (value && !_isEditingComment) _savedComment = _comment;
+                this.RaiseAndSetIfChanged(ref _isEditingComment, value);
+            }
+        }
+
+        public void ConfirmRename()
+        {
+            if (!_isRenaming) return;
+            IsRenaming = false;
+            if (string.IsNullOrWhiteSpace(_name)) Name = _savedName;
+            if (_name != _savedName) _owner.RenameFolder(Id, _name);
+        }
+
+        /// <summary>Esc в поле названия: прежнее название возвращается.</summary>
+        public void CancelRename()
+        {
+            if (!_isRenaming) return;
+            Name = _savedName;
+            IsRenaming = false;
+        }
+
+        public void ConfirmComment()
+        {
+            if (!_isEditingComment) return;
+            IsEditingComment = false;
+            if (_comment != _savedComment) _owner.SetFolderComment(Id, _comment);
+        }
+
+        public void CancelComment()
+        {
+            if (!_isEditingComment) return;
+            Comment = _savedComment;
+            IsEditingComment = false;
+        }
+
+        private bool _isSelected;
+
+        /// <summary>Текущая папка: новый шаблон встаёт в неё.</summary>
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set => this.RaiseAndSetIfChanged(ref _isSelected, value);
+        }
+
+        private bool _isDragOver;
+
+        /// <summary>Над свёрнутой папкой тащат блок — отпущенный ляжет в её конец.</summary>
+        public bool IsDragOver
+        {
+            get => _isDragOver;
+            set => this.RaiseAndSetIfChanged(ref _isDragOver, value);
+        }
+
+        // ── Сворачивание и поиск ─────────────────────────────────────────
+
+        private bool _isExpanded = true;
+
+        public bool IsExpanded
+        {
+            get => _isExpanded;
+            set
+            {
+                if (_isExpanded == value) return;
+                this.RaiseAndSetIfChanged(ref _isExpanded, value);
+                _owner.SetFolderCollapsed(Id, !value);
+                RaiseVisibility();
+            }
+        }
+
+        /// <summary>Свёрнутость из сохранённого — без записи обратно.</summary>
+        internal void SetExpandedSilently(bool expanded)
+        {
+            if (_isExpanded == expanded) return;
+            _isExpanded = expanded;
+            this.RaisePropertyChanged(nameof(IsExpanded));
+            RaiseVisibility();
+        }
+
+        /// <summary>Блоки видны: раздел развёрнут или идёт поиск — найденное показывается и в свёрнутом.</summary>
+        public bool ShowBlocks => _isExpanded || _owner.IsSearching;
+
+        /// <summary>
+        /// Раздел виден: без поиска — всегда, при поиске — только если в нём
+        /// что-то нашлось.
+        /// </summary>
+        public bool IsShown => !_owner.IsSearching || Blocks.Any(b => b.IsMatch);
+
+        /// <summary>Пустой развёрнутый раздел показывает подсказку — и это же место, куда бросают блок.</summary>
+        public bool ShowEmptyHint => !IsBuiltIn && Blocks.Count == 0 && ShowBlocks;
+
+        public string EmptyHint => IsUngrouped
+            ? "Шаблонов без папки нет. «+» сверху создаёт новый, а встроенный можно продублировать — копия встанет сюда"
+            : "Папка пуста — перетащите сюда шаблон";
+
+        private bool _canMoveUp;
+        public bool CanMoveUp { get => _canMoveUp; private set => this.RaiseAndSetIfChanged(ref _canMoveUp, value); }
+
+        private bool _canMoveDown;
+        public bool CanMoveDown { get => _canMoveDown; private set => this.RaiseAndSetIfChanged(ref _canMoveDown, value); }
+
+        internal void RefreshState(bool canMoveUp, bool canMoveDown)
+        {
+            CanMoveUp = canMoveUp;
+            CanMoveDown = canMoveDown;
+            RaiseVisibility();
+        }
+
+        private void RaiseVisibility()
+        {
+            this.RaisePropertyChanged(nameof(ShowBlocks));
+            this.RaisePropertyChanged(nameof(IsShown));
+            this.RaisePropertyChanged(nameof(ShowEmptyHint));
+        }
+
+        // ── Команды ──────────────────────────────────────────────────────
+
+        public ReactiveCommand<Unit, Unit> ToggleExpandCommand { get; }
+        public ReactiveCommand<Unit, Unit> SelectOrRenameCommand { get; }
+        public ReactiveCommand<Unit, Unit> ConfirmRenameCommand { get; }
+        public ReactiveCommand<Unit, Unit> StartEditCommentCommand { get; }
+        public ReactiveCommand<Unit, Unit> ConfirmCommentCommand { get; }
+        public ReactiveCommand<Unit, Unit> MoveUpCommand { get; }
+        public ReactiveCommand<Unit, Unit> MoveDownCommand { get; }
     }
 }

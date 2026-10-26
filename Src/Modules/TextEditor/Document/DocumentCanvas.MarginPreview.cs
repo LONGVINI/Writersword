@@ -162,10 +162,26 @@ namespace Writersword.Modules.TextEditor.Document
 
             _marginSettlePending = true;
 
-            if (ShouldWarmupBeforeRebuild())
-                RelayoutVisiblePages();
+            // Ширины абзацев — по новым параметрам разделов: иначе ворота прогрева
+            // судили бы по ширинам прошлого прохода (PredictSectionTextWidths).
+            PredictSectionTextWidths();
 
-            RebuildLayouts();
+            // В листах: видимые листы — сразу частичным проходом, вся книга — фоновой
+            // пересборкой по частям; при холодном кеше она сама уйдёт в прогрев
+            // (DocumentCanvas.BackgroundLayout). Окно не замирает ни на миг дольше
+            // прохода по видимым листам.
+            if (CanLayoutInBackground)
+            {
+                RelayoutVisiblePages();
+                RebuildLayoutsInBackground();
+            }
+            else
+            {
+                if (ShouldWarmupBeforeRebuild())
+                    RelayoutVisiblePages();
+
+                RebuildLayouts();
+            }
 
             _lastZoom = Zoom;
             InvalidateMeasure();
@@ -184,6 +200,22 @@ namespace Writersword.Modules.TextEditor.Document
         /// false — проход не нужен или не может быть частичным.
         /// </summary>
         private bool RelayoutVisiblePages()
+        {
+            // Частичный проход и фоновая пересборка делят поля прохода: идущая
+            // пересборка бросается и после прохода начинается заново — уже с видимыми
+            // листами по-новому (DocumentCanvas.BackgroundLayout).
+            bool resumeBackground = AbandonBackgroundLayout(keepDone: true);
+            try
+            {
+                return RelayoutVisiblePagesCore();
+            }
+            finally
+            {
+                if (resumeBackground) RebuildLayoutsInBackground();
+            }
+        }
+
+        private bool RelayoutVisiblePagesCore()
         {
             if (!CanRelayoutVisiblePages) return false;
 

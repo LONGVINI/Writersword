@@ -24,10 +24,18 @@
 			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
 			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
+		<!-- У «Шаблонов» под переключателем сразу их поиск — одна полоса с
+		     ним: черты между ними нет. У редактора анкет ниже лента, и черта
+		     её отделяет. -->
+		<Style Selector="Border.lib-head.joined">
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
 	</UserControl.Styles>
 
 	<Grid RowDefinitions="Auto,*">
 		<Border Grid.Row="0" Padding="10,7"
+		        Classes="lib-head"
+		        Classes.joined="{Binding IsTab3Active}"
 		        Background="{DynamicResource BgPanelBrush}"
 		        BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,0,0,1">
 			<Grid ColumnDefinitions="Auto,*">
@@ -39,7 +47,7 @@
 						        Command="{Binding GoToTemplatesCommand}"
 						        Content="Шаблоны"
 						        behaviours:TooltipBehavior.Tip="Шаблоны"
-						        behaviours:TooltipBehavior.Description="Наборы анкет под проект. Анкеты шаблона проекта получает каждый новый персонаж"/>
+						        behaviours:TooltipBehavior.Description="Готовые наборы анкет. Шаблон подключается персонажу в его карточке"/>
 						<Button Classes="part ro-allow"
 						        Classes.active="{Binding IsTab4Active}"
 						        Command="{Binding GoToAnketasCommand}"

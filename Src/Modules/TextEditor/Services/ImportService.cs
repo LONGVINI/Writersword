@@ -1063,6 +1063,10 @@ namespace Writersword.Modules.TextEditor.Services
                 if (chunk.Runs.Count == 0)
                     chunk.Runs.Add(BuildParagraphMarkRun(p, resolver, effPara));
 
+                // Оформление знака абзаца — как в файле: у Word его кегль входит в высоту
+                // последней строки, и выгрузка возвращает его таким же.
+                para.Properties.MarkFormat = ParagraphMarkFormat(p, resolver, effPara);
+
                 // Правки абзаца. Знак абзаца стоит в его последнем куске: куски до
                 // разрыва страницы кончаются разрывом, а не знаком.
                 ApplyParagraphRevisions(p, para, resolver, numbering, listIdMap);
@@ -1280,6 +1284,28 @@ namespace Writersword.Modules.TextEditor.Services
                 }
             }
             doc.JustifyWithShrinking = compatibilityMode >= 15;
+
+            // Документ, выгруженный из Writersword, пишет режим 15 всегда, а сжатие
+            // пробелов, которого у него не было, помечает своей пометкой wsx у w:compat
+            // (ExportService.Settings): вёрстка возвращается такой, какой была до выгрузки.
+            if (compat is not null)
+            {
+                foreach (var attribute in compat.GetAttributes())
+                {
+                    if (attribute.NamespaceUri != DocxTextEffects.WsxNamespace
+                        || attribute.LocalName != ExportService.JustifyWithShrinkingAttribute)
+                        continue;
+
+                    doc.JustifyWithShrinking = attribute.Value == "1";
+                }
+            }
+
+            // Шаг табуляции по умолчанию (w:defaultTabStop): к нему уходит табуляция
+            // абзаца без своих позиций.
+            var defaultTab = mainPart.DocumentSettingsPart?.Settings?.GetFirstChild<W.DefaultTabStop>();
+            if (defaultTab?.Val?.Value is short tabTwips && tabTwips > 0)
+                doc.DefaultTabStopPt = tabTwips / 20.0;
+
             return compatibilityMode;
         }
 
@@ -1604,12 +1630,20 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         private static RunModel BuildParagraphMarkRun(
             W.Paragraph p, DocxFormatResolver resolver, EffectiveParagraph effPara)
+            => new() { Text = string.Empty, Properties = ParagraphMarkFormat(p, resolver, effPara) };
+
+        /// <summary>
+        /// Оформление знака конца абзаца: стиль абзаца, поверх него w:pPr/w:rPr. Отметки
+        /// правок знака (w:ins, w:del) сюда не входят — их читает ApplyParagraphRevisions.
+        /// </summary>
+        private static RunProperties ParagraphMarkFormat(
+            W.Paragraph p, DocxFormatResolver resolver, EffectiveParagraph effPara)
         {
             var markFormat = effPara.BaseRun.Clone();
             markFormat.MergeFrom(p.ParagraphProperties?.ParagraphMarkRunProperties,
                 resolver.ThemeMajorFont, resolver.ThemeMinorFont);
 
-            return new RunModel { Text = string.Empty, Properties = markFormat.ToRunProperties() };
+            return markFormat.ToRunProperties();
         }
 
         private void AppendRun(
@@ -2783,6 +2817,8 @@ namespace Writersword.Modules.TextEditor.Services
             if (chunk.Runs.Count == 0)
                 chunk.Runs.Add(BuildParagraphMarkRun(p, resolver, effPara));
 
+            para.Properties.MarkFormat = ParagraphMarkFormat(p, resolver, effPara);
+
             ApplyParagraphRevisions(p, para, resolver, numbering, listIdMap);
 
             chunk.InvalidateLength();
@@ -3022,6 +3058,7 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 doc.ColumnSettings.ColumnCount = cc;
                 doc.ColumnSettings.ShowSeparator = cols?.Separator?.Value == true;
+                doc.ColumnSettings.SeparatorColor = ExportService.ReadSeparatorColor(cols);
 
                 // Значение читается через InnerText: атрибут w:space в схеме — мера в twips,
                 // и разные версии SDK типизируют его по-разному. Строковое представление
@@ -3159,6 +3196,12 @@ namespace Writersword.Modules.TextEditor.Services
 
         /// <summary>Масштаб знаков по ширине в процентах (w:w).</summary>
         public int? CharacterScalePct;
+
+        /// <summary>
+        /// Кернинг (w:kern): наименьший кегль в пунктах. Ноль на нижнем уровне каскада
+        /// снимает кернинг, заданный стилем выше.
+        /// </summary>
+        public double? KerningMinSizePt;
 
         /// <summary>Смещение от базовой линии в пунктах, плюс — вверх (w:position).</summary>
         public double? BaselineOffsetPt;
@@ -3299,6 +3342,11 @@ namespace Writersword.Modules.TextEditor.Services
             // Смещение хранится в половинах пункта, со знаком.
             if (container.GetFirstChild<W.CharacterScale>()?.Val?.Value is long scalePct)
                 CharacterScalePct = (int)Math.Clamp(scalePct, 1L, 600L);
+
+            // Кернинг хранится в половинах пункта.
+            if (container.GetFirstChild<W.Kern>()?.Val?.InnerText is string kernVal
+                && double.TryParse(kernVal, NumberStyles.Float, CultureInfo.InvariantCulture, out var kernHalfPoints))
+                KerningMinSizePt = Math.Max(kernHalfPoints, 0) / HalfPointsPerPoint;
 
             if (container.GetFirstChild<W.Position>()?.Val?.Value is string positionVal
                 && double.TryParse(positionVal, NumberStyles.Float, CultureInfo.InvariantCulture, out var positionHalfPoints))
@@ -3489,6 +3537,7 @@ namespace Writersword.Modules.TextEditor.Services
                 ? spacing
                 : null,
             CharacterScale = CharacterScalePct is int scale && scale > 0 && scale != 100 ? scale : null,
+            KerningMinSizePt = KerningMinSizePt is double kern && kern > 0.001 ? kern : null,
             BaselineOffset = BaselineOffsetPt is double offset && Math.Abs(offset) > 0.001 ? offset : null,
             IsHidden = Hidden == true,
             IsOutline = Outline == true,

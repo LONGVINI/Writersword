@@ -366,23 +366,26 @@ namespace Writersword.Modules.TextEditor.Document
                 var color = HeaderFooterInk(settings);
                 string family = HeaderFooterFallbackFamily();
 
-                using var font = HeaderFooterPainter.CreateFont(settings, SKTextRenderer.ResolveTypeface, family);
+                using var fonts = new HeaderFooterFonts(settings, SKTextRenderer.ResolveTypeface, family);
 
                 for (int pi = Math.Max(firstPage, 0); pi <= lastPage && pi < pages.Count && pi < decorations.Length; pi++)
                 {
                     var box = HeaderFooterBox(pages[pi], pi);
                     var decoration = decorations[pi];
 
+                    // Свой цвет полосы или куска на бумаге выглядит так же, как общий
+                    // цвет колонтитулов: через чернила текущей бумаги.
                     bool editingHere = mode && pi == _hfEditPage;
                     HeaderFooterPainter.DrawPage(canvas, settings, decoration, box, color,
                         SKTextRenderer.ResolveTypeface, family,
                         drawHeader: !(editingHere && _hfEditHeader),
-                        drawFooter: !(editingHere && !_hfEditHeader));
+                        drawFooter: !(editingHere && !_hfEditHeader),
+                        ink: SKTextRenderer.ResolveInk);
 
                     // Номер, набранный руками, обводится пунктиром — только на экране:
                     // видно, что на этом листе число живёт не по счёту.
                     if (!exporting && decoration.ManualText is not null && decoration.BandsVisible)
-                        DrawManualNumberHint(canvas, settings, decoration, box, font);
+                        DrawManualNumberHint(canvas, settings, decoration, box, fonts);
                 }
             }
 
@@ -465,7 +468,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         private static void DrawManualNumberHint(
             SKCanvas canvas, HeaderFooterSettings settings, PageDecoration decoration,
-            HeaderFooterPageBox box, SKFont font)
+            HeaderFooterPageBox box, HeaderFooterFonts fonts)
         {
             using var paint = new SKPaint
             {
@@ -486,8 +489,7 @@ namespace Writersword.Modules.TextEditor.Document
                     string template = bandModel.GetSlot(slot);
                     if (!template.Contains(HeaderFooterSettings.PageToken, StringComparison.Ordinal)) continue;
 
-                    string? text = PageNumbering.RenderSlot(template, decoration);
-                    var rect = HeaderFooterPainter.MeasureSlot(box, header, slot, text, font, settings);
+                    var rect = HeaderFooterPainter.MeasureSlot(box, header, slot, bandModel, decoration, fonts);
                     if (rect is not { } r) continue;
 
                     r.Inflate(2f, 1f);

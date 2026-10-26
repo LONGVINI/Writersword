@@ -24,16 +24,6 @@ namespace Writersword.Modules.Characters.Models
         /// </summary>
         public bool IsFirstLaunch { get; set; } = true;
 
-        /// <summary>Id активных шаблонов — применяются к каждому новому персонажу</summary>
-        public List<string> ActiveTemplateIds { get; set; } = new();
-
-        /// <summary>
-        /// Шаблон проекта: набор анкет, который получает каждый новый персонаж.
-        /// Его анкеты и лежат в ActiveTemplateIds; здесь — какой шаблон их задал,
-        /// чтобы правка шаблона доходила до состава. Пусто — шаблон не выбран.
-        /// </summary>
-        public string? ProjectTemplateId { get; set; }
-
         public List<Character> Characters { get; set; } = new();
 
         /// <summary>
@@ -59,6 +49,35 @@ namespace Writersword.Modules.Characters.Models
         /// был бы списком пустых мест.
         /// </summary>
         public List<CharacterTemplate> Templates { get; set; } = new();
+
+        /// <summary>Папки своих шаблонов по порядку.</summary>
+        public List<CharacterTemplateFolder> TemplateFolders { get; set; } = new();
+
+        /// <summary>
+        /// Порядок разделов вкладки шаблонов сверху вниз: ключи папок,
+        /// «Мои шаблоны» (TemplateSections.Ungrouped) и «Встроенные»
+        /// (TemplateSections.BuiltIn). Пусто — порядок по умолчанию.
+        /// </summary>
+        public List<string> TemplateSectionOrder { get; set; } = new();
+
+        /// <summary>
+        /// Свои заготовки полей анкет — поля со всеми настройками, сохранённые
+        /// из анкет проекта. Встроенные заготовки собираются из кода.
+        /// </summary>
+        public List<CharacterFieldPreset> FieldPresets { get; set; } = new();
+
+        /// <summary>
+        /// Скрытые шаблоны — свои и встроенные. Во вкладке шаблонов они стоят
+        /// на своих местах, только бледнее, а в поиске и в списках шаблонов
+        /// (карточка персонажа) их нет.
+        /// </summary>
+        public List<string> HiddenTemplateIds { get; set; } = new();
+
+        /// <summary>
+        /// Свёрнутые разделы вкладки шаблонов: папки, «Мои шаблоны»
+        /// (TemplateSections.Ungrouped) и «Встроенные» (TemplateSections.BuiltIn).
+        /// </summary>
+        public List<string> CollapsedTemplateFolderIds { get; set; } = new();
 
         /// <summary>
         /// Недавно подключённые анкеты, свежие впереди. Персонажей одного
@@ -98,7 +117,6 @@ namespace Writersword.Modules.Characters.Models
         public int MainTabIndex { get; set; } = 0;
         public List<string> ActiveTagFilters { get; set; } = new();
         public string LastSearchQuery { get; set; } = string.Empty;
-        public List<string> ActiveTemplateIds { get; set; } = new();
         public double GraphOffsetX { get; set; } = 0;
         public double GraphOffsetY { get; set; } = 0;
         public double GraphScale { get; set; } = 1.0;

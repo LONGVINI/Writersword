@@ -65,6 +65,10 @@ namespace Writersword.Infrastructure.Services.Storage
 
         private async System.Threading.Tasks.Task TickAsync()
         {
+            // Диагностика: точки истории выключены (DiagnosticSwitches).
+            if (Writersword.Infrastructure.Diagnostics.DiagnosticSwitches.BackgroundWorkDisabled)
+                return;
+
             if (System.Threading.Interlocked.CompareExchange(ref _running, 1, 0) != 0)
             {
                 _logger.LogDebug("Backup timer tick skipped: previous one is still running");

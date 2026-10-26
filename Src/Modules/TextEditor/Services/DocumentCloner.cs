@@ -157,7 +157,8 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 ColumnCount = source.ColumnCount,
                 GapMm = source.GapMm,
-                ShowSeparator = source.ShowSeparator
+                ShowSeparator = source.ShowSeparator,
+                SeparatorColor = source.SeparatorColor
             };
         }
 

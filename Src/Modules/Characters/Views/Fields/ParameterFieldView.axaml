@@ -108,6 +108,25 @@
 			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
+		<!-- Ручка высоты описания: узкая полоска под полем. -->
+		<Style Selector="Border.height-grip">
+			<Setter Property="Height" Value="8"/>
+			<Setter Property="Cursor" Value="SizeNorthSouth"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+		</Style>
+		<Style Selector="Border.height-grip > Border">
+			<Setter Property="Background" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Background" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Border.height-grip:pointerover > Border">
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
 		<!-- Примечание — подчёркнутая строка без рамки: не спорит со значением. -->
 		<Style Selector="TextBox.field-note">
 			<Setter Property="FontSize" Value="11"/>
@@ -213,10 +232,22 @@
 		<Style Selector="ToggleButton.field-action.has-value">
 			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
+
+		<!-- В конструкторе анкет поле — макет, а не форма: анкету здесь
+		     создают, а не заполняют. Значение выглядит так же, как в карточке
+		     персонажа, но не принимает ни указатель, ни фокус: щелчок по
+		     полю выбирает его для настройки. Ручка ширины остаётся живой —
+		     ширину поля тянут прямо на нём. -->
+		<Style Selector="Grid.field-row.designer TextBox.field-input, Grid.field-row.designer controls|BallScale, Grid.field-row.designer controls|GlyphScale, Grid.field-row.designer controls|SegmentBar, Grid.field-row.designer Slider, Grid.field-row.designer ToggleButton.field-chip, Grid.field-row.designer ToggleButton.field-seg, Grid.field-row.designer ToggleButton.field-swatch, Grid.field-row.designer ComboBox, Grid.field-row.designer ToggleSwitch, Grid.field-row.designer colorControls|ColorPickerButton">
+			<Setter Property="IsHitTestVisible" Value="False"/>
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
 	</UserControl.Styles>
 
 	<Grid Classes="field-row"
+	      Classes.designer="{Binding IsDesignerPreview}"
 	      Classes.not-applicable="{Binding IsNotApplicable}"
+	      VerticalAlignment="{Binding FieldVerticalAlignment}"
 	      RowDefinitions="Auto,Auto"
 	      ColumnDefinitions="Auto,*,Auto"
 	      ColumnSpacing="10"
@@ -241,6 +272,8 @@
 			           Classes.colored="{Binding HasLabelBrush}"
 			           Text="{Binding Name}"
 			           FontWeight="{Binding LabelFontWeight}"
+			           FontSize="{Binding LabelFontSizeValue}"
+			           FontFamily="{Binding FontFamilyValue}"
 			           VerticalAlignment="Center"
 			           TextTrimming="CharacterEllipsis"
 			           behaviours:TooltipBehavior.Tip="{Binding Name}"/>
@@ -251,7 +284,7 @@
 			                behaviours:TooltipBehavior.Description="{Binding Description}"/>
 		</Grid>
 
-		<Panel Grid.Column="1" VerticalAlignment="Center">
+		<Panel Grid.Column="1" x:Name="ValuePanel" VerticalAlignment="Center">
 
 			<TextBlock Classes="field-muted"
 			           Text="{x:Static loc:CharactersStrings.Param_NotApplicable}"
@@ -346,12 +379,15 @@
 			            IsVisible="{Binding ShowText}">
 				<TextBox Classes="field-input"
 				         Width="{Binding InputWidth}"
+				         FontSize="{Binding ValueFontSizeValue}"
+				         FontFamily="{Binding FontFamilyValue}"
 				         Text="{Binding TextValue}"/>
 				<Border Classes="width-grip"
 				       IsVisible="{Binding IsDesignerPreview}"
 				       PointerPressed="OnWidthGripPressed"
 				       PointerMoved="OnWidthGripMoved"
 				       PointerReleased="OnWidthGripReleased"
+				       PointerCaptureLost="OnWidthGripCaptureLost"
 				       behaviours:TooltipBehavior.Tip="Ширина поля"
 				       behaviours:TooltipBehavior.Description="Потяните, чтобы сделать поле шире или уже">
 <Border Width="3" CornerRadius="2" HorizontalAlignment="Center" Margin="0,5"/>
@@ -360,18 +396,36 @@
 
 			<StackPanel Orientation="Horizontal" Spacing="2"
 			            IsVisible="{Binding ShowLongText}">
-				<TextBox Classes="field-input"
-				         Width="{Binding InputWidth}"
-				         Text="{Binding TextValue}"
-				         AcceptsReturn="True"
-				         TextWrapping="Wrap"
-				         MinHeight="64"
-				         VerticalContentAlignment="Top"/>
+				<!-- Высота описания: по тексту или заданная анкетой. В конструкторе
+				     под полем ручка высоты — как ручка ширины справа. -->
+				<Grid RowDefinitions="*,Auto">
+					<TextBox Classes="field-input"
+					         Width="{Binding InputWidth}"
+					         Height="{Binding InputHeightValue}"
+					         FontSize="{Binding ValueFontSizeValue}"
+					         FontFamily="{Binding FontFamilyValue}"
+					         Text="{Binding TextValue}"
+					         AcceptsReturn="True"
+					         TextWrapping="Wrap"
+					         MinHeight="{Binding InputMinHeight}"
+					         VerticalContentAlignment="Top"/>
+					<Border Grid.Row="1" Classes="height-grip"
+					        IsVisible="{Binding IsDesignerPreview}"
+					        PointerPressed="OnHeightGripPressed"
+					        PointerMoved="OnHeightGripMoved"
+					        PointerReleased="OnHeightGripReleased"
+					        PointerCaptureLost="OnHeightGripCaptureLost"
+					        behaviours:TooltipBehavior.Tip="Высота поля"
+					        behaviours:TooltipBehavior.Description="Потяните, чтобы сделать поле выше или ниже. Без этого описание растёт по тексту">
+						<Border Height="3" Width="28" CornerRadius="2" HorizontalAlignment="Center" Margin="0,2"/>
+					</Border>
+				</Grid>
 				<Border Classes="width-grip"
 				       IsVisible="{Binding IsDesignerPreview}"
 				       PointerPressed="OnWidthGripPressed"
 				       PointerMoved="OnWidthGripMoved"
 				       PointerReleased="OnWidthGripReleased"
+				       PointerCaptureLost="OnWidthGripCaptureLost"
 				       behaviours:TooltipBehavior.Tip="Ширина поля"
 				       behaviours:TooltipBehavior.Description="Потяните, чтобы сделать поле шире или уже">
 <Border Width="3" CornerRadius="2" HorizontalAlignment="Center" Margin="0,5"/>
@@ -452,6 +506,8 @@
 					           VerticalAlignment="Center"/>
 					<TextBox Classes="field-input field-number"
 					         Width="{Binding InputWidth}"
+					         FontSize="{Binding ValueFontSizeValue}"
+					         FontFamily="{Binding FontFamilyValue}"
 					         Text="{Binding NumberText}"
 					         Tag="from"
 					         KeyDown="OnNumberKeyDown"
@@ -461,6 +517,8 @@
 					           VerticalAlignment="Center"/>
 					<TextBox Classes="field-input field-number"
 					         Width="{Binding InputWidth}"
+					         FontSize="{Binding ValueFontSizeValue}"
+					         FontFamily="{Binding FontFamilyValue}"
 					         Text="{Binding NumberToText}"
 					         Tag="to"
 					         KeyDown="OnNumberKeyDown"
@@ -475,6 +533,7 @@
 					       PointerPressed="OnWidthGripPressed"
 					       PointerMoved="OnWidthGripMoved"
 					       PointerReleased="OnWidthGripReleased"
+				       PointerCaptureLost="OnWidthGripCaptureLost"
 					       behaviours:TooltipBehavior.Tip="Ширина поля"
 					       behaviours:TooltipBehavior.Description="Потяните, чтобы сделать поле шире или уже">
 <Border Width="3" CornerRadius="2" HorizontalAlignment="Center" Margin="0,5"/>

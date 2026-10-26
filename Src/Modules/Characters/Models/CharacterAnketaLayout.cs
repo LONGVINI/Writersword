@@ -36,12 +36,19 @@ namespace Writersword.Modules.Characters.Models
         /// </summary>
         public int Depth { get; set; } = CharacterDetailLevels.Brief;
 
+        /// <summary>
+        /// Добавочное расстояние под строкой, пт. Пусто — как у анкеты
+        /// (CharacterAnketaLook.RowSpacing).
+        /// </summary>
+        public double? SpacingAfter { get; set; }
+
         public CharacterAnketaRow Clone() => new()
         {
             Kind = Kind,
             Title = Title,
             Cells = Cells.ToList(),
-            Depth = Depth
+            Depth = Depth,
+            SpacingAfter = SpacingAfter
         };
     }
 

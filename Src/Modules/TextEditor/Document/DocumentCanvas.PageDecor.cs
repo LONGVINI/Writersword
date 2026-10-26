@@ -179,8 +179,18 @@ namespace Writersword.Modules.TextEditor.Document
                 : previousSheet ? (info!.Break is not null ? realLayout : null)
                 : info!.Layout;
 
-            // Колонки листа: раздела или документа; на прежнем листе — прежние.
-            var columns = previousSheet && info!.Layout!.Columns is { } previousColumns
+            // Колонки — раздела, в котором стоит каретка. Раздел листа считается по
+            // первому блоку на листе, а раздел в колонках после непрерывного разрыва
+            // начинается посреди листа: по разделу листа линейка показывала колонки
+            // раздела над ним (обычно одну) и промежутков не было, пока каретка в
+            // колонках. Word показывает их, как только каретка входит в раздел.
+            // Каретка в разделе листа — как раньше: раздела или документа, на прежнем
+            // листе — прежние.
+            var caretBreak = CaretSectionBreak(document, out bool caretFound);
+            bool caretOtherSection = info is not null && caretFound && !ReferenceEquals(caretBreak, info.Break);
+            var columns = caretOtherSection
+                ? (caretBreak is not null ? ColumnFrames.ColumnsOf(document, caretBreak) : ColumnFrames.FinalColumns(document))
+                : previousSheet && info!.Layout!.Columns is { } previousColumns
                 ? previousColumns
                 : info?.Break is { } sectionBreak
                 ? ColumnFrames.ColumnsOf(document, sectionBreak)
@@ -223,6 +233,33 @@ namespace Writersword.Modules.TextEditor.Document
                 gaps,
                 mirrored,
                 rightGutterMm));
+        }
+
+        /// <summary>
+        /// Разрыв, которым кончается раздел абзаца под кареткой; null — последний раздел
+        /// или каретки нет. <paramref name="found"/> — блок каретки найден в потоке
+        /// документа (у абзаца во вложенной таблице его там нет).
+        /// </summary>
+        private BreakBlock? CaretSectionBreak(DocumentModel document, out bool found)
+        {
+            found = false;
+            if (_caretPara < 0 || _caretPara >= _layouts.Count || document.Sections.Count == 0) return null;
+
+            var pl = _layouts[_caretPara];
+            BlockModel? block = pl.Cell is { } cell ? cell.Table : pl.Vm?.Model;
+            if (block is null) return null;
+
+            var blocks = document.Sections[0].Blocks;
+            int index = 0;
+            while (index < blocks.Count && !ReferenceEquals(blocks[index], block)) index++;
+            if (index == blocks.Count) return null;
+
+            found = true;
+            for (; index < blocks.Count; index++)
+                if (blocks[index] is BreakBlock { IsSectionBreak: true } sectionBreak)
+                    return sectionBreak;
+
+            return null;
         }
 
         /// <summary>

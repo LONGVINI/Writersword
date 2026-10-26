@@ -196,6 +196,15 @@ namespace Writersword.Modules.TextEditor.Models.Styles
         public string? ShadingPatternColor { get; set; }
 
         /// <summary>
+        /// Оформление знака конца абзаца (w:pPr/w:rPr), каким оно пришло из файла.
+        /// Знак — тоже знак строки: у Word его кегль входит в высоту последней строки
+        /// абзаца. Null — своего оформления у знака нет, при выгрузке он берёт
+        /// оформление последнего рана с текстом.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Inline.RunProperties? MarkFormat { get; set; }
+
+        /// <summary>
         /// Знак абзаца вставлен под рецензированием (w:pPr/w:rPr/w:ins): абзац
         /// появился правкой — нажатием Enter, вставкой текста. Отклонить правку — слить
         /// абзац со следующим.
@@ -252,6 +261,9 @@ namespace Writersword.Modules.TextEditor.Models.Styles
             // Рамка копируется своей: общая у копии и оригинала менялась бы сразу у обоих.
             copy.Borders = Borders?.Clone();
 
+            // Оформление знака абзаца — своим, по той же причине.
+            copy.MarkFormat = MarkFormat?.Clone();
+
             // Отметки правок — тоже своими, по той же причине.
             copy.MarkInserted = MarkInserted?.Clone();
             copy.MarkDeleted = MarkDeleted?.Clone();
@@ -303,6 +315,7 @@ namespace Writersword.Modules.TextEditor.Models.Styles
             ShadingColor = src.ShadingColor;
             ShadingPattern = src.ShadingPattern;
             ShadingPatternColor = src.ShadingPatternColor;
+            MarkFormat = src.MarkFormat?.Clone();
 
             // Правки рецензирования возвращаются вместе с оформлением: отмена правки
             // оформления, записанной под рецензированием, снимает и её отметку.

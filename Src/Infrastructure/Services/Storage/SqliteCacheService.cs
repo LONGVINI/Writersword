@@ -842,7 +842,11 @@ namespace Writersword.Infrastructure.Services.Storage
                             moduleParameter.Value = moduleType;
                             customParameter.Value = customDataJson;
                             sessionParameter.Value = (object?)sessionDataJson ?? DBNull.Value;
-                            hashParameter.Value = _hashService.ComputeHash(customDataJson);
+                            // Хеш самой записанной строки. Канонический хеш (ComputeHash) разбирал
+                            // её в дерево JSON целиком — у документа с картинками это сотни
+                            // мегабайт памяти и секунды на каждой записи кеша, а хеш записи
+                            // ни с чем каноническим не сравнивается: он только описывает строку.
+                            hashParameter.Value = _hashService.ComputeHashFromString(customDataJson);
                             sizeParameter.Value = Encoding.UTF8.GetByteCount(customDataJson);
                             modifiedParameter.Value = modifiedMs;
 

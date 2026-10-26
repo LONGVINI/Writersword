@@ -40,6 +40,15 @@ namespace Writersword.Infrastructure.Services.Storage
         // которые не идут внахлёст (_semaphore).
         private readonly Dictionary<string, string> _lastMixedSignatures = new(StringComparer.OrdinalIgnoreCase);
 
+        // Итог прошлой проверки модулей без отслеживания правок — по пути проекта:
+        // быстрые отпечатки их данных, отметка файла проекта и вывод «есть правки».
+        // Вывод зависит только от данных модулей и от файла; если не изменилось ни
+        // то ни другое, он прежний, и файл не читается, а данные не нормализуются.
+        // Доступ только из операции кеширования (_semaphore).
+        private readonly Dictionary<string, UntrackedVerdict> _untrackedVerdicts = new(StringComparer.OrdinalIgnoreCase);
+
+        private sealed record UntrackedVerdict(string FileStamp, Dictionary<string, string> Fingerprints, bool Dirty);
+
         public event EventHandler? CacheSaved;
 
         public CacheUpdateService(
@@ -139,7 +148,20 @@ namespace Writersword.Infrastructure.Services.Storage
 
                 try
                 {
+                    // Диагностика: кеш восстановления выключен (DiagnosticSwitches).
+                    if (Writersword.Infrastructure.Diagnostics.DiagnosticSwitches.BackgroundWorkDisabled)
+                        return;
+
+                    var tickStopwatch = System.Diagnostics.Stopwatch.StartNew();
+                    long allocatedBefore = GC.GetTotalAllocatedBytes(false);
+
                     await PerformCacheUpdateAsync();
+
+                    // Диагностика памяти: тик кеша, выделивший много, виден в журнале.
+                    long allocatedMb = (GC.GetTotalAllocatedBytes(false) - allocatedBefore) / (1024 * 1024);
+                    if (allocatedMb >= 50)
+                        _logger.LogWarning("Cache tick: {ElapsedMs}ms, выделено {AllocatedMb} МБ",
+                            tickStopwatch.ElapsedMilliseconds, allocatedMb);
                 }
                 finally
                 {
@@ -256,17 +278,50 @@ namespace Writersword.Infrastructure.Services.Storage
                         "тик кеша: сбор данных (без отслеживания) " + System.IO.Path.GetFileName(projectPath));
                     var (untrackedCustom, _) = _stateCollector.CollectAllData(untrackedModules);
 
-                    // Из файла читаются только данные модулей без отслеживания правок:
-                    // сравниваются только они. Прежде на каждом тике читались данные
-                    // всех модулей, включая весь текст рукописи.
-                    var savedForUntracked = _cacheService.ReadProjectDataWithoutLock(
-                        projectPath, untrackedModules.Select(m => m.moduleType));
+                    // Быстрые отпечатки данных: сериализация прямо в хеш, без строк
+                    // и деревьев JSON. Прежде каждые десять секунд данные модулей
+                    // (у персонажей — сотни карточек) и их копия из файла целиком
+                    // превращались в отсортированный JSON ради сравнения: сотни
+                    // мегабайт мусора за тик и полные сборки, замораживавшие
+                    // интерфейс. Теперь полное сравнение — только когда изменились
+                    // данные или файл проекта.
+                    Writersword.Infrastructure.Diagnostics.SwitchProfiler.SetStage(
+                        "тик кеша: отпечатки (без отслеживания) " + System.IO.Path.GetFileName(projectPath));
+                    var fingerprints = Fingerprints(untrackedModules, untrackedCustom);
+                    var fileStamp = ProjectFileStamp(projectPath);
 
-                    if (savedForUntracked != null)
+                    IReadOnlyDictionary<string, object?>? savedForUntracked = null;
+                    bool? knownDirty = null;
+
+                    if (fingerprints != null
+                        && _untrackedVerdicts.TryGetValue(projectPath, out var verdict)
+                        && verdict.FileStamp == fileStamp
+                        && SameFingerprints(verdict.Fingerprints, fingerprints))
                     {
-                        bool untrackedDirty = tab.EvaluateUntrackedDirty(untrackedModules, untrackedCustom, savedForUntracked);
+                        knownDirty = verdict.Dirty;
+                    }
+                    else
+                    {
+                        // Из файла читаются только данные модулей без отслеживания правок:
+                        // сравниваются только они. Прежде на каждом тике читались данные
+                        // всех модулей, включая весь текст рукописи.
+                        Writersword.Infrastructure.Diagnostics.SwitchProfiler.SetStage(
+                            "тик кеша: сравнение с файлом (без отслеживания) " + System.IO.Path.GetFileName(projectPath));
+                        savedForUntracked = _cacheService.ReadProjectDataWithoutLock(
+                            projectPath, untrackedModules.Select(m => m.moduleType));
+                    }
+
+                    if (knownDirty.HasValue || savedForUntracked != null)
+                    {
+                        bool untrackedDirty = knownDirty
+                            ?? tab.EvaluateUntrackedDirty(untrackedModules, untrackedCustom, savedForUntracked!);
                         tab.SetUntrackedDirty(untrackedDirty);
                         untrackedEvaluated = true;
+
+                        if (fingerprints != null)
+                            _untrackedVerdicts[projectPath] = new UntrackedVerdict(fileStamp, fingerprints, untrackedDirty);
+                        else
+                            _untrackedVerdicts.Remove(projectPath);
 
                         if (!untrackedDirty && !tab.HasTrackedChanges(modulesList))
                         {
@@ -279,7 +334,7 @@ namespace Writersword.Infrastructure.Services.Storage
                         // содержит это состояние — переписывать его каждые несколько
                         // секунд (у документа это весь текст) незачем. Пропавший кеш
                         // (сохранение, смена воркмода) пишется заново.
-                        mixedSignature = BuildMixedSignature(modulesList, untrackedCustom);
+                        mixedSignature = BuildMixedSignature(modulesList, untrackedCustom, fingerprints);
 
                         if (_lastMixedSignatures.TryGetValue(projectPath, out var previousSignature)
                             && previousSignature == mixedSignature
@@ -458,7 +513,9 @@ namespace Writersword.Infrastructure.Services.Storage
         /// отметок значит, что с прошлой записи кеша не менялось ничего.
         /// </summary>
         private static string BuildMixedSignature(
-            IEnumerable<IModule> modules, IReadOnlyDictionary<string, object?> untrackedData)
+            IEnumerable<IModule> modules,
+            IReadOnlyDictionary<string, object?> untrackedData,
+            IReadOnlyDictionary<string, string>? fingerprints)
         {
             var hashService = App.Services.GetRequiredService<Writersword.Core.Interfaces.Services.IHashService>();
             var signature = new System.Text.StringBuilder();
@@ -469,6 +526,8 @@ namespace Writersword.Infrastructure.Services.Storage
 
                 if (module is IChangeTrackingModule { TracksChanges: true } tracking)
                     signature.Append('r').Append(tracking.Revision);
+                else if (fingerprints != null && fingerprints.TryGetValue(module.moduleType, out var fingerprint))
+                    signature.Append('f').Append(fingerprint);
                 else if (untrackedData.TryGetValue(module.moduleType, out var data))
                     signature.Append('h').Append(data is null ? "null" : hashService.ComputeHash(data));
                 else
@@ -478,6 +537,124 @@ namespace Writersword.Infrastructure.Services.Storage
             }
 
             return signature.ToString();
+        }
+
+        /// <summary>
+        /// Быстрые отпечатки данных модулей: данные сериализуются прямо в SHA-256,
+        /// без промежуточной строки и дерева JSON, поэтому памяти почти не
+        /// требуют. Отпечаток годится только для сравнения с прошлым отпечатком
+        /// тех же данных: ключи не сортируются, и с файлом он не сравним. null —
+        /// данные какого-то модуля не сериализовались; тогда тик идёт полным путём.
+        /// </summary>
+        private Dictionary<string, string>? Fingerprints(
+            IEnumerable<IModule> modules, IReadOnlyDictionary<string, object?> data)
+        {
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var module in modules)
+            {
+                if (!data.TryGetValue(module.moduleType, out var value))
+                {
+                    result[module.moduleType] = "-";
+                    continue;
+                }
+
+                try
+                {
+                    result[module.moduleType] = StreamHash(value);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Fingerprint failed for {Module}, full comparison", module.moduleType);
+                    return null;
+                }
+            }
+
+            return result;
+        }
+
+        private static readonly Newtonsoft.Json.JsonSerializer FingerprintSerializer =
+            Newtonsoft.Json.JsonSerializer.Create(new Newtonsoft.Json.JsonSerializerSettings
+            {
+                ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore
+            });
+
+        private static string StreamHash(object? value)
+        {
+            using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(
+                System.Security.Cryptography.HashAlgorithmName.SHA256);
+
+            if (value is null)
+            {
+                hash.AppendData(System.Text.Encoding.UTF8.GetBytes("null"));
+            }
+            else if (value is string text)
+            {
+                hash.AppendData(System.Text.Encoding.UTF8.GetBytes(text));
+            }
+            else
+            {
+                using var sink = new HashSinkStream(hash);
+                using var writer = new System.IO.StreamWriter(sink, new System.Text.UTF8Encoding(false), 64 * 1024, leaveOpen: true);
+                using (var json = new Newtonsoft.Json.JsonTextWriter(writer) { CloseOutput = false })
+                    FingerprintSerializer.Serialize(json, value);
+                writer.Flush();
+            }
+
+            return Convert.ToHexString(hash.GetHashAndReset());
+        }
+
+        private static bool SameFingerprints(Dictionary<string, string> a, Dictionary<string, string> b)
+        {
+            if (a.Count != b.Count) return false;
+            foreach (var (key, value) in a)
+                if (!b.TryGetValue(key, out var other) || other != value)
+                    return false;
+            return true;
+        }
+
+        /// <summary>
+        /// Отметка файла проекта: размер и время записи самого файла и его журнала
+        /// WAL. Сохранение пишет в журнал, а в основной файл — при переносе
+        /// журнала, поэтому смотрятся оба.
+        /// </summary>
+        private static string ProjectFileStamp(string projectPath)
+        {
+            static string Stamp(string path)
+            {
+                var info = new System.IO.FileInfo(path);
+                return info.Exists ? info.Length + ":" + info.LastWriteTimeUtc.Ticks : "none";
+            }
+
+            try
+            {
+                return Stamp(projectPath) + "|" + Stamp(projectPath + "-wal");
+            }
+            catch
+            {
+                return Guid.NewGuid().ToString("N");
+            }
+        }
+
+        /// <summary>Поток, который ничего не хранит: всё записанное уходит в хеш.</summary>
+        private sealed class HashSinkStream : System.IO.Stream
+        {
+            private readonly System.Security.Cryptography.IncrementalHash _hash;
+
+            public HashSinkStream(System.Security.Cryptography.IncrementalHash hash) => _hash = hash;
+
+            public override bool CanRead => false;
+            public override bool CanSeek => false;
+            public override bool CanWrite => true;
+            public override long Length => throw new NotSupportedException();
+            public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+            public override void Write(byte[] buffer, int offset, int count) => _hash.AppendData(buffer, offset, count);
+            public override void Write(ReadOnlySpan<byte> buffer) => _hash.AppendData(buffer);
+            public override void Flush() { }
+            public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+            public override long Seek(long offset, System.IO.SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
         }
 
         /// <summary>

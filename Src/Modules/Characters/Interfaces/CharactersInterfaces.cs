@@ -175,5 +175,71 @@ namespace Writersword.Modules.Characters.Interfaces
 
         /// <summary>Пользовательские шаблоны — то, что уходит в файл проекта.</summary>
         IReadOnlyList<CharacterTemplate> GetCustomTemplates();
+
+        /// <summary>
+        /// Разложить свои шаблоны: порядок списка — новый порядок своих
+        /// шаблонов, у каждого — его папка (пусто — без папки). Свои шаблоны,
+        /// которых в списке нет, остаются следом в прежнем порядке.
+        /// </summary>
+        void ArrangeTemplates(IReadOnlyList<(string Id, string FolderId)> order);
+
+        // ── Папки шаблонов ────────────────────────────────────────────────
+
+        IReadOnlyList<CharacterTemplateFolder> GetTemplateFolders();
+        CharacterTemplateFolder CreateTemplateFolder(string name);
+        void UpdateTemplateFolder(CharacterTemplateFolder folder);
+
+        /// <summary>Удалить папку; её шаблоны уходят в конец «Моих шаблонов».</summary>
+        void DeleteTemplateFolder(string id);
+
+        /// <summary>
+        /// Сдвинуть раздел вкладки шаблонов на shift мест: −1 — выше, +1 — ниже.
+        /// Двигаются и свои папки, и «Мои шаблоны», и «Встроенные» (ключи
+        /// TemplateSections).
+        /// </summary>
+        void MoveTemplateFolder(string id, int shift);
+
+        void LoadTemplateFolders(List<CharacterTemplateFolder> folders);
+
+        /// <summary>
+        /// Порядок разделов вкладки шаблонов сверху вниз: ключи своих папок,
+        /// TemplateSections.Ungrouped и TemplateSections.BuiltIn. В нём всегда
+        /// все разделы — недостающие встают на места по умолчанию.
+        /// </summary>
+        IReadOnlyList<string> GetTemplateSectionOrder();
+
+        /// <summary>Порядок разделов из проекта; вызывается после LoadTemplateFolders.</summary>
+        void LoadTemplateSectionOrder(List<string> ids);
+
+        // ── Заготовки полей ───────────────────────────────────────────────
+
+        /// <summary>Все заготовки полей: сначала свои, за ними встроенные.</summary>
+        IReadOnlyList<CharacterFieldPreset> GetFieldPresets();
+
+        /// <summary>Свои заготовки — то, что уходит в файл проекта.</summary>
+        IReadOnlyList<CharacterFieldPreset> GetCustomFieldPresets();
+
+        /// <summary>
+        /// Сохранить поле своей заготовкой под его названием. Своя заготовка
+        /// с тем же названием и типом заменяется. null — в режиме только чтения.
+        /// </summary>
+        CharacterFieldPreset? SaveFieldPreset(CharacterAnketaField field);
+
+        /// <summary>Удалить свою заготовку; встроенные не удаляются.</summary>
+        void DeleteFieldPreset(string id);
+
+        void LoadFieldPresets(List<CharacterFieldPreset> presets);
+
+        // ── Скрытые шаблоны и свёрнутые разделы ───────────────────────────
+
+        bool IsTemplateHidden(string id);
+        void SetTemplateHidden(string id, bool hidden);
+        IReadOnlyCollection<string> GetHiddenTemplateIds();
+        void LoadHiddenTemplateIds(List<string> ids);
+
+        bool IsTemplateFolderCollapsed(string id);
+        void SetTemplateFolderCollapsed(string id, bool collapsed);
+        IReadOnlyCollection<string> GetCollapsedTemplateFolderIds();
+        void LoadCollapsedTemplateFolderIds(List<string> ids);
     }
 }

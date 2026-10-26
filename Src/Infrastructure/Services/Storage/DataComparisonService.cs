@@ -66,6 +66,13 @@ namespace Writersword.Infrastructure.Services
             if (value1 == null && value2 == null) return true;
             if (value1 == null || value2 == null) return false;
 
+            // Одинаковые строки дают одинаковый хеш — разбирать и хешировать
+            // документ на сотни мегабайт ради этого ответа незачем. Так сравнение
+            // кеша с файлом при открытии вкладки проходит за время сравнения строк.
+            if (value1 is string text1 && value2 is string text2
+                && string.Equals(text1, text2, System.StringComparison.Ordinal))
+                return true;
+
             if (IsDeltaMode(value1) && IsDeltaMode(value2))
             {
                 _logger.LogDebug("Using Delta mode comparison");
@@ -83,6 +90,25 @@ namespace Writersword.Infrastructure.Services
             }
 
             return equal;
+        }
+
+        /// <summary>
+        /// Первое структурное расхождение двух значений в виде
+        /// «путь | сейчас=… | в файле=…» или null, если путь не найден.
+        /// Только для диагностики: на результат сравнения не влияет.
+        /// </summary>
+        public string? DescribeFirstDifference(object? live, object? saved)
+        {
+            try
+            {
+                var diff = FindFirstDifferencePath(ToToken(live), ToToken(saved), "$");
+                if (diff == null) return null;
+                return diff.Path + " | сейчас=" + Truncate(diff.Value1) + " | в файле=" + Truncate(diff.Value2);
+            }
+            catch (System.Exception ex)
+            {
+                return "не удалось найти отличие: " + ex.Message;
+            }
         }
 
         /// <summary>
@@ -149,10 +175,14 @@ namespace Writersword.Infrastructure.Services
 
             if (t1 is Newtonsoft.Json.Linq.JObject o1 && t2 is Newtonsoft.Json.Linq.JObject o2)
             {
+                // Свойство со значением null и отсутствующее свойство равны — так их
+                // считает и хеш (HashService), иначе диагностика указывала бы на
+                // расхождение, которого сравнение не видит.
                 foreach (var prop in o1.Properties())
                 {
+                    if (prop.Value.Type == Newtonsoft.Json.Linq.JTokenType.Null) continue;
                     var other = o2.Property(prop.Name);
-                    if (other == null)
+                    if (other == null || other.Value.Type == Newtonsoft.Json.Linq.JTokenType.Null)
                         return new DiffResult
                         {
                             Path = path + "." + prop.Name + " (missing in saved)",
@@ -164,7 +194,9 @@ namespace Writersword.Infrastructure.Services
                 }
                 foreach (var prop in o2.Properties())
                 {
-                    if (o1.Property(prop.Name) == null)
+                    if (prop.Value.Type == Newtonsoft.Json.Linq.JTokenType.Null) continue;
+                    var own = o1.Property(prop.Name);
+                    if (own == null || own.Value.Type == Newtonsoft.Json.Linq.JTokenType.Null)
                         return new DiffResult
                         {
                             Path = path + "." + prop.Name + " (missing in live)",

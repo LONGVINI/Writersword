@@ -82,12 +82,9 @@ namespace Writersword.Modules.TextEditor.Document
             float headerDistancePt = MmToPt(ps.HeaderDistanceMm);
             float footerDistancePt = MmToPt(ps.FooterDistanceMm);
 
-            float lineHeight;
-            using (var font = HeaderFooterPainter.CreateFont(settings, SKTextRenderer.ResolveTypeface,
-                       HeaderFooterFallbackFamily()))
-            {
-                lineHeight = HeaderFooterPainter.LineHeight(font);
-            }
+            // У полос и их кусков бывает своё оформление: высота полосы — по её шрифтам.
+            using var fonts = new HeaderFooterFonts(settings, SKTextRenderer.ResolveTypeface,
+                HeaderFooterFallbackFamily());
 
             var tops = new float[pageCount];
             var bottoms = new float[pageCount];
@@ -101,37 +98,17 @@ namespace Writersword.Modules.TextEditor.Document
                 var header = settings.BandFor(decoration, true);
                 var footer = settings.BandFor(decoration, false);
 
-                int headerLines = PrintedLines(header, decoration);
-                int footerLines = PrintedLines(footer, decoration);
+                // Место, которое на этом листе гаснет (номер скрыт), места не занимает.
+                float headerHeight = HeaderFooterPainter.BandHeightPt(header, decoration, fonts);
+                float footerHeight = HeaderFooterPainter.BandHeightPt(footer, decoration, fonts);
 
                 // Без зазора, как в Word и как в HeaderFooterPainter.BodyReservePt: пока
                 // колонтитул умещается в поле листа, текст стоит там же, где без него.
-                tops[p] = headerLines > 0 ? headerDistancePt + lineHeight * headerLines : 0f;
-                bottoms[p] = footerLines > 0 ? footerDistancePt + lineHeight * footerLines : 0f;
+                tops[p] = headerHeight > 0f ? headerDistancePt + headerHeight : 0f;
+                bottoms[p] = footerHeight > 0f ? footerDistancePt + footerHeight : 0f;
             }
 
             return (tops, bottoms);
-        }
-
-        /// <summary>
-        /// Сколько строк полосы печатается на листе. Место, которое на этом листе
-        /// гаснет (номер скрыт, колонтитулы скрыты), места не занимает.
-        /// </summary>
-        private static int PrintedLines(HeaderFooterBand? band, PageDecoration decoration)
-        {
-            if (band is null) return 0;
-
-            int lines = 0;
-            for (int s = 0; s < 3; s++)
-            {
-                string template = band.GetSlot(s);
-                if (template.Length == 0) continue;
-                if (PageNumbering.RenderSlot(template, decoration) is null) continue;
-
-                lines = Math.Max(lines, HeaderFooterPainter.SplitLines(template).Count);
-            }
-
-            return lines;
         }
 
         /// <summary>

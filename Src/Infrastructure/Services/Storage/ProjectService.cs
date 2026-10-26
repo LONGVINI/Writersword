@@ -25,7 +25,13 @@ namespace Writersword.Infrastructure.Services.Storage
     {
         private readonly ILogger<ProjectService> _logger;
 
-        // Список всех открытых проектов
+        // Список всех открытых проектов. Хранятся карточки проектов (ProjectHeader)
+        // без данных модулей: из реестра читают только название, тип и сам факт,
+        // что проект открыт. Прежде здесь лежал целиком последний прочитанный
+        // экземпляр — в том числе прочитанный только для сравнения с кешем или
+        // файлом, — со всем текстом рукописи строкой JSON: десятки мегабайт на
+        // каждый открытый проект сверх того, что держит сама вкладка (снимок кучи
+        // 2026-10-24: 46 МБ на одну книгу).
         private readonly List<ProjectFile> _openProjects = new List<ProjectFile>();
 
         // Соответствие: ID проекта → путь к файлу
@@ -108,7 +114,7 @@ namespace Writersword.Infrastructure.Services.Storage
                     _logger.LogDebug("Project loaded: {ProjectTitle}", project.Title);
 
                     // Добавляем в список открытых проектов
-                    _openProjects.Add(project);
+                    _openProjects.Add(ProjectHeader(project));
                     _projectPaths[project.Id] = filePath;
                 }
                 else
@@ -146,20 +152,18 @@ namespace Writersword.Infrastructure.Services.Storage
 
                 _logger.LogDebug("Project saved to: {FilePath}", filePath);
 
-                // Удаляем старый проект с таким же путём (если это другой объект)
+                // Удаляем старую карточку проекта с таким же путём: в реестре всегда
+                // лежит карточка последнего сохранённого состояния.
                 var existingProject = GetProjectByPath(filePath);
-                if (existingProject != null && existingProject != project)
+                if (existingProject != null)
                 {
                     _logger.LogDebug("Removing old project from cache: {OldProjectTitle}", existingProject.Title);
                     _openProjects.Remove(existingProject);
                     _projectPaths.Remove(existingProject.Id);
                 }
 
-                // Добавляем в список открытых проектов если его там нет
-                if (!_openProjects.Contains(project))
-                {
-                    _openProjects.Add(project);
-                }
+                // Добавляем в список открытых проектов
+                _openProjects.Add(ProjectHeader(project));
 
                 // Обновляем путь к файлу
                 _projectPaths[project.Id] = filePath;
@@ -172,6 +176,28 @@ namespace Writersword.Infrastructure.Services.Storage
                 return false;
             }
         }
+
+        /// <summary>
+        /// Карточка проекта для реестра открытых: все поля проекта, кроме данных
+        /// модулей. Списки и словари не копируются — карточка ссылается на те же,
+        /// они небольшие.
+        /// </summary>
+        private static ProjectFile ProjectHeader(ProjectFile project) => new()
+        {
+            Title = project.Title,
+            Type = project.Type,
+            FormatVersion = project.FormatVersion,
+            Id = project.Id,
+            CreatedAt = project.CreatedAt,
+            LastModified = project.LastModified,
+            ModulesData = new Dictionary<string, object?>(),
+            ProjectPinnedColors = project.ProjectPinnedColors,
+            ProjectRecentColors = project.ProjectRecentColors,
+            AvatarRingsAll = project.AvatarRingsAll,
+            ProjectPalettes = project.ProjectPalettes,
+            GlobalPaletteOrder = project.GlobalPaletteOrder,
+            WorkModes = project.WorkModes
+        };
 
         /// <summary>Закрыть проект</summary>
         public void CloseProject(ProjectFile project)

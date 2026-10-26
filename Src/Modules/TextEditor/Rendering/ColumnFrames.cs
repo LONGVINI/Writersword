@@ -31,7 +31,8 @@ namespace Writersword.Modules.TextEditor.Rendering
             {
                 Count = Math.Max(1, settings.ColumnCount),
                 GapMm = settings.GapMm,
-                Separator = settings.ShowSeparator
+                Separator = settings.ShowSeparator,
+                SeparatorColor = settings.SeparatorColor
             };
         }
 

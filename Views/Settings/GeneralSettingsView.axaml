@@ -2,6 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.ViewModels.Settings"
              xmlns:loc="using:Writersword.Resources.Localization"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:infra="using:Writersword.Infrastructure.Controls"
              x:Class="Writersword.Views.Settings.GeneralSettingsView"
              x:DataType="vm:GeneralSettingsViewModel">
 
@@ -165,6 +167,69 @@
                    Text="{x:Static loc:Strings.Settings_General_Caching_Hint}"
                    TextWrapping="Wrap"
                    Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <!-- ── Память ────────────────────────────────────────────────── -->
+        <StackPanel Spacing="10">
+            <TextBlock Classes="SectionHeader"
+                       Text="{x:Static loc:Strings.Settings_General_Memory}"/>
+            <Separator/>
+
+            <!-- Уровень: большинству достаточно его, лимит считается сам -->
+            <StackPanel Spacing="0">
+                <TextBlock Classes="FieldLabel"
+                           Text="{x:Static loc:Strings.Settings_General_Memory_Level}"/>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <ComboBox ItemsSource="{Binding MemoryLevels}"
+                              SelectedItem="{Binding SelectedMemoryLevel}"
+                              MinWidth="200"
+                              HorizontalAlignment="Left">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MemoryLevelOption">
+                                <TextBlock Text="{Binding DisplayName}"
+                                           FontSize="13"
+                                           Padding="4,2"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <infra:HintMark VerticalAlignment="Center"
+                                    behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_General_Memory_Hint_Title}"
+                                    behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_General_Memory_Hint_Body}"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Дополнительно: свой лимит. Выключен — ползунок показывает
+                 посчитанный лимит и не двигается. -->
+            <CheckBox IsChecked="{Binding CustomMemoryLimitEnabled}"
+                      Content="{x:Static loc:Strings.Settings_General_Memory_CustomLimit}"
+                      behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_General_Memory_CustomLimit}"
+                      behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_General_Memory_CustomLimit_Hint}"/>
+
+            <StackPanel Spacing="0">
+                <TextBlock Classes="FieldLabel"
+                           Text="{x:Static loc:Strings.Settings_General_Memory_Limit}"/>
+                <Grid ColumnDefinitions="*,Auto" MaxWidth="420" HorizontalAlignment="Left">
+                    <Slider Grid.Column="0"
+                            MinWidth="260"
+                            Minimum="{Binding MemoryLimitMinimum}"
+                            Maximum="{Binding MemoryLimitMaximum}"
+                            SmallChange="{Binding MemoryLimitStep}"
+                            LargeChange="{Binding MemoryLimitStep}"
+                            TickFrequency="{Binding MemoryLimitStep}"
+                            IsSnapToTickEnabled="True"
+                            Value="{Binding MemoryLimitMb}"
+                            IsEnabled="{Binding CustomMemoryLimitEnabled}"
+                            behaviours:SliderJumpBehavior.Enabled="True"
+                            VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding MemoryLimitText}"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               Margin="12,0,0,0"
+                               MinWidth="110"
+                               VerticalAlignment="Center"/>
+                </Grid>
+            </StackPanel>
         </StackPanel>
 
     </StackPanel>

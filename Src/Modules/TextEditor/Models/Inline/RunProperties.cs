@@ -116,6 +116,14 @@ namespace Writersword.Modules.TextEditor.Models.Inline
         public int? CharacterScale { get; set; }
 
         /// <summary>
+        /// Кернинг шрифтов, как «Кернинг для знаков размером … пт и более» во вкладке
+        /// «Интервал» шрифта Word (w:kern): наименьший кегль в пунктах, с которого пары
+        /// знаков сближаются. Null — без кернинга.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? KerningMinSizePt { get; set; }
+
+        /// <summary>
         /// Смещение текста вверх (плюс) или вниз (минус) от базовой линии в пунктах,
         /// как «Смещение» во вкладке «Интервал» шрифта Word (w:position). Кегль при этом
         /// не меняется — в отличие от верхнего и нижнего индекса. Null — без смещения.
@@ -282,6 +290,7 @@ namespace Writersword.Modules.TextEditor.Models.Inline
                 && a.IsSmallCaps == b.IsSmallCaps
                 && a.CharacterSpacing == b.CharacterSpacing
                 && a.CharacterScale == b.CharacterScale
+                && a.KerningMinSizePt == b.KerningMinSizePt
                 && a.BaselineOffset == b.BaselineOffset
                 && a.IsHidden == b.IsHidden
                 && a.IsOutline == b.IsOutline
@@ -405,6 +414,7 @@ namespace Writersword.Modules.TextEditor.Models.Inline
                 && !IsSmallCaps
                 && CharacterSpacing is null
                 && CharacterScale is null
+                && KerningMinSizePt is null
                 && BaselineOffset is null
                 && !IsHidden
                 && !IsOutline

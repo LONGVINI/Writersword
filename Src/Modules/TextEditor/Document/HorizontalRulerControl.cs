@@ -72,6 +72,7 @@ namespace Writersword.Modules.TextEditor.Document
         private bool _isDragging;
         private bool _isDraggingMargin;
         private bool _draggingLeftMargin;
+        private bool _isDraggingGap;
         private bool _isDraggingIndentInTable; // true = drag indent маркера в режиме таблицы
         private bool _isDraggingTab;
 
@@ -775,7 +776,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Правая кнопка, нажатая посреди жеста, отпускает привязку и ничего больше:
             // меню в этот момент открывать нельзя — оно перехватит указатель и бросит
             // маркер на полпути.
-            if ((_isDragging || _isDraggingMargin)
+            if ((_isDragging || _isDraggingMargin || _isDraggingGap)
                 && e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
             {
                 _vm.IsSnapEnabled = false;
@@ -892,6 +893,19 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
 
+            // Промежуток между колонками: край меняет ширину колонки рядом, середина
+            // двигает промежуток целиком (RulerViewModel.BeginColumnGapDrag).
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+                && HitTestColumnGap(pos.X, textAreaStartPx, zoom) is { } gapHit)
+            {
+                _isDraggingGap = true;
+                _vm.BeginColumnGapDrag(gapHit.Index, gapHit.Part, PxToMm(pos.X - textAreaStartPx, zoom));
+                e.Pointer.Capture(this);
+                Cursor = new Cursor(StandardCursorType.SizeWestEast);
+                e.Handled = true;
+                return;
+            }
+
             // Drag границы поля.
             const double MarginHitPx = 5.0;
             if (Math.Abs(pos.X - textAreaStartPx) <= MarginHitPx)
@@ -937,8 +951,16 @@ namespace Writersword.Modules.TextEditor.Document
             // Привязка отпущена ровно столько, сколько зажата правая кнопка. Читаем её
             // на каждом движении, а не только на нажатии: кнопку отпускают и посреди
             // жеста, и тогда маркер обязан снова пойти по делениям.
-            if (_isDragging || _isDraggingMargin)
+            if (_isDragging || _isDraggingMargin || _isDraggingGap)
                 _vm.IsSnapEnabled = !e.GetCurrentPoint(this).Properties.IsRightButtonPressed;
+
+            if (_isDraggingGap)
+            {
+                _vm.UpdateColumnGapDrag(PxToMm(pos.X - textAreaStartPx, zoom));
+                InvalidateVisual();
+                e.Handled = true;
+                return;
+            }
 
             if (_isDraggingMargin)
             {
@@ -946,13 +968,14 @@ namespace Writersword.Modules.TextEditor.Document
                 double pageWidthPx2 = MmToPx(_vm.PageWidthMm, zoom);
                 double clampedX = Math.Max(pageOffsetXPx2,
                     Math.Min(pos.X, pageOffsetXPx2 + pageWidthPx2));
+                double minTextMm = MinTextWidthMm();
 
                 if (_draggingLeftMargin)
                 {
                     double newMarginMm = PxToMm(clampedX - pageOffsetXPx2, zoom);
                     if (_vm.IsSnapEnabled)
                     { double s = _vm.UnitsToMm(_vm.SnapStep); newMarginMm = Math.Round(newMarginMm / s) * s; }
-                    newMarginMm = Math.Max(0, Math.Min(newMarginMm, _vm.PageWidthMm - _vm.MarginRightMm - 5));
+                    newMarginMm = Math.Max(0, Math.Min(newMarginMm, _vm.PageWidthMm - _vm.MarginRightMm - minTextMm));
                     _vm.MarginLeftMm = newMarginMm;
                 }
                 else
@@ -960,7 +983,7 @@ namespace Writersword.Modules.TextEditor.Document
                     double newMarginMm = PxToMm(pageOffsetXPx2 + pageWidthPx2 - clampedX, zoom);
                     if (_vm.IsSnapEnabled)
                     { double s = _vm.UnitsToMm(_vm.SnapStep); newMarginMm = Math.Round(newMarginMm / s) * s; }
-                    newMarginMm = Math.Max(0, Math.Min(newMarginMm, _vm.PageWidthMm - _vm.MarginLeftMm - 5));
+                    newMarginMm = Math.Max(0, Math.Min(newMarginMm, _vm.PageWidthMm - _vm.MarginLeftMm - minTextMm));
                     _vm.MarginRightMm = newMarginMm;
                 }
 
@@ -1049,6 +1072,54 @@ namespace Writersword.Modules.TextEditor.Document
             UpdateTabHint(pos.X, pos.Y, hintStartPx, hintEndPx, unitSizePx);
         }
 
+        // Самая узкая колонка, мм: полдюйма, как у Word (тот же предел у окна колонок,
+        // RibbonLayoutTabViewModel).
+        private const double MinColumnWidthMm = RulerViewModel.MinColumnWidthMm;
+
+        // Сколько пикселей от края промежутка ещё берёт край, а не середину.
+        private const double GapEdgeHitPx = 4.0;
+
+        /// <summary>
+        /// Промежуток между колонками под указателем и за что его берут; null — мимо.
+        /// Ближе к краю, чем на <see cref="GapEdgeHitPx"/>, — край; внутри — середина.
+        /// Пока пишут в колонтитуле, на линейке позиции колонтитула, и промежутки не тянутся.
+        /// </summary>
+        private (int Index, RulerColumnGapPart Part)? HitTestColumnGap(double xPx, double textAreaStartPx, double zoom)
+        {
+            if (_vm is null || _vm.IsReadOnly || _vm.IsHeaderFooterTabs) return null;
+
+            var gaps = _vm.ColumnGapsMm;
+            for (int i = 0; i < gaps.Count; i++)
+            {
+                double startPx = textAreaStartPx + MmToPx(gaps[i].FromMm, zoom);
+                double endPx = textAreaStartPx + MmToPx(gaps[i].ToMm, zoom);
+                if (xPx < startPx - GapEdgeHitPx || xPx > endPx + GapEdgeHitPx) continue;
+
+                double toStart = Math.Abs(xPx - startPx);
+                double toEnd = Math.Abs(xPx - endPx);
+                if (toStart <= GapEdgeHitPx && toStart <= toEnd) return (i, RulerColumnGapPart.LeftEdge);
+                if (toEnd <= GapEdgeHitPx) return (i, RulerColumnGapPart.RightEdge);
+                return (i, RulerColumnGapPart.Whole);
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Уже этого поле не сжимает текст: каждой колонке — не меньше полудюйма, плюс
+        /// промежутки между ними. Раньше предел был пять миллиметров на весь текст, и
+        /// поле, дотянутое до края, сжимало три колонки с промежутками в полтора
+        /// миллиметра каждую: строка вмещала по букве, документ разрастался в тысячи
+        /// листов, и любая правка перекладывала их все.
+        /// </summary>
+        private double MinTextWidthMm()
+        {
+            var gaps = _vm!.ColumnGapsMm;
+            double gapsMm = 0;
+            foreach (var (fromMm, toMm) in gaps) gapsMm += Math.Max(0, toMm - fromMm);
+            return MinColumnWidthMm * (gaps.Count + 1) + gapsMm;
+        }
+
         protected override void OnPointerExited(PointerEventArgs e)
         {
             base.OnPointerExited(e);
@@ -1062,6 +1133,17 @@ namespace Writersword.Modules.TextEditor.Document
         protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
         {
             base.OnPointerCaptureLost(e);
+
+            if (_isDraggingGap)
+            {
+                _isDraggingGap = false;
+                Cursor = new Cursor(StandardCursorType.Arrow);
+                _vm?.EndColumnGapDrag();
+                if (_vm is not null) _vm.IsSnapEnabled = true;
+                InvalidateVisual();
+                return;
+            }
+
             if (!_isDraggingMargin) return;
 
             _isDraggingMargin = false;
@@ -1080,12 +1162,24 @@ namespace Writersword.Modules.TextEditor.Document
             // перестал держать точную подгонку.
             if (e.InitialPressMouseButton != MouseButton.Left)
             {
-                if (_vm is not null && (_isDragging || _isDraggingMargin))
+                if (_vm is not null && (_isDragging || _isDraggingMargin || _isDraggingGap))
                 {
                     _vm.IsSnapEnabled = true;
                     InvalidateVisual();
                     e.Handled = true;
                 }
+                return;
+            }
+
+            if (_isDraggingGap)
+            {
+                _isDraggingGap = false;
+                e.Pointer.Capture(null);
+                Cursor = new Cursor(StandardCursorType.Arrow);
+                _vm?.EndColumnGapDrag();
+                if (_vm is not null) _vm.IsSnapEnabled = true;
+                InvalidateVisual();
+                e.Handled = true;
                 return;
             }
 
@@ -1239,6 +1333,9 @@ namespace Writersword.Modules.TextEditor.Document
                 int hitCol = HitTestColumnMarker(xPx, yPx, textAreaStartPx, unitSizePx);
                 if (hitCol >= 0) { Cursor = new Cursor(StandardCursorType.SizeWestEast); return; }
             }
+
+            if (HitTestColumnGap(xPx, textAreaStartPx, _vm.Zoom) is not null)
+            { Cursor = new Cursor(StandardCursorType.SizeWestEast); return; }
 
             const double MarginHoverPx = 5.0;
             if (Math.Abs(xPx - textAreaStartPx) <= MarginHoverPx

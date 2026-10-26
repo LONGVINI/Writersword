@@ -37,7 +37,8 @@ namespace Writersword.Modules.TextEditor.Document
             float BottomPt,
             float[] ColumnOffsetsPt,
             float[] ColumnWidthsPt,
-            bool ColumnSeparator)
+            bool ColumnSeparator,
+            string? ColumnSeparatorColor = null)
         {
             public float TextWidthPt => Math.Max(PageWidthPt - LeftPt - RightPt, 1f);
 
@@ -89,7 +90,8 @@ namespace Writersword.Modules.TextEditor.Document
             var (offsets, widths) = ColumnFrames.Compute(SectionSheetsApply ? columns : null, textWidth);
             bool separator = SectionSheetsApply && columns is { Separator: true } && offsets.Length > 1;
 
-            return new SectionGeometry(width, height, left, top, right, bottom, offsets, widths, separator);
+            return new SectionGeometry(width, height, left, top, right, bottom, offsets, widths, separator,
+                separator ? columns!.SeparatorColor : null);
         }
 
         /// <summary>
@@ -157,6 +159,53 @@ namespace Writersword.Modules.TextEditor.Document
                 _passParityBreaks.ToArray(),
                 page => page >= 0 && page < decorations.Length ? decorations[page].Number : page + 1,
                 _parityDecisions);
+        }
+
+        /// <summary>
+        /// Ширины абзацев по разделам — до прогрева и до прохода. Ширину абзаца в
+        /// колонке запоминает проход (passTextWidths), и после смены колонок или листа
+        /// раздела запомненное ещё прежнее: прогрев шейпил абзацы по старой ширине,
+        /// годной ему считалась вся книга, и абзацы раздела заново шейпились в самом
+        /// проходе — синхронно, на потоке интерфейса, секундами. Здесь ширина каждого
+        /// абзаца берётся из параметров его раздела: у одной колонки — ширина текста
+        /// раздела, у равных колонок — ширина колонки. У колонок разной ширины
+        /// остаётся запомненная, если она — ширина одной из колонок раздела, иначе
+        /// берётся первая колонка: в неё абзац попадает, пока выравнивание не
+        /// переложит его в другую.
+        /// </summary>
+        private void PredictSectionTextWidths()
+        {
+            if (!SectionSheetsApply || DocVm is null || DocVm.Document.Sections.Count == 0) return;
+
+            var blocks = DocVm.Document.Sections[0].Blocks;
+            var sections = BuildSectionGeometries(blocks);
+            float documentWidthPt = GetCurrentTextWidthPt();
+            var predicted = new Dictionary<BlockModel, float>();
+
+            int section = 0;
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                while (section + 1 < sections.Count && sections[section + 1].FirstBlock <= i) section++;
+                if (blocks[i] is not ParagraphBlock paragraph) continue;
+
+                var geometry = sections[section].Geometry;
+                float widthPt = geometry.ColumnCount > 1 ? geometry.ColumnWidthsPt[0] : geometry.TextWidthPt;
+
+                if (geometry.ColumnCount > 1 && _sectionTextWidths.TryGetValue(paragraph, out float previousPt))
+                {
+                    foreach (float columnPt in geometry.ColumnWidthsPt)
+                    {
+                        if (Math.Abs(columnPt - previousPt) > 0.05f) continue;
+                        widthPt = previousPt;
+                        break;
+                    }
+                }
+
+                if (Math.Abs(widthPt - documentWidthPt) > 0.05f)
+                    predicted[paragraph] = widthPt;
+            }
+
+            _sectionTextWidths = predicted;
         }
 
         /// <summary>Номер раздела, в который входит блок с этим индексом.</summary>

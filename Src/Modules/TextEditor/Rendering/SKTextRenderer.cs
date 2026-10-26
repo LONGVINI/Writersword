@@ -1830,6 +1830,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             float[] colOffsets = { 0f };
             float[] colWidths = { textWidthPt };
             bool colSeparator = false;
+            string? colSeparatorColor = null;
             int colIndex = 0;
             float colTopY = 0f;
             float colRegionBottomY = 0f;
@@ -1852,6 +1853,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             {
                 (colOffsets, colWidths) = ColumnFrames.Compute(columns, sectionTextWidthPt);
                 colSeparator = columns is { Separator: true } && colOffsets.Length > 1;
+                colSeparatorColor = colSeparator ? columns!.SeparatorColor : null;
                 colIndex = 0;
                 textWidthPt = colWidths[0];
             }
@@ -1905,7 +1907,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 {
                     AddPrintColumnRule(currentPage,
                         marginLeftPt - currentPage.MarginLeftPt + ColumnFrames.SeparatorX(colOffsets, colWidths, c),
-                        colTopY, bottomY);
+                        colTopY, bottomY, colSeparatorColor);
                 }
             }
 
@@ -6522,7 +6524,7 @@ namespace Writersword.Modules.TextEditor.Rendering
 
         // Черты между колонками листа печати: X от левого края текстовой области, верх и
         // низ — от её верха.
-        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SKPageContent, List<(float X, float Top, float Bottom)>> PrintColumnRules = new();
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SKPageContent, List<(float X, float Top, float Bottom, string? Color)>> PrintColumnRules = new();
 
         private static void SetPrintOffset(SKPageParagraph paragraph, float offsetPt)
         {
@@ -6539,10 +6541,10 @@ namespace Writersword.Modules.TextEditor.Rendering
         public static float PrintOffsetOf(SKPageParagraph paragraph)
             => PrintOffsets.TryGetValue(paragraph, out var box) ? box.Value : 0f;
 
-        private static void AddPrintColumnRule(SKPageContent page, float xPt, float topPt, float bottomPt)
+        private static void AddPrintColumnRule(SKPageContent page, float xPt, float topPt, float bottomPt, string? color)
         {
             if (bottomPt - topPt < 1f) return;
-            PrintColumnRules.GetOrCreateValue(page).Add((xPt, topPt, bottomPt));
+            PrintColumnRules.GetOrCreateValue(page).Add((xPt, topPt, bottomPt, color));
         }
 
         /// <summary>Черты между колонками листа печати — тонкой линией, как у Word.</summary>
@@ -6558,10 +6560,33 @@ namespace Writersword.Modules.TextEditor.Rendering
                 StrokeWidth = 0.5f
             };
 
-            foreach (var (x, top, bottom) in rules)
+            // Свой цвет черты (SectionColumns.SeparatorColor) — как задан, градиент —
+            // шейдером по длине черты; без цвета — чёрная, как у Word.
+            foreach (var (x, top, bottom, color) in rules)
             {
                 float lineX = page.MarginLeftPt + x;
-                canvas.DrawLine(lineX, page.MarginTopPt + top, lineX, page.MarginTopPt + bottom, paint);
+                float lineTop = page.MarginTopPt + top;
+                float lineBottom = page.MarginTopPt + bottom;
+
+                SKShader? shader = null;
+                paint.Color = color is null ? SKColors.Black : GradientSolidColor(color, SKColors.Black);
+                if (IsGradientCode(color))
+                {
+                    try
+                    {
+                        shader = GradientShaderFactory.BuildShader(GradientSpec.Parse(color),
+                            new SKRect(lineX - 0.25f, lineTop, lineX + 0.25f, lineBottom));
+                    }
+                    catch
+                    {
+                        shader = null;
+                    }
+                }
+
+                paint.Shader = shader;
+                canvas.DrawLine(lineX, lineTop, lineX, lineBottom, paint);
+                paint.Shader = null;
+                shader?.Dispose();
             }
         }
 

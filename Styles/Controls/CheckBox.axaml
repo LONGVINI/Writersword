@@ -34,4 +34,68 @@
 		<Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
 		<Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}"/>
 	</Style>
+	<!-- Уменьшенный флажок: Classes="compact". Для выпадающих панелей и окон, где
+	     настройки стоят плотно, — колонки, поля, параметры раздела. Шаблон задан
+	     целиком, как у флажка ленты (Ribbon.axaml, RibbonCheck): штатный флажок
+	     Fluent держит высоту в тридцать две точки сеткой внутри шаблона, и
+	     сеттерами поверх него строку не сжать — квадратик уезжает из строки.
+	     Здесь коробочка в четырнадцать точек и подпись стоят в одной строке и
+	     занимают столько, сколько им нужно. -->
+	<Style Selector="CheckBox.compact">
+		<Setter Property="MinHeight"           Value="20"/>
+		<Setter Property="MinWidth"            Value="0"/>
+		<Setter Property="Padding"             Value="0"/>
+		<Setter Property="FontSize"            Value="11"/>
+		<Setter Property="Foreground"          Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="HorizontalAlignment" Value="Left"/>
+		<Setter Property="VerticalContentAlignment" Value="Center"/>
+		<Setter Property="Cursor"              Value="Hand"/>
+		<Setter Property="Template">
+			<ControlTemplate>
+				<Grid ColumnDefinitions="Auto,*" Background="Transparent">
+					<Border Name="Box"
+					        Grid.Column="0"
+					        Width="14" Height="14"
+					        CornerRadius="3"
+					        BorderThickness="1"
+					        BorderBrush="{DynamicResource BorderDefaultBrush}"
+					        Background="{DynamicResource BgPanelBrush}"
+					        VerticalAlignment="Center">
+						<!-- Галочка стоит точно посередине поля коробочки (12×12 внутри рамки):
+						     её охват 7,8 на 6,2 точки отложен от краёв поровну. -->
+						<Path Name="Tick"
+						      Data="M 2.1,6.3 L 4.9,9.1 L 9.9,2.9"
+						      Stroke="White"
+						      StrokeThickness="1.7"
+						      StrokeLineCap="Round"
+						      StrokeJoin="Round"
+						      IsVisible="False"/>
+					</Border>
+					<ContentPresenter Grid.Column="1"
+					                  Margin="7 0 0 0"
+					                  Content="{TemplateBinding Content}"
+					                  Foreground="{TemplateBinding Foreground}"
+					                  FontSize="{TemplateBinding FontSize}"
+					                  VerticalAlignment="Center"/>
+				</Grid>
+			</ControlTemplate>
+		</Setter>
+	</Style>
+	<Style Selector="CheckBox.compact:pointerover /template/ Border#Box">
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="CheckBox.compact:checked /template/ Border#Box">
+		<Setter Property="Background"  Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="CheckBox.compact:checked:pointerover /template/ Border#Box">
+		<Setter Property="Background"  Value="{DynamicResource AccentHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}"/>
+	</Style>
+	<Style Selector="CheckBox.compact:checked /template/ Path#Tick">
+		<Setter Property="IsVisible" Value="True"/>
+	</Style>
+	<Style Selector="CheckBox.compact:disabled">
+		<Setter Property="Opacity" Value="0.45"/>
+	</Style>
 </Styles>

@@ -105,6 +105,16 @@ namespace Writersword.Modules.Characters.Models
         /// </summary>
         public double? InputWidth { get; set; }
 
+        /// <summary>
+        /// Высота поля описания, в точках. Задаётся в анкете перетаскиванием
+        /// нижнего края поля или числом в особом виде поля. Пусто — как у
+        /// анкеты (CharacterAnketaLook.LongTextHeight), а там пусто — по тексту.
+        /// </summary>
+        public double? InputHeight { get; set; }
+
+        /// <summary>Особый вид поля: выравнивание в строке, шрифт, размеры. Пусто — как у анкеты.</summary>
+        public CharacterFieldLook? Look { get; set; }
+
         // ── Раскладка и подпись ──────────────────────────────────────────
 
         /// <summary>

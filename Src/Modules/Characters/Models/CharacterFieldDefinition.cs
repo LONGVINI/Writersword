@@ -31,6 +31,8 @@ namespace Writersword.Modules.Characters.Models
             parameter.Palette = (field.Palette ?? new List<string>()).ToList();
             parameter.AllowCustomColor = field.AllowCustomColor;
             parameter.InputWidth = field.InputWidth;
+            parameter.InputHeight = field.InputHeight;
+            parameter.Look = field.Look is { IsEmpty: false } look ? look.Clone() : null;
             parameter.LabelBold = field.LabelBold;
             parameter.LabelColor = field.LabelColor ?? string.Empty;
             parameter.LabelIcon = field.LabelIcon ?? string.Empty;

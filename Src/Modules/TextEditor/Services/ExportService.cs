@@ -290,6 +290,18 @@ namespace Writersword.Modules.TextEditor.Services
                     // встают якорями в его начало.
                     var pendingFloatRuns = new List<OpenXmlElement>();
 
+                    // Таблица только что записана, и абзаца за ней ещё нет. Абзац за
+                    // таблицей Word требует не всегда, а только там, где без него файл
+                    // негоден или таблицы склеились бы: перед другой таблицей, перед
+                    // параметрами раздела и в конце тела. Раньше пустой абзац ставился
+                    // за каждой таблицей — обратный импорт получал его настоящим абзацем,
+                    // и под каждой из семидесяти таблиц документа вырастала лишняя строка.
+                    bool tableTailPending = false;
+
+                    // Таблица, записанная последней: за таблицей без обтекания пустой
+                    // абзац-якорь места не занимает (IsTableAnchorParagraph).
+                    TableBlock? lastTable = null;
+
                     // Плавающим объектам не досталось абзаца (за ними таблица или конец
                     // раздела): им отдаётся собственный пустой абзац.
                     void FlushPendingFloats()
@@ -306,6 +318,21 @@ namespace Writersword.Modules.TextEditor.Services
                         lastBreakRun = null;
                         lastIsFlowParagraph = false;
                         continueIntoLast = false;
+                        tableTailPending = false;
+                    }
+
+                    void EnsureTableTail()
+                    {
+                        if (!tableTailPending) return;
+
+                        var tail = new W.Paragraph();
+                        body.AppendChild(tail);
+                        lastParagraph = tail;
+                        lastIsPageBreak = false;
+                        lastBreakRun = null;
+                        lastIsFlowParagraph = false;
+                        continueIntoLast = false;
+                        tableTailPending = false;
                     }
 
                     foreach (var block in section.Blocks)
@@ -314,6 +341,17 @@ namespace Writersword.Modules.TextEditor.Services
                         {
                             case ParagraphBlock para:
                                 bool startsWordSection = hfPlan is not null && hfPlan.SectionStarts.ContainsKey(para.Id);
+
+                                // Пустой абзац-якорь за таблицей — место каретки справа от
+                                // таблицы. В раскладке Writersword он строки не занимает, а у
+                                // Word стал бы настоящей пустой строкой: под каждой таблицей
+                                // документа вырастал лишний отступ, и семьдесят таблиц давали
+                                // лишние страницы. Абзац за таблицей, если он нужен Word,
+                                // ставит EnsureTableTail.
+                                if (tableTailPending && !startsWordSection && pendingFloatRuns.Count == 0
+                                    && lastTable is { FloatPosition: null }
+                                    && IsTableAnchorParagraph(para))
+                                    break;
 
                                 if (continueIntoLast && lastParagraph is not null && !startsWordSection)
                                 {
@@ -344,6 +382,10 @@ namespace Writersword.Modules.TextEditor.Services
                                 }
 
                                 continueIntoLast = false;
+
+                                // Параметрам раздела, кончающегося таблицей, нужен абзац за ней.
+                                if (startsWordSection)
+                                    EnsureTableTail();
 
                                 if (hfPlan is not null && hfPlan.SectionStarts.TryGetValue(para.Id, out int wordSection))
                                 {
@@ -376,6 +418,7 @@ namespace Writersword.Modules.TextEditor.Services
                                 }
 
                                 lastParagraph = BuildParagraph(para, ctx);
+                                RememberTocParagraph(para, lastParagraph, ctx);
 
                                 // Якоря плавающих объектов — в начало абзаца, сразу за его свойствами.
                                 if (pendingFloatRuns.Count > 0)
@@ -390,20 +433,26 @@ namespace Writersword.Modules.TextEditor.Services
                                 lastIsPageBreak = false;
                                 lastBreakRun = null;
                                 lastIsFlowParagraph = true;
+                                tableTailPending = false;
                                 break;
 
                             case TableBlock table:
                                 FlushPendingFloats();
-                                body.AppendChild(BuildTable(table, ctx));
 
-                                // После таблицы в OOXML обязан идти абзац, иначе Word
-                                // считает файл повреждённым.
-                                lastParagraph = new W.Paragraph();
-                                body.AppendChild(lastParagraph);
+                                // Две таблицы подряд Word склеил бы в одну: между ними — абзац.
+                                EnsureTableTail();
+
+                                body.AppendChild(BuildTable(table, ctx));
+                                lastTable = table;
+
+                                // Абзац за таблицей ставится, только если он понадобится
+                                // (EnsureTableTail): следующий абзац модели встанет сразу за ней.
+                                lastParagraph = null;
                                 lastIsPageBreak = false;
                                 lastBreakRun = null;
                                 lastIsFlowParagraph = false;
                                 continueIntoLast = false;
+                                tableTailPending = true;
                                 break;
 
                             case BreakBlock sectionBreak when sectionBreak.IsSectionBreak:
@@ -423,6 +472,9 @@ namespace Writersword.Modules.TextEditor.Services
                                 if (hfPlan is not null)
                                     ApplyHeaderFooterToSection(endingSectPr, hfPlan, ctx);
                                 NormalizeSectionProperties(endingSectPr);
+
+                                // Раздел кончается таблицей: параметры раздела встают в абзац за ней.
+                                EnsureTableTail();
 
                                 bool ownsSectPr = lastParagraph?.GetFirstChild<W.ParagraphProperties>()
                                     ?.GetFirstChild<W.SectionProperties>() is not null;
@@ -465,6 +517,7 @@ namespace Writersword.Modules.TextEditor.Services
                                     lastBreakRun = null;
                                     lastIsFlowParagraph = false;
                                     continueIntoLast = false;
+                                    tableTailPending = false;
                                 }
 
                                 lastIsPageBreak = brk.BreakType != BreakType.Column;
@@ -517,6 +570,7 @@ namespace Writersword.Modules.TextEditor.Services
                                 lastBreakRun = null;
                                 lastIsFlowParagraph = false;
                                 continueIntoLast = false;
+                                tableTailPending = false;
                                 break;
                             }
 
@@ -527,6 +581,10 @@ namespace Writersword.Modules.TextEditor.Services
                     }
 
                     FlushPendingFloats();
+
+                    // Раздел кончается таблицей: за ней — абзац, которому достанутся
+                    // параметры раздела (а у последнего раздела — конец тела документа).
+                    EnsureTableTail();
 
                     var finalLayout = isFinal ? document.FinalSection : null;
                     var sectPr = BuildSectionLayoutProperties(
@@ -566,6 +624,10 @@ namespace Writersword.Modules.TextEditor.Services
                     }
                 }
 
+                // Строки оглавлений — в контейнер оглавления Word с полем TOC
+                // (ExportService.Toc).
+                WrapTablesOfContents(body, document, ctx);
+
                 if (!body.Elements<W.Paragraph>().Any() && !body.Elements<W.Table>().Any())
                     body.InsertAt(new W.Paragraph(), 0);
 
@@ -575,6 +637,9 @@ namespace Writersword.Modules.TextEditor.Services
 
                 // Текст примечаний — тоже после тела (ExportService.Comments).
                 WriteCommentParts(mainPart, ctx);
+
+                // Шаг табуляции и совместимость Word (ExportService.Settings).
+                WriteLayoutSettings(mainPart, document);
 
                 mainPart.Document.Save();
 
@@ -682,6 +747,16 @@ namespace Writersword.Modules.TextEditor.Services
             var stylePart = mainPart.AddNewPart<StyleDefinitionsPart>();
             var styles = new W.Styles();
             DocxTextEffects.DeclareNamespaces(styles);
+
+            // Умолчания документа. Без w:docDefaults Word берёт свои умолчания
+            // приложения, а в них включён запрет висячих строк: абзац, у которого внизу
+            // листа помещалась одна строка, целиком уезжал на следующий лист, и документ
+            // в Word выходил на несколько страниц длиннее. Writersword висячие строки не
+            // запрещает — так же, как исходный файл без w:widowControl.
+            styles.AppendChild(new W.DocDefaults(
+                new W.RunPropertiesDefault(new W.RunPropertiesBaseStyle()),
+                new W.ParagraphPropertiesDefault(new W.ParagraphPropertiesBaseStyle(
+                    new W.WidowControl { Val = false }))));
 
             foreach (var style in document.Styles)
             {
@@ -1009,12 +1084,23 @@ namespace Writersword.Modules.TextEditor.Services
                 || props?.RightIndent is not null
                 || props?.FirstLineIndent is not null;
 
-            if (list is not null)
+            if (list is not null && list.MarkerType != ListMarkerType.None)
             {
-                // Отступы элемента списка задаёт сам список: текст сдвинут вправо,
-                // маркер висит слева от него.
-                left += list.EffectiveTextIndentPt();
-                firstLine = -(list.EffectiveTextIndentPt() - list.EffectiveMarkerIndentPt());
+                // Отступы элемента списка — те же, что ставит вёрстка (SKTextRenderer):
+                // левый отступ абзаца, если он задан, — это уже место текста от поля;
+                // нет — место текста по уровню. Номер — на своём месте, иначе на шаг
+                // выступа левее текста. Раньше к заданному отступу прибавлялся ещё и
+                // отступ уровня: пункт из Word уезжал вправо на целый уровень, а выступ
+                // номера становился другим.
+                left = props?.LeftIndent ?? list.EffectiveTextIndentPt();
+                double marker = list.MarkerIndentPt
+                    ?? Math.Max(0.0, left - ListProperties.DefaultHangingPt);
+
+                // Список из Word хранит выступ первой строки сам (отрицательный отступ
+                // первой строки) — он и уходит в файл.
+                firstLine = list.WordLevels is not null && props?.FirstLineIndent is double wordFirstLine
+                    ? wordFirstLine
+                    : -(left - marker);
                 hasAny = true;
             }
 
@@ -1132,6 +1218,16 @@ namespace Writersword.Modules.TextEditor.Services
             // схемы CT_RPr (w:spacing, w:w, w:kern, w:position, w:sz).
             if (props.CharacterScale is int scale && scale > 0 && scale != 100)
                 elements.Add(new W.CharacterScale { Val = scale });
+
+            // Кернинг — в половинах пункта, между w:w и w:position.
+            if (props.KerningMinSizePt is double kern && kern > 0.001)
+            {
+                var kerning = new W.Kern();
+                kerning.SetAttribute(new OpenXmlAttribute("w", "val",
+                    "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+                    Math.Round(kern * HalfPointsPerPoint).ToString(CultureInfo.InvariantCulture)));
+                elements.Add(kerning);
+            }
 
             if (props.BaselineOffset is double offset && Math.Abs(offset) > 0.001)
                 elements.Add(new W.Position
@@ -1263,13 +1359,35 @@ namespace Writersword.Modules.TextEditor.Services
             var propertyElements = BuildParagraphPropertyElements(
                 para.Properties, para.ListProperties, ctx.Numbering, null);
 
-            if (propertyElements.Count > 0 || para.Properties.HasRevision)
+            // Оформление знака конца абзаца (w:pPr/w:rPr). Высоту пустой строки у Word
+            // задаёт именно оно: без него пустой абзац брал кегль стиля Normal файла, и
+            // пустая строка в 12 пунктов становилась строкой в 14, а в 36 — тоже в 14.
+            var markElements = BuildRunPropertyElements(ParagraphMarkProperties(para), writeExplicitToggles: true);
+
+            if (propertyElements.Count > 0 || para.Properties.HasRevision || markElements.Count > 0)
             {
                 var pPr = new W.ParagraphProperties();
                 foreach (var element in propertyElements) pPr.AppendChild(element);
 
                 // Правки знака абзаца и его оформления (ExportService.Revisions).
                 AppendParagraphRevisions(pPr, para, ctx);
+
+                if (markElements.Count > 0)
+                {
+                    // Правка знака абзаца уже завела w:rPr со своими w:ins/w:del: по схеме
+                    // оформление идёт за ними, в том же w:rPr.
+                    var markRunProperties = pPr.GetFirstChild<W.ParagraphMarkRunProperties>();
+                    if (markRunProperties is null)
+                    {
+                        markRunProperties = new W.ParagraphMarkRunProperties();
+                        if (pPr.GetFirstChild<W.ParagraphPropertiesChange>() is { } change)
+                            change.InsertBeforeSelf(markRunProperties);
+                        else
+                            pPr.AppendChild(markRunProperties);
+                    }
+
+                    foreach (var element in markElements) markRunProperties.AppendChild(element);
+                }
 
                 result.AppendChild(pPr);
             }
@@ -1287,6 +1405,78 @@ namespace Writersword.Modules.TextEditor.Services
                 result.AppendChild(element);
 
             return result;
+        }
+
+        /// <summary>
+        /// Пустой абзац-якорь, который редактор ставит за таблицей
+        /// (DocumentViewModel.NormalizeTableAnchors): без текста, объектов, списка, стиля,
+        /// правок и примечаний, с оформлением по умолчанию. Пустой абзац из файла Word
+        /// якорем не считается: у него есть оформление знака абзаца из файла.
+        /// </summary>
+        private static bool IsTableAnchorParagraph(ParagraphBlock para)
+        {
+            if (!string.IsNullOrEmpty(para.GetPlainText())) return false;
+            if (para.ListProperties is not null) return false;
+
+            var props = para.Properties;
+            if (props.MarkFormat is not null || props.StyleName is not null || props.HasRevision) return false;
+            if (props.TocOwnerId is not null) return false;
+
+            foreach (var chunk in para.Chunks)
+            {
+                foreach (var run in chunk.Runs)
+                {
+                    if (run.InlineImageId is not null) return false;
+                    if (run.Properties is { } runProps && (runProps.HasRevision || runProps.HasComments)) return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Оформление знака конца абзаца. У пустого абзаца импорт хранит его пустым раном
+        /// (ImportService.BuildParagraphMarkRun) — он и даёт оформление. У абзаца с
+        /// текстом знак берёт оформление последнего рана с текстом, как у Word, когда
+        /// абзац набран одним шрифтом: последняя строка не становится выше от кегля стиля.
+        /// </summary>
+        private static Models.Inline.RunProperties? ParagraphMarkProperties(ParagraphBlock para)
+        {
+            Models.Inline.RunProperties? empty = null;
+            Models.Inline.RunProperties? lastText = null;
+
+            foreach (var chunk in para.Chunks)
+            {
+                foreach (var run in chunk.Runs)
+                {
+                    if (run.InlineImageId is not null) continue;
+
+                    if (string.IsNullOrEmpty(run.Text))
+                        empty ??= run.Properties;
+                    else
+                        lastText = run.Properties;
+                }
+            }
+
+            // Знак абзаца с текстом, пришедший из файла, сохраняет своё оформление: у
+            // Word его кегль входит в высоту последней строки. Пустой абзац берёт
+            // оформление своего пустого рана — его меняет набор в пустой строке.
+            var source = lastText is not null && para.Properties.MarkFormat is { } own
+                ? own
+                : lastText ?? empty;
+            if (source is null) return null;
+
+            // Знаку достаётся только оформление букв: правки, примечания и смена
+            // оформления принадлежат рану. Скрытым знак абзаца с текстом не делается —
+            // у Word скрытый знак склеивает абзац со следующим.
+            var mark = source.Clone();
+            mark.Inserted = null;
+            mark.Deleted = null;
+            mark.FormatChange = null;
+            mark.CommentIds = null;
+            if (lastText is not null) mark.IsHidden = false;
+
+            return mark;
         }
 
         private List<OpenXmlElement> BuildRunElements(RunModel run, DocxWriteContext ctx)
@@ -2498,7 +2688,10 @@ namespace Writersword.Modules.TextEditor.Services
             };
 
             if (columnSettings.ColumnCount > 1 && columnSettings.ShowSeparator)
+            {
                 columns.Separator = true;
+                WriteSeparatorColor(columns, columnSettings.SeparatorColor);
+            }
 
             result.AppendChild(columns);
 
@@ -2719,6 +2912,12 @@ namespace Writersword.Modules.TextEditor.Services
 
         /// <summary>Следующий номер правки рецензирования (w:id): номера не повторяются по всему документу.</summary>
         public int NextRevisionId = 1;
+
+        /// <summary>
+        /// Абзацы Word, собранные из строк оглавлений: чьё оглавление и какой уровень
+        /// строки. По ним строки собираются в контейнер оглавления (ExportService.Toc).
+        /// </summary>
+        public readonly Dictionary<W.Paragraph, (Guid Owner, int Level)> TocParagraphs = new(ReferenceEqualityComparer.Instance);
     }
 
     /// <summary>
@@ -3462,7 +3661,11 @@ namespace Writersword.Modules.TextEditor.Services
 
             if (list is not null && list.MarkerType != ListMarkerType.None)
             {
-                leftIndent += (float)list.EffectiveTextIndentPt();
+                // Как у вёрстки редактора: заданный отступ абзаца — место текста,
+                // иначе место текста по уровню списка.
+                leftIndent = paragraph.Properties.LeftIndent is null
+                    ? (float)list.EffectiveTextIndentPt()
+                    : (float)style.LeftIndent;
                 firstLineIndent = 0f;
             }
 
@@ -4169,7 +4372,8 @@ namespace Writersword.Modules.TextEditor.Services
             if (_canvas is null) return;
 
             var font = GetFont(style.BaseRun, 1f);
-            float markerX = _left + (float)style.LeftIndent + (float)list.EffectiveMarkerIndentPt();
+            float markerX = _left + (float)(list.MarkerIndentPt
+                ?? Math.Max(0.0, leftIndent - ListProperties.DefaultHangingPt));
             float baseline = _y + line.Ascent;
 
             float markerWidth = font.MeasureText(markerText);
@@ -4419,8 +4623,9 @@ namespace Writersword.Modules.TextEditor.Services
                 var style = _styles.ResolveParagraph(paragraph);
 
                 float indent = (float)(style.LeftIndent + style.RightIndent);
-                if (paragraph.ListProperties is { } list && list.MarkerType != ListMarkerType.None)
-                    indent += (float)list.EffectiveTextIndentPt();
+                if (paragraph.ListProperties is { } list && list.MarkerType != ListMarkerType.None
+                    && paragraph.Properties.LeftIndent is null)
+                    indent = (float)(list.EffectiveTextIndentPt() + style.RightIndent);
 
                 float available = Math.Max(width - indent, 12f);
                 var lines = LayoutParagraph(paragraph, style, available, (float)style.FirstLineIndent);

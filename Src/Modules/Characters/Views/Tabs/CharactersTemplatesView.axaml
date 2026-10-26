@@ -4,6 +4,9 @@
              xmlns:avm="using:Writersword.Modules.Characters.ViewModels.Anketas"
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:controls="using:Writersword.Modules.Characters.Controls"
+             xmlns:colorControls="using:Writersword.Styles.UserControls"
+             xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             xmlns:infra="using:Writersword.Infrastructure.Controls"
              x:Class="Writersword.Modules.Characters.Views.Tabs.CharactersTemplatesView"
              x:DataType="vm:CharactersTemplatesViewModel"
              Background="{DynamicResource BgSurfaceBrush}">
@@ -25,32 +28,32 @@
 			<Panel Margin="6" IsVisible="{Binding IsMatch}">
 				<Border Classes="tpl-block"
 				        Classes.active="{Binding IsActive}"
+				        Classes.hidden-tpl="{Binding IsHidden}"
 				        Classes.drag-source="{Binding IsDragSource}"
 				        BorderBrush="{Binding ColorBrush}"
 				        PointerPressed="OnBlockPressed">
+					<!-- Сдвиг на время перестановки: блок, которому пришлось
+					     уступить место, доезжает до нового места, как карточка
+					     персонажа, а не прыгает. -->
+					<Border.RenderTransform>
+						<TranslateTransform>
+							<TranslateTransform.Transitions>
+								<Transitions>
+									<DoubleTransition Property="X" Duration="0:0:0.28" Easing="CubicEaseOut"/>
+									<DoubleTransition Property="Y" Duration="0:0:0.28" Easing="CubicEaseOut"/>
+								</Transitions>
+							</TranslateTransform.Transitions>
+						</TranslateTransform>
+					</Border.RenderTransform>
 					<Panel>
-						<!-- Шаблон проекта: та же ленточка, что у групп персонажей -->
-						<Path Classes="tpl-bookmark"
-						      IsVisible="{Binding IsProject}"
-						      IsHitTestVisible="False"
-						      ZIndex="3"
-						      HorizontalAlignment="Right"
-						      VerticalAlignment="Top"
-						      Margin="0,-1,12,0"
-						      Data="M0,0 H14 V20 L7,14 L0,20 Z"
-						      Fill="{Binding ColorBrush}"/>
-
 						<StackPanel>
-							<!-- Шапка: картинка, название, описание. За неё блок перетаскивают. -->
+							<!-- Шапка: картинка, название, описание. Блок перетаскивают
+							     за любое место, как карточку персонажа: зажать и повести. -->
 							<Grid Classes="tpl-head"
 							      ColumnDefinitions="Auto,*"
 							      ColumnSpacing="12"
 							      Margin="12"
-							      Background="Transparent"
-							      PointerPressed="OnHeadPressed"
-							      PointerMoved="OnHeadMoved"
-							      PointerReleased="OnHeadReleased"
-							      PointerCaptureLost="OnHeadCaptureLost">
+							      Background="Transparent">
 								<!-- Картинка шаблона. Щелчок — окно значков: значок, цвет,
 								     подложка, рамка, свои картинки. Бросок файла прямо на
 								     плитку — картинка шаблона; рамка акцентом показывает, что
@@ -94,49 +97,82 @@
 								     уходу из поля, Esc возвращает как было. Встроенный
 								     шаблон не меняется — у него просто текст. -->
 								<StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Top" Margin="0,0,72,0">
-									<TextBlock Text="{Binding Name}"
-									           IsVisible="{Binding IsBuiltIn}"
-									           Margin="0,2,0,0"
-									           FontSize="13" FontWeight="Medium"
-									           TextTrimming="CharacterEllipsis"
-									           Foreground="{DynamicResource TextPrimaryBrush}"/>
-									<TextBlock Text="{Binding Description}"
-									           Margin="0,1,0,0"
-									           FontSize="11"
-									           TextWrapping="Wrap" MaxLines="2"
-									           TextTrimming="CharacterEllipsis"
-									           Foreground="{DynamicResource TextSecondaryBrush}">
-										<TextBlock.IsVisible>
+									<!-- Длинное название — одной строкой с многоточием, длинное
+									     описание — двумя; целиком — нашей подсказкой, и только
+									     когда текст правда обрезан. -->
+									<controls:TrimmedTextBlock Text="{Binding Name}"
+									                           IsVisible="{Binding IsBuiltIn}"
+									                           Margin="0,2,0,0"
+									                           FontSize="13" FontWeight="Medium"
+									                           TextTrimming="CharacterEllipsis"
+									                           Foreground="{DynamicResource TextPrimaryBrush}"/>
+									<controls:TrimmedTextBlock Text="{Binding Description}"
+									                           Margin="0,1,0,0"
+									                           FontSize="11"
+									                           TextWrapping="Wrap" MaxLines="2"
+									                           TextTrimming="CharacterEllipsis"
+									                           Foreground="{DynamicResource TextSecondaryBrush}">
+										<controls:TrimmedTextBlock.IsVisible>
 											<MultiBinding Converter="{x:Static BoolConverters.And}">
 												<Binding Path="IsBuiltIn"/>
 												<Binding Path="HasDescription"/>
 											</MultiBinding>
-										</TextBlock.IsVisible>
-									</TextBlock>
+										</controls:TrimmedTextBlock.IsVisible>
+									</controls:TrimmedTextBlock>
 
-									<TextBox Classes="tpl-inline tpl-name"
-									         IsVisible="{Binding IsEditable}"
-									         Text="{Binding EditName, Mode=TwoWay}"
-									         PlaceholderText="Название шаблона"
-									         FontSize="13" FontWeight="Medium"
-									         GotFocus="OnInlineGotFocus"
-									         LostFocus="OnInlineLostFocus"
-									         KeyDown="OnInlineKeyDown"
-									         behaviours:SelectAllBehavior.Enabled="True"/>
+									<!-- Название своего шаблона — как описание: в покое показ
+									     одной строкой с многоточием поверх поля, длинное — целиком
+									     подсказкой; в правке — само поле. Показ лежит поверх
+									     поля и указатель не ловит: подсветка поля под курсором его
+									     не закрывает, щелчок идёт в поле. -->
+									<Panel Classes="tpl-name-slot" Background="Transparent"
+									       IsVisible="{Binding IsEditable}">
+										<TextBox Classes="tpl-inline tpl-name"
+										         Text="{Binding EditName, Mode=TwoWay}"
+										         PlaceholderText="Название шаблона"
+										         FontSize="13" FontWeight="Medium"
+										         TextWrapping="NoWrap" AcceptsReturn="False"
+										         GotFocus="OnInlineGotFocus"
+										         LostFocus="OnInlineLostFocus"
+										         KeyDown="OnInlineKeyDown"
+										         behaviours:SelectAllBehavior.Enabled="True"/>
+										<controls:TrimmedTextBlock Classes="tpl-name-view"
+										                           Text="{Binding EditName}"
+										                           FontSize="13" FontWeight="Medium"
+										                           TextWrapping="NoWrap"
+										                           TextTrimming="CharacterEllipsis"
+										                           Foreground="{DynamicResource TextPrimaryBrush}"
+										                           IsHitTestVisible="False"/>
+									</Panel>
 									<!-- Пока описания нет, на его месте значок строк текста,
 									     как в шапке карточки персонажа: слово «Описание» под
 									     названием читается как само описание шаблона. Щелчок
-									     по значку ставит курсор в поле, в правке значок гаснет. -->
+									     по значку ставит курсор в поле, в правке значок гаснет.
+
+									     Описание видно двумя строками с многоточием, целиком —
+									     нашей подсказкой, если не влезло. Пишут его в одну
+									     строку: поле в правке однострочное, а две строки поверх
+									     него — только показ, мимо которого щелчок идёт в само
+									     поле. Показ лежит поверх поля, чтобы подсветка поля под
+									     курсором его не закрывала, и в правке держит место —
+									     блок не прыгает по высоте. -->
 									<Panel Classes="tpl-desc-slot" Background="Transparent"
 									       IsVisible="{Binding IsEditable}">
 										<TextBox Classes="tpl-inline tpl-desc"
 										         Text="{Binding EditDescription, Mode=TwoWay}"
-										         FontSize="11" TextWrapping="Wrap" MaxHeight="38"
+										         FontSize="11" TextWrapping="NoWrap" AcceptsReturn="False"
 										         Foreground="{DynamicResource TextSecondaryBrush}"
 										         GotFocus="OnInlineGotFocus"
 										         LostFocus="OnInlineLostFocus"
 										         KeyDown="OnInlineKeyDown"
 										         behaviours:SelectAllBehavior.Enabled="True"/>
+										<controls:TrimmedTextBlock Classes="tpl-desc-view"
+										                           Text="{Binding EditDescription}"
+										                           FontSize="11"
+										                           TextWrapping="Wrap" MaxLines="2"
+										                           TextTrimming="CharacterEllipsis"
+										                           Foreground="{DynamicResource TextSecondaryBrush}"
+										                           IsHitTestVisible="False"/>
 										<Button Classes="tpl-desc-icon"
 										        Click="OnDescriptionIconClick"
 										        IsVisible="{Binding EditDescription,
@@ -172,7 +208,8 @@
 													       PointerCaptureLost="OnIconCaptureLost"
 													       DoubleTapped="OnIconDoubleTapped"
 													       behaviours:TooltipBehavior.Tip="{Binding Name}"
-													       behaviours:TooltipBehavior.Description="{Binding Description}">
+													       behaviours:TooltipBehavior.Description="{Binding Description}"
+													       behaviours:TooltipBehavior.ShowDelay="450">
 														<controls:AnketaIconBadge Size="32" Icon="{Binding Icon}" IconColor="{Binding IconColor}"
 														                          IconBackground="{Binding IconBackground}" IconBorder="{Binding IconBorder}"
 														                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -315,7 +352,8 @@
 																		<DataTemplate x:DataType="vm:TemplatePickItemViewModel">
 																			<Button Classes="ghost pick-tile" Click="OnPickAnketaClick"
 																			        behaviours:TooltipBehavior.Tip="{Binding Name}"
-																			        behaviours:TooltipBehavior.Description="{Binding Description}">
+																			        behaviours:TooltipBehavior.Description="{Binding Description}"
+																			        behaviours:TooltipBehavior.ShowDelay="450">
 																				<controls:AnketaIconBadge Size="32" Icon="{Binding Icon}" IconColor="{Binding IconColor}"
 																				                          IconBackground="{Binding IconBackground}" IconBorder="{Binding IconBorder}"/>
 																			</Button>
@@ -330,7 +368,8 @@
 																		<DataTemplate x:DataType="vm:TemplatePickItemViewModel">
 																			<Button Classes="ghost pick-row" Click="OnPickAnketaClick"
 																			        behaviours:TooltipBehavior.Tip="{Binding Name}"
-																			        behaviours:TooltipBehavior.Description="{Binding Description}">
+																			        behaviours:TooltipBehavior.Description="{Binding Description}"
+																			        behaviours:TooltipBehavior.ShowDelay="450">
 																				<Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
 																					<controls:AnketaIconBadge Grid.Column="0" Size="22"
 																					                          Icon="{Binding Icon}" IconColor="{Binding IconColor}"
@@ -374,22 +413,25 @@
 						            Orientation="Horizontal" Spacing="2"
 						            HorizontalAlignment="Right" VerticalAlignment="Top"
 						            Margin="0,8,8,0" ZIndex="4">
-							<Button Classes="card-btn" Click="OnStarClick"
-							        behaviours:TooltipBehavior.Tip="{Binding ProjectTip}"
-							        behaviours:TooltipBehavior.Description="Его анкеты получает каждый новый персонаж">
-								<Panel>
-									<PathIcon IsVisible="{Binding IsProject}"
-									          Data="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
-									          Width="11" Height="11" Foreground="White"/>
-									<PathIcon IsVisible="{Binding !IsProject}"
-									          Data="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"
-									          Width="11" Height="11" Foreground="White"/>
-								</Panel>
-							</Button>
 							<Button Classes="card-btn" Click="OnDuplicateClick"
-							        behaviours:TooltipBehavior.Tip="Копия шаблона">
+							        behaviours:TooltipBehavior.Tip="Дублировать шаблон"
+							        behaviours:TooltipBehavior.Description="Копия встаёт в конец своих шаблонов, список прокручивается к ней, курсор — в её названии">
 								<PathIcon Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
 								          Width="11" Height="11" Foreground="White"/>
+							</Button>
+							<!-- Скрыть: шаблон остаётся на месте бледнее, но поиск его
+							     не находит и в списке шаблонов карточки его нет. -->
+							<Button Classes="card-btn" Click="OnHideClick"
+							        behaviours:TooltipBehavior.Tip="{Binding HideTip}"
+							        behaviours:TooltipBehavior.Description="Скрытый шаблон стоит на своём месте бледнее, но поиск его не находит и в списке шаблонов карточки персонажа его нет">
+								<Panel>
+									<PathIcon IsVisible="{Binding !IsHidden}"
+									          Data="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"
+									          Width="12" Height="12" Foreground="White"/>
+									<PathIcon IsVisible="{Binding IsHidden}"
+									          Data="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"
+									          Width="12" Height="12" Foreground="White"/>
+								</Panel>
 							</Button>
 							<Button Classes="card-btn danger"
 							        IsVisible="{Binding IsEditable}"
@@ -401,7 +443,7 @@
 									<Flyout Placement="BottomEdgeAlignedRight">
 										<StackPanel Spacing="8" Margin="2">
 											<TextBlock Text="Удалить шаблон?" FontWeight="SemiBold"/>
-											<Button Classes="primary" Content="Удалить" Click="OnDeleteClick" HorizontalAlignment="Right"/>
+											<Button Classes="standard primary" Content="Удалить" Click="OnDeleteClick" HorizontalAlignment="Right"/>
 										</StackPanel>
 									</Flyout>
 								</Button.Flyout>
@@ -416,8 +458,9 @@
 	<UserControl.Styles>
 
 		<!-- Блок шаблона — как карточка персонажа (CharactersListView) -->
+		<!-- Ширины своей у блока нет: ряд делится поровну между блоками
+		     (StretchWrapPanel), и справа не остаётся дыры. -->
 		<Style Selector="Border.tpl-block">
-			<Setter Property="Width" Value="404"/>
 			<Setter Property="CornerRadius" Value="10"/>
 			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
 			<Setter Property="BorderThickness" Value="2"/>
@@ -441,22 +484,24 @@
 			<Setter Property="BoxShadow" Value="0 0 0 2 #FF12151A, 0 0 0 5 #FFFFFFFF"/>
 			<Setter Property="ZIndex" Value="16"/>
 		</Style>
+		<!-- Скрытый шаблон — чуть серее остальных, но на своём месте -->
+		<Style Selector="Border.tpl-block.hidden-tpl">
+			<Setter Property="Opacity" Value="0.45"/>
+		</Style>
+		<Style Selector="Border.tpl-block.hidden-tpl:pointerover">
+			<Setter Property="Opacity" Value="0.75"/>
+		</Style>
 		<Style Selector="Border.tpl-block.drag-source">
 			<Setter Property="Opacity" Value="0.35"/>
 		</Style>
+		<!-- Блок «взят»: приподнят тенью с первого мгновения зажатия, как
+		     карточка персонажа. -->
+		<Style Selector="Border.tpl-block.picked">
+			<Setter Property="BoxShadow" Value="0 0 16 2 #99FFFFFF"/>
+			<Setter Property="ZIndex" Value="20"/>
+		</Style>
 		<Style Selector="Grid.tpl-head">
 			<Setter Property="Cursor" Value="Hand"/>
-		</Style>
-
-		<Style Selector="Border.tpl-block Path.tpl-bookmark">
-			<Setter Property="Transitions">
-				<Transitions>
-					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
-				</Transitions>
-			</Setter>
-		</Style>
-		<Style Selector="Border.tpl-block:pointerover Path.tpl-bookmark">
-			<Setter Property="Opacity" Value="0"/>
 		</Style>
 
 		<!-- Кнопки в углу блока — как у карточки персонажа -->
@@ -593,6 +638,40 @@
 		<Style Selector="TextBox.tpl-name">
 			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 		</Style>
+		<!-- Описание: в покое поле растянуто под оба ряда показа — подсветка
+		     наведением и щелчок покрывают весь текст, а свой текст поля скрыт
+		     под показом. В правке поле — одна строка сверху, показ гаснет,
+		     но место держит. Отступы показа — те же, что у текста поля. -->
+		<Style Selector="TextBox.tpl-desc">
+			<Setter Property="VerticalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalContentAlignment" Value="Top"/>
+		</Style>
+		<Style Selector="TextBox.tpl-desc:focus">
+			<Setter Property="VerticalAlignment" Value="Top"/>
+		</Style>
+		<Style Selector="TextBox.tpl-desc:not(:focus) /template/ TextPresenter#PART_TextPresenter">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<Style Selector="TextBlock.tpl-desc-view">
+			<Setter Property="Margin" Value="0,4,7,4"/>
+			<Setter Property="VerticalAlignment" Value="Top"/>
+		</Style>
+		<Style Selector="Panel.tpl-desc-slot:focus-within TextBlock.tpl-desc-view">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<!-- Название своего шаблона: в покое свой текст поля скрыт под
+		     показом в одну строку, в правке показ гаснет. Подпись-заглушка
+		     пустого поля видна как есть. -->
+		<Style Selector="TextBox.tpl-name:not(:focus) /template/ TextPresenter#PART_TextPresenter">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<Style Selector="TextBlock.tpl-name-view">
+			<Setter Property="Margin" Value="0,4,7,4"/>
+			<Setter Property="VerticalAlignment" Value="Top"/>
+		</Style>
+		<Style Selector="Panel.tpl-name-slot:focus-within TextBlock.tpl-name-view">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
 		<Style Selector="Button.tpl-desc-icon">
 			<Setter Property="HorizontalAlignment" Value="Left"/>
 			<Setter Property="VerticalAlignment" Value="Center"/>
@@ -670,6 +749,104 @@
 			<Setter Property="Margin" Value="8,6,0,0"/>
 		</Style>
 
+		<!-- Панель поиска — те же размеры, что у поиска и кнопок на вкладке
+		     персонажей (CharactersListView): одна высота, скругление 6. -->
+		<!-- Поле и кнопки — одной высоты ровно: высота задана, а не набрана
+		     из отступов, иначе у кнопки со значком и у поля с текстом она
+		     выходит разной. -->
+		<Style Selector="TextBox.tpl-toolbar">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="Padding" Value="7,0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Height" Value="28"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+		</Style>
+		<Style Selector="Button.tpl-toolbar">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="Padding" Value="8,0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Height" Value="28"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.tpl-toolbar /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="CornerRadius" Value="6"/>
+		</Style>
+		<Style Selector="Button.tpl-toolbar:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<!-- Папки — как у персонажей (CharactersListView) -->
+		<Style Selector="Button.folder-hdr-btn">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.folder-hdr-btn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#1FFFFFFF"/>
+		</Style>
+		<Style Selector="Button.folder-hdr-btn:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="#33FFFFFF"/>
+		</Style>
+		<Style Selector="Button.folder-hdr-btn:disabled">
+			<Setter Property="Opacity" Value="0.3"/>
+		</Style>
+		<!-- Пара стрелок порядка разделов: тонкая рамка вокруг обеих, между
+		     ними черта. Погасшая стрелка — без фона, только бледный значок. -->
+		<Style Selector="Border.folder-move">
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="ClipToBounds" Value="True"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Border.folder-move-sep">
+			<Setter Property="Width" Value="1"/>
+			<Setter Property="Margin" Value="0,4"/>
+			<Setter Property="Background" Value="{DynamicResource BorderSubtleBrush}"/>
+		</Style>
+		<Style Selector="Button.folder-move-btn">
+			<Setter Property="Padding" Value="6,4"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="CornerRadius" Value="0"/>
+		</Style>
+		<Style Selector="Button.folder-move-btn /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="CornerRadius" Value="0"/>
+		</Style>
+		<Style Selector="Button.folder-move-btn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#1FFFFFFF"/>
+		</Style>
+		<Style Selector="Button.folder-move-btn:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="#33FFFFFF"/>
+		</Style>
+		<Style Selector="Button.folder-move-btn:disabled /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.folder-move-btn:disabled PathIcon">
+			<Setter Property="Opacity" Value="0.25"/>
+		</Style>
+		<Style Selector="Border.tpl-empty">
+			<Setter Property="Margin" Value="12,8,12,6"/>
+			<Setter Property="MinHeight" Value="64"/>
+			<Setter Property="CornerRadius" Value="10"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+
 		<!-- Перетаскивание -->
 		<Style Selector="Border.ghost">
 			<Setter Property="Padding" Value="6,4,10,4"/>
@@ -678,6 +855,14 @@
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
 			<Setter Property="BoxShadow" Value="0 0 16 2 #66000000"/>
+		</Style>
+		<!-- Призрак блока: шапка шаблона — картинка, название, описание —
+		     в рамке его цвета. Ширина — как у самого блока. -->
+		<Style Selector="Border.block-ghost">
+			<Setter Property="CornerRadius" Value="10"/>
+			<Setter Property="BorderThickness" Value="2"/>
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="Opacity" Value="0.9"/>
 		</Style>
 		<Style Selector="Border.insert-mark">
 			<Setter Property="Width" Value="3"/>
@@ -688,83 +873,281 @@
 
 	<Grid RowDefinitions="Auto,*">
 
-		<!-- ── Панель: поиск, шаблон проекта, новый шаблон ─────────────── -->
+		<!-- ── Панель: поиск и новый шаблон ───────────────────────────── -->
+		<!-- Поиск и кнопки — того же вида, что на вкладке персонажей; левый
+		     край вровень с переключателем «Шаблоны / Редактор анкет». Панель —
+		     продолжение полосы с переключателем: черты между ними нет, сверху
+		     отступа нет, и до переключателя ровно столько же, сколько от него
+		     до верха (7). -->
 		<Border Grid.Row="0"
 		        Background="{DynamicResource BgPanelBrush}"
 		        BorderBrush="{DynamicResource BorderDefaultBrush}"
 		        BorderThickness="0,0,0,1"
-		        Padding="8,6">
-			<Grid ColumnDefinitions="260,*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="6">
-				<TextBox Grid.Column="0" Classes="ro-allow"
+		        Padding="10,0,10,7">
+			<Grid ColumnDefinitions="260,Auto,*,Auto" ColumnSpacing="6">
+				<TextBox Grid.Column="0" Classes="ro-allow tpl-toolbar"
 				         Text="{Binding SearchQuery, Mode=TwoWay}"
 				         PlaceholderText="Поиск"/>
 
-				<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
-				            VerticalAlignment="Center"
-				            Background="Transparent"
-				            behaviours:TooltipBehavior.Tip="Шаблон проекта"
-				            behaviours:TooltipBehavior.Description="{Binding ProjectAnketasCaption}">
-					<PathIcon Data="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
-					          Width="12" Height="12" Foreground="{DynamicResource AccentDefaultBrush}"/>
-					<TextBlock Text="{Binding ProjectCaption}"
-					           VerticalAlignment="Center" MaxWidth="220"
-					           TextTrimming="CharacterEllipsis"
-					           Foreground="{DynamicResource TextPrimaryBrush}"/>
-				</StackPanel>
-
-				<StackPanel Grid.Column="3" x:Name="ApplyResult" Orientation="Horizontal" Spacing="4"
-				            VerticalAlignment="Center" IsVisible="False">
-					<PathIcon Data="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-					          Width="11" Height="11" Foreground="{DynamicResource AccentDefaultBrush}"/>
-					<TextBlock x:Name="ApplyResultText"
-					           Foreground="{DynamicResource AccentDefaultBrush}"/>
-				</StackPanel>
-
-				<Button Grid.Column="4" Click="OnApplyToAllClick"
-				        IsEnabled="{Binding HasProject}"
-				        behaviours:TooltipBehavior.Tip="Применить к созданным"
-				        behaviours:TooltipBehavior.Description="Добавить анкеты шаблона проекта уже созданным персонажам. Заполненное не трогается">
-					<PathIcon Data="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
-					          Width="16" Height="12"/>
+				<!-- Новая папка — как у персонажей: встаёт в конце папок, сразу
+				     с полем названия. -->
+				<Button Grid.Column="1" Classes="tpl-toolbar" Click="OnNewFolderClick"
+				        behaviours:TooltipBehavior.Tip="Новая папка"
+				        behaviours:TooltipBehavior.Description="Папка для своих шаблонов. Шаблоны перетаскивают между папками, разделы — любые, и «Мои шаблоны», и «Встроенные» — двигают стрелками в их шапке">
+					<StackPanel Orientation="Horizontal" Spacing="5">
+						<PathIcon Data="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
+						          Width="14" Height="14"/>
+						<TextBlock Text="Папка" FontSize="12" VerticalAlignment="Center"/>
+					</StackPanel>
 				</Button>
 
-				<Button Grid.Column="5" Click="OnIconLibraryClick"
-				        behaviours:TooltipBehavior.Tip="Библиотека значков"
-				        behaviours:TooltipBehavior.Description="Встроенные значки и свои картинки проекта — общие для шаблонов, анкет и меток персонажей. Пополнить, переименовать, убрать лишнее">
-					<PathIcon Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" Width="13" Height="13"/>
-				</Button>
-
-				<Button Grid.Column="6" Click="OnNewTemplateClick"
-				        behaviours:TooltipBehavior.Tip="Новый шаблон">
+				<Button Grid.Column="3" Classes="tpl-toolbar" Click="OnNewTemplateClick"
+				        behaviours:TooltipBehavior.Tip="Новый шаблон"
+				        behaviours:TooltipBehavior.Description="Встаёт в конец текущей папки — той, где выбран шаблон или по которой щёлкнули последней">
 					<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" Width="12" Height="12"/>
 				</Button>
 			</Grid>
 		</Border>
 
-		<!-- ── Блоки ──────────────────────────────────────────────────── -->
-		<!-- Прозрачный фон — чтобы щелчок по пустому месту между блоками
+		<!-- ── Разделы: «Мои шаблоны», папки, «Встроенные» ──────────────── -->
+		<!-- Как папки персонажей: шапка с цветом, названием, подписью, числом
+		     и стрелкой сворачивания, под ней блоки рядами во всю ширину.
+		     Прозрачный фон — чтобы щелчок по пустому месту между блоками
 		     доходил до списка и снимал выбор. -->
-		<ScrollViewer Grid.Row="1" x:Name="BlocksScroll" Background="Transparent">
-			<StackPanel Margin="8,6,8,16" Background="Transparent">
-				<TextBlock Classes="section" Text="Мои шаблоны" IsVisible="{Binding HasCustom}"/>
-				<ItemsControl x:Name="CustomList" ItemsSource="{Binding CustomBlocks}">
-					<ItemsControl.ItemsPanel>
-						<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-					</ItemsControl.ItemsPanel>
-				</ItemsControl>
+		<ScrollViewer Grid.Row="1" x:Name="BlocksScroll" Background="Transparent"
+		              HorizontalScrollBarVisibility="Disabled"
+		              VerticalScrollBarVisibility="Auto"
+		              AllowAutoHide="False">
+			<ItemsControl x:Name="FoldersList" ItemsSource="{Binding Folders}"
+			              Background="Transparent" Margin="0,0,0,16">
+				<ItemsControl.ItemTemplate>
+					<DataTemplate x:DataType="vm:TemplateFolderViewModel">
+						<StackPanel Classes="tpl-section" Margin="0,0,0,4"
+						            Background="Transparent"
+						            IsVisible="{Binding IsShown}">
 
-				<TextBlock Classes="section" Text="Встроенные" Margin="8,10,0,0"/>
-				<ItemsControl x:Name="BuiltInList" ItemsSource="{Binding BuiltInBlocks}">
-					<ItemsControl.ItemsPanel>
-						<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-					</ItemsControl.ItemsPanel>
-				</ItemsControl>
-			</StackPanel>
+							<!-- Шапка раздела. Щелчок по ней делает папку текущей:
+							     новый шаблон встанет в неё. -->
+							<Border Classes="tpl-folder-head"
+							        BorderBrush="{DynamicResource BorderDefaultBrush}"
+							        BorderThickness="0,0,0,1"
+							        Background="{DynamicResource BgPanelBrush}"
+							        PointerPressed="OnFolderHeadPressed">
+								<Panel>
+									<Border IsVisible="{Binding IsSelected}" Background="#22FFFFFF" IsHitTestVisible="False"/>
+									<Border IsVisible="{Binding IsDragOver}"
+									        Background="#22FFFFFF"
+									        BorderBrush="{DynamicResource AccentDefaultBrush}"
+									        BorderThickness="0,0,0,2"
+									        IsHitTestVisible="False"/>
+									<Grid MinHeight="36" Margin="0,0,8,0" ColumnDefinitions="Auto,*,Auto">
+
+										<!-- Цвет своей папки; у «Моих шаблонов» и «Встроенных» — значок -->
+										<Panel Grid.Column="0" MinWidth="24" Margin="12,0,8,0" VerticalAlignment="Center">
+											<colorControls:ColorPickerButton IsVisible="{Binding IsCustom}"
+											                                 HexColor="{Binding Color, Mode=TwoWay}"
+											                                 VerticalAlignment="Center"/>
+											<PathIcon IsVisible="{Binding IsUngrouped}"
+											          Data="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
+											          Width="15" Height="15"
+											          HorizontalAlignment="Center" VerticalAlignment="Center"
+											          Foreground="{DynamicResource TextSecondaryBrush}"/>
+											<PathIcon IsVisible="{Binding IsBuiltIn}"
+											          Data="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"
+											          Width="14" Height="14"
+											          HorizontalAlignment="Center" VerticalAlignment="Center"
+											          Foreground="{DynamicResource TextSecondaryBrush}"/>
+										</Panel>
+
+										<controls:CharactersFolderHeaderPanel Grid.Column="1"
+										                                      LeftMinWidth="55"
+										                                      RightMinWidth="90"
+										                                      LeftPreferredWidth="260"
+										                                      RightPreferredWidth="210">
+											<!-- Название: первый щелчок делает папку текущей,
+											     второй — правка названия (у своей папки) -->
+											<Panel Margin="0,0,12,0" ClipToBounds="True">
+												<Button Classes="flat ro-allow"
+												        Command="{Binding SelectOrRenameCommand}"
+												        Background="Transparent" BorderThickness="0"
+												        Padding="0" VerticalAlignment="Center"
+												        HorizontalAlignment="Stretch"
+												        HorizontalContentAlignment="Stretch"
+												        IsVisible="{Binding !IsRenaming}">
+													<TextBlock Text="{Binding Name}"
+													           FontSize="13" FontWeight="SemiBold"
+													           Foreground="{DynamicResource TextPrimaryBrush}"
+													           TextTrimming="CharacterEllipsis"/>
+												</Button>
+												<TextBox Text="{Binding Name, Mode=TwoWay}"
+												         FontSize="13" FontWeight="SemiBold"
+												         Padding="4,2,16,2"
+												         VerticalAlignment="Center"
+												         IsVisible="{Binding IsRenaming}"
+												         KeyDown="OnFolderRenameKeyDown"
+												         LostFocus="OnFolderRenameLostFocus"
+												         behaviours:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"
+												         behaviours:SelectAllBehavior.Enabled="True"/>
+											</Panel>
+
+											<!-- Подпись своей папки -->
+											<Grid Margin="8,0,8,0" IsVisible="{Binding IsCustom}">
+												<Button Classes="folder-hdr-btn"
+												        Command="{Binding StartEditCommentCommand}"
+												        Padding="4"
+												        HorizontalAlignment="Right"
+												        behaviours:TooltipBehavior.Tip="Подпись папки"
+												        IsVisible="{Binding Comment, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+													<PathIcon Data="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
+													          Width="12" Height="12"
+													          Foreground="{DynamicResource TextMutedBrush}"
+													          Opacity="0.4"/>
+												</Button>
+												<Button Classes="flat"
+												        Command="{Binding StartEditCommentCommand}"
+												        Background="Transparent" BorderThickness="0"
+												        Padding="0" VerticalAlignment="Center"
+												        HorizontalAlignment="Stretch"
+												        HorizontalContentAlignment="Stretch"
+												        IsVisible="{Binding Comment, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+													<TextBlock Text="{Binding Comment}"
+													           FontSize="11" FontStyle="Italic"
+													           Foreground="{DynamicResource TextSecondaryBrush}"
+													           TextTrimming="CharacterEllipsis"/>
+												</Button>
+												<infra:ItalicCaretTextBox Classes="italic"
+												                          Text="{Binding Comment, Mode=TwoWay}"
+												                          FontStyle="Italic"
+												                          PlaceholderText="Подпись папки"
+												                          Padding="4,2,4,2"
+												                          HorizontalAlignment="Stretch"
+												                          VerticalAlignment="Center"
+												                          IsVisible="{Binding IsEditingComment}"
+												                          KeyDown="OnFolderCommentKeyDown"
+												                          LostFocus="OnFolderCommentLostFocus"
+												                          behaviours:FocusOnVisibleBehavior.Enabled="{Binding IsEditingComment}"
+												                          behaviours:SelectAllBehavior.Enabled="True"/>
+											</Grid>
+										</controls:CharactersFolderHeaderPanel>
+
+										<StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+											<!-- Порядок разделов — стрелками, одной парой: любой
+											     раздел, и «Мои шаблоны», и «Встроенные», встаёт
+											     выше или ниже соседа. Крайнему некуда — его стрелка
+											     гаснет, а место пары остаётся. -->
+											<Border Classes="folder-move" Margin="0,0,6,0">
+												<StackPanel Orientation="Horizontal">
+													<Button Classes="folder-move-btn"
+													        Command="{Binding MoveUpCommand}"
+													        IsEnabled="{Binding CanMoveUp}"
+													        behaviours:TooltipBehavior.Tip="Раздел выше">
+														<PathIcon Data="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"
+														          Width="12" Height="12"
+														          Foreground="{DynamicResource TextSecondaryBrush}"/>
+													</Button>
+													<Border Classes="folder-move-sep"/>
+													<Button Classes="folder-move-btn"
+													        Command="{Binding MoveDownCommand}"
+													        IsEnabled="{Binding CanMoveDown}"
+													        behaviours:TooltipBehavior.Tip="Раздел ниже">
+														<PathIcon Data="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"
+														          Width="12" Height="12"
+														          Foreground="{DynamicResource TextSecondaryBrush}"/>
+													</Button>
+												</StackPanel>
+											</Border>
+											<Button Classes="folder-hdr-btn"
+											        IsVisible="{Binding IsCustom}"
+											        Padding="8"
+											        behaviours:TooltipBehavior.Tip="Удалить папку"
+											        behaviours:TooltipBehavior.Description="Шаблоны папки не удаляются — они перейдут в «Мои шаблоны»">
+												<PathIcon Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+												          Width="13" Height="13"
+												          Foreground="{DynamicResource TextSecondaryBrush}"/>
+												<Button.Flyout>
+													<Flyout Placement="BottomEdgeAlignedRight">
+														<StackPanel Spacing="8" Margin="2" MaxWidth="260">
+															<TextBlock Text="Удалить папку?" FontWeight="SemiBold"/>
+															<TextBlock Text="Шаблоны из неё перейдут в «Мои шаблоны»"
+															           FontSize="11" TextWrapping="Wrap"
+															           Foreground="{DynamicResource TextSecondaryBrush}"/>
+															<Button Classes="standard primary" Content="Удалить" Click="OnDeleteFolderClick" HorizontalAlignment="Right"/>
+														</StackPanel>
+													</Flyout>
+												</Button.Flyout>
+											</Button>
+											<TextBlock Text="{Binding Count}"
+											           FontSize="11"
+											           Foreground="{DynamicResource TextSecondaryBrush}"
+											           VerticalAlignment="Center"
+											           MinWidth="20"
+											           TextAlignment="Center"/>
+											<Button Classes="folder-hdr-btn ro-allow"
+											        Command="{Binding ToggleExpandCommand}"
+											        Padding="6,4" Margin="0,0,4,0">
+												<TextBlock Text="{Binding IsExpanded, Converter={x:Static conv:BoolToCollapseArrowConverter.Instance}}"
+												           FontSize="10"
+												           Foreground="{DynamicResource TextSecondaryBrush}"
+												           VerticalAlignment="Center"/>
+											</Button>
+										</StackPanel>
+									</Grid>
+								</Panel>
+							</Border>
+
+							<!-- Блоки раздела: ряды во всю ширину, без дыры справа -->
+							<ItemsControl Classes="tpl-blocks"
+							              ItemsSource="{Binding Blocks}"
+							              IsVisible="{Binding ShowBlocks}"
+							              Margin="6,6,6,2">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate>
+										<controls:StretchWrapPanel MinItemWidth="380"/>
+									</ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+							</ItemsControl>
+
+							<!-- Пустой раздел: подсказка, и сюда же бросают блок -->
+							<Border Classes="tpl-empty" IsVisible="{Binding ShowEmptyHint}">
+								<TextBlock Text="{Binding EmptyHint}"
+								           FontSize="11" TextWrapping="Wrap" TextAlignment="Center"
+								           HorizontalAlignment="Center" VerticalAlignment="Center"
+								           Margin="12,8"
+								           Foreground="{DynamicResource TextMutedBrush}"/>
+							</Border>
+						</StackPanel>
+					</DataTemplate>
+				</ItemsControl.ItemTemplate>
+			</ItemsControl>
 		</ScrollViewer>
 
 		<!-- ── Слой перетаскивания ────────────────────────────────────── -->
 		<Canvas Grid.Row="0" Grid.RowSpan="2" x:Name="DragLayer" IsHitTestVisible="False">
 			<Border x:Name="InsertMark" Classes="insert-mark" IsVisible="False"/>
+			<Border x:Name="BlockGhost" Classes="block-ghost" IsVisible="False">
+				<Border.Effect>
+					<DropShadowEffect BlurRadius="16" OffsetX="0" OffsetY="6" Opacity="0.4"/>
+				</Border.Effect>
+				<Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="12">
+					<Panel Grid.Column="0" Width="64" Height="64">
+						<controls:AnketaIconBadge x:Name="BlockGhostBadge" Size="64" Look="Tile"/>
+						<Border x:Name="BlockGhostImageHost" CornerRadius="8" ClipToBounds="True">
+							<Image x:Name="BlockGhostImage" Stretch="UniformToFill"/>
+						</Border>
+					</Panel>
+					<StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Top" Margin="0,2,0,0">
+						<TextBlock x:Name="BlockGhostName"
+						           FontSize="13" FontWeight="Medium"
+						           TextTrimming="CharacterEllipsis"
+						           Foreground="{DynamicResource TextPrimaryBrush}"/>
+						<TextBlock x:Name="BlockGhostDescription"
+						           FontSize="11"
+						           TextWrapping="Wrap" MaxLines="2"
+						           TextTrimming="CharacterEllipsis"
+						           Foreground="{DynamicResource TextSecondaryBrush}"/>
+					</StackPanel>
+				</Grid>
+			</Border>
 			<Border x:Name="Ghost" Classes="ghost" IsVisible="False">
 				<StackPanel Orientation="Horizontal" Spacing="7">
 					<controls:AnketaIconBadge x:Name="GhostBadge" Size="22"/>

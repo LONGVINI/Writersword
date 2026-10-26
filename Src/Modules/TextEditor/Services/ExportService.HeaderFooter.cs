@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using Writersword.Modules.TextEditor.Models.Document;
@@ -32,19 +33,50 @@ namespace Writersword.Modules.TextEditor.Services
     /// </summary>
     public sealed partial class ExportService
     {
-        /// <summary>Вид колонтитулов листа в понятиях Word: текст мест с полями.</summary>
+        /// <summary>
+        /// Вид колонтитулов листа в понятиях Word: текст мест с полями, кусками одного
+        /// оформления.
+        /// </summary>
         private sealed class DocxHfLook
         {
-            public DocxHfLook(string[] header, string[] footer)
+            public DocxHfLook(List<(string Text, HeaderFooterFont Font)>[] header, List<(string Text, HeaderFooterFont Font)>[] footer)
             {
                 Header = header;
                 Footer = footer;
-                Key = string.Join("\u0001", header) + "\u0002" + string.Join("\u0001", footer);
+                HeaderKey = SlotsKey(header);
+                FooterKey = SlotsKey(footer);
+                Key = HeaderKey + "\u0002" + FooterKey;
             }
 
-            public string[] Header { get; }
-            public string[] Footer { get; }
+            public List<(string Text, HeaderFooterFont Font)>[] Header { get; }
+            public List<(string Text, HeaderFooterFont Font)>[] Footer { get; }
+
+            /// <summary>Текст и оформление верхней полосы — по нему одинаковые полосы пишутся одной частью.</summary>
+            public string HeaderKey { get; }
+
+            /// <summary>Текст и оформление нижней полосы.</summary>
+            public string FooterKey { get; }
+
             public string Key { get; }
+
+            private static string SlotsKey(List<(string Text, HeaderFooterFont Font)>[] slots)
+            {
+                var sb = new StringBuilder();
+                foreach (var slot in slots)
+                {
+                    foreach (var (text, font) in slot)
+                    {
+                        sb.Append(text).Append('\u0003')
+                            .Append(font.FontFamily).Append('|')
+                            .Append(font.FontSizePt.ToString("R", CultureInfo.InvariantCulture)).Append('|')
+                            .Append(font.IsBold ? '1' : '0')
+                            .Append(font.IsItalic ? '1' : '0').Append('|')
+                            .Append(font.TextColor).Append('\u0004');
+                    }
+                    sb.Append('\u0001');
+                }
+                return sb.ToString();
+            }
 
             public bool SameAs(DocxHfLook? other) => other is not null && string.Equals(Key, other.Key, StringComparison.Ordinal);
         }
@@ -76,6 +108,13 @@ namespace Writersword.Modules.TextEditor.Services
             /// <summary>Разделы, чьё начало уже записано: продолжение раздела после разрыва раздела модели начала счёта не повторяет.</summary>
             public HashSet<int> Written { get; } = new();
 
+            /// <summary>
+            /// Виды ссылок на колонтитулы, которые уже записаны каким-то разделом:
+            /// «h:default», «f:even» и т. п. Раздел без своей ссылки Word берёт у
+            /// предыдущего — пустую полосу до первой записанной не пишем вовсе.
+            /// </summary>
+            public HashSet<string> Referenced { get; } = new(StringComparer.Ordinal);
+
             public Dictionary<string, string> HeaderIds { get; } = new(StringComparer.Ordinal);
             public Dictionary<string, string> FooterIds { get; } = new(StringComparer.Ordinal);
 
@@ -105,11 +144,13 @@ namespace Writersword.Modules.TextEditor.Services
                 plan.Sections.Add(new DocxHfSection
                 {
                     StartPage = 0,
-                    Odd = TemplateLook(settings.Header, settings.Footer),
-                    Even = settings.DifferentOddEven ? TemplateLook(settings.EvenHeader, settings.EvenFooter) : null,
-                    First = settings.DifferentFirstPage ? TemplateLook(settings.FirstHeader, settings.FirstFooter) : null,
+                    Odd = TemplateLook(settings, settings.Header, settings.Footer),
+                    Even = settings.DifferentOddEven ? TemplateLook(settings, settings.EvenHeader, settings.EvenFooter) : null,
+                    First = settings.DifferentFirstPage ? TemplateLook(settings, settings.FirstHeader, settings.FirstFooter) : null,
                     TitlePage = settings.DifferentFirstPage,
-                    Start = settings.StartNumber,
+
+                    // Счёт с единицы у Word по умолчанию: начало пишется, только если оно другое.
+                    Start = settings.StartNumber != 1 ? settings.StartNumber : null,
                     Format = settings.NumberFormat
                 });
 
@@ -198,9 +239,11 @@ namespace Writersword.Modules.TextEditor.Services
             section.Even = settings.DifferentOddEven ? regular[1] ?? regular[0] : null;
             section.Format = decorations[start].Format;
 
+            // Документ, который считает с единицы, начала счёта не пишет: у Word счёт с
+            // единицы по умолчанию, и обратный импорт не видит в нём своего правила.
             var d = decorations[start];
             if (start == 0)
-                section.Start = d.Number;
+                section.Start = d.Number != 1 ? d.Number : null;
             else if (d.Number != decorations[start - 1].Number + 1)
                 section.Start = d.Number;
         }
@@ -213,12 +256,15 @@ namespace Writersword.Modules.TextEditor.Services
                 PageSlots(settings, decoration, false));
         }
 
-        private static string[] PageSlots(HeaderFooterSettings settings, PageDecoration decoration, bool header)
+        private static List<(string Text, HeaderFooterFont Font)>[] PageSlots(
+            HeaderFooterSettings settings, PageDecoration decoration, bool header)
         {
-            var result = new[] { string.Empty, string.Empty, string.Empty };
+            var result = EmptySlots();
             if (!decoration.BandsVisible) return result;
 
             var band = settings.BandFor(decoration, header);
+            var documentFont = settings.BaseFont;
+
             for (int slot = 0; slot < 3; slot++)
             {
                 string template = band.GetSlot(slot);
@@ -226,25 +272,46 @@ namespace Writersword.Modules.TextEditor.Services
 
                 // Место с номером, который на листе не печатается, пустеет целиком —
                 // так же его рисует полотно.
+                string? manual = null;
                 if (template.Contains(HeaderFooterSettings.PageToken, StringComparison.Ordinal))
                 {
                     if (!decoration.NumberVisible) continue;
 
                     // Набранный руками номер — просто текст: поле на этом листе не живёт.
-                    if (decoration.ManualText is not null)
-                        template = template.Replace(HeaderFooterSettings.PageToken, decoration.ManualText, StringComparison.Ordinal);
+                    manual = decoration.ManualText;
                 }
 
-                result[slot] = template;
+                foreach (var (text, font) in band.SlotPieces(slot, documentFont))
+                {
+                    string piece = manual is null
+                        ? text
+                        : text.Replace(HeaderFooterSettings.PageToken, manual, StringComparison.Ordinal);
+                    result[slot].Add((piece, font));
+                }
             }
 
             return result;
         }
 
-        private static DocxHfLook TemplateLook(HeaderFooterBand header, HeaderFooterBand footer)
-            => new(
-                new[] { header.Left, header.Center, header.Right },
-                new[] { footer.Left, footer.Center, footer.Right });
+        private static List<(string Text, HeaderFooterFont Font)>[] EmptySlots()
+            => new[]
+            {
+                new List<(string Text, HeaderFooterFont Font)>(),
+                new List<(string Text, HeaderFooterFont Font)>(),
+                new List<(string Text, HeaderFooterFont Font)>()
+            };
+
+        private static List<(string Text, HeaderFooterFont Font)>[] TemplateSlots(HeaderFooterSettings settings, HeaderFooterBand band)
+        {
+            var result = EmptySlots();
+            var documentFont = settings.BaseFont;
+            for (int slot = 0; slot < 3; slot++)
+                result[slot].AddRange(band.SlotPieces(slot, documentFont));
+            return result;
+        }
+
+        private static DocxHfLook TemplateLook(HeaderFooterSettings settings, HeaderFooterBand header, HeaderFooterBand footer)
+            => new(TemplateSlots(settings, header), TemplateSlots(settings, footer));
 
         // ── Запись ────────────────────────────────────────────────────────
 
@@ -274,48 +341,40 @@ namespace Writersword.Modules.TextEditor.Services
             bool beginning = plan.Written.Add(plan.Current);
 
             // Ссылки — первыми детьми w:sectPr: так требует схема.
-            var references = new List<OpenXmlElement>
+            var references = new List<OpenXmlElement>();
+
+            // Пустая полоса, пока ни один раздел не писал ссылку этого вида, не пишется
+            // вовсе: у Word колонтитула тогда просто нет. Пустая часть колонтитула —
+            // всё равно абзац, а абзац занимает строку: у титула, где колонтитул стоит
+            // ниже нижнего поля, эта строка отодвигала текст, и последняя строка
+            // оглавления уезжала на следующий лист. После записанной ссылки пустую
+            // полосу писать надо — иначе раздел унаследует чужой колонтитул.
+            void Reference(DocxHfLook? look, bool header, W.HeaderFooterValues type, string kind)
             {
-                new W.HeaderReference
-                {
-                    Type = W.HeaderFooterValues.Default,
-                    Id = EnsureBandPart(plan, section.Odd, true, ctx)
-                }
-            };
+                if (look is null) return;
 
-            if (section.Even is not null)
-                references.Add(new W.HeaderReference
-                {
-                    Type = W.HeaderFooterValues.Even,
-                    Id = EnsureBandPart(plan, section.Even, true, ctx)
-                });
+                string key = (header ? "h:" : "f:") + kind;
+                bool empty = SideEmpty(header ? look.Header : look.Footer);
+                if (empty && !plan.Referenced.Contains(key)) return;
 
-            if (beginning && section.TitlePage && section.First is not null)
-                references.Add(new W.HeaderReference
-                {
-                    Type = W.HeaderFooterValues.First,
-                    Id = EnsureBandPart(plan, section.First, true, ctx)
-                });
+                plan.Referenced.Add(key);
+                string id = EnsureBandPart(plan, look, header, ctx);
 
-            references.Add(new W.FooterReference
-            {
-                Type = W.HeaderFooterValues.Default,
-                Id = EnsureBandPart(plan, section.Odd, false, ctx)
-            });
+                if (header)
+                    references.Add(new W.HeaderReference { Type = type, Id = id });
+                else
+                    references.Add(new W.FooterReference { Type = type, Id = id });
+            }
 
-            if (section.Even is not null)
-                references.Add(new W.FooterReference
-                {
-                    Type = W.HeaderFooterValues.Even,
-                    Id = EnsureBandPart(plan, section.Even, false, ctx)
-                });
+            bool first = beginning && section.TitlePage && section.First is not null;
 
-            if (beginning && section.TitlePage && section.First is not null)
-                references.Add(new W.FooterReference
-                {
-                    Type = W.HeaderFooterValues.First,
-                    Id = EnsureBandPart(plan, section.First, false, ctx)
-                });
+            Reference(section.Odd, true, W.HeaderFooterValues.Default, "default");
+            if (section.Even is not null) Reference(section.Even, true, W.HeaderFooterValues.Even, "even");
+            if (first) Reference(section.First, true, W.HeaderFooterValues.First, "first");
+
+            Reference(section.Odd, false, W.HeaderFooterValues.Default, "default");
+            if (section.Even is not null) Reference(section.Even, false, W.HeaderFooterValues.Even, "even");
+            if (first) Reference(section.First, false, W.HeaderFooterValues.First, "first");
 
             for (int i = references.Count - 1; i >= 0; i--)
                 sectPr.InsertAt(references[i], 0);
@@ -361,11 +420,15 @@ namespace Writersword.Modules.TextEditor.Services
             _ => null
         };
 
+        /// <summary>Во всех трёх местах полосы пусто.</summary>
+        private static bool SideEmpty(List<(string Text, HeaderFooterFont Font)>[] slots)
+            => slots.All(s => s.Count == 0 || s.TrueForAll(p => string.IsNullOrEmpty(p.Text)));
+
         /// <summary>Часть колонтитула для вида листа. Одинаковые виды пишутся одной частью.</summary>
         private static string EnsureBandPart(DocxHfPlan plan, DocxHfLook look, bool header, DocxWriteContext ctx)
         {
             var ids = header ? plan.HeaderIds : plan.FooterIds;
-            string key = string.Join("\u0001", header ? look.Header : look.Footer);
+            string key = header ? look.HeaderKey : look.FooterKey;
             if (ids.TryGetValue(key, out var existing)) return existing;
 
             var slots = header ? look.Header : look.Footer;
@@ -397,17 +460,38 @@ namespace Writersword.Modules.TextEditor.Services
         /// Абзацы полосы: строка на абзац, места разведены табуляциями по центру и у
         /// правого края — так колонтитулы строит сам Word.
         /// </summary>
-        private static List<OpenXmlElement> BuildBandParagraphs(string[] slots, DocxHfPlan plan)
+        private static List<OpenXmlElement> BuildBandParagraphs(List<(string Text, HeaderFooterFont Font)>[] slots, DocxHfPlan plan)
         {
-            var lines = slots.Select(s => (s ?? string.Empty).Split('\n')).ToArray();
-            int lineCount = Math.Max(1, lines.Max(l => l.Length));
+            // Пустая полоса — один абзац высотой в пункт: у Word пустой колонтитул
+            // занимает строку и мог бы отодвинуть текст, а у нас он места не занимает.
+            if (SideEmpty(slots))
+            {
+                return new List<OpenXmlElement>
+                {
+                    new W.Paragraph(new W.ParagraphProperties(
+                        new W.SpacingBetweenLines
+                        {
+                            Before = "0",
+                            After = "0",
+                            Line = "20",
+                            LineRule = W.LineSpacingRuleValues.Exact
+                        },
+                        new W.ParagraphMarkRunProperties(
+                            new W.FontSize { Val = "2" },
+                            new W.FontSizeComplexScript { Val = "2" })))
+                };
+            }
+
+            var lines = slots.Select(s => SplitPieceLines(s)).ToArray();
+            int lineCount = Math.Max(1, lines.Max(l => l.Count));
+            var none = new List<(string Text, HeaderFooterFont Font)>();
 
             var result = new List<OpenXmlElement>(lineCount);
             for (int i = 0; i < lineCount; i++)
             {
-                string left = i < lines[0].Length ? lines[0][i] : string.Empty;
-                string center = i < lines[1].Length ? lines[1][i] : string.Empty;
-                string right = i < lines[2].Length ? lines[2][i] : string.Empty;
+                var left = i < lines[0].Count ? lines[0][i] : none;
+                var center = i < lines[1].Count ? lines[1][i] : none;
+                var right = i < lines[2].Count ? lines[2][i] : none;
 
                 var paragraph = new W.Paragraph();
 
@@ -422,20 +506,39 @@ namespace Writersword.Modules.TextEditor.Services
                     Line = "240",
                     LineRule = W.LineSpacingRuleValues.Auto
                 });
-                paragraph.AppendChild(pPr);
-
-                AppendBandText(paragraph, left, plan.Settings);
-
-                if (center.Length > 0 || right.Length > 0)
+                // Знак абзаца — кеглем самого крупного куска строки. Без своего
+                // оформления знак брал кегль стиля «Обычный», и строка колонтитула у Word
+                // выходила выше, чем её текст: колонтитул ниже нижнего поля отодвигал
+                // текст листа.
+                var lineFonts = left.Concat(center).Concat(right).Select(p => p.Font).ToList();
+                if (lineFonts.Count > 0)
                 {
-                    paragraph.AppendChild(BandRun(plan.Settings, new W.TabChar()));
-                    AppendBandText(paragraph, center, plan.Settings);
+                    var markFont = lineFonts.OrderByDescending(f => f.FontSizePt).First();
+                    var markRun = BandRun(markFont, new W.Text());
+                    pPr.AppendChild(new W.ParagraphMarkRunProperties(
+                        markRun.RunProperties!.ChildElements.Select(e => e.CloneNode(true))));
                 }
 
-                if (right.Length > 0)
+                paragraph.AppendChild(pPr);
+
+                foreach (var (text, font) in left)
+                    AppendBandText(paragraph, text, font);
+
+                // Табуляция — оформлением текста за ней: в строке не появляется рана с
+                // чужим кеглем, который поднял бы её высоту у Word.
+                if (center.Count > 0 || right.Count > 0)
                 {
-                    paragraph.AppendChild(BandRun(plan.Settings, new W.TabChar()));
-                    AppendBandText(paragraph, right, plan.Settings);
+                    var tabFont = center.Count > 0 ? center[0].Font : right[0].Font;
+                    paragraph.AppendChild(BandRun(tabFont, new W.TabChar()));
+                    foreach (var (text, font) in center)
+                        AppendBandText(paragraph, text, font);
+                }
+
+                if (right.Count > 0)
+                {
+                    paragraph.AppendChild(BandRun(right[0].Font, new W.TabChar()));
+                    foreach (var (text, font) in right)
+                        AppendBandText(paragraph, text, font);
                 }
 
                 result.Add(paragraph);
@@ -444,12 +547,34 @@ namespace Writersword.Modules.TextEditor.Services
             return result;
         }
 
+        /// <summary>
+        /// Строки места по кускам: перевод строки в куске начинает новую строку, куски
+        /// сохраняют оформление. Пустое место — одна пустая строка.
+        /// </summary>
+        private static List<List<(string Text, HeaderFooterFont Font)>> SplitPieceLines(
+            List<(string Text, HeaderFooterFont Font)> pieces)
+        {
+            var lines = new List<List<(string Text, HeaderFooterFont Font)>> { new() };
+
+            foreach (var (text, font) in pieces)
+            {
+                var parts = (text ?? string.Empty).Split('\n');
+                for (int k = 0; k < parts.Length; k++)
+                {
+                    if (k > 0) lines.Add(new List<(string Text, HeaderFooterFont Font)>());
+                    if (parts[k].Length > 0) lines[^1].Add((parts[k], font));
+                }
+            }
+
+            return lines;
+        }
+
         /// <summary>Позиция табуляции колонтитула в twips: своя, если задана, иначе обычная.</summary>
         private static int TabTwips(double? mm, int fallback)
             => mm is double value ? (int)Math.Round(value * TwipsPerMm) : fallback;
 
-        /// <summary>Текст места: обычный текст — ранами, поля номера — полями Word.</summary>
-        private static void AppendBandText(W.Paragraph paragraph, string text, HeaderFooterSettings settings)
+        /// <summary>Текст куска места: обычный текст — ранами, поля номера — полями Word.</summary>
+        private static void AppendBandText(W.Paragraph paragraph, string text, HeaderFooterFont font)
         {
             int i = 0;
             int textStart = 0;
@@ -457,7 +582,7 @@ namespace Writersword.Modules.TextEditor.Services
             void FlushText(int end)
             {
                 if (end <= textStart) return;
-                paragraph.AppendChild(BandRun(settings, new W.Text(text.Substring(textStart, end - textStart))
+                paragraph.AppendChild(BandRun(font, new W.Text(text.Substring(textStart, end - textStart))
                 {
                     Space = SpaceProcessingModeValues.Preserve
                 }));
@@ -489,7 +614,7 @@ namespace Writersword.Modules.TextEditor.Services
 
                 // Результат поля — «1»: Word пересчитает его при открытии.
                 var simple = new W.SimpleField { Instruction = field };
-                simple.AppendChild(BandRun(settings, new W.Text("1")));
+                simple.AppendChild(BandRun(font, new W.Text("1")));
                 paragraph.AppendChild(simple);
 
                 i += length;
@@ -499,30 +624,31 @@ namespace Writersword.Modules.TextEditor.Services
             FlushText(text.Length);
         }
 
-        private static W.Run BandRun(HeaderFooterSettings settings, OpenXmlElement content)
+        /// <summary>Ран колонтитула с оформлением куска.</summary>
+        private static W.Run BandRun(HeaderFooterFont font, OpenXmlElement content)
         {
             var rPr = new W.RunProperties();
 
-            if (!string.IsNullOrWhiteSpace(settings.FontFamily))
+            if (!string.IsNullOrWhiteSpace(font.FontFamily))
             {
                 rPr.AppendChild(new W.RunFonts
                 {
-                    Ascii = settings.FontFamily,
-                    HighAnsi = settings.FontFamily,
-                    ComplexScript = settings.FontFamily,
-                    EastAsia = settings.FontFamily
+                    Ascii = font.FontFamily,
+                    HighAnsi = font.FontFamily,
+                    ComplexScript = font.FontFamily,
+                    EastAsia = font.FontFamily
                 });
             }
 
-            if (settings.IsBold) rPr.AppendChild(new W.Bold());
-            if (settings.IsItalic) rPr.AppendChild(new W.Italic());
+            if (font.IsBold) rPr.AppendChild(new W.Bold());
+            if (font.IsItalic) rPr.AppendChild(new W.Italic());
 
-            string? color = HexWithoutHash(settings.TextColor);
+            string? color = HexWithoutHash(font.TextColor);
             if (color is not null) rPr.AppendChild(new W.Color { Val = color });
 
-            if (settings.FontSizePt > 0)
+            if (font.FontSizePt > 0)
             {
-                string halfPoints = Math.Round(settings.FontSizePt * HalfPointsPerPoint).ToString(CultureInfo.InvariantCulture);
+                string halfPoints = Math.Round(font.FontSizePt * HalfPointsPerPoint).ToString(CultureInfo.InvariantCulture);
                 rPr.AppendChild(new W.FontSize { Val = halfPoints });
                 rPr.AppendChild(new W.FontSizeComplexScript { Val = halfPoints });
             }

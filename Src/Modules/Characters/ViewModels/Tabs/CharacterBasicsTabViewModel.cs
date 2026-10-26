@@ -637,9 +637,12 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             foreach (var anketa in rest.Where(a => !usedElsewhere.Contains(a.Id)))
                 AvailableAnketas.Add(anketa);
 
+            // Скрытые шаблоны в список не идут: их и скрывают, чтобы не
+            // мешались среди нужных.
             Templates.Clear();
             foreach (var template in _anketaService.GetTemplates())
-                Templates.Add(template);
+                if (!_anketaService.IsTemplateHidden(template.Id))
+                    Templates.Add(template);
 
             // Уже подключённого в недавних не показываем: подключать второй
             // раз нечего, а строка, которая ничего не делает, только сбивает.
@@ -1392,6 +1395,11 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             Title = title;
             AnketaId = anketaId;
             Items = items;
+
+            // Особый вид анкеты — шрифт, выравнивание, высота описаний — у всех её полей.
+            if (anketa?.Look is { IsEmpty: false } look)
+                foreach (var item in items) item.ApplyAnketaLook(look);
+
             Groups = anketa != null && anketa.Layout.Count > 0
                 ? BuildFromLayout(anketa, items, hiddenFieldIds)
                 : BuildGroups(items);
@@ -1562,7 +1570,10 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                     .ToList();
 
                 if (cells.All(c => c == null)) continue;
-                rows.Add(new CharacterFieldRowViewModel(cells));
+                rows.Add(new CharacterFieldRowViewModel(cells)
+                {
+                    SpacingAfter = Math.Max(0, row.SpacingAfter ?? anketa.Look?.RowSpacing ?? 0)
+                });
             }
 
             var rest = items.Where(i => !placed.Contains(i)).ToList();
@@ -1718,6 +1729,11 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public int Columns { get; }
 
         public IReadOnlyList<CharacterFieldCellViewModel> Cells { get; }
+
+        /// <summary>Добавочный отступ под строкой — свой у строки или общий у анкеты, пт.</summary>
+        public double SpacingAfter { get; init; }
+
+        public Avalonia.Thickness RowMargin => new(0, 0, 0, SpacingAfter);
     }
 
     /// <summary>Ячейка строки: поле или пустое место.</summary>

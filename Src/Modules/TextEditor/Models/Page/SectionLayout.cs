@@ -55,6 +55,15 @@ namespace Writersword.Modules.TextEditor.Models.Page
         public bool Separator { get; set; }
 
         /// <summary>
+        /// Цвет черты между колонками — код подборщика цвета: «#RRGGBB», «#AARRGGBB»
+        /// (с прозрачностью) или градиент «grad|…». Null — авто: чёрная, как у Word.
+        /// У Word черта всегда одна — цвета у неё нет; в .docx цвет уходит пропускаемым
+        /// атрибутом wsx (ExportService.SeparatorColorAttribute), Word его не видит.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SeparatorColor { get; set; }
+
+        /// <summary>
         /// Колонки разной ширины: каждая со своей шириной и промежутком. Null — все
         /// колонки равны и стоят через <see cref="GapMm"/>.
         /// </summary>
